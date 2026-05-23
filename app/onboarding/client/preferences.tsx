@@ -105,7 +105,7 @@ export default function ClientPreferences() {
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.topBarLabel}>Set your preferences</Text>
-        <Text style={styles.topBarStep}>Step 2 of 2</Text>
+        <Text style={styles.topBarStep}>Step 2 of 4</Text>
       </View>
 
       {/* Scrollable content */}
@@ -221,9 +221,9 @@ export default function ClientPreferences() {
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
         <Pressable
           style={({ pressed }) => [styles.startBtn, pressed && { opacity: 0.88 }]}
-          onPress={() => router.replace('/')}
+          onPress={() => router.push('/onboarding/client/uploads')}
         >
-          <Text style={styles.startBtnText}>Start Exploring</Text>
+          <Text style={styles.startBtnText}>Continue</Text>
         </Pressable>
         <Text style={styles.ctaNote}>You can update these anytime in settings.</Text>
       </View>
@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   progressFill: {
-    width: '100%',
+    width: '50%',
     height: 4,
     backgroundColor: 'rgba(240,232,213,0.6)',
   },
@@ -268,8 +268,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 96,
-    flexGrow: 1,
+    paddingTop: 16,
+    paddingBottom: 140,
   },
   headline: {
     fontSize: 32,

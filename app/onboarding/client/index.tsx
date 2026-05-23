@@ -37,7 +37,7 @@ export default function ClientProfileSetup() {
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.topBarLabel}>Set up your profile</Text>
-        <Text style={styles.topBarStep}>Step 1 of 2</Text>
+        <Text style={styles.topBarStep}>Step 1 of 4</Text>
       </View>
 
       {/* Scrollable form */}
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   progressFill: {
-    width: '50%',
+    width: '25%',
     height: 4,
     backgroundColor: 'rgba(240,232,213,0.6)',
   },
@@ -211,8 +211,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 96,
-    flexGrow: 1,
+    paddingTop: 16,
+    paddingBottom: 140,
   },
   headline: {
     fontSize: 32,
@@ -262,7 +262,7 @@ const styles = StyleSheet.create({
   photoLabel: {
     textAlign: 'center',
     fontSize: 13,
-    color: '#C8922A',
+    color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
     marginBottom: 4,
     marginTop: 10,
@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
   },
   pinIcon: {
     fontSize: 16,
-    color: '#C8922A',
+    color: 'rgba(240,232,213,0.4)',
     marginRight: 10,
   },
   bioLabelRow: {
@@ -346,7 +346,7 @@ const styles = StyleSheet.create({
   },
   shieldIcon: {
     fontSize: 18,
-    color: '#C8922A',
+    color: 'rgba(240,232,213,0.4)',
     marginTop: 2,
   },
   trustTitle: {
@@ -383,7 +383,7 @@ const styles = StyleSheet.create({
   verifyLink: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#C8922A',
+    color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
   },
   cta: {
