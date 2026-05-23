@@ -4,6 +4,7 @@ import {
   Text,
   TouchableOpacity,
   Animated,
+  Alert,
   StyleSheet,
 } from 'react-native'
 import { router } from 'expo-router'
@@ -78,7 +79,14 @@ export default function PathSelection() {
             icon="✦"
             title="I'm a provider"
             subtitle={"Set up your profile and start\ngetting discovered."}
-            onPress={() => router.push('/onboarding/provider')}
+            onPress={() => Alert.alert(
+              'Coming Soon',
+              'Provider sign up is launching very soon in Houston. Want us to notify you when it is ready?',
+              [
+                { text: 'Not now', style: 'cancel' },
+                { text: 'Notify me', onPress: () => console.log('provider waitlist') },
+              ]
+            )}
           />
         </View>
 

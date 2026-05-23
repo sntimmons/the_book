@@ -27,11 +27,13 @@
       "favicon": "./assets/favicon.png"
     },
     "assetBundlePatterns": ["**/*"],
+    "assets": ["assets/videos/welcome.mp4"],
     "plugins": [
       "expo-router",
       "expo-secure-store",
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      ["expo-image-picker", {"photosPermission": "Allow The Book to access your photos to set your profile picture."}]
     ]
   }
 }

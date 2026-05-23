@@ -7,7 +7,9 @@ import {
   ScrollView,
   StyleSheet,
   TouchableOpacity,
+  Image,
 } from 'react-native'
+import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -22,6 +24,19 @@ export default function ClientProfileSetup() {
   const [lastName, setLastName] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
   const [bio, setBio] = useState('')
+  const [photo, setPhoto] = useState<string | null>(null)
+
+  async function pickImage() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    })
+    if (!result.canceled && result.assets[0]) {
+      setPhoto(result.assets[0].uri)
+    }
+  }
 
   function borderColor(field: FocusedField) {
     return focused === field ? 'rgba(240,232,213,0.3)' : 'rgba(240,232,213,0.08)'
@@ -55,11 +70,17 @@ export default function ClientProfileSetup() {
         </Text>
 
         {/* Photo upload */}
-        <TouchableOpacity activeOpacity={0.8} style={styles.photoCircle}>
-          <View style={styles.personHead} />
-          <View style={styles.personBody} />
+        <TouchableOpacity activeOpacity={0.8} style={styles.photoCircle} onPress={pickImage}>
+          {photo ? (
+            <Image source={{ uri: photo }} style={styles.photoImage} resizeMode="cover" />
+          ) : (
+            <>
+              <View style={styles.personHead} />
+              <View style={styles.personBody} />
+            </>
+          )}
         </TouchableOpacity>
-        <Text style={styles.photoLabel}>Add your photo</Text>
+        <Text style={styles.photoLabel}>{photo ? 'Change photo' : 'Add your photo'}</Text>
         <Text style={styles.photoHelper}>
           Providers are more likely to accept{'\n'}
           bookings with a profile photo
@@ -244,6 +265,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignSelf: 'center',
     marginBottom: 10,
+  },
+  photoImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   personHead: {
     width: 26,

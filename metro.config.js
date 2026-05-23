@@ -8,4 +8,6 @@ config.resolver.blockList = [
   /\/the-book-app\/src\/.*/,
 ]
 
+config.resolver.assetExts.push('mp4')
+
 module.exports = config

@@ -52,7 +52,7 @@ export default function VerifyScreen() {
         <Text style={styles.subtext}>We sent a 6-digit code to</Text>
         <Text style={styles.phoneDisplay}>(000) 000-0000</Text>
 
-        <Pressable>
+        <Pressable onPress={() => router.back()}>
           <Text style={styles.wrongNumber}>Wrong number?</Text>
         </Pressable>
 
@@ -96,7 +96,7 @@ export default function VerifyScreen() {
         </Text>
 
         {/* Dev bypass */}
-        <Pressable onPress={() => router.push('/path-selection')} style={{ marginTop: 32 }}>
+        <Pressable onPress={() => router.push('/path-selection')} style={{ marginTop: 32, alignItems: 'center' }}>
           <Text style={styles.devSkip}>Skip verification (dev only)</Text>
         </Pressable>
       </View>
@@ -108,7 +108,7 @@ export default function VerifyScreen() {
             styles.verifyBtn,
             isValid ? styles.verifyBtnActive : styles.verifyBtnInactive,
           ]}
-          onPress={() => isValid && console.log('verified')}
+          onPress={() => { if (code.length === 6) router.push('/path-selection') }}
         >
           <Text style={[styles.verifyText, isValid ? styles.verifyTextActive : styles.verifyTextInactive]}>
             Verify
@@ -127,10 +127,10 @@ const styles = StyleSheet.create({
   wordmark: {
     position: 'absolute',
     alignSelf: 'center',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    letterSpacing: 3,
-    color: 'rgba(240,232,213,0.5)',
+    letterSpacing: 3.5,
+    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_600SemiBold',
     zIndex: 1,
   },
@@ -190,8 +190,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   boxActive: {
-    borderColor: '#C8922A',
-    backgroundColor: 'rgba(200,146,42,0.06)',
+    borderColor: 'rgba(240,232,213,0.5)',
+    backgroundColor: 'rgba(240,232,213,0.05)',
   },
   boxFilled: {
     borderColor: 'rgba(240,232,213,0.2)',

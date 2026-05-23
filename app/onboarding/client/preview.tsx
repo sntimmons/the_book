@@ -271,7 +271,7 @@ export default function ClientPreview() {
         <Text style={s.ctaEyebrow}>This is what providers see.</Text>
         <Pressable
           style={({ pressed }) => [s.continueBtn, pressed && { opacity: 0.88 }]}
-          onPress={() => router.push('/discovery')}
+          onPress={() => router.push('/(tabs)/')}
         >
           <Text style={s.continueBtnText}>Looks good, continue</Text>
         </Pressable>
