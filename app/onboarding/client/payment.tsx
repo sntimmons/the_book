@@ -14,6 +14,13 @@ export default function ClientPayment() {
 
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backArrow}>‹</Text>
+        </TouchableOpacity>
         <Text style={styles.topBarLabel}>Almost there</Text>
         <Text style={styles.topBarStep}>Step 4 of 4</Text>
       </View>
@@ -53,7 +60,7 @@ export default function ClientPayment() {
             onPress={() => console.log('apple pay')}
           >
             <View style={styles.optionIconWrap}>
-              <Text style={styles.optionIcon}>⌘</Text>
+              <Text style={styles.optionIcon}>⊛</Text>
             </View>
             <View style={styles.optionBody}>
               <Text style={styles.optionTitle}>Apple Pay</Text>
@@ -119,8 +126,14 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 24,
     marginBottom: 8,
+  },
+  backArrow: {
+    fontSize: 28,
+    color: 'rgba(240,232,213,0.6)',
+    lineHeight: 32,
   },
   topBarLabel: {
     fontSize: 13,
@@ -219,7 +232,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   skipWrap: {
-    marginTop: 24,
+    marginTop: 12,
   },
   skipText: {
     fontSize: 13,

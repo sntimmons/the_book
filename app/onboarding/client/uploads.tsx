@@ -17,6 +17,13 @@ export default function ClientUploads() {
 
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backArrow}>‹</Text>
+        </TouchableOpacity>
         <Text style={styles.topBarLabel}>Build your vibe</Text>
         <Text style={styles.topBarStep}>Step 3 of 4</Text>
       </View>
@@ -38,14 +45,17 @@ export default function ClientUploads() {
         <Text style={styles.sectionLabel}>PHOTOS</Text>
         <View style={styles.photoGrid}>
           {PHOTO_SLOTS.map((i) => (
-            <TouchableOpacity
+            <Pressable
               key={i}
-              activeOpacity={0.7}
-              style={styles.photoBox}
+              style={({ pressed }) => [
+                styles.photoBox,
+                pressed && styles.photoBoxPressed,
+              ]}
               onPress={() => console.log('open photo picker')}
             >
-              <Text style={styles.plusIcon}>+</Text>
-            </TouchableOpacity>
+              <Text style={styles.photoIcon}>⊞</Text>
+              <Text style={styles.photoBoxLabel}>Add photo</Text>
+            </Pressable>
           ))}
         </View>
         <Text style={styles.mediaHint}>Add up to 9 photos</Text>
@@ -56,15 +66,18 @@ export default function ClientUploads() {
         <Text style={styles.sectionLabel}>REELS</Text>
         <View style={styles.reelRow}>
           {VIDEO_SLOTS.map((i) => (
-            <TouchableOpacity
+            <Pressable
               key={i}
-              activeOpacity={0.7}
-              style={styles.reelBox}
+              style={({ pressed }) => [
+                styles.reelBox,
+                pressed && styles.reelBoxPressed,
+              ]}
               onPress={() => console.log('open video picker')}
             >
               <Text style={styles.videoIcon}>▷</Text>
               <Text style={styles.reelLabel}>Add reel</Text>
-            </TouchableOpacity>
+              <Text style={styles.reelSublabel}>Up to 60 seconds</Text>
+            </Pressable>
           ))}
         </View>
         <Text style={styles.mediaHint}>
@@ -119,8 +132,14 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 24,
     marginBottom: 8,
+  },
+  backArrow: {
+    fontSize: 28,
+    color: 'rgba(240,232,213,0.6)',
+    lineHeight: 32,
   },
   topBarLabel: {
     fontSize: 13,
@@ -169,18 +188,28 @@ const styles = StyleSheet.create({
   photoBox: {
     flex: 1,
     aspectRatio: 1,
-    backgroundColor: 'rgba(240,232,213,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.08)',
+    backgroundColor: 'rgba(240,232,213,0.04)',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(240,232,213,0.1)',
     borderRadius: 12,
-    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
   },
-  plusIcon: {
-    fontSize: 20,
+  photoBoxPressed: {
+    backgroundColor: 'rgba(240,232,213,0.07)',
+    borderColor: 'rgba(240,232,213,0.2)',
+  },
+  photoIcon: {
+    fontSize: 24,
     color: 'rgba(240,232,213,0.2)',
-    lineHeight: 24,
+    lineHeight: 28,
+  },
+  photoBoxLabel: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.25)',
+    fontFamily: 'Manrope_400Regular',
   },
   mediaHint: {
     fontSize: 11,
@@ -200,23 +229,35 @@ const styles = StyleSheet.create({
   reelBox: {
     width: '47%',
     aspectRatio: 9 / 16,
-    backgroundColor: 'rgba(240,232,213,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.08)',
+    backgroundColor: 'rgba(240,232,213,0.04)',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: 'rgba(240,232,213,0.1)',
     borderRadius: 12,
-    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 4,
+  },
+  reelBoxPressed: {
+    backgroundColor: 'rgba(240,232,213,0.07)',
+    borderColor: 'rgba(240,232,213,0.2)',
   },
   videoIcon: {
-    fontSize: 24,
+    fontSize: 28,
     color: 'rgba(240,232,213,0.2)',
+    lineHeight: 34,
   },
   reelLabel: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.3)',
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.25)',
     fontFamily: 'Manrope_400Regular',
-    marginTop: 8,
+    marginTop: 4,
+  },
+  reelSublabel: {
+    fontSize: 10,
+    color: 'rgba(240,232,213,0.15)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 2,
   },
   skipText: {
     fontSize: 13,

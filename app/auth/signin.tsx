@@ -1,28 +1,37 @@
-import { View, Text, Pressable, StyleSheet } from 'react-native'
+import { useState } from 'react'
+import { View, Text, Pressable, Image, StyleSheet } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
 export default function SigninScreen() {
   const insets = useSafeAreaInsets()
+  const [imageError, setImageError] = useState(false)
 
   return (
     <View style={styles.root}>
+      {/* Background: image with gradient overlay, or gradient fallback */}
+      {!imageError ? (
+        <Image
+          source={require('../../assets/images/welcome/welcome-bg.jpg')}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+          onError={() => setImageError(true)}
+        />
+      ) : (
+        <LinearGradient
+          colors={['#2E1A0A', '#1C1008', '#0D0907', '#080808']}
+          locations={[0, 0.28, 0.58, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+
+      {/* Dark overlay always on top of background */}
       <LinearGradient
-        colors={['#2E1A0A', '#1C1008', '#0D0907', '#080808']}
-        locations={[0, 0.28, 0.58, 1]}
+        colors={['rgba(8,8,8,0.3)', 'rgba(8,8,8,0.5)', 'rgba(8,8,8,0.85)', '#080808']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
         style={StyleSheet.absoluteFill}
-      />
-      <LinearGradient
-        colors={['transparent', 'rgba(200,146,42,0.11)', 'transparent']}
-        start={{ x: 0, y: 0.5 }}
-        end={{ x: 1, y: 0.5 }}
-        style={{ position: 'absolute', top: '4%', left: 0, right: 0, height: '45%' }}
-      />
-      <LinearGradient
-        colors={['rgba(185,105,25,0.18)', 'rgba(185,105,25,0.04)', 'transparent']}
-        locations={[0, 0.5, 1]}
-        style={{ position: 'absolute', top: 0, left: '12%', right: '12%', height: '52%' }}
       />
 
       <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>

@@ -51,6 +51,13 @@ export default function ClientProfileSetup() {
 
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.backArrow}>‹</Text>
+        </TouchableOpacity>
         <Text style={styles.topBarLabel}>Set up your profile</Text>
         <Text style={styles.topBarStep}>Step 1 of 4</Text>
       </View>
@@ -217,8 +224,14 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 24,
     marginBottom: 8,
+  },
+  backArrow: {
+    fontSize: 28,
+    color: 'rgba(240,232,213,0.6)',
+    lineHeight: 32,
   },
   topBarLabel: {
     fontSize: 13,

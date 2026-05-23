@@ -3,6 +3,7 @@ import { View, Text, Pressable, Animated, StyleSheet } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Video, ResizeMode } from 'expo-av'
 import { Asset } from 'expo-asset'
+import { StatusBar } from 'expo-status-bar'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 
@@ -26,7 +27,7 @@ const SLIDES = [
 
 // Set to require('../assets/videos/welcome.mp4') once you drop the file in.
 // Leave null to use the gradient fallback.
-const VIDEO_MODULE: number | null = null
+const VIDEO_MODULE = require("../assets/videos/welcome.mp4")
 
 const DISPLAY_MS = 4500
 const FADE_MS = 600
@@ -80,6 +81,7 @@ export default function WelcomeScreen() {
 
   return (
     <View style={styles.root}>
+      <StatusBar style="light" />
       {/* Video or gradient background */}
       {videoUri ? (
         <Video
