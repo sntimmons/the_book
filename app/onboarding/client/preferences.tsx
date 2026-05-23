@@ -5,8 +5,9 @@ import {
   ScrollView,
   Pressable,
   TouchableOpacity,
+  Switch,
+  Alert,
   StyleSheet,
-  Animated,
 } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -26,18 +27,6 @@ const INTERESTS = [
 type InterestId = typeof INTERESTS[number]['id']
 
 const DEFAULT_SELECTED: Set<InterestId> = new Set(['lashes', 'hair', 'makeup', 'nails'])
-
-function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      onPress={onToggle}
-      style={[styles.track, on ? styles.trackOn : styles.trackOff]}
-    >
-      <View style={[styles.knob, on ? styles.knobOn : styles.knobOff]} />
-    </TouchableOpacity>
-  )
-}
 
 function InterestCard({
   icon,
@@ -71,6 +60,8 @@ function InterestCard({
 export default function ClientPreferences() {
   const insets = useSafeAreaInsets()
   const [selected, setSelected] = useState<Set<InterestId>>(new Set(DEFAULT_SELECTED))
+  const [location, setLocation] = useState('Midtown, Houston')
+  const [mobileProv, setMobileProv] = useState(true)
   const [notifBooking, setNotifBooking] = useState(true)
   const [notifCreator, setNotifCreator] = useState(true)
   const [notifDeals, setNotifDeals] = useState(false)
@@ -85,6 +76,18 @@ export default function ClientPreferences() {
       }
       return next
     })
+  }
+
+  function handleChangeLocation() {
+    Alert.prompt(
+      'Change Location',
+      'Enter your neighborhood',
+      (value: string) => {
+        if (value && value.trim()) setLocation(value.trim())
+      },
+      'plain-text',
+      location,
+    )
   }
 
   const rows: Array<typeof INTERESTS[number][]> = []
@@ -111,6 +114,7 @@ export default function ClientPreferences() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         <Text style={styles.headline}>What are you into?</Text>
         <Text style={styles.subtext}>
@@ -132,7 +136,6 @@ export default function ClientPreferences() {
                   onToggle={() => toggleInterest(item.id)}
                 />
               ))}
-              {/* Spacer for odd last row */}
               {row.length === 1 && <View style={styles.interestCardSpacer} />}
             </View>
           ))}
@@ -146,21 +149,25 @@ export default function ClientPreferences() {
           <View style={styles.locationRow}>
             <Text style={styles.pinIcon}>⊙</Text>
             <View style={{ flex: 1 }}>
-              <Text style={styles.locationTitle}>Midtown, Houston</Text>
+              <Text style={styles.locationTitle}>{location}</Text>
               <Text style={styles.locationSubtext}>Providers within 15 miles</Text>
             </View>
-            <TouchableOpacity activeOpacity={0.7}>
+            <TouchableOpacity activeOpacity={0.7} onPress={handleChangeLocation}>
               <Text style={styles.changeLink}>Change</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.divider} />
-          <View style={styles.locationRow}>
-            <Text style={styles.pinIcon}>⌖</Text>
+          <View style={styles.notifRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.locationTitle}>Show mobile providers</Text>
               <Text style={styles.locationSubtext}>Creators that come to you</Text>
             </View>
-            <Toggle on={true} onToggle={() => {}} />
+            <Switch
+              value={mobileProv}
+              onValueChange={setMobileProv}
+              trackColor={{ false: 'rgba(240,232,213,0.15)', true: 'rgba(240,232,213,0.5)' }}
+              thumbColor={mobileProv ? '#F0E8D5' : 'rgba(240,232,213,0.4)'}
+            />
           </View>
         </View>
 
@@ -174,7 +181,12 @@ export default function ClientPreferences() {
               <Text style={styles.notifTitle}>Booking updates</Text>
               <Text style={styles.notifSubtext}>Confirmations and reminders</Text>
             </View>
-            <Toggle on={notifBooking} onToggle={() => setNotifBooking((v) => !v)} />
+            <Switch
+              value={notifBooking}
+              onValueChange={setNotifBooking}
+              trackColor={{ false: 'rgba(240,232,213,0.15)', true: 'rgba(240,232,213,0.5)' }}
+              thumbColor={notifBooking ? '#F0E8D5' : 'rgba(240,232,213,0.4)'}
+            />
           </View>
           <View style={styles.divider} />
           <View style={styles.notifRow}>
@@ -182,7 +194,12 @@ export default function ClientPreferences() {
               <Text style={styles.notifTitle}>New creators nearby</Text>
               <Text style={styles.notifSubtext}>When providers join your area</Text>
             </View>
-            <Toggle on={notifCreator} onToggle={() => setNotifCreator((v) => !v)} />
+            <Switch
+              value={notifCreator}
+              onValueChange={setNotifCreator}
+              trackColor={{ false: 'rgba(240,232,213,0.15)', true: 'rgba(240,232,213,0.5)' }}
+              thumbColor={notifCreator ? '#F0E8D5' : 'rgba(240,232,213,0.4)'}
+            />
           </View>
           <View style={styles.divider} />
           <View style={styles.notifRow}>
@@ -190,7 +207,12 @@ export default function ClientPreferences() {
               <Text style={styles.notifTitle}>Deals & promotions</Text>
               <Text style={styles.notifSubtext}>Special offers from providers</Text>
             </View>
-            <Toggle on={notifDeals} onToggle={() => setNotifDeals((v) => !v)} />
+            <Switch
+              value={notifDeals}
+              onValueChange={setNotifDeals}
+              trackColor={{ false: 'rgba(240,232,213,0.15)', true: 'rgba(240,232,213,0.5)' }}
+              thumbColor={notifDeals ? '#F0E8D5' : 'rgba(240,232,213,0.4)'}
+            />
           </View>
         </View>
       </ScrollView>
@@ -203,9 +225,7 @@ export default function ClientPreferences() {
         >
           <Text style={styles.startBtnText}>Start Exploring</Text>
         </Pressable>
-        <Text style={styles.ctaNote}>
-          You can update these anytime in settings.
-        </Text>
+        <Text style={styles.ctaNote}>You can update these anytime in settings.</Text>
       </View>
     </View>
   )
@@ -228,7 +248,7 @@ const styles = StyleSheet.create({
   progressFill: {
     width: '100%',
     height: 4,
-    backgroundColor: '#C8922A',
+    backgroundColor: 'rgba(240,232,213,0.6)',
   },
   topBar: {
     flexDirection: 'row',
@@ -248,7 +268,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 120,
+    paddingBottom: 96,
+    flexGrow: 1,
   },
   headline: {
     fontSize: 32,
@@ -290,8 +311,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(240,232,213,0.08)',
   },
   interestCardSelected: {
-    backgroundColor: 'rgba(200,146,42,0.12)',
-    borderColor: 'rgba(200,146,42,0.45)',
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    borderColor: 'rgba(240,232,213,0.28)',
   },
   interestCardTopRow: {
     flexDirection: 'row',
@@ -301,21 +322,21 @@ const styles = StyleSheet.create({
   },
   interestIcon: {
     fontSize: 18,
-    color: 'rgba(240,232,213,0.35)',
+    color: 'rgba(240,232,213,0.3)',
   },
   interestIconSelected: {
-    color: '#C8922A',
+    color: '#F0E8D5',
   },
   checkmark: {
     fontSize: 12,
-    color: '#C8922A',
+    color: '#F0E8D5',
     fontWeight: '700',
     fontFamily: 'Manrope_700Bold',
   },
   interestTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: 'rgba(240,232,213,0.5)',
+    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_600SemiBold',
     marginBottom: 3,
   },
@@ -324,12 +345,12 @@ const styles = StyleSheet.create({
   },
   interestSubtitle: {
     fontSize: 11,
-    color: 'rgba(240,232,213,0.28)',
+    color: 'rgba(240,232,213,0.25)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 15,
   },
   interestSubtitleSelected: {
-    color: 'rgba(240,232,213,0.55)',
+    color: 'rgba(240,232,213,0.5)',
   },
   sectionHeader: {
     marginBottom: 10,
@@ -365,7 +386,7 @@ const styles = StyleSheet.create({
   },
   pinIcon: {
     fontSize: 16,
-    color: '#C8922A',
+    color: 'rgba(240,232,213,0.5)',
     width: 20,
     textAlign: 'center',
   },
@@ -384,7 +405,7 @@ const styles = StyleSheet.create({
   changeLink: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#C8922A',
+    color: 'rgba(240,232,213,0.6)',
     fontFamily: 'Manrope_600SemiBold',
   },
   notifRow: {
@@ -406,33 +427,11 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_400Regular',
   },
-  track: {
-    width: 44,
-    height: 26,
-    borderRadius: 13,
-    padding: 3,
-    justifyContent: 'center',
-  },
-  trackOn: {
-    backgroundColor: '#C8922A',
-    alignItems: 'flex-end',
-  },
-  trackOff: {
-    backgroundColor: 'rgba(240,232,213,0.12)',
-    alignItems: 'flex-start',
-  },
-  knob: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-  },
-  knobOn: {
-    backgroundColor: '#080808',
-  },
-  knobOff: {
-    backgroundColor: 'rgba(240,232,213,0.3)',
-  },
   cta: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: '#080808',
     borderTopWidth: 1,
     borderTopColor: 'rgba(240,232,213,0.06)',
@@ -440,7 +439,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
   },
   startBtn: {
-    backgroundColor: '#C8922A',
+    backgroundColor: '#F0E8D5',
     borderRadius: 14,
     borderCurve: 'continuous',
     height: 52,

@@ -24,7 +24,7 @@ export default function ClientProfileSetup() {
   const [bio, setBio] = useState('')
 
   function borderColor(field: FocusedField) {
-    return focused === field ? 'rgba(200,146,42,0.5)' : 'rgba(240,232,213,0.08)'
+    return focused === field ? 'rgba(240,232,213,0.3)' : 'rgba(240,232,213,0.08)'
   }
 
   return (
@@ -46,6 +46,7 @@ export default function ClientProfileSetup() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         <Text style={styles.headline}>Tell us who you are.</Text>
         <Text style={styles.subtext}>
@@ -158,7 +159,7 @@ export default function ClientProfileSetup() {
       </ScrollView>
 
       {/* Fixed bottom CTA */}
-      <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
+      <View style={[styles.cta, { paddingBottom: insets.bottom + 16, bottom: 0, left: 0, right: 0, position: 'absolute' }]}>
         <Pressable
           style={({ pressed }) => [styles.continueBtn, pressed && { opacity: 0.88 }]}
           onPress={() => router.push('/onboarding/client/preferences')}
@@ -190,7 +191,7 @@ const styles = StyleSheet.create({
   progressFill: {
     width: '50%',
     height: 4,
-    backgroundColor: '#C8922A',
+    backgroundColor: 'rgba(240,232,213,0.6)',
   },
   topBar: {
     flexDirection: 'row',
@@ -210,7 +211,8 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingBottom: 120,
+    paddingBottom: 96,
+    flexGrow: 1,
   },
   headline: {
     fontSize: 32,
@@ -220,6 +222,7 @@ const styles = StyleSheet.create({
     lineHeight: 38,
     marginTop: 24,
     marginBottom: 10,
+    textAlign: 'center',
   },
   subtext: {
     fontSize: 14,
@@ -227,6 +230,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     lineHeight: 20,
     marginBottom: 32,
+    textAlign: 'center',
   },
   photoCircle: {
     width: 96,

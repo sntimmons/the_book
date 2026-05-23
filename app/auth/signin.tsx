@@ -71,10 +71,10 @@ const styles = StyleSheet.create({
   wordmark: {
     position: 'absolute',
     alignSelf: 'center',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    letterSpacing: 3,
-    color: 'rgba(240,232,213,0.5)',
+    letterSpacing: 3.5,
+    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_600SemiBold',
     zIndex: 1,
   },
