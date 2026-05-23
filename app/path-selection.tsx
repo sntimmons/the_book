@@ -1,5 +1,11 @@
 import { useRef } from 'react'
-import { View, Text, Pressable, Animated, StyleSheet } from 'react-native'
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Animated,
+  StyleSheet,
+} from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -15,60 +21,38 @@ function Card({
   onPress: () => void
 }) {
   const scale = useRef(new Animated.Value(1)).current
-  const bg = useRef(new Animated.Value(0)).current
 
   function handlePressIn() {
-    Animated.parallel([
-      Animated.timing(scale, { toValue: 0.98, duration: 80, useNativeDriver: true }),
-      Animated.timing(bg, { toValue: 1, duration: 80, useNativeDriver: false }),
-    ]).start()
+    Animated.timing(scale, { toValue: 0.97, duration: 100, useNativeDriver: true }).start()
   }
 
   function handlePressOut() {
-    Animated.parallel([
-      Animated.timing(scale, { toValue: 1, duration: 120, useNativeDriver: true }),
-      Animated.timing(bg, { toValue: 0, duration: 120, useNativeDriver: false }),
-    ]).start()
+    Animated.timing(scale, { toValue: 1, duration: 100, useNativeDriver: true }).start()
   }
 
-  const bgColor = bg.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['rgba(240,232,213,0.04)', 'rgba(240,232,213,0.07)'],
-  })
-  const borderColor = bg.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['rgba(240,232,213,0.08)', 'rgba(240,232,213,0.15)'],
-  })
-
   return (
-    <Pressable
+    <TouchableOpacity
+      activeOpacity={0.7}
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
     >
-      <Animated.View
-        style={[
-          styles.card,
-          { backgroundColor: bgColor, borderColor, transform: [{ scale }] },
-        ]}
-      >
-        <View style={styles.cardInner}>
-          {/* Left side */}
-          <View style={{ flex: 1 }}>
-            <View style={styles.iconCircle}>
-              <Text style={styles.iconText}>{icon}</Text>
-            </View>
-            <Text style={styles.cardTitle}>{title}</Text>
-            <Text style={styles.cardSubtitle}>{subtitle}</Text>
+      <Animated.View style={[styles.card, { transform: [{ scale }] }]}>
+        {/* Top row: icon left, arrow right */}
+        <View style={styles.cardTopRow}>
+          <View style={styles.iconContainer}>
+            <Text style={styles.iconText}>{icon}</Text>
           </View>
-
-          {/* Right arrow */}
-          <View style={styles.arrowCircle}>
+          <View style={styles.arrowContainer}>
             <Text style={styles.arrowText}>›</Text>
           </View>
         </View>
+
+        {/* Title + subtext */}
+        <Text style={styles.cardTitle}>{title}</Text>
+        <Text style={styles.cardSubtitle}>{subtitle}</Text>
       </Animated.View>
-    </Pressable>
+    </TouchableOpacity>
   )
 }
 
@@ -77,11 +61,9 @@ export default function PathSelection() {
 
   return (
     <View style={styles.root}>
-      {/* Wordmark */}
       <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>
 
-      {/* Centered content */}
-      <View style={[styles.center, { paddingBottom: insets.bottom + 24 }]}>
+      <View style={styles.center}>
         <Text style={styles.headline}>How are you here?</Text>
         <Text style={styles.subtext}>Choose your path to get started.</Text>
 
@@ -89,23 +71,27 @@ export default function PathSelection() {
           <Card
             icon="⌕"
             title="I'm booking"
-            subtitle={'Discover and book the best\ncreators in Houston.'}
+            subtitle={"Discover and book the best\ncreators in Houston."}
             onPress={() => router.push('/onboarding/client')}
           />
           <Card
             icon="✦"
             title="I'm a provider"
-            subtitle={'Set up your profile and start\ngetting discovered.'}
+            subtitle={"Set up your profile and start\ngetting discovered."}
             onPress={() => router.push('/onboarding/provider')}
           />
         </View>
 
-        <Pressable onPress={() => router.push('/auth/signin')}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.push('/auth/signin')}
+          style={{ marginTop: 36 }}
+        >
           <Text style={styles.signInText}>
             Already have an account?{'  '}
             <Text style={styles.signInLink}>Sign in</Text>
           </Text>
-        </Pressable>
+        </TouchableOpacity>
       </View>
     </View>
   )
@@ -122,7 +108,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 3,
-    color: 'rgba(240,232,213,0.45)',
+    color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_600SemiBold',
     zIndex: 1,
   },
@@ -132,7 +118,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   headline: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '700',
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
@@ -144,38 +130,54 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 48,
   },
   cards: {
     gap: 12,
-    marginBottom: 24,
   },
   card: {
+    backgroundColor: 'rgba(240,232,213,0.04)',
     borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.08)',
     borderRadius: 20,
     padding: 28,
     width: '100%',
   },
-  cardInner: {
+  cardTopRow: {
     flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: 16,
+    marginBottom: 20,
   },
-  iconCircle: {
+  iconContainer: {
     width: 44,
     height: 44,
     borderRadius: 22,
     backgroundColor: 'rgba(240,232,213,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
   },
   iconText: {
     fontSize: 20,
-    color: '#F0E8D5',
+    color: 'rgba(240,232,213,0.6)',
+  },
+  arrowContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(240,232,213,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  arrowText: {
+    fontSize: 18,
+    color: 'rgba(240,232,213,0.35)',
+    lineHeight: 20,
   },
   cardTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
@@ -186,22 +188,6 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.5)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 18,
-  },
-  arrowCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-  },
-  arrowText: {
-    fontSize: 20,
-    color: 'rgba(240,232,213,0.4)',
-    lineHeight: 22,
   },
   signInText: {
     textAlign: 'center',
