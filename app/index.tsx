@@ -10,17 +10,17 @@ import { router } from 'expo-router'
 const SLIDES = [
   {
     pill: true,
-    headline: "Your city's best creators. One place.",
+    headline: "Your city's best providers. One place.",
     subtext: "Discover and book the talent your\ncity is talking about.",
   },
   {
     pill: false,
     headline: 'Book with confidence. Every time.',
-    subtext: 'Protected payments. Verified creators.\nReal reviews from real clients.',
+    subtext: 'Protected payments. Verified providers.\nReal reviews from real clients.',
   },
   {
     pill: false,
-    headline: 'Built for creators. Loved by clients.',
+    headline: 'Built for providers. Loved by clients.',
     subtext: "Whether you're booking or building,\nthis is where Houston shows up.",
   },
 ] as const

@@ -20,18 +20,20 @@ export default function SigninScreen() {
         />
       ) : (
         <LinearGradient
-          colors={['#2E1A0A', '#1C1008', '#0D0907', '#080808']}
-          locations={[0, 0.28, 0.58, 1]}
+          colors={['#2A1808', '#1a0e05', '#080808']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 0, y: 1 }}
           style={StyleSheet.absoluteFill}
         />
       )}
 
       {/* Dark overlay always on top of background */}
       <LinearGradient
-        colors={['rgba(8,8,8,0.3)', 'rgba(8,8,8,0.5)', 'rgba(8,8,8,0.85)', '#080808']}
+        colors={['rgba(8,8,8,0.2)', 'rgba(8,8,8,0.5)', 'rgba(8,8,8,0.88)', '#080808']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={StyleSheet.absoluteFill}
+        pointerEvents="none"
       />
 
       <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>

@@ -146,6 +146,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_500Medium',
   },
   scrollContent: {
+    flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 16,
     paddingBottom: 140,
