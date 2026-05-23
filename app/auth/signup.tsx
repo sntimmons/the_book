@@ -40,14 +40,14 @@ export default function SignupScreen() {
 
         <Pressable
           style={({ pressed }) => [styles.btnPrimary, { marginBottom: 10, opacity: pressed ? 0.86 : 1 }]}
-          onPress={() => console.log('apple')}
+          onPress={() => router.push('/onboarding/client')}
         >
           <Text style={styles.btnPrimaryText}>Continue with Apple</Text>
         </Pressable>
 
         <Pressable
           style={({ pressed }) => [styles.btnSecondary, { marginBottom: 10, opacity: pressed ? 0.78 : 1 }]}
-          onPress={() => console.log('email')}
+          onPress={() => router.push('/onboarding/client')}
         >
           <Text style={styles.btnSecondaryText}>Continue with Email</Text>
         </Pressable>

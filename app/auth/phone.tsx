@@ -82,7 +82,7 @@ export default function PhoneScreen() {
               styles.nextBtn,
               isValid ? styles.nextBtnActive : styles.nextBtnInactive,
             ]}
-            onPress={() => isValid && router.push('/auth/verify')}
+            onPress={() => router.push('/auth/verify')}
           >
             <Text style={[styles.nextText, isValid ? styles.nextTextActive : styles.nextTextInactive]}>
               Next
