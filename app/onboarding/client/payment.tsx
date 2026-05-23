@@ -77,7 +77,7 @@ export default function ClientPayment() {
         <TouchableOpacity
           activeOpacity={0.6}
           style={styles.skipWrap}
-          onPress={() => router.push('/discovery')}
+          onPress={() => router.push('/onboarding/client/preview')}
         >
           <Text style={styles.skipText}>Skip for now, add later in settings</Text>
         </TouchableOpacity>
@@ -87,7 +87,7 @@ export default function ClientPayment() {
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
         <Pressable
           style={({ pressed }) => [styles.finishBtn, pressed && { opacity: 0.88 }]}
-          onPress={() => router.push('/discovery')}
+          onPress={() => router.push('/onboarding/client/preview')}
         >
           <Text style={styles.finishBtnText}>Finish Setup</Text>
         </Pressable>
