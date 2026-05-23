@@ -1,210 +1,397 @@
-import { useEffect, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   View,
   Text,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Animated,
   StyleSheet,
-  SafeAreaView,
+  useWindowDimensions,
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-// ── Static data ────────────────────────────────────────────────────────────────
+// ── Static data ──────────────────────────────────────────────────────────────
 
-const STORIES = [
-  { id: '1', name: 'Nia', type: 'Lash Tech', active: true },
-  { id: '2', name: 'Marcus', type: 'Barber', active: true },
-  { id: '3', name: 'Elena', type: 'MUA', active: false },
-  { id: '4', name: 'Jade', type: 'Braider', active: true },
-]
-
-const TRENDING = [
-  { id: '1', name: 'Marcus Blade', category: 'Barber', rating: '4.9', distance: '1.2 mi' },
-  { id: '2', name: 'Camille B.', category: 'Knotless Braids', rating: '4.8', distance: '2.1 mi' },
-  { id: '3', name: 'Sienna J.', category: 'MUA', rating: '5.0', distance: '0.8 mi' },
+const FEATURED = [
+  { id: '1', name: 'Jasmine Turner', category: 'Lashes and Brows', location: 'Midtown', bg: '#1E0E0A' },
+  { id: '2', name: 'Marcus Chen', category: 'Photography', location: 'Heights', bg: '#0A100C' },
+  { id: '3', name: 'Tanya Robinson', category: 'Hair Styling', location: 'Montrose', bg: '#0E0A1E' },
 ]
 
 const CATEGORIES = [
-  { id: '1', icon: '✦', name: 'Lash & Brows' },
-  { id: '2', icon: '◈', name: 'Hair & Braids' },
-  { id: '3', icon: '◉', name: 'Makeup' },
-  { id: '4', icon: '⬡', name: 'Nails' },
-  { id: '5', icon: '⌖', name: 'Barber' },
-  { id: '6', icon: '◎', name: 'Wellness' },
+  'All', 'Hair', 'Lashes', 'Nails', 'Barber', 'Makeup',
+  'Massage', 'Photography', 'Bartending', 'Fitness', 'Wellness', 'Mechanics',
 ]
 
-// ── Animated pulse dot ─────────────────────────────────────────────────────────
+const FOR_YOU = [
+  { id: '1', name: 'Maya Reed',     category: 'Braids',       rating: '4.9', verified: false, bg: '#1A0F14' },
+  { id: '2', name: 'Devon Pierce',  category: 'Barber',       rating: '5.0', verified: true,  bg: '#0F1A16' },
+  { id: '3', name: 'Aisha Coleman', category: 'Lashes',       rating: '4.8', verified: false, bg: '#1A100A' },
+  { id: '4', name: 'Marcus Hall',   category: 'Photography',  rating: '4.9', verified: true,  bg: '#0A0F1A' },
+  { id: '5', name: 'Tia Brooks',    category: 'Makeup',       rating: '4.7', verified: false, bg: '#1A0A16' },
+]
 
-function PulseDot() {
-  const pulse = useRef(new Animated.Value(1)).current
+const LIVE_NOW = [
+  { id: '1', name: 'Jordan Ellis', category: 'Nails',       watching: 23, bg: '#1A0F14' },
+  { id: '2', name: 'Sasha Mills',  category: 'Hair',        watching: 41, bg: '#0F1A16' },
+  { id: '3', name: 'Ray Tucker',   category: 'Barber',      watching: 18, bg: '#1A1A0A' },
+  { id: '4', name: 'Naomi Cross',  category: 'Makeup',      watching: 9,  bg: '#1A0A16' },
+]
+
+const TRENDING = [
+  { id: '1', name: 'Whitney Adams',  category: 'Lashes',      rating: '4.9', tag: 'Mobile, books fast',    bg: '#1E0E0A' },
+  { id: '2', name: 'Trey Morgan',    category: 'Barber',      rating: '5.0', tag: 'Shop in Heights',        bg: '#0A100C' },
+  { id: '3', name: 'Camille Booker', category: 'Makeup',      rating: '4.8', tag: 'Bridal specialist',      bg: '#1A0A16' },
+  { id: '4', name: 'Andre Watts',    category: 'Photography', rating: '4.9', tag: 'Events and portraits',   bg: '#0E0A1E' },
+]
+
+const BROWSE = [
+  { id: '1', name: 'Hair',        icon: '✂',  count: 240 },
+  { id: '2', name: 'Lashes',      icon: '✦',  count: 156 },
+  { id: '3', name: 'Nails',       icon: '⬡',  count: 189 },
+  { id: '4', name: 'Barber',      icon: '◈',  count: 203 },
+  { id: '5', name: 'Photography', icon: '⌗',  count: 98  },
+  { id: '6', name: 'Bartending',  icon: '◉',  count: 67  },
+]
+
+// ── Animated pulse dot ────────────────────────────────────────────────────────
+
+function PulseDot({ size = 6 }: { size?: number }) {
+  const opacity = useRef(new Animated.Value(1)).current
 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 0.3, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.3, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 1.0, duration: 800, useNativeDriver: true }),
       ])
     ).start()
-    return () => pulse.stopAnimation()
+    return () => opacity.stopAnimation()
   }, [])
 
-  return <Animated.View style={[s.pulseDot, { opacity: pulse }]} />
+  return (
+    <Animated.View
+      style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#C8922A', opacity }}
+    />
+  )
 }
 
-// ── Small person silhouette ────────────────────────────────────────────────────
+// ── Person silhouette placeholder ─────────────────────────────────────────────
 
-function PersonIcon({ size = 24 }: { size?: number }) {
-  const head = size * 0.38
-  const bodyW = size * 0.55
-  const bodyH = size * 0.28
-  const color = 'rgba(240,232,213,0.18)'
+function Silhouette({ size = 36 }: { size?: number }) {
+  const head = size * 0.36
+  const bodyW = size * 0.52
+  const bodyH = size * 0.27
+  const c = 'rgba(240,232,213,0.12)'
   return (
     <View style={{ alignItems: 'center', gap: size * 0.06 }}>
-      <View style={{ width: head, height: head, borderRadius: head / 2, backgroundColor: color }} />
-      <View style={{ width: bodyW, height: bodyH, borderTopLeftRadius: bodyH, borderTopRightRadius: bodyH, backgroundColor: color }} />
+      <View style={{ width: head, height: head, borderRadius: head / 2, backgroundColor: c }} />
+      <View style={{
+        width: bodyW, height: bodyH,
+        borderTopLeftRadius: bodyH, borderTopRightRadius: bodyH,
+        backgroundColor: c,
+      }} />
     </View>
   )
 }
 
-// ── Main component ─────────────────────────────────────────────────────────────
+// ── Rating row ────────────────────────────────────────────────────────────────
+
+function RatingRow({ rating, category }: { rating: string; category: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <Text style={{ fontSize: 10, color: '#C8922A' }}>★</Text>
+      <Text style={{ fontSize: 12, color: '#F0E8D5', fontFamily: 'Manrope_500Medium' }}>{rating}</Text>
+      <View style={{ width: 2, height: 2, borderRadius: 1, backgroundColor: 'rgba(240,232,213,0.4)' }} />
+      <Text style={{ fontSize: 12, color: 'rgba(240,232,213,0.6)', fontFamily: 'Manrope_400Regular' }}>{category}</Text>
+    </View>
+  )
+}
+
+// ── Section header ────────────────────────────────────────────────────────────
+
+function SectionHeader({ title, onSeeAll }: { title: string; onSeeAll?: () => void }) {
+  return (
+    <View style={s.sectionHeader}>
+      <Text style={s.sectionTitle}>{title}</Text>
+      {onSeeAll && (
+        <TouchableOpacity activeOpacity={0.7} onPress={onSeeAll}>
+          <Text style={s.seeAll}>See all</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function DiscoveryFeed() {
+  const insets = useSafeAreaInsets()
+  const { width } = useWindowDimensions()
+  const [activeCategory, setActiveCategory] = useState('All')
+  const [currentFeatured, setCurrentFeatured] = useState(0)
+  const heroRef = useRef<ScrollView>(null)
+
+  const heroW = width - 48
+  const colW  = (width - 48 - 16) / 2
+
   return (
-    <SafeAreaView style={s.root}>
-      {/* Top bar */}
-      <View style={s.topBar}>
-        <Text style={s.wordmark}>The Book</Text>
-        <View style={s.topRight}>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Text style={s.topIcon}>⌕</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.7}>
-            <View style={s.bellWrap}>
-              <Text style={s.topIcon}>♔</Text>
-              <View style={s.notifDot} />
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Live ticker */}
-      <View style={s.ticker}>
-        <PulseDot />
-        <Text style={s.tickerText}>14 booked in Houston today</Text>
-      </View>
-
+    <View style={s.root}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.scrollContent}
+        contentContainerStyle={[s.scrollContent, { paddingTop: insets.top }]}
       >
-        {/* ── Story rings ─────────────────────────────── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.storyRow}
-          style={s.storyScroll}
-        >
-          {STORIES.map((p) => (
-            <TouchableOpacity key={p.id} activeOpacity={0.8} style={s.storyItem}>
-              <View style={[s.storyRing, p.active ? s.storyRingActive : s.storyRingInactive]}>
-                <View style={s.storyInner}>
-                  <PersonIcon size={24} />
-                </View>
-              </View>
-              <Text style={s.storyName}>{p.name}</Text>
-              <Text style={s.storyType}>{p.type}</Text>
+        {/* ── Top bar ────────────────────────────────────────────────────── */}
+        <View style={s.topBar}>
+          <Text style={s.wordmark}>The Book</Text>
+          <View style={s.topRight}>
+            <TouchableOpacity activeOpacity={0.7} style={s.iconBtn}>
+              <Text style={s.bellIcon}>♔</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* ── Featured hero ────────────────────────────── */}
-        <View style={s.heroWrap}>
-          <LinearGradient
-            colors={['#3D2010', '#1a0e05', '#080808']}
-            start={{ x: 0.3, y: 0 }}
-            end={{ x: 0, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={s.heroContent}>
-            <View style={s.featuredPill}>
-              <Text style={s.featuredPillText}>FEATURED</Text>
+            <View style={s.avatarCircle}>
+              <Silhouette size={16} />
             </View>
-            <Text style={s.heroName}>Nia Laurent</Text>
-            <Text style={s.heroSub}>Lash Tech · River Oaks</Text>
-            <View style={s.heroStats}>
-              <Text style={s.heroStar}>★</Text>
-              <Text style={s.heroStatNum}>4.9</Text>
-              <View style={s.heroDot} />
-              <Text style={s.heroStatText}>127 reviews</Text>
-              <View style={s.heroDot} />
-              <Text style={s.heroAvail}>Available today</Text>
-            </View>
-            <TouchableOpacity
-              activeOpacity={0.85}
-              style={s.bookNowBtn}
-              onPress={() => console.log('book Nia')}
-            >
-              <Text style={s.bookNowText}>Book Now</Text>
-            </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Trending ─────────────────────────────────── */}
+        {/* ── Live ticker ─────────────────────────────────────────────────── */}
+        <View style={s.ticker}>
+          <PulseDot />
+          <Text style={s.tickerText}>12 providers live right now in Houston</Text>
+        </View>
+
+        {/* ── Featured hero carousel ─────────────────────────────────────── */}
+        <View style={s.heroOuter}>
+          <ScrollView
+            ref={heroRef}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            style={{ width: heroW }}
+            onMomentumScrollEnd={(e) => {
+              const idx = Math.round(e.nativeEvent.contentOffset.x / heroW)
+              setCurrentFeatured(Math.max(0, Math.min(idx, FEATURED.length - 1)))
+            }}
+          >
+            {FEATURED.map((p) => (
+              <View key={p.id} style={[s.heroCard, { width: heroW, backgroundColor: p.bg }]}>
+                <LinearGradient
+                  colors={['transparent', 'rgba(8,8,8,0.85)']}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={s.heroInner}>
+                  <View style={{ flex: 1, marginRight: 12 }}>
+                    <Text style={s.featuredLabel}>FEATURED PROVIDER</Text>
+                    <Text style={s.heroName}>{p.name}</Text>
+                    <Text style={s.heroSub}>{p.category} · {p.location}</Text>
+                  </View>
+                  <TouchableOpacity activeOpacity={0.8} style={s.viewBtn}>
+                    <Text style={s.viewBtnText}>View</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          {/* Pagination dots */}
+          <View style={s.dots}>
+            {FEATURED.map((_, i) => (
+              <TouchableOpacity
+                key={i}
+                activeOpacity={0.7}
+                onPress={() => {
+                  heroRef.current?.scrollTo({ x: i * heroW, animated: true })
+                  setCurrentFeatured(i)
+                }}
+              >
+                <View style={[s.dot, i === currentFeatured ? s.dotActive : s.dotInactive]} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* ── Category nav ───────────────────────────────────────────────── */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={s.categoryRow}
+          style={s.categoryScroll}
+        >
+          {CATEGORIES.map((cat) => {
+            const active = cat === activeCategory
+            return (
+              <TouchableOpacity
+                key={cat}
+                activeOpacity={0.8}
+                onPress={() => setActiveCategory(cat)}
+                style={s.categoryBtn}
+              >
+                <Text style={[s.categoryText, active ? s.catActive : s.catInactive]}>
+                  {cat}
+                </Text>
+                {active && <View style={s.catUnderline} />}
+              </TouchableOpacity>
+            )
+          })}
+        </ScrollView>
+
+        {/* ── For You ────────────────────────────────────────────────────── */}
+        <View style={s.section}>
+          <SectionHeader title="For you, Stephen" onSeeAll={() => {}} />
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={s.hRow}
+          >
+            {FOR_YOU.map((p) => (
+              <Pressable
+                key={p.id}
+                style={({ pressed }) => [s.forYouCard, { backgroundColor: p.bg, opacity: pressed ? 0.9 : 1 }]}
+              >
+                {/* background silhouette */}
+                <View style={s.absCenter}>
+                  <Silhouette size={40} />
+                </View>
+                {/* gradient overlay */}
+                <LinearGradient
+                  colors={['transparent', 'rgba(8,8,8,0.7)']}
+                  start={{ x: 0, y: 0.6 }}
+                  end={{ x: 0, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                {/* verified badge — above gradient */}
+                {p.verified && (
+                  <View style={s.verifiedBadge}>
+                    <Text style={s.verifiedCheck}>✓</Text>
+                  </View>
+                )}
+                {/* info */}
+                <View style={s.cardInfo}>
+                  <Text style={s.cardName} numberOfLines={1}>{p.name}</Text>
+                  <RatingRow rating={p.rating} category={p.category} />
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* ── Live Right Now ──────────────────────────────────────────────── */}
         <View style={s.section}>
           <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Trending</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <PulseDot />
+              <Text style={s.sectionTitle}>Live right now</Text>
+            </View>
             <TouchableOpacity activeOpacity={0.7}>
-              <Text style={s.sectionLink}>This week →</Text>
+              <Text style={s.seeAll}>See all</Text>
             </TouchableOpacity>
           </View>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.trendingRow}
+            contentContainerStyle={s.hRow}
           >
-            {TRENDING.map((p) => (
-              <TouchableOpacity key={p.id} activeOpacity={0.8} style={s.providerCard}>
-                <View style={s.providerCardPhoto}>
-                  <PersonIcon size={36} />
+            {LIVE_NOW.map((p) => (
+              <Pressable
+                key={p.id}
+                style={({ pressed }) => [s.liveCard, { backgroundColor: p.bg, opacity: pressed ? 0.9 : 1 }]}
+              >
+                {/* background silhouette */}
+                <View style={s.absCenter}>
+                  <Silhouette size={36} />
                 </View>
-                <View style={s.providerCardInfo}>
-                  <Text style={s.providerCardName}>{p.name}</Text>
-                  <Text style={s.providerCardCat}>{p.category}</Text>
-                  <View style={s.providerCardStats}>
-                    <Text style={s.providerStar}>★</Text>
-                    <Text style={s.providerRating}>{p.rating}</Text>
-                    <Text style={s.providerDist}> · {p.distance}</Text>
-                  </View>
+                {/* gradient overlay */}
+                <LinearGradient
+                  colors={['transparent', 'rgba(8,8,8,0.7)']}
+                  start={{ x: 0, y: 0.6 }}
+                  end={{ x: 0, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                {/* LIVE badge — above gradient */}
+                <View style={s.liveBadge}>
+                  <Text style={s.liveBadgeText}>LIVE</Text>
                 </View>
-              </TouchableOpacity>
+                {/* info */}
+                <View style={s.cardInfo}>
+                  <Text style={s.liveCardName} numberOfLines={1}>{p.name}</Text>
+                  <Text style={s.liveCardDetail}>{p.category}, {p.watching} watching</Text>
+                </View>
+              </Pressable>
             ))}
           </ScrollView>
         </View>
 
-        {/* ── Browse by category ───────────────────────── */}
-        <View style={s.section}>
-          <View style={s.sectionHeader}>
-            <Text style={s.sectionTitle}>Browse</Text>
-          </View>
-          <View style={s.categoryGrid}>
-            {CATEGORIES.map((c) => (
-              <TouchableOpacity key={c.id} activeOpacity={0.8} style={s.categoryCard}>
-                <Text style={s.categoryIcon}>{c.icon}</Text>
-                <Text style={s.categoryName}>{c.name}</Text>
-              </TouchableOpacity>
+        {/* ── Trending in Houston ─────────────────────────────────────────── */}
+        <View style={[s.section, s.padded]}>
+          <SectionHeader title="Trending in Houston" onSeeAll={() => {}} />
+          <View style={s.grid}>
+            {TRENDING.map((p) => (
+              <Pressable
+                key={p.id}
+                style={({ pressed }) => [
+                  s.trendCard,
+                  { width: colW, backgroundColor: p.bg, opacity: pressed ? 0.9 : 1 },
+                ]}
+              >
+                <View style={s.absCenter}>
+                  <Silhouette size={48} />
+                </View>
+                <LinearGradient
+                  colors={['transparent', 'rgba(8,8,8,0.8)']}
+                  start={{ x: 0, y: 0.5 }}
+                  end={{ x: 0, y: 1 }}
+                  style={StyleSheet.absoluteFill}
+                />
+                <View style={s.trendInfo}>
+                  <Text style={s.trendName}>{p.name}</Text>
+                  <RatingRow rating={p.rating} category={p.category} />
+                  <Text style={s.trendTag}>{p.tag}</Text>
+                </View>
+              </Pressable>
             ))}
           </View>
         </View>
+
+        {/* ── Browse by category ──────────────────────────────────────────── */}
+        <View style={[s.section, s.padded]}>
+          <Text style={s.sectionTitle}>Browse by category</Text>
+          <View style={[s.grid, { marginTop: 16 }]}>
+            {BROWSE.map((c) => (
+              <Pressable
+                key={c.id}
+                style={({ pressed }) => [
+                  s.browseCard,
+                  { width: colW, opacity: pressed ? 0.85 : 1 },
+                ]}
+              >
+                <Text style={s.browseIcon}>{c.icon}</Text>
+                <View>
+                  <Text style={s.browseName}>{c.name}</Text>
+                  <Text style={s.browseCount}>{c.count} providers</Text>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* Bottom spacer for tab bar */}
+        <View style={{ height: 120 }} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   )
 }
+
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#080808',
+  },
+  scrollContent: {
+    paddingBottom: 32,
   },
 
   // Top bar
@@ -212,305 +399,353 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    marginBottom: 8,
+    paddingHorizontal: 24,
+    height: 56,
   },
   wordmark: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
+    letterSpacing: -0.2,
   },
   topRight: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
   },
-  topIcon: {
+  iconBtn: {
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellIcon: {
     fontSize: 22,
-    color: 'rgba(240,232,213,0.5)',
+    color: 'rgba(240,232,213,0.8)',
   },
-  bellWrap: {
-    position: 'relative',
-  },
-  notifDot: {
-    position: 'absolute',
-    top: -1,
-    right: -1,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#C8922A',
+  avatarCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(240,232,213,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Live ticker
   ticker: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 20,
-    marginBottom: 20,
-    marginTop: 4,
-  },
-  pulseDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#C8922A',
+    gap: 10,
+    paddingHorizontal: 24,
+    height: 36,
+    marginBottom: 12,
   },
   tickerText: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-  },
-
-  scrollContent: {
-    paddingBottom: 100,
-  },
-
-  // Story rings
-  storyScroll: {
-    marginBottom: 28,
-  },
-  storyRow: {
-    paddingHorizontal: 20,
-    gap: 16,
-    flexDirection: 'row',
-  },
-  storyItem: {
-    alignItems: 'center',
-  },
-  storyRing: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    borderWidth: 2,
-    padding: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  storyRingActive: {
-    borderColor: '#C8922A',
-  },
-  storyRingInactive: {
-    borderColor: 'rgba(240,232,213,0.1)',
-  },
-  storyInner: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  storyName: {
-    fontSize: 11,
+    fontSize: 13,
     color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  storyType: {
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
+    letterSpacing: -0.05,
   },
 
-  // Featured hero
-  heroWrap: {
-    width: '100%',
-    height: 240,
-    marginBottom: 28,
+  // Hero carousel
+  heroOuter: {
+    paddingHorizontal: 24,
+    marginBottom: 12,
+  },
+  heroCard: {
+    height: 200,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
     justifyContent: 'flex-end',
   },
-  heroContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
+  heroInner: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+    padding: 12,
   },
-  featuredPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#C8922A',
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    marginBottom: 10,
-  },
-  featuredPillText: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: 0.5,
+  featuredLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#C8922A',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: 6,
   },
   heroName: {
-    fontSize: 26,
+    fontSize: 22,
     fontWeight: '700',
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
+    letterSpacing: -0.2,
+    marginBottom: 4,
   },
   heroSub: {
     fontSize: 13,
-    color: 'rgba(240,232,213,0.6)',
+    color: 'rgba(240,232,213,0.7)',
     fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
+    letterSpacing: -0.05,
   },
-  heroStats: {
-    flexDirection: 'row',
+  viewBtn: {
+    width: 80,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.3)',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 8,
+    justifyContent: 'center',
   },
-  heroStar: {
-    fontSize: 12,
-    color: '#C8922A',
-  },
-  heroStatNum: {
-    fontSize: 12,
+  viewBtnText: {
+    fontSize: 13,
     fontWeight: '600',
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
   },
-  heroDot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: 'rgba(240,232,213,0.3)',
+
+  // Pagination dots
+  dots: {
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    marginTop: 16,
   },
-  heroStatText: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_400Regular',
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
-  heroAvail: {
-    fontSize: 12,
-    color: '#C8922A',
-    fontFamily: 'Manrope_500Medium',
+  dotActive: {
+    backgroundColor: '#F0E8D5',
   },
-  bookNowBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#C8922A',
-    borderRadius: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    marginTop: 14,
-  },
-  bookNowText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
+  dotInactive: {
+    backgroundColor: 'rgba(240,232,213,0.25)',
   },
 
-  // Sections
+  // Category nav
+  categoryScroll: {
+    marginTop: 12,
+    marginBottom: 32,
+    height: 44,
+  },
+  categoryRow: {
+    paddingHorizontal: 24,
+    gap: 24,
+    alignItems: 'center',
+    height: 44,
+  },
+  categoryBtn: {
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  categoryText: {
+    fontSize: 14,
+    fontFamily: 'Manrope_500Medium',
+    letterSpacing: -0.05,
+  },
+  catActive: {
+    color: '#F0E8D5',
+  },
+  catInactive: {
+    color: 'rgba(240,232,213,0.5)',
+  },
+  catUnderline: {
+    position: 'absolute',
+    bottom: 7,
+    left: 0,
+    right: 0,
+    height: 1.5,
+    backgroundColor: '#F0E8D5',
+    borderRadius: 1,
+  },
+
+  // Section structure
   section: {
-    paddingHorizontal: 20,
-    marginBottom: 28,
+    marginBottom: 40,
+  },
+  padded: {
+    paddingHorizontal: 24,
   },
   sectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingHorizontal: 24,
     marginBottom: 16,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
+    letterSpacing: -0.2,
   },
-  sectionLink: {
+  seeAll: {
     fontSize: 13,
-    color: 'rgba(240,232,213,0.4)',
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_500Medium',
+    letterSpacing: -0.05,
+  },
+  hRow: {
+    paddingHorizontal: 24,
+    gap: 12,
+  },
+
+  // For You cards
+  forYouCard: {
+    width: 160,
+    height: 220,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  absCenter: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  verifiedBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#C8922A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+  verifiedCheck: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    fontFamily: 'Manrope_700Bold',
+  },
+  cardInfo: {
+    padding: 10,
+    gap: 4,
+  },
+  cardName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: -0.05,
+  },
+
+  // Live cards
+  liveCard: {
+    width: 140,
+    height: 180,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
+  },
+  liveBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#C8922A',
+    borderRadius: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    zIndex: 2,
+  },
+  liveBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: 1,
+  },
+  liveCardName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: -0.05,
+    marginBottom: 3,
+  },
+  liveCardDetail: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.6)',
     fontFamily: 'Manrope_400Regular',
+    letterSpacing: -0.05,
+  },
+
+  // Grid layout
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
   },
 
   // Trending cards
-  trendingRow: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingRight: 4,
+  trendCard: {
+    height: 230,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+    justifyContent: 'flex-end',
   },
-  providerCard: {
-    width: 160,
-    height: 200,
+  trendInfo: {
+    padding: 12,
+    gap: 4,
+  },
+  trendName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: -0.05,
+  },
+  trendTag: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+    letterSpacing: -0.05,
+    marginTop: 2,
+  },
+
+  // Browse cards
+  browseCard: {
+    height: 100,
     borderRadius: 14,
     borderCurve: 'continuous',
     backgroundColor: 'rgba(240,232,213,0.04)',
     borderWidth: 1,
     borderColor: 'rgba(240,232,213,0.07)',
-    overflow: 'hidden',
+    padding: 14,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
   },
-  providerCardPhoto: {
-    height: 120,
-    backgroundColor: 'rgba(240,232,213,0.07)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  providerCardInfo: {
-    padding: 12,
-  },
-  providerCardName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  providerCardCat: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  providerCardStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  providerStar: {
-    fontSize: 10,
-    color: '#C8922A',
-  },
-  providerRating: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-    marginLeft: 3,
-  },
-  providerDist: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
-  },
-
-  // Category grid
-  categoryGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  categoryCard: {
-    width: '47.5%',
-    height: 72,
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.07)',
-    borderRadius: 12,
-    borderCurve: 'continuous',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  categoryIcon: {
+  browseIcon: {
     fontSize: 20,
-    color: 'rgba(240,232,213,0.45)',
-  },
-  categoryName: {
-    fontSize: 14,
     color: '#F0E8D5',
+  },
+  browseName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: -0.05,
+    marginBottom: 2,
+  },
+  browseCount: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_500Medium',
+    letterSpacing: -0.05,
   },
 })
