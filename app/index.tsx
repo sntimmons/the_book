@@ -131,20 +131,12 @@ export default function WelcomeScreen() {
           ))}
         </View>
 
-        {/* Button 1 */}
+        {/* Get Started */}
         <Pressable
           style={({ pressed }) => [styles.btnPrimary, pressed && { opacity: 0.86 }]}
           onPress={() => router.push('/auth/signup')}
         >
-          <Text style={styles.btnPrimaryText}>I'm looking to book</Text>
-        </Pressable>
-
-        {/* Button 2 */}
-        <Pressable
-          style={({ pressed }) => [styles.btnSecondary, pressed && { opacity: 0.78 }]}
-          onPress={() => router.push('/auth/signup')}
-        >
-          <Text style={styles.btnSecondaryText}>I'm a provider</Text>
+          <Text style={styles.btnPrimaryText}>Get Started</Text>
         </Pressable>
 
         {/* Sign in link */}
@@ -234,23 +226,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#080808',
     fontFamily: 'Manrope_700Bold',
-  },
-  btnSecondary: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.2)',
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  btnSecondaryText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
   },
   signInText: {
     textAlign: 'center',
