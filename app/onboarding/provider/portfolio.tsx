@@ -7,28 +7,19 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { useWindowDimensions } from 'react-native'
 
 const TOTAL_SLOTS = 9
 
 const TIPS = [
-  {
-    n: '1',
-    text: 'Use natural or ring light.\nDark blurry photos lose clients.',
-  },
-  {
-    n: '2',
-    text: 'Show finished results clearly.\nBefore and after works well.',
-  },
-  {
-    n: '3',
-    text: 'Your first photo is your hero shot.\nMake it your absolute best work.',
-  },
+  { n: '1', text: 'Use natural or ring light.\nDark blurry photos lose clients.' },
+  { n: '2', text: 'Show finished results clearly.\nBefore and after works well.' },
+  { n: '3', text: "Your first photo is your hero shot.\nMake it your absolute best work." },
 ]
 
 export default function ProviderPortfolio() {
@@ -36,7 +27,7 @@ export default function ProviderPortfolio() {
   const { width } = useWindowDimensions()
   const [photos, setPhotos] = useState<string[]>([])
 
-  // Cell size: full width minus 48px horizontal padding, divided into 3 cols with 2 gaps of 3px
+  // 3 columns, 2 inner gaps of 3px, within the 24px horizontal padding on each side
   const cellSize = (width - 48 - 6) / 3
 
   async function pickPhoto() {
@@ -67,12 +58,12 @@ export default function ProviderPortfolio() {
 
   return (
     <View style={styles.root}>
-      {/* Progress bar — 25% */}
+      {/* Progress bar — absolute, always on top */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>
 
-      {/* Top bar */}
+      {/* Top bar — fixed in flow, NOT inside ScrollView */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -86,10 +77,13 @@ export default function ProviderPortfolio() {
         <Text style={styles.topBarStep}>Step 2 of 8</Text>
       </View>
 
+      {/* All scrollable content below the top bar */}
       <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={styles.scrollContent}
+        contentInsetAdjustmentBehavior="never"
       >
         <Text style={styles.headline}>Show them your work.</Text>
         <Text style={styles.subtext}>
@@ -104,7 +98,7 @@ export default function ProviderPortfolio() {
           </Text>
         </View>
 
-        {/* Photo grid — 3 cols, edge to edge within padding */}
+        {/* Photo grid — 3 cols */}
         <View style={styles.grid}>
           {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
             const uri = photos[i]
@@ -148,17 +142,13 @@ export default function ProviderPortfolio() {
 
         {/* Add more row */}
         {photos.length > 0 && photos.length < TOTAL_SLOTS && (
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={styles.addMoreRow}
-            onPress={pickPhoto}
-          >
+          <TouchableOpacity activeOpacity={0.7} style={styles.addMoreRow} onPress={pickPhoto}>
             <Feather name="plus" size={16} color="rgba(240,232,213,0.3)" />
             <Text style={styles.addMoreText}>Add more photos</Text>
           </TouchableOpacity>
         )}
 
-        {/* Tips section */}
+        {/* Tips */}
         <Text style={styles.tipsLabel}>TIPS FOR GREAT PORTFOLIO PHOTOS</Text>
         <View style={styles.tipsList}>
           {TIPS.map((tip) => (
@@ -221,7 +211,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    marginBottom: 8,
+    paddingBottom: 12,
   },
   backBtn: {
     width: 36,
@@ -243,17 +233,20 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_500Medium',
   },
+  scroll: {
+    flex: 1,
+  },
   scrollContent: {
     paddingHorizontal: 24,
+    paddingTop: 24,
     paddingBottom: 140,
   },
   headline: {
-    fontSize: 30,
+    fontSize: 28,
     fontWeight: '700',
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
-    lineHeight: 36,
-    marginTop: 24,
+    lineHeight: 34,
     marginBottom: 8,
   },
   subtext: {
@@ -276,8 +269,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     lineHeight: 17,
   },
-
-  // Grid
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -310,8 +301,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // Count + add more
   photoCount: {
     fontSize: 12,
     color: 'rgba(240,232,213,0.35)',
@@ -333,8 +322,6 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_500Medium',
   },
-
-  // Tips
   tipsLabel: {
     fontSize: 10,
     fontWeight: '600',
@@ -378,8 +365,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     lineHeight: 18,
   },
-
-  // CTA
   cta: {
     position: 'absolute',
     bottom: 0,
