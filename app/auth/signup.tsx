@@ -1,40 +1,22 @@
-import { useState } from 'react'
-import { View, Text, Pressable, Image, StyleSheet } from 'react-native'
-import { LinearGradient } from 'expo-linear-gradient'
+import { View, Text, Pressable, StyleSheet, ImageSourcePropType } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import CrossfadeBackground from '../../components/CrossfadeBackground'
+
+const authImages = (() => {
+  const loaded: ImageSourcePropType[] = []
+  try { loaded.push(require('../../assets/images/auth/signup1.jpg')) } catch (e) {}
+  try { loaded.push(require('../../assets/images/auth/signup2.jpg')) } catch (e) {}
+  try { loaded.push(require('../../assets/images/auth/signup3.jpg')) } catch (e) {}
+  return loaded
+})()
 
 export default function SignupScreen() {
   const insets = useSafeAreaInsets()
-  const [imageError, setImageError] = useState(false)
 
   return (
     <View style={styles.root}>
-      {/* Background: image with gradient overlay, or gradient fallback */}
-      {!imageError ? (
-        <Image
-          source={require('../../assets/images/welcome/welcome-bg.jpg')}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-          onError={() => setImageError(true)}
-        />
-      ) : (
-        <LinearGradient
-          colors={['#2A1808', '#1a0e05', '#080808']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 0, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      )}
-
-      {/* Dark overlay always on top of background */}
-      <LinearGradient
-        colors={['rgba(8,8,8,0.2)', 'rgba(8,8,8,0.5)', 'rgba(8,8,8,0.88)', '#080808']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-        style={StyleSheet.absoluteFill}
-        pointerEvents="none"
-      />
+      <CrossfadeBackground images={authImages} fallback={authImages.length === 0} />
 
       {/* Wordmark */}
       <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>
