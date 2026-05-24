@@ -46,7 +46,7 @@ export default function ProviderGoLive() {
     setIsGoingLive(true)
     setTimeout(() => {
       reset()
-      router.replace('/(tabs)')
+      router.replace('/dashboard/provider')
     }, 1500)
   }
 
