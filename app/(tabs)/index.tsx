@@ -15,9 +15,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 // ── Static data ──────────────────────────────────────────────────────────────
 
 const FEATURED = [
-  { id: '1', name: 'Jasmine Turner', category: 'Lashes and Brows', location: 'Midtown', bg: '#1E0E0A' },
-  { id: '2', name: 'Marcus Chen', category: 'Photography', location: 'Heights', bg: '#0A100C' },
-  { id: '3', name: 'Tanya Robinson', category: 'Hair Styling', location: 'Montrose', bg: '#0E0A1E' },
+  { id: '1', name: 'Jasmine Turner', category: 'Lashes and Brows', location: 'Midtown', bg: 'rgba(240,232,213,0.08)' },
+  { id: '2', name: 'Marcus Chen', category: 'Photography', location: 'Heights', bg: 'rgba(240,232,213,0.08)' },
+  { id: '3', name: 'Tanya Robinson', category: 'Hair Styling', location: 'Montrose', bg: 'rgba(240,232,213,0.08)' },
 ]
 
 const CATEGORIES = [
@@ -26,25 +26,25 @@ const CATEGORIES = [
 ]
 
 const FOR_YOU = [
-  { id: '1', name: 'Maya Reed',     category: 'Braids',       rating: '4.9', verified: false, bg: '#1A0F14' },
-  { id: '2', name: 'Devon Pierce',  category: 'Barber',       rating: '5.0', verified: true,  bg: '#0F1A16' },
-  { id: '3', name: 'Aisha Coleman', category: 'Lashes',       rating: '4.8', verified: false, bg: '#1A100A' },
-  { id: '4', name: 'Marcus Hall',   category: 'Photography',  rating: '4.9', verified: true,  bg: '#0A0F1A' },
-  { id: '5', name: 'Tia Brooks',    category: 'Makeup',       rating: '4.7', verified: false, bg: '#1A0A16' },
+  { id: '1', name: 'Maya Reed',     category: 'Braids',       rating: '4.9', verified: false, bg: 'rgba(240,232,213,0.08)' },
+  { id: '2', name: 'Devon Pierce',  category: 'Barber',       rating: '5.0', verified: true,  bg: 'rgba(240,232,213,0.08)' },
+  { id: '3', name: 'Aisha Coleman', category: 'Lashes',       rating: '4.8', verified: false, bg: 'rgba(240,232,213,0.08)' },
+  { id: '4', name: 'Marcus Hall',   category: 'Photography',  rating: '4.9', verified: true,  bg: 'rgba(240,232,213,0.08)' },
+  { id: '5', name: 'Tia Brooks',    category: 'Makeup',       rating: '4.7', verified: false, bg: 'rgba(240,232,213,0.08)' },
 ]
 
 const LIVE_NOW = [
-  { id: '1', name: 'Jordan Ellis', category: 'Nails',       watching: 23, bg: '#1A0F14' },
-  { id: '2', name: 'Sasha Mills',  category: 'Hair',        watching: 41, bg: '#0F1A16' },
-  { id: '3', name: 'Ray Tucker',   category: 'Barber',      watching: 18, bg: '#1A1A0A' },
-  { id: '4', name: 'Naomi Cross',  category: 'Makeup',      watching: 9,  bg: '#1A0A16' },
+  { id: '1', name: 'Jordan Ellis', category: 'Nails',  watching: 23, bg: 'rgba(240,232,213,0.08)' },
+  { id: '2', name: 'Sasha Mills',  category: 'Hair',   watching: 41, bg: 'rgba(240,232,213,0.08)' },
+  { id: '3', name: 'Ray Tucker',   category: 'Barber', watching: 18, bg: 'rgba(240,232,213,0.08)' },
+  { id: '4', name: 'Naomi Cross',  category: 'Makeup', watching: 9,  bg: 'rgba(240,232,213,0.08)' },
 ]
 
 const TRENDING = [
-  { id: '1', name: 'Whitney Adams',  category: 'Lashes',      rating: '4.9', tag: 'Mobile, books fast',    bg: '#1E0E0A' },
-  { id: '2', name: 'Trey Morgan',    category: 'Barber',      rating: '5.0', tag: 'Shop in Heights',        bg: '#0A100C' },
-  { id: '3', name: 'Camille Booker', category: 'Makeup',      rating: '4.8', tag: 'Bridal specialist',      bg: '#1A0A16' },
-  { id: '4', name: 'Andre Watts',    category: 'Photography', rating: '4.9', tag: 'Events and portraits',   bg: '#0E0A1E' },
+  { id: '1', name: 'Whitney Adams',  category: 'Lashes',      rating: '4.9', tag: 'Mobile, books fast',  bg: 'rgba(240,232,213,0.08)' },
+  { id: '2', name: 'Trey Morgan',    category: 'Barber',      rating: '5.0', tag: 'Shop in Heights',      bg: 'rgba(240,232,213,0.08)' },
+  { id: '3', name: 'Camille Booker', category: 'Makeup',      rating: '4.8', tag: 'Bridal specialist',    bg: 'rgba(240,232,213,0.08)' },
+  { id: '4', name: 'Andre Watts',    category: 'Photography', rating: '4.9', tag: 'Events and portraits', bg: 'rgba(240,232,213,0.08)' },
 ]
 
 const BROWSE = [
