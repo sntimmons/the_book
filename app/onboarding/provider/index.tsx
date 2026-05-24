@@ -15,6 +15,7 @@ import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useProviderStore } from '@/store/providerStore'
 
 type FocusedField = 'name' | 'businessName' | 'location' | 'bio' | 'customCategory' | null
 type Errors = { name?: string; category?: string; photo?: string }
@@ -29,15 +30,17 @@ const CATEGORIES = [
 export default function ProviderOnboardingStep1() {
   const insets = useSafeAreaInsets()
 
-  const [photo, setPhoto] = useState<string | null>(null)
-  const [banner, setBanner] = useState<string | null>(null)
-  const [name, setName] = useState('')
-  const [businessName, setBusinessName] = useState('')
-  const [category, setCategory] = useState('')
-  const [customCategory, setCustomCategory] = useState('')
-  const [location, setLocation] = useState('')
-  const [bio, setBio] = useState('')
-  const [isMobile, setIsMobile] = useState(false)
+  const {
+    name, setName,
+    businessName, setBusinessName,
+    category, setCategory,
+    customCategory, setCustomCategory,
+    location, setLocation,
+    bio, setBio,
+    photo, setPhoto,
+    banner, setBanner,
+    isMobile, setIsMobile,
+  } = useProviderStore()
   const [showCategorySheet, setShowCategorySheet] = useState(false)
   const [focusedField, setFocusedField] = useState<FocusedField>(null)
   const [errors, setErrors] = useState<Errors>({})
@@ -74,6 +77,7 @@ export default function ProviderOnboardingStep1() {
 
   function selectCategory(cat: string) {
     setCategory(cat)
+    setCustomCategory('')
     setShowCategorySheet(false)
     setErrors((prev) => ({ ...prev, category: undefined }))
   }

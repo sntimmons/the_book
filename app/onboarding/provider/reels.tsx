@@ -12,6 +12,7 @@ import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useProviderStore } from '@/store/providerStore'
 
 const TOTAL_SLOTS = 6
 
@@ -38,7 +39,10 @@ const TIPS = [
 export default function ProviderReels() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const [reels, setReels] = useState<Reel[]>([])
+  const { reels: storedReels, setReels: setStoredReels } = useProviderStore()
+  const [reels, setReelsLocal] = useState<Reel[]>(() =>
+    storedReels.map((uri) => ({ uri }))
+  )
   const scrollRef = useRef<ScrollView>(null)
 
   useEffect(() => {
@@ -65,12 +69,17 @@ export default function ProviderReels() {
       const raw = result.assets[0].duration ?? 0
       const secs = Math.round(raw / 1000)
       const duration = '0:' + secs.toString().padStart(2, '0')
-      setReels((prev) => [...prev, { uri: result.assets[0].uri, duration }])
+      const newReel = { uri: result.assets[0].uri, duration }
+      const updated = [...reels, newReel]
+      setReelsLocal(updated)
+      setStoredReels(updated.map((r) => r.uri))
     }
   }
 
   function removeReel(index: number) {
-    setReels((prev) => prev.filter((_, i) => i !== index))
+    const updated = reels.filter((_, i) => i !== index)
+    setReelsLocal(updated)
+    setStoredReels(updated.map((r) => r.uri))
   }
 
   function navigate() {

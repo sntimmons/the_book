@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useRef, useEffect } from 'react'
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useProviderStore } from '@/store/providerStore'
 
 const TOTAL_SLOTS = 9
 
@@ -38,7 +39,7 @@ const TIPS = [
 export default function ProviderPortfolio() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const [photos, setPhotos] = useState<string[]>([])
+  const { portfolioPhotos: photos, setPortfolioPhotos } = useProviderStore()
   const scrollRef = useRef<ScrollView>(null)
 
   // Force scroll to top on mount — prevents Stack navigator from injecting a content offset
@@ -63,12 +64,12 @@ export default function ProviderPortfolio() {
       quality: 0.8,
     })
     if (!result.canceled && result.assets[0]) {
-      setPhotos((prev) => [...prev, result.assets[0].uri])
+      setPortfolioPhotos([...photos, result.assets[0].uri])
     }
   }
 
   function removePhoto(index: number) {
-    setPhotos((prev) => prev.filter((_, i) => i !== index))
+    setPortfolioPhotos(photos.filter((_, i) => i !== index))
   }
 
   function handleContinue() {
@@ -77,6 +78,7 @@ export default function ProviderPortfolio() {
   }
 
   const isActive = photos.length >= 1
+
 
   // CTA height estimate for gradient positioning
   const ctaHeight = insets.bottom + 132

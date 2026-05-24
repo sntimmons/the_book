@@ -13,6 +13,7 @@ import {
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useProviderStore } from '@/store/providerStore'
 
 const DURATION_PILLS = ['30 min', '45 min', '1 hr', '1.5 hr', '2 hr', '3 hr', '4 hr+', 'Custom']
 
@@ -36,7 +37,7 @@ export default function ProviderServices() {
   const insets = useSafeAreaInsets()
   const scrollRef = useRef<ScrollView>(null)
 
-  const [services, setServices] = useState<Service[]>([])
+  const { services, setServices } = useProviderStore()
   const [showAddService, setShowAddService] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
 
@@ -98,8 +99,8 @@ export default function ProviderServices() {
     const resolvedDuration = draftDuration === 'Custom' ? draftCustomDuration : draftDuration
 
     if (editingId) {
-      setServices((prev) =>
-        prev.map((s) =>
+      setServices(
+        services.map((s) =>
           s.id === editingId
             ? {
                 ...s,
@@ -123,7 +124,7 @@ export default function ProviderServices() {
         depositAmount: draftDepositAmount,
         addOns: draftAddOns,
       }
-      setServices((prev) => [...prev, newService])
+      setServices([...services, newService])
     }
 
     setShowAddService(false)
@@ -131,7 +132,7 @@ export default function ProviderServices() {
   }
 
   function removeService(id: string) {
-    setServices((prev) => prev.filter((s) => s.id !== id))
+    setServices(services.filter((s) => s.id !== id))
   }
 
   function saveAddOn() {

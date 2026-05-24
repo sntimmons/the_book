@@ -11,24 +11,41 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile from '@/components/ProviderProfile'
-
-// In a real app, this data would come from a store or navigation params.
-// For now we use the same defaults as the component's mock, which providers
-// can see so they know exactly how their profile will look.
-const PREVIEW_DATA = {
-  name: 'Your Name',
-  category: 'Category',
-  location: 'Houston, TX',
-  isLive: true,
-}
+import { useProviderStore } from '@/store/providerStore'
 
 export default function ProviderGoLive() {
   const insets = useSafeAreaInsets()
   const [isGoingLive, setIsGoingLive] = useState(false)
+  const {
+    name, businessName, category, customCategory,
+    location, bio, photo, banner,
+    services, portfolioPhotos, reels,
+    reset,
+  } = useProviderStore()
+
+  const providerData = {
+    name: name || 'Your Name',
+    businessName: businessName || undefined,
+    category: customCategory || category || 'Your Category',
+    location: location || 'Houston, TX',
+    bio: bio || undefined,
+    photo: photo || undefined,
+    banner: banner || undefined,
+    services,
+    portfolio: portfolioPhotos,
+    reels,
+    rating: 0,
+    bookingCount: 0,
+    followerCount: 0,
+    followingCount: 0,
+    isVerified: false,
+    isLive: false,
+  }
 
   function handleGoLive() {
     setIsGoingLive(true)
     setTimeout(() => {
+      reset()
       router.replace('/(tabs)')
     }, 1500)
   }
@@ -60,7 +77,7 @@ export default function ProviderGoLive() {
 
       {/* Profile preview fills remaining space */}
       <View style={styles.profileWrap}>
-        <ProviderProfile previewMode provider={PREVIEW_DATA} />
+        <ProviderProfile previewMode provider={providerData} />
       </View>
 
       {/* Fixed bottom */}
