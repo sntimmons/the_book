@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StyleSheet,
   useWindowDimensions,
 } from 'react-native'
+import { LinearGradient } from 'expo-linear-gradient'
 import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
@@ -17,18 +18,39 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 const TOTAL_SLOTS = 9
 
 const TIPS = [
-  { n: '1', text: 'Use natural or ring light.\nDark blurry photos lose clients.' },
-  { n: '2', text: 'Show finished results clearly.\nBefore and after works well.' },
-  { n: '3', text: "Your first photo is your hero shot.\nMake it your absolute best work." },
+  {
+    n: '1',
+    bold: 'Use natural or ring light.',
+    sub: 'Dark blurry photos lose clients.',
+  },
+  {
+    n: '2',
+    bold: 'Show finished results clearly.',
+    sub: 'Before and after works well.',
+  },
+  {
+    n: '3',
+    bold: 'Your first photo is your hero shot.',
+    sub: 'Make it your absolute best work.',
+  },
 ]
 
 export default function ProviderPortfolio() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const [photos, setPhotos] = useState<string[]>([])
+  const scrollRef = useRef<ScrollView>(null)
 
-  // 3 columns, 2 inner gaps of 3px, within the 24px horizontal padding on each side
-  const cellSize = (width - 48 - 6) / 3
+  // Force scroll to top on mount — prevents Stack navigator from injecting a content offset
+  useEffect(() => {
+    const t = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false })
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
+
+  // 3 cols, two 12px gaps between them, within 24px padding each side
+  const cellSize = (width - 48 - 24) / 3
 
   async function pickPhoto() {
     if (photos.length >= TOTAL_SLOTS) return
@@ -56,14 +78,17 @@ export default function ProviderPortfolio() {
 
   const isActive = photos.length >= 1
 
+  // CTA height estimate for gradient positioning
+  const ctaHeight = insets.bottom + 132
+
   return (
     <View style={styles.root}>
-      {/* Progress bar — absolute, always on top */}
+      {/* Progress bar */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>
 
-      {/* Top bar — fixed in flow, NOT inside ScrollView */}
+      {/* Top bar — in flow, above ScrollView */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -77,28 +102,26 @@ export default function ProviderPortfolio() {
         <Text style={styles.topBarStep}>Step 2 of 8</Text>
       </View>
 
-      {/* All scrollable content below the top bar */}
+      {/* Scrollable content */}
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
       >
-        <Text style={styles.headline}>Show them your work.</Text>
-        <Text style={styles.subtext}>
-          Add your best photos. This is what clients see when deciding to book you.
-        </Text>
+        <Text style={styles.headline}>Show clients why they{'\n'}should book you.</Text>
 
-        {/* Quality note */}
-        <View style={styles.qualityNote}>
+        <View style={styles.subheadRow}>
           <Feather name="star" size={14} color="#C8922A" style={{ marginTop: 2 }} />
-          <Text style={styles.qualityText}>
+          <Text style={styles.subheadText}>
             Portfolio photos are permanent on your profile. Post casual content in posts and stories.
           </Text>
         </View>
 
-        {/* Photo grid — 3 cols */}
+        {/* Photo grid — 3×3 */}
         <View style={styles.grid}>
           {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
             const uri = photos[i]
@@ -127,40 +150,39 @@ export default function ProviderPortfolio() {
                 ]}
                 onPress={pickPhoto}
               >
-                <Feather name="plus" size={20} color="rgba(240,232,213,0.2)" />
+                <Feather name="plus" size={24} color="rgba(240,232,213,0.4)" />
               </Pressable>
             )
           })}
         </View>
 
-        {/* Photo count */}
-        <Text style={styles.photoCount}>
-          {photos.length === 0
-            ? 'Add at least 1 photo to continue'
-            : `${photos.length} of 9 photos added`}
+        <Text style={styles.photoHelper}>
+          {isActive ? `${photos.length} of 9 photos added` : 'Add at least 1 photo to continue.'}
         </Text>
-
-        {/* Add more row */}
-        {photos.length > 0 && photos.length < TOTAL_SLOTS && (
-          <TouchableOpacity activeOpacity={0.7} style={styles.addMoreRow} onPress={pickPhoto}>
-            <Feather name="plus" size={16} color="rgba(240,232,213,0.3)" />
-            <Text style={styles.addMoreText}>Add more photos</Text>
-          </TouchableOpacity>
-        )}
 
         {/* Tips */}
         <Text style={styles.tipsLabel}>TIPS FOR GREAT PORTFOLIO PHOTOS</Text>
         <View style={styles.tipsList}>
           {TIPS.map((tip) => (
             <View key={tip.n} style={styles.tipRow}>
-              <View style={styles.tipNumCircle}>
+              <View style={styles.tipCircle}>
                 <Text style={styles.tipNum}>{tip.n}</Text>
               </View>
-              <Text style={styles.tipText}>{tip.text}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.tipBold}>{tip.bold}</Text>
+                <Text style={styles.tipSub}>{tip.sub}</Text>
+              </View>
             </View>
           ))}
         </View>
       </ScrollView>
+
+      {/* Gradient fade above CTA */}
+      <LinearGradient
+        colors={['rgba(8,8,8,0)', '#080808']}
+        style={[styles.gradientMask, { bottom: ctaHeight }]}
+        pointerEvents="none"
+      />
 
       {/* Fixed CTA */}
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
@@ -174,7 +196,7 @@ export default function ProviderPortfolio() {
         </Pressable>
         <TouchableOpacity
           activeOpacity={0.6}
-          style={styles.skipWrap}
+          style={{ marginTop: 12, alignItems: 'center' }}
           onPress={() => router.push('/onboarding/provider/reels')}
         >
           <Text style={styles.skipText}>Skip for now</Text>
@@ -247,48 +269,40 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
     lineHeight: 34,
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  subtext: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  qualityNote: {
+  subheadRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 28,
+    gap: 10,
+    marginBottom: 32,
   },
-  qualityText: {
+  subheadText: {
     flex: 1,
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.4)',
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.7)',
     fontFamily: 'Manrope_400Regular',
-    lineHeight: 17,
+    lineHeight: 20,
   },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 3,
+    gap: 12,
   },
   cell: {
+    borderRadius: 12,
     overflow: 'hidden',
-    borderRadius: 4,
   },
   emptyCell: {
-    backgroundColor: 'rgba(240,232,213,0.04)',
     borderWidth: 1,
     borderStyle: 'dashed',
-    borderColor: 'rgba(240,232,213,0.1)',
+    borderColor: 'rgba(240,232,213,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   emptyCellPressed: {
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderColor: 'rgba(240,232,213,0.2)',
+    backgroundColor: 'rgba(240,232,213,0.06)',
+    borderColor: 'rgba(240,232,213,0.35)',
   },
   deleteBtn: {
     position: 'absolute',
@@ -301,49 +315,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  photoCount: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.35)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
-    marginTop: 12,
-    marginBottom: 8,
-  },
-  addMoreRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    marginBottom: 32,
-  },
-  addMoreText: {
+  photoHelper: {
     fontSize: 13,
-    color: 'rgba(240,232,213,0.35)',
+    color: 'rgba(240,232,213,0.55)',
     fontFamily: 'Manrope_500Medium',
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 32,
   },
   tipsLabel: {
     fontSize: 10,
     fontWeight: '600',
-    color: 'rgba(240,232,213,0.35)',
+    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
-    marginBottom: 12,
-    marginTop: 8,
+    marginBottom: 16,
   },
   tipsList: {
-    gap: 10,
+    gap: 20,
   },
   tipRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
+    gap: 12,
   },
-  tipNumCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  tipCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: 'rgba(240,232,213,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(240,232,213,0.1)',
@@ -353,17 +353,30 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
   tipNum: {
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: '600',
     color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_600SemiBold',
   },
-  tipText: {
-    flex: 1,
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
+  tipBold: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+    lineHeight: 20,
+  },
+  tipSub: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.65)',
     fontFamily: 'Manrope_400Regular',
-    lineHeight: 18,
+    lineHeight: 20,
+  },
+  gradientMask: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 24,
+    zIndex: 2,
+    pointerEvents: 'none',
   },
   cta: {
     position: 'absolute',
@@ -386,7 +399,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   continueBtnInactive: {
-    backgroundColor: 'rgba(240,232,213,0.12)',
+    backgroundColor: 'rgba(240,232,213,0.1)',
   },
   continueBtnText: {
     fontSize: 16,
@@ -395,23 +408,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
   },
   continueBtnTextInactive: {
-    color: 'rgba(240,232,213,0.35)',
-  },
-  skipWrap: {
-    alignItems: 'center',
-    marginTop: 10,
+    color: 'rgba(240,232,213,0.4)',
   },
   skipText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.3)',
-    fontFamily: 'Manrope_500Medium',
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
   skipNote: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.25)',
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.5)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
-    marginTop: 6,
+    marginTop: 4,
   },
 })

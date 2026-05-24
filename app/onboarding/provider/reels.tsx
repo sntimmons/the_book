@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   View,
   Text,
@@ -39,6 +39,14 @@ export default function ProviderReels() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const [reels, setReels] = useState<Reel[]>([])
+  const scrollRef = useRef<ScrollView>(null)
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: false })
+    }, 0)
+    return () => clearTimeout(t)
+  }, [])
 
   // 2 columns, 1 inner gap of 10px, within 24px horizontal padding each side
   const cellWidth = (width - 48 - 10) / 2
@@ -91,11 +99,13 @@ export default function ProviderReels() {
       </View>
 
       <ScrollView
+        ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
       >
         <Text style={styles.headline}>Add your reels.</Text>
         <Text style={styles.subtext}>
