@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native'
+import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -53,10 +54,11 @@ export default function ClientProfileSetup() {
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity
           onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           activeOpacity={0.7}
+          style={styles.backBtn}
         >
-          <Text style={styles.backArrow}>‹</Text>
+          <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Set up your profile</Text>
         <Text style={styles.topBarStep}>Step 1 of 4</Text>
@@ -228,10 +230,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginBottom: 8,
   },
-  backArrow: {
-    fontSize: 28,
-    color: 'rgba(240,232,213,0.6)',
-    lineHeight: 32,
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   topBarLabel: {
     fontSize: 13,

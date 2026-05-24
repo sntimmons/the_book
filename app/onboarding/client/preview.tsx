@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
 } from 'react-native'
+import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -74,8 +75,13 @@ export default function ClientPreview() {
     <View style={s.root}>
       {/* Top bar */}
       <View style={[s.topBar, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()} style={s.navBtn}>
-          <Text style={s.backArrow}>‹</Text>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => router.back()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={s.backBtn}
+        >
+          <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={s.topTitle}>Me</Text>
         <TouchableOpacity activeOpacity={0.7} onPress={() => console.log('settings')} style={[s.navBtn, { alignItems: 'flex-end' }]}>
@@ -304,10 +310,15 @@ const s = StyleSheet.create({
     width: 40,
     justifyContent: 'center',
   },
-  backArrow: {
-    fontSize: 30,
-    color: '#F0E8D5',
-    lineHeight: 34,
+  backBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   topTitle: {
     flex: 1,

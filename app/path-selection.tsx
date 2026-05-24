@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   Animated,
-  Alert,
   StyleSheet,
 } from 'react-native'
 import { router } from 'expo-router'
@@ -72,21 +71,14 @@ export default function PathSelection() {
           <Card
             icon="⌕"
             title="I'm booking"
-            subtitle={"Discover and book the best\ncreators in Houston."}
+            subtitle={"Discover and book the best\nproviders in Houston."}
             onPress={() => router.push('/onboarding/client')}
           />
           <Card
             icon="✦"
             title="I'm a provider"
             subtitle={"Set up your profile and start\ngetting discovered."}
-            onPress={() => Alert.alert(
-              'Coming Soon',
-              'Provider sign up is launching very soon in Houston. Want us to notify you when it is ready?',
-              [
-                { text: 'Not now', style: 'cancel' },
-                { text: 'Notify me', onPress: () => console.log('provider waitlist') },
-              ]
-            )}
+            onPress={() => router.push('/onboarding/provider')}
           />
         </View>
 

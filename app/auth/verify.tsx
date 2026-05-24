@@ -4,8 +4,10 @@ import {
   Text,
   Pressable,
   TextInput,
+  TouchableOpacity,
   StyleSheet,
 } from 'react-native'
+import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
@@ -38,12 +40,14 @@ export default function VerifyScreen() {
       <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>
 
       {/* Back arrow */}
-      <Pressable
+      <TouchableOpacity
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        activeOpacity={0.7}
         style={[styles.backBtn, { top: insets.top + 12 }]}
         onPress={() => router.back()}
       >
-        <Text style={styles.backText}>{'<'}</Text>
-      </Pressable>
+        <Feather name="chevron-left" size={18} color="#F0E8D5" />
+      </TouchableOpacity>
 
       {/* Content */}
       <View style={[styles.content, { paddingTop: insets.top + 80 }]}>
@@ -138,11 +142,14 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 20,
     zIndex: 1,
-    padding: 4,
-  },
-  backText: {
-    fontSize: 24,
-    color: 'rgba(240,232,213,0.6)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   content: {
     paddingHorizontal: 24,
