@@ -4,8 +4,11 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   TextInput,
   KeyboardAvoidingView,
+  InputAccessoryView,
+  Keyboard,
   Platform,
   StyleSheet,
 } from 'react-native'
@@ -71,13 +74,15 @@ const PROVIDER_NAMES: Record<string, string> = {
   '3': 'Camille Brooks',
 }
 
+const INPUT_ACCESSORY_ID = 'chatInput'
+
 export default function ChatScreen() {
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const providerName = PROVIDER_NAMES[id ?? '1'] ?? 'Nia Laurent'
   const firstName = providerName.split(' ')[0]
 
-  const [inputText, setInputText] = useState('')
+  const [message, setMessage] = useState('')
   const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES)
   const [isTyping, setIsTyping] = useState(false)
   const scrollRef = useRef<ScrollView>(null)
@@ -86,10 +91,10 @@ export default function ChatScreen() {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 80)
   }, [])
 
-  function handleSend() {
-    const text = inputText.trim()
+  function sendMessage() {
+    const text = message.trim()
     if (!text) return
-    const newMessage: Message = {
+    const newMsg: Message = {
       id: String(Date.now()),
       senderId: 'client',
       type: 'text',
@@ -97,11 +102,9 @@ export default function ChatScreen() {
       timestamp: 'Now',
       read: false,
     }
-    setMessages((prev) => [...prev, newMessage])
-    setInputText('')
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80)
+    setMessages((prev) => [...prev, newMsg])
+    setMessage('')
 
-    // Simulate provider typing
     setIsTyping(true)
     setTimeout(() => {
       setIsTyping(false)
@@ -114,151 +117,206 @@ export default function ChatScreen() {
         read: false,
       }
       setMessages((prev) => [...prev, reply])
-      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80)
     }, 2000)
   }
 
+  const hasText = message.trim().length > 0
+
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={0}
-    >
-      {/* Top bar */}
-      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          activeOpacity={0.7}
-        >
-          <Feather name="chevron-left" size={18} color="#F0E8D5" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.providerRow}
-          activeOpacity={0.8}
-          onPress={() => router.push('/providers/1' as any)}
-        >
-          <View style={styles.providerAvatar}>
-            <Feather name="user" size={16} color="rgba(240,232,213,0.4)" />
-            <View style={styles.avatarOnlineDot} />
-          </View>
-          <View>
-            <Text style={styles.providerName}>{providerName}</Text>
-            <Text style={styles.providerStatus}>Active now</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.infoBtn}
-          activeOpacity={0.7}
-          onPress={() => router.push('/providers/1' as any)}
-        >
-          <Feather name="info" size={16} color="rgba(240,232,213,0.5)" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Messages */}
-      <ScrollView
-        ref={scrollRef}
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardDismissMode="interactive"
+    <>
+      <KeyboardAvoidingView
+        style={styles.root}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
       >
-        {messages.map((msg) => {
-          if (msg.type === 'system') {
-            return (
-              <View key={msg.id} style={styles.systemRow}>
-                <Text style={styles.systemTimestamp}>{msg.timestamp}</Text>
-                <Text style={styles.systemText}>{msg.content}</Text>
-              </View>
-            )
-          }
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={styles.inner}>
 
-          if (msg.type === 'booking') {
-            return (
-              <View key={msg.id} style={styles.bookingCardWrap}>
-                <View style={styles.bookingCard}>
-                  <View style={styles.bookingCardHeader}>
-                    <Feather name="check-circle" size={14} color="#4CAF50" />
-                    <Text style={styles.bookingCardLabel}>BOOKING CONFIRMED</Text>
-                  </View>
-                  <Text style={styles.bookingCardContent}>{msg.content}</Text>
-                  <Text style={styles.bookingCardTimestamp}>{msg.timestamp}</Text>
+            {/* Top bar */}
+            <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => router.back()}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                activeOpacity={0.7}
+              >
+                <Feather name="chevron-left" size={18} color="#F0E8D5" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.providerRow}
+                activeOpacity={0.8}
+                onPress={() => router.push('/providers/1' as any)}
+              >
+                <View style={styles.providerAvatar}>
+                  <Feather name="user" size={16} color="rgba(240,232,213,0.4)" />
+                  <View style={styles.avatarOnlineDot} />
                 </View>
-              </View>
-            )
-          }
+                <View>
+                  <Text style={styles.providerName}>{providerName}</Text>
+                  <Text style={styles.providerStatus}>Active now</Text>
+                </View>
+              </TouchableOpacity>
 
-          const isClient = msg.senderId === 'client'
-          return (
-            <View key={msg.id} style={[styles.messageRow, isClient ? styles.messageRowRight : styles.messageRowLeft]}>
-              {!isClient && (
-                <View style={styles.messageAvatar}>
-                  <Feather name="user" size={12} color="rgba(240,232,213,0.3)" />
+              <TouchableOpacity
+                style={styles.infoBtn}
+                activeOpacity={0.7}
+                onPress={() => router.push('/providers/1' as any)}
+              >
+                <Feather name="info" size={16} color="rgba(240,232,213,0.5)" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Messages scroll area */}
+            <ScrollView
+              ref={scrollRef}
+              style={styles.scroll}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardDismissMode="interactive"
+              keyboardShouldPersistTaps="handled"
+              onContentSizeChange={() =>
+                scrollRef.current?.scrollToEnd({ animated: true })
+              }
+            >
+              {messages.map((msg) => {
+                if (msg.type === 'system') {
+                  return (
+                    <View key={msg.id} style={styles.systemRow}>
+                      <Text style={styles.systemTimestamp}>{msg.timestamp}</Text>
+                      <Text style={styles.systemText}>{msg.content}</Text>
+                    </View>
+                  )
+                }
+
+                if (msg.type === 'booking') {
+                  return (
+                    <View key={msg.id} style={styles.bookingCardWrap}>
+                      <View style={styles.bookingCard}>
+                        <View style={styles.bookingCardHeader}>
+                          <Feather name="check-circle" size={14} color="#4CAF50" />
+                          <Text style={styles.bookingCardLabel}>BOOKING CONFIRMED</Text>
+                        </View>
+                        <Text style={styles.bookingCardContent}>{msg.content}</Text>
+                        <Text style={styles.bookingCardTimestamp}>{msg.timestamp}</Text>
+                      </View>
+                    </View>
+                  )
+                }
+
+                const isClient = msg.senderId === 'client'
+                return (
+                  <View
+                    key={msg.id}
+                    style={[styles.messageRow, isClient ? styles.messageRowRight : styles.messageRowLeft]}
+                  >
+                    {!isClient && (
+                      <View style={styles.messageAvatar}>
+                        <Feather name="user" size={12} color="rgba(240,232,213,0.3)" />
+                      </View>
+                    )}
+                    <View style={[styles.bubble, isClient ? styles.bubbleClient : styles.bubbleProvider]}>
+                      <Text style={[styles.bubbleText, isClient ? styles.bubbleTextClient : styles.bubbleTextProvider]}>
+                        {msg.content}
+                      </Text>
+                      <Text style={[styles.bubbleTime, isClient ? styles.bubbleTimeClient : styles.bubbleTimeProvider]}>
+                        {msg.timestamp}
+                      </Text>
+                    </View>
+                  </View>
+                )
+              })}
+
+              {isTyping && (
+                <View style={[styles.messageRow, styles.messageRowLeft]}>
+                  <View style={styles.messageAvatar}>
+                    <Feather name="user" size={12} color="rgba(240,232,213,0.3)" />
+                  </View>
+                  <View style={[styles.bubble, styles.bubbleProvider, styles.typingBubble]}>
+                    <Text style={styles.typingDots}>•  •  •</Text>
+                  </View>
                 </View>
               )}
-              <View style={[styles.bubble, isClient ? styles.bubbleClient : styles.bubbleProvider]}>
-                <Text style={[styles.bubbleText, isClient ? styles.bubbleTextClient : styles.bubbleTextProvider]}>
-                  {msg.content}
-                </Text>
-                <Text style={[styles.bubbleTime, isClient ? styles.bubbleTimeClient : styles.bubbleTimeProvider]}>
-                  {msg.timestamp}
-                </Text>
-              </View>
-            </View>
-          )
-        })}
 
-        {/* Typing indicator */}
-        {isTyping && (
-          <View style={[styles.messageRow, styles.messageRowLeft]}>
-            <View style={styles.messageAvatar}>
-              <Feather name="user" size={12} color="rgba(240,232,213,0.3)" />
+              <View style={{ height: 8 }} />
+            </ScrollView>
+
+            {/* Input bar — sits naturally at bottom, KAV lifts it */}
+            <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
+              <TouchableOpacity
+                style={styles.attachBtn}
+                activeOpacity={0.7}
+                onPress={() => {}}
+              >
+                <Feather name="plus" size={18} color="rgba(240,232,213,0.4)" />
+              </TouchableOpacity>
+
+              <View style={styles.inputWrap}>
+                <TextInput
+                  style={styles.input}
+                  value={message}
+                  onChangeText={setMessage}
+                  placeholder={`Message ${firstName}...`}
+                  placeholderTextColor="rgba(240,232,213,0.3)"
+                  multiline
+                  maxLength={1000}
+                  inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
+                />
+              </View>
+
+              <TouchableOpacity
+                style={[styles.sendBtn, hasText && styles.sendBtnActive]}
+                activeOpacity={0.7}
+                onPress={sendMessage}
+              >
+                <Feather
+                  name="send"
+                  size={16}
+                  color={hasText ? '#080808' : 'rgba(240,232,213,0.25)'}
+                />
+              </TouchableOpacity>
             </View>
-            <View style={[styles.bubble, styles.bubbleProvider, styles.typingBubble]}>
-              <Text style={styles.typingDots}>•  •  •</Text>
+
+          </View>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
+
+      {/* iOS keyboard toolbar */}
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={INPUT_ACCESSORY_ID} backgroundColor="#111111">
+          <View style={styles.accessoryBar}>
+            <Text style={[
+              styles.accessoryCount,
+              message.length > 800 && styles.accessoryCountWarning,
+            ]}>
+              {message.length} / 1000
+            </Text>
+            <View style={styles.accessoryActions}>
+              <TouchableOpacity
+                onPress={Keyboard.dismiss}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.accessoryDone}>Done</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  if (hasText) {
+                    sendMessage()
+                    Keyboard.dismiss()
+                  }
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                disabled={!hasText}
+              >
+                <Text style={[styles.accessorySend, !hasText && styles.accessorySendDisabled]}>
+                  Send
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
-        )}
-
-        <View style={{ height: 8 }} />
-      </ScrollView>
-
-      {/* Input bar */}
-      <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
-        <TouchableOpacity style={styles.attachBtn} activeOpacity={0.7} onPress={() => {}}>
-          <Feather name="plus" size={18} color="rgba(240,232,213,0.4)" />
-        </TouchableOpacity>
-
-        <View style={styles.inputWrap}>
-          <TextInput
-            style={styles.input}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder={`Message ${firstName}...`}
-            placeholderTextColor="rgba(240,232,213,0.3)"
-            multiline
-            returnKeyType="default"
-            onSubmitEditing={handleSend}
-          />
-        </View>
-
-        <TouchableOpacity
-          style={[styles.sendBtn, inputText.trim().length > 0 && styles.sendBtnActive]}
-          activeOpacity={0.7}
-          onPress={handleSend}
-        >
-          <Feather
-            name="send"
-            size={16}
-            color={inputText.trim().length > 0 ? '#080808' : 'rgba(240,232,213,0.25)'}
-          />
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+        </InputAccessoryView>
+      )}
+    </>
   )
 }
 
@@ -266,6 +324,9 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#080808',
+  },
+  inner: {
+    flex: 1,
   },
   topBar: {
     flexDirection: 'row',
@@ -336,6 +397,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
+    paddingBottom: 16,
   },
   systemRow: {
     alignItems: 'center',
@@ -511,5 +573,40 @@ const styles = StyleSheet.create({
   },
   sendBtnActive: {
     backgroundColor: '#C8922A',
+  },
+  accessoryBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(240,232,213,0.08)',
+  },
+  accessoryCount: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.3)',
+    fontFamily: 'Manrope_400Regular',
+  },
+  accessoryCountWarning: {
+    color: '#C8922A',
+  },
+  accessoryActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  accessoryDone: {
+    fontSize: 15,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  accessorySend: {
+    fontSize: 15,
+    color: '#C8922A',
+    fontFamily: 'Manrope_700Bold',
+  },
+  accessorySendDisabled: {
+    color: 'rgba(240,232,213,0.2)',
+    fontFamily: 'Manrope_400Regular',
   },
 })

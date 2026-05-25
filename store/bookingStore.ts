@@ -17,14 +17,16 @@ interface BookingState {
   selectedService: BookingService | null
   selectedDate: string
   selectedTime: string
-  note: string
+  bookingMessage: string
+  bookingPhotos: string[]
   agreedToPolicy: boolean
 
   setProvider: (id: string, name: string, category: string, location: string) => void
   setSelectedService: (service: BookingService) => void
   setSelectedDate: (date: string) => void
   setSelectedTime: (time: string) => void
-  setNote: (note: string) => void
+  setBookingMessage: (msg: string) => void
+  setBookingPhotos: (photos: string[]) => void
   setAgreedToPolicy: (agreed: boolean) => void
   reset: () => void
 }
@@ -37,7 +39,8 @@ export const useBookingStore = create<BookingState>((set) => ({
   selectedService: null,
   selectedDate: '',
   selectedTime: '',
-  note: '',
+  bookingMessage: '',
+  bookingPhotos: [],
   agreedToPolicy: false,
 
   setProvider: (id, name, category, location) =>
@@ -45,13 +48,15 @@ export const useBookingStore = create<BookingState>((set) => ({
   setSelectedService: (service) => set({ selectedService: service }),
   setSelectedDate: (date) => set({ selectedDate: date }),
   setSelectedTime: (time) => set({ selectedTime: time }),
-  setNote: (note) => set({ note }),
+  setBookingMessage: (msg) => set({ bookingMessage: msg }),
+  setBookingPhotos: (photos) => set({ bookingPhotos: photos }),
   setAgreedToPolicy: (agreed) => set({ agreedToPolicy: agreed }),
   reset: () => set({
     selectedService: null,
     selectedDate: '',
     selectedTime: '',
-    note: '',
+    bookingMessage: '',
+    bookingPhotos: [],
     agreedToPolicy: false,
   }),
 }))
