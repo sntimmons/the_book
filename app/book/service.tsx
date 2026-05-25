@@ -95,6 +95,15 @@ export default function BookService() {
         </View>
       </View>
 
+      {/* Trust badge */}
+      <View style={styles.trustBadge}>
+        <Feather name="shield" size={12} color="#4CAF50" />
+        <Text style={styles.trustBadgeMain}>Only charged when your provider says yes</Text>
+        <View style={styles.trustDot} />
+        <Feather name="lock" size={12} color="rgba(240,232,213,0.3)" />
+        <Text style={styles.trustBadgeSub}>Secure booking</Text>
+      </View>
+
       {/* Category filter */}
       <ScrollView
         horizontal
@@ -221,6 +230,32 @@ const styles = StyleSheet.create({
   },
   topBarSpacer: {
     width: 36,
+  },
+  trustBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(240,232,213,0.05)',
+    backgroundColor: 'rgba(76,175,80,0.04)',
+  },
+  trustBadgeMain: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_500Medium',
+  },
+  trustDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: 'rgba(240,232,213,0.2)',
+  },
+  trustBadgeSub: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.35)',
+    fontFamily: 'Manrope_400Regular',
   },
   providerStrip: {
     flexDirection: 'row',

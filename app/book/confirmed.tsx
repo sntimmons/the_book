@@ -21,6 +21,11 @@ export default function BookConfirmed() {
 
   const firstName = providerName.split(' ')[0]
   const depositAmount = selectedService?.depositRequired ? selectedService.depositAmount : '$45'
+
+  function getResponseWindow(_dateStr: string): string {
+    return '24 hours'
+  }
+  const responseWindow = getResponseWindow(selectedDate)
   const bookingSummary = [
     selectedService?.name ?? 'Classic Full Set',
     selectedDate || 'May 28',
@@ -62,7 +67,7 @@ export default function BookConfirmed() {
         {/* Response timer */}
         <View style={styles.responseTimer}>
           <Feather name="clock" size={13} color="#C8922A" />
-          <Text style={styles.responseTimerText}>{firstName} has 24 hours to respond</Text>
+          <Text style={styles.responseTimerText}>{firstName} has {responseWindow} to respond</Text>
         </View>
 
         {/* Booking summary pill */}

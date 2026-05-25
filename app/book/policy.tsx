@@ -99,12 +99,19 @@ export default function BookPolicy() {
             <Text style={styles.priceValue}>+{protectionFee}</Text>
           </View>
           <View style={styles.priceRow}>
-            <Text style={[styles.priceLabel, styles.depositLabel]}>Due today (deposit)</Text>
+            <Text style={[styles.priceLabel, styles.depositLabel]}>Authorization hold (charged on acceptance)</Text>
             <Text style={[styles.priceValue, styles.depositValue]}>{depositAmount ?? '$45.00'}</Text>
           </View>
           <View style={styles.priceRow}>
             <Text style={styles.priceRemainingLabel}>Due at appointment</Text>
             <Text style={styles.priceRemainingValue}>{dueAtAppointment}</Text>
+          </View>
+
+          <View style={styles.authNote}>
+            <Feather name="info" size={11} color="rgba(240,232,213,0.3)" />
+            <Text style={styles.authNoteText}>
+              Your card is held but not charged until your provider accepts.
+            </Text>
           </View>
         </View>
 
@@ -156,8 +163,8 @@ export default function BookPolicy() {
           <View style={styles.depositNote}>
             <Feather name="info" size={14} color="#C8922A" style={{ marginTop: 2 }} />
             <Text style={styles.depositNoteText}>
-              Your deposit of {depositAmount ?? '$45.00'} will be charged today and applied to your total.
-              Deposits are refundable per the cancellation policy above.
+              A hold of {depositAmount ?? '$45.00'} will be placed on your card when you request.
+              It converts to a real charge only when your provider accepts. If declined it releases instantly.
             </Text>
           </View>
 
@@ -173,6 +180,7 @@ export default function BookPolicy() {
             <Text style={styles.checkboxText}>
               I have read and agree to the provider's cancellation and reschedule policies.
               I understand my deposit is non-refundable if I cancel within 24 hours.
+              I understand my card will be authorized but not charged until my provider confirms my booking request.
             </Text>
           </TouchableOpacity>
         </View>
@@ -316,6 +324,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
+  },
+  authNote: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(240,232,213,0.07)',
+    marginTop: 8,
+    paddingTop: 8,
+  },
+  authNoteText: {
+    flex: 1,
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.35)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 15,
   },
   policySections: {
     paddingHorizontal: 20,
