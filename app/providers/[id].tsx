@@ -1,5 +1,7 @@
 import { useLocalSearchParams } from 'expo-router'
+import { router } from 'expo-router'
 import ProviderProfile, { ProviderData } from '@/components/ProviderProfile'
+import { useBookingStore } from '@/store/bookingStore'
 
 // Static mock data — replace with a Supabase fetch keyed on `id` when the API is ready.
 const MOCK_PROVIDERS: Record<string, ProviderData> = {
@@ -27,12 +29,18 @@ const MOCK_PROVIDERS: Record<string, ProviderData> = {
 export default function ProviderProfilePage() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const provider = MOCK_PROVIDERS[id ?? ''] ?? MOCK_PROVIDERS.default
+  const { setProvider } = useBookingStore()
+
+  function handleBookNow() {
+    setProvider(id ?? '1', provider.name, provider.category, provider.location)
+    router.push('/book/service')
+  }
 
   return (
     <ProviderProfile
       previewMode={false}
       provider={provider}
-      onBookNow={() => console.log('book', id)}
+      onBookNow={handleBookNow}
       onFollow={() => console.log('follow', id)}
       onMessage={() => console.log('message', id)}
     />

@@ -126,6 +126,16 @@ const DEV_NAV: NavSection[] = [
     ],
   },
   {
+    label: 'BOOKING FLOW',
+    items: [
+      { label: 'Step 1 — Select Service', route: '/book/service' },
+      { label: 'Step 2 — Pick Date & Time', route: '/book/datetime' },
+      { label: 'Step 3 — Review Policy', route: '/book/policy' },
+      { label: 'Step 4 — Confirm & Pay', route: '/book/payment' },
+      { label: 'Step 5 — Confirmed', route: '/book/confirmed' },
+    ],
+  },
+  {
     label: 'MESSAGING',
     items: [
       { label: 'Inbox', route: '/messages' },
@@ -177,8 +187,11 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/messages/[id]', route: '/messages/1', status: 'Planned' },
   { label: '/admin/providers', route: '/admin/providers', status: 'Stub' },
   { label: '/admin/create-provider', route: '/admin/create-provider', status: 'Stub' },
-  { label: '/booking/[id]', route: '/booking/1', status: 'Planned' },
-  { label: '/checkout/[id]', route: '/checkout/1', status: 'Planned' },
+  { label: '/book/service', route: '/book/service', status: 'Built' },
+  { label: '/book/datetime', route: '/book/datetime', status: 'Built' },
+  { label: '/book/policy', route: '/book/policy', status: 'Built' },
+  { label: '/book/payment', route: '/book/payment', status: 'Built' },
+  { label: '/book/confirmed', route: '/book/confirmed', status: 'Built' },
   { label: '/reviews/[id]', route: '/reviews/1', status: 'Planned' },
   { label: '/notifications', route: '/notifications', status: 'Planned' },
   { label: '/search', route: '/search', status: 'Planned' },
