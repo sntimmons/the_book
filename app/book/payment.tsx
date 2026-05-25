@@ -51,7 +51,7 @@ export default function BookPayment() {
         >
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Secure Your Spot</Text>
+        <Text style={styles.topBarTitle}>Add Payment Method</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
@@ -63,6 +63,11 @@ export default function BookPayment() {
         bounces={true}
         scrollEventThrottle={16}
       >
+        {/* Subtext */}
+        <Text style={styles.headerSubtext}>
+          Your card is saved securely. Nothing is charged until your provider confirms your booking.
+        </Text>
+
         {/* Order summary */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>ORDER SUMMARY</Text>
@@ -121,11 +126,11 @@ export default function BookPayment() {
           <View style={styles.priceSeparator} />
 
           <View style={styles.priceRow}>
-            <Text style={styles.depositLabel}>Authorization hold (not charged yet)</Text>
+            <Text style={styles.depositLabel}>Deposit (saved, not charged yet)</Text>
             <Text style={styles.depositValue}>{depositAmount}</Text>
           </View>
           <Text style={styles.holdHelperText}>
-            Your card will show a pending hold. This becomes a real charge only when your provider confirms your booking.
+            Only charged when provider confirms.
           </Text>
           <View style={[styles.priceRow, { marginTop: 6 }]}>
             <Text style={styles.remainingLabel}>Balance due at appointment</Text>
@@ -164,13 +169,13 @@ export default function BookPayment() {
           </TouchableOpacity>
         </View>
 
-        {/* Authorization info box — inside scroll so it's always reachable */}
+        {/* Info box — inside scroll so it's always reachable */}
         <View style={styles.authInfoBox}>
           <Feather name="shield" size={13} color="#4CAF50" style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
             <Text style={styles.authInfoTitle}>Zero charge until confirmed</Text>
             <Text style={styles.authInfoSub}>
-              You will only be charged if your provider accepts your request.
+              Your card is saved but never charged until your provider says yes. If they decline nothing happens to your account. Ever.
             </Text>
           </View>
         </View>
@@ -179,14 +184,14 @@ export default function BookPayment() {
         <View style={styles.securityNote}>
           <Feather name="lock" size={13} color="rgba(240,232,213,0.3)" />
           <Text style={styles.securityText}>
-            Your card is authorized but never charged until your provider says yes. If declined your hold releases instantly with zero charge to your account.
+            Your card details are encrypted and stored securely by Stripe. Nothing is charged until your provider confirms your booking request.
           </Text>
         </View>
       </ScrollView>
 
       {/* Fixed bottom CTA — outside ScrollView, always visible */}
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
-        <Text style={styles.ctaLabel}>Authorization hold:</Text>
+        <Text style={styles.ctaLabel}>Deposit saved, not charged:</Text>
         <Text style={styles.ctaAmount}>{depositAmount}</Text>
 
         <Pressable
@@ -197,10 +202,10 @@ export default function BookPayment() {
           {isProcessing ? (
             <View style={styles.processingRow}>
               <ActivityIndicator color="#080808" size="small" />
-              <Text style={styles.confirmBtnText}>Securing your spot...</Text>
+              <Text style={styles.confirmBtnText}>Sending your request...</Text>
             </View>
           ) : (
-            <Text style={styles.confirmBtnText}>Request & Authorize {depositAmount}</Text>
+            <Text style={styles.confirmBtnText}>Save Card & Send Request</Text>
           )}
         </Pressable>
       </View>
@@ -247,6 +252,16 @@ const styles = StyleSheet.create({
   },
   topBarSpacer: {
     width: 36,
+  },
+  headerSubtext: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 20,
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   section: {
     marginTop: 16,

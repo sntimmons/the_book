@@ -193,7 +193,7 @@ export default function BookService() {
           onPress={() => selectedId && router.push('/book/datetime')}
         >
           <Text style={[styles.nextBtnText, !selectedId && styles.nextBtnTextInactive]}>
-            Next: Pick a Time
+            Next: Schedule Your Appointment
           </Text>
         </Pressable>
       </View>
