@@ -80,6 +80,7 @@ const DEV_NAV: NavSection[] = [
       { label: 'Nearby', route: '/(tabs)/nearby' },
       { label: 'Top Rated', route: '/(tabs)/top-rated' },
       { label: 'New Posts', route: '/(tabs)/new' },
+      { label: 'Search', route: '/(tabs)/search' },
       { label: 'My Bookings', route: '/(tabs)/bookings' },
       { label: 'Me', route: '/(tabs)/me' },
     ],
@@ -217,7 +218,7 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/post-booking/provider-review', route: '/post-booking/provider-review', status: 'Built' },
   { label: '/reviews/[id]', route: '/reviews/1', status: 'Planned' },
   { label: '/notifications', route: '/notifications', status: 'Planned' },
-  { label: '/search', route: '/search', status: 'Planned' },
+  { label: '/(tabs)/search', route: '/(tabs)/search', status: 'Built' },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
