@@ -56,8 +56,12 @@ export default function BookPayment() {
       </View>
 
       <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 160 }}
+        keyboardShouldPersistTaps="handled"
+        bounces={true}
+        scrollEventThrottle={16}
       >
         {/* Order summary */}
         <View style={styles.section}>
@@ -169,8 +173,8 @@ export default function BookPayment() {
         </View>
       </ScrollView>
 
-      {/* Fixed bottom CTA */}
-      <View style={[styles.cta, { paddingBottom: insets.bottom + 20 }]}>
+      {/* Fixed bottom CTA — outside ScrollView, always visible */}
+      <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
         <Text style={styles.ctaLabel}>Authorization hold:</Text>
         <Text style={styles.ctaAmount}>{depositAmount}</Text>
 
@@ -214,7 +218,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 20,
-    marginBottom: 4,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(240,232,213,0.06)',
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 160,
   },
   backBtn: {
     width: 36,
@@ -235,7 +249,6 @@ const styles = StyleSheet.create({
     width: 36,
   },
   section: {
-    paddingHorizontal: 20,
     marginTop: 16,
   },
   sectionLabel: {
@@ -430,7 +443,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     alignItems: 'center',
-    paddingHorizontal: 20,
     marginTop: 16,
   },
   securityText: {
