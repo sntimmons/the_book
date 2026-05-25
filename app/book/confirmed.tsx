@@ -130,15 +130,6 @@ export default function BookConfirmed() {
       {/* Bottom buttons — inside scroll so they never overlap content */}
       <View style={styles.bottomButtons}>
         <TouchableOpacity
-          style={styles.messageBtn}
-          activeOpacity={0.8}
-          onPress={() => router.push('/messages/1' as any)}
-        >
-          <Feather name="message-circle" size={18} color="#F0E8D5" />
-          <Text style={styles.messageBtnText}>Message {firstName}</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={styles.homeBtn}
           activeOpacity={0.7}
           onPress={handleBackToHome}
@@ -319,25 +310,6 @@ const styles = StyleSheet.create({
   },
   bottomButtons: {
     marginTop: 32,
-  },
-  messageBtn: {
-    backgroundColor: 'rgba(240,232,213,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    width: '100%',
-    marginBottom: 10,
-  },
-  messageBtnText: {
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
   },
   homeBtn: {
     height: 44,
