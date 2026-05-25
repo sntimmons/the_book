@@ -1,6 +1,7 @@
 import {
   View,
   Text,
+  ScrollView,
   TouchableOpacity,
   StyleSheet,
 } from 'react-native'
@@ -38,9 +39,14 @@ export default function BookConfirmed() {
   }
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top + 20 }]}>
-
-      {/* Main content — centered */}
+    <View style={styles.root}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 24 }]}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+      >
+      {/* Main content */}
       <View style={styles.centerContent}>
 
         {/* Status icon */}
@@ -121,8 +127,8 @@ export default function BookConfirmed() {
         </View>
       </View>
 
-      {/* Bottom buttons */}
-      <View style={[styles.bottomButtons, { paddingBottom: insets.bottom + 20 }]}>
+      {/* Bottom buttons — inside scroll so they never overlap content */}
+      <View style={styles.bottomButtons}>
         <TouchableOpacity
           style={styles.messageBtn}
           activeOpacity={0.8}
@@ -140,6 +146,7 @@ export default function BookConfirmed() {
           <Text style={styles.homeBtnText}>Back to Home</Text>
         </TouchableOpacity>
       </View>
+      </ScrollView>
     </View>
   )
 }
@@ -149,10 +156,14 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#080808',
   },
-  centerContent: {
+  scroll: {
     flex: 1,
-    alignItems: 'center',
+  },
+  scrollContent: {
     paddingHorizontal: 24,
+  },
+  centerContent: {
+    alignItems: 'center',
     paddingTop: 40,
   },
   iconRing: {
@@ -307,7 +318,7 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   bottomButtons: {
-    paddingHorizontal: 24,
+    marginTop: 32,
   },
   messageBtn: {
     backgroundColor: 'rgba(240,232,213,0.07)',
