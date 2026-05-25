@@ -11,6 +11,7 @@ import {
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { router } from 'expo-router'
 
 // ── Static data ──────────────────────────────────────────────────────────────
 
@@ -187,7 +188,11 @@ export default function DiscoveryFeed() {
                     <Text style={s.heroName}>{p.name}</Text>
                     <Text style={s.heroSub}>{p.category} · {p.location}</Text>
                   </View>
-                  <TouchableOpacity activeOpacity={0.8} style={s.viewBtn}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    style={s.viewBtn}
+                    onPress={() => router.push('/providers/1')}
+                  >
                     <Text style={s.viewBtnText}>View</Text>
                   </TouchableOpacity>
                 </View>
@@ -246,9 +251,11 @@ export default function DiscoveryFeed() {
             contentContainerStyle={s.hRow}
           >
             {FOR_YOU.map((p) => (
-              <Pressable
+              <TouchableOpacity
                 key={p.id}
-                style={({ pressed }) => [s.forYouCard, { backgroundColor: p.bg, opacity: pressed ? 0.9 : 1 }]}
+                activeOpacity={0.8}
+                onPress={() => router.push('/providers/1')}
+                style={[s.forYouCard, { backgroundColor: p.bg }]}
               >
                 {/* background silhouette */}
                 <View style={s.absCenter}>
@@ -272,7 +279,7 @@ export default function DiscoveryFeed() {
                   <Text style={s.cardName} numberOfLines={1}>{p.name}</Text>
                   <RatingRow rating={p.rating} category={p.category} />
                 </View>
-              </Pressable>
+              </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
@@ -294,9 +301,11 @@ export default function DiscoveryFeed() {
             contentContainerStyle={s.hRow}
           >
             {LIVE_NOW.map((p) => (
-              <Pressable
+              <TouchableOpacity
                 key={p.id}
-                style={({ pressed }) => [s.liveCard, { backgroundColor: p.bg, opacity: pressed ? 0.9 : 1 }]}
+                activeOpacity={0.8}
+                onPress={() => router.push('/providers/1')}
+                style={[s.liveCard, { backgroundColor: p.bg }]}
               >
                 {/* background silhouette */}
                 <View style={s.absCenter}>
@@ -318,7 +327,7 @@ export default function DiscoveryFeed() {
                   <Text style={s.liveCardName} numberOfLines={1}>{p.name}</Text>
                   <Text style={s.liveCardDetail}>{p.category}, {p.watching} watching</Text>
                 </View>
-              </Pressable>
+              </TouchableOpacity>
             ))}
           </ScrollView>
         </View>
@@ -328,12 +337,11 @@ export default function DiscoveryFeed() {
           <SectionHeader title="Trending in Houston" onSeeAll={() => {}} />
           <View style={s.grid}>
             {TRENDING.map((p) => (
-              <Pressable
+              <TouchableOpacity
                 key={p.id}
-                style={({ pressed }) => [
-                  s.trendCard,
-                  { width: colW, backgroundColor: p.bg, opacity: pressed ? 0.9 : 1 },
-                ]}
+                activeOpacity={0.8}
+                onPress={() => router.push('/providers/1')}
+                style={[s.trendCard, { width: colW, backgroundColor: p.bg }]}
               >
                 <View style={s.absCenter}>
                   <Silhouette size={48} />
@@ -349,7 +357,7 @@ export default function DiscoveryFeed() {
                   <RatingRow rating={p.rating} category={p.category} />
                   <Text style={s.trendTag}>{p.tag}</Text>
                 </View>
-              </Pressable>
+              </TouchableOpacity>
             ))}
           </View>
         </View>
@@ -359,19 +367,18 @@ export default function DiscoveryFeed() {
           <Text style={s.sectionTitle}>Browse by category</Text>
           <View style={[s.grid, { marginTop: 16 }]}>
             {BROWSE.map((c) => (
-              <Pressable
+              <TouchableOpacity
                 key={c.id}
-                style={({ pressed }) => [
-                  s.browseCard,
-                  { width: colW, opacity: pressed ? 0.85 : 1 },
-                ]}
+                activeOpacity={0.8}
+                onPress={() => router.push('/(tabs)/search')}
+                style={[s.browseCard, { width: colW }]}
               >
                 <Text style={s.browseIcon}>{c.icon}</Text>
                 <View>
                   <Text style={s.browseName}>{c.name}</Text>
                   <Text style={s.browseCount}>{c.count} providers</Text>
                 </View>
-              </Pressable>
+              </TouchableOpacity>
             ))}
           </View>
         </View>
