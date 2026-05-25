@@ -51,7 +51,7 @@ export default function BookPayment() {
         >
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Confirm & Pay</Text>
+        <Text style={styles.topBarTitle}>Secure Your Spot</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
@@ -117,11 +117,14 @@ export default function BookPayment() {
           <View style={styles.priceSeparator} />
 
           <View style={styles.priceRow}>
-            <Text style={styles.depositLabel}>Due today (deposit)</Text>
+            <Text style={styles.depositLabel}>Authorization hold (not charged yet)</Text>
             <Text style={styles.depositValue}>{depositAmount}</Text>
           </View>
-          <View style={styles.priceRow}>
-            <Text style={styles.remainingLabel}>Remaining at appointment</Text>
+          <Text style={styles.holdHelperText}>
+            Your card will show a pending hold. This becomes a real charge only when your provider confirms your booking.
+          </Text>
+          <View style={[styles.priceRow, { marginTop: 6 }]}>
+            <Text style={styles.remainingLabel}>Balance due at appointment</Text>
             <Text style={styles.remainingValue}>{dueAtAppointment}</Text>
           </View>
         </View>
@@ -161,15 +164,26 @@ export default function BookPayment() {
         <View style={styles.securityNote}>
           <Feather name="lock" size={13} color="rgba(240,232,213,0.3)" />
           <Text style={styles.securityText}>
-            Your payment is protected by The Book. Deposit held securely until appointment.
+            Your card is authorized but never charged until your provider says yes. If declined your hold releases instantly with zero charge to your account.
           </Text>
         </View>
       </ScrollView>
 
       {/* Fixed bottom CTA */}
       <View style={[styles.cta, { paddingBottom: insets.bottom + 20 }]}>
-        <Text style={styles.ctaLabel}>Deposit due today:</Text>
+        <Text style={styles.ctaLabel}>Authorization hold:</Text>
         <Text style={styles.ctaAmount}>{depositAmount}</Text>
+
+        {/* Zero charge info box */}
+        <View style={styles.authInfoBox}>
+          <Feather name="shield" size={13} color="#4CAF50" style={{ marginTop: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.authInfoTitle}>Zero charge until confirmed</Text>
+            <Text style={styles.authInfoSub}>
+              You will only be charged if your provider accepts your request.
+            </Text>
+          </View>
+        </View>
 
         <Pressable
           style={[styles.confirmBtn, isProcessing && styles.confirmBtnProcessing]}
@@ -179,10 +193,10 @@ export default function BookPayment() {
           {isProcessing ? (
             <View style={styles.processingRow}>
               <ActivityIndicator color="#080808" size="small" />
-              <Text style={styles.confirmBtnText}>Processing...</Text>
+              <Text style={styles.confirmBtnText}>Securing your spot...</Text>
             </View>
           ) : (
-            <Text style={styles.confirmBtnText}>Confirm & Pay {depositAmount}</Text>
+            <Text style={styles.confirmBtnText}>Request & Authorize {depositAmount}</Text>
           )}
         </Pressable>
       </View>
@@ -340,6 +354,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
+  },
+  holdHelperText: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.35)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 16,
+    marginTop: 4,
+  },
+  authInfoBox: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    backgroundColor: 'rgba(76,175,80,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(76,175,80,0.15)',
+    borderRadius: 10,
+    borderCurve: 'continuous',
+    marginBottom: 12,
+    width: '100%',
+  },
+  authInfoTitle: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontFamily: 'Manrope_600SemiBold',
+    marginBottom: 2,
+  },
+  authInfoSub: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 15,
   },
   paymentCard: {
     flexDirection: 'row',

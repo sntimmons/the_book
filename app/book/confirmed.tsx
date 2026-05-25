@@ -45,7 +45,7 @@ export default function BookConfirmed() {
 
         {/* Status badge */}
         <View style={styles.statusBadge}>
-          <Text style={styles.statusBadgeText}>REQUEST SENT</Text>
+          <Text style={styles.statusBadgeText}>REQUEST SENT · NO CHARGE YET</Text>
         </View>
 
         {/* Headline */}
@@ -54,9 +54,16 @@ export default function BookConfirmed() {
         {/* Subtext */}
         <Text style={styles.subtext}>
           {firstName} typically responds within 2 hours.{'\n'}
-          You will be notified the moment{'\n'}
-          {firstName} confirms your booking.
+          Your card will not be charged until{'\n'}
+          she confirms. If she declines nothing{'\n'}
+          happens to your account.
         </Text>
+
+        {/* Response timer */}
+        <View style={styles.responseTimer}>
+          <Feather name="clock" size={13} color="#C8922A" />
+          <Text style={styles.responseTimerText}>{firstName} has 24 hours to respond</Text>
+        </View>
 
         {/* Booking summary pill */}
         <View style={styles.summaryPill}>
@@ -69,7 +76,7 @@ export default function BookConfirmed() {
         {/* Deposit confirmation */}
         <View style={styles.depositConfirm}>
           <Feather name="shield" size={13} color="#4CAF50" />
-          <Text style={styles.depositConfirmText}>{depositAmount} deposit held securely</Text>
+          <Text style={styles.depositConfirmText}>{depositAmount} authorized · not charged yet</Text>
         </View>
 
         {/* What happens next */}
@@ -80,25 +87,28 @@ export default function BookConfirmed() {
             {
               n: '1',
               title: 'Provider reviews your request',
-              desc: `${firstName} will review your profile and confirm or suggest an alternative time.`,
+              desc: `${firstName} will review your profile and confirm or suggest an alternative time. She has 24 hours to respond.`,
+              green: false,
             },
             {
               n: '2',
               title: 'You get notified instantly',
-              desc: `We will send you a notification the moment ${firstName} responds to your request.`,
+              desc: `The moment ${firstName} responds you get a notification. If she accepts your ${depositAmount} deposit is charged automatically.`,
+              green: false,
             },
             {
               n: '3',
-              title: 'Appointment is locked in',
-              desc: 'Once confirmed your appointment is set and your deposit is applied.',
+              title: 'If declined — zero charge',
+              desc: `If ${firstName} declines or does not respond in time your hold releases instantly. Nothing is charged. Ever.`,
+              green: true,
             },
           ].map((step) => (
             <View key={step.n} style={styles.stepRow}>
-              <View style={styles.stepNumCircle}>
-                <Text style={styles.stepNum}>{step.n}</Text>
+              <View style={[styles.stepNumCircle, step.green && styles.stepNumCircleGreen]}>
+                <Text style={[styles.stepNum, step.green && styles.stepNumGreen]}>{step.n}</Text>
               </View>
               <View style={styles.stepText}>
-                <Text style={styles.stepTitle}>{step.title}</Text>
+                <Text style={[styles.stepTitle, step.green && styles.stepTitleGreen]}>{step.title}</Text>
                 <Text style={styles.stepDesc}>{step.desc}</Text>
               </View>
             </View>
@@ -206,6 +216,18 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
   },
+  responseTimer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 16,
+  },
+  responseTimerText: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_400Regular',
+  },
   depositConfirm: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -257,10 +279,20 @@ const styles = StyleSheet.create({
   stepText: {
     flex: 1,
   },
+  stepNumCircleGreen: {
+    backgroundColor: 'rgba(76,175,80,0.1)',
+    borderColor: 'rgba(76,175,80,0.2)',
+  },
+  stepNumGreen: {
+    color: '#4CAF50',
+  },
   stepTitle: {
     fontSize: 13,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
+  },
+  stepTitleGreen: {
+    color: '#4CAF50',
   },
   stepDesc: {
     fontSize: 12,
