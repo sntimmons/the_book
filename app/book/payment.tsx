@@ -164,6 +164,17 @@ export default function BookPayment() {
           </TouchableOpacity>
         </View>
 
+        {/* Authorization info box — inside scroll so it's always reachable */}
+        <View style={styles.authInfoBox}>
+          <Feather name="shield" size={13} color="#4CAF50" style={{ marginTop: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.authInfoTitle}>Zero charge until confirmed</Text>
+            <Text style={styles.authInfoSub}>
+              You will only be charged if your provider accepts your request.
+            </Text>
+          </View>
+        </View>
+
         {/* Security note */}
         <View style={styles.securityNote}>
           <Feather name="lock" size={13} color="rgba(240,232,213,0.3)" />
@@ -177,17 +188,6 @@ export default function BookPayment() {
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
         <Text style={styles.ctaLabel}>Authorization hold:</Text>
         <Text style={styles.ctaAmount}>{depositAmount}</Text>
-
-        {/* Zero charge info box */}
-        <View style={styles.authInfoBox}>
-          <Feather name="shield" size={13} color="#4CAF50" style={{ marginTop: 1 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.authInfoTitle}>Zero charge until confirmed</Text>
-            <Text style={styles.authInfoSub}>
-              You will only be charged if your provider accepts your request.
-            </Text>
-          </View>
-        </View>
 
         <Pressable
           style={[styles.confirmBtn, isProcessing && styles.confirmBtnProcessing]}
@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 4,
-    paddingBottom: 160,
+    paddingBottom: 180,
   },
   backBtn: {
     width: 36,
@@ -385,8 +385,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(76,175,80,0.15)',
     borderRadius: 10,
     borderCurve: 'continuous',
-    marginBottom: 12,
-    width: '100%',
+    marginTop: 16,
   },
   authInfoTitle: {
     fontSize: 12,
