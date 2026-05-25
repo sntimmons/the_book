@@ -136,6 +136,16 @@ const DEV_NAV: NavSection[] = [
     ],
   },
   {
+    label: 'POST BOOKING',
+    items: [
+      { label: 'Booking Accepted', route: '/post-booking/accepted' },
+      { label: 'Booking Declined', route: '/post-booking/declined' },
+      { label: 'Satisfaction Check', route: '/post-booking/satisfaction' },
+      { label: 'Write a Review', route: '/post-booking/review' },
+      { label: 'Review Submitted', route: '/post-booking/submitted' },
+    ],
+  },
+  {
     label: 'MESSAGING',
     items: [
       { label: 'Inbox', route: '/messages' },
@@ -192,6 +202,11 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/book/policy', route: '/book/policy', status: 'Built' },
   { label: '/book/payment', route: '/book/payment', status: 'Built' },
   { label: '/book/confirmed', route: '/book/confirmed', status: 'Built' },
+  { label: '/post-booking/accepted', route: '/post-booking/accepted', status: 'Built' },
+  { label: '/post-booking/declined', route: '/post-booking/declined', status: 'Built' },
+  { label: '/post-booking/satisfaction', route: '/post-booking/satisfaction', status: 'Built' },
+  { label: '/post-booking/review', route: '/post-booking/review', status: 'Built' },
+  { label: '/post-booking/submitted', route: '/post-booking/submitted', status: 'Built' },
   { label: '/reviews/[id]', route: '/reviews/1', status: 'Planned' },
   { label: '/notifications', route: '/notifications', status: 'Planned' },
   { label: '/search', route: '/search', status: 'Planned' },
