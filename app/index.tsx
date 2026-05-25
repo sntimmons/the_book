@@ -145,6 +145,8 @@ const DEV_NAV: NavSection[] = [
       { label: 'Satisfaction Check', route: '/post-booking/satisfaction' },
       { label: 'Write a Review', route: '/post-booking/review' },
       { label: 'Review Submitted', route: '/post-booking/submitted' },
+      { label: 'Something Went Wrong', route: '/post-booking/issue' },
+      { label: 'Provider Rate Client', route: '/post-booking/provider-review' },
     ],
   },
   {
@@ -211,6 +213,8 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/post-booking/satisfaction', route: '/post-booking/satisfaction', status: 'Built' },
   { label: '/post-booking/review', route: '/post-booking/review', status: 'Built' },
   { label: '/post-booking/submitted', route: '/post-booking/submitted', status: 'Built' },
+  { label: '/post-booking/issue', route: '/post-booking/issue', status: 'Built' },
+  { label: '/post-booking/provider-review', route: '/post-booking/provider-review', status: 'Built' },
   { label: '/reviews/[id]', route: '/reviews/1', status: 'Planned' },
   { label: '/notifications', route: '/notifications', status: 'Planned' },
   { label: '/search', route: '/search', status: 'Planned' },

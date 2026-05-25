@@ -79,7 +79,7 @@ export default function SatisfactionCheck() {
             <TouchableOpacity
               style={styles.secondaryBtn}
               activeOpacity={0.7}
-              onPress={() => router.push('/(tabs)/')}
+              onPress={() => router.push('/post-booking/issue')}
             >
               <Text style={styles.secondaryBtnText}>Something wasn't right</Text>
             </TouchableOpacity>
