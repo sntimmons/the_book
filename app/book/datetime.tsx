@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Pressable,
+  TextInput,
   StyleSheet,
   useWindowDimensions,
 } from 'react-native'
@@ -60,11 +61,12 @@ const TIME_SLOTS_MAP: Record<number, { time: string; booked: boolean }[]> = {
 export default function BookDateTime() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const { providerName, providerCategory, providerLocation, selectedService, setSelectedDate, setSelectedTime } = useBookingStore()
+  const { providerName, providerCategory, providerLocation, selectedService, setSelectedDate, setSelectedTime, setNote } = useBookingStore()
   const [currentMonth, setCurrentMonth] = useState(CALENDAR_MONTH)
   const [currentYear, setCurrentYear] = useState(CALENDAR_YEAR)
   const [selectedDateNum, setSelectedDateNum] = useState<number | null>(null)
   const [selectedTimeStr, setSelectedTimeStr] = useState<string | null>(null)
+  const [noteText, setNoteText] = useState('')
   const scrollRef = useRef<ScrollView>(null)
 
   function prevMonth() {
@@ -242,6 +244,30 @@ export default function BookDateTime() {
             </View>
           )}
         </View>
+
+        {/* Optional note field — appears once time is chosen */}
+        {selectedTimeStr && (
+          <View style={styles.noteSection}>
+            <Text style={styles.noteLabel}>ADD A NOTE (OPTIONAL)</Text>
+            <View style={styles.noteInputWrap}>
+              <TextInput
+                style={styles.noteInput}
+                value={noteText}
+                onChangeText={(text) => {
+                  setNoteText(text)
+                  setNote(text)
+                }}
+                placeholder={`Tell ${providerName.split(' ')[0]} anything she should know — lash length, allergies, or special requests.`}
+                placeholderTextColor="rgba(240,232,213,0.25)"
+                multiline
+                maxLength={300}
+              />
+            </View>
+            {noteText.length > 0 && (
+              <Text style={styles.noteCount}>{noteText.length}/300</Text>
+            )}
+          </View>
+        )}
       </ScrollView>
 
       {/* Fixed bottom CTA */}
@@ -478,6 +504,43 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.2)',
     fontFamily: 'Manrope_400Regular',
     textDecorationLine: 'line-through',
+  },
+  noteSection: {
+    paddingHorizontal: 20,
+    marginTop: 24,
+  },
+  noteLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: 'rgba(240,232,213,0.35)',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginBottom: 10,
+  },
+  noteInputWrap: {
+    backgroundColor: 'rgba(240,232,213,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minHeight: 80,
+  },
+  noteInput: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 20,
+    padding: 0,
+  },
+  noteCount: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.25)',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'right',
+    marginTop: 6,
   },
   cta: {
     position: 'absolute',
