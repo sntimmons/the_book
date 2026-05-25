@@ -80,6 +80,8 @@ const DEV_NAV: NavSection[] = [
       { label: 'Nearby', route: '/(tabs)/nearby' },
       { label: 'Top Rated', route: '/(tabs)/top-rated' },
       { label: 'New Posts', route: '/(tabs)/new' },
+      { label: 'My Bookings', route: '/(tabs)/bookings' },
+      { label: 'Me', route: '/(tabs)/me' },
     ],
   },
   {
@@ -170,6 +172,8 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/(tabs)/nearby', route: '/(tabs)/nearby', status: 'Built' },
   { label: '/(tabs)/top-rated', route: '/(tabs)/top-rated', status: 'Built' },
   { label: '/(tabs)/new', route: '/(tabs)/new', status: 'Built' },
+  { label: '/(tabs)/bookings', route: '/(tabs)/bookings', status: 'Built' },
+  { label: '/(tabs)/me', route: '/(tabs)/me', status: 'Built' },
   { label: '/providers/[id]', route: '/providers/1', status: 'Built' },
   { label: '/onboarding/provider (Step 1)', route: '/onboarding/provider', status: 'Built' },
   { label: '/onboarding/provider/portfolio (Step 2)', route: '/onboarding/provider/portfolio', status: 'Built' },
