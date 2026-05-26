@@ -15,6 +15,7 @@ import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useClientStore } from '@/store/clientStore'
 
 type FocusedField = 'firstName' | 'lastName' | 'neighborhood' | 'bio' | null
 
@@ -23,11 +24,18 @@ const BIO_LIMIT = 150
 export default function ClientProfileSetup() {
   const insets = useSafeAreaInsets()
   const [focused, setFocused] = useState<FocusedField>(null)
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [neighborhood, setNeighborhood] = useState('')
-  const [bio, setBio] = useState('')
-  const [photo, setPhoto] = useState<string | null>(null)
+  const {
+    firstName,
+    lastName,
+    neighborhood,
+    bio,
+    photo,
+    setFirstName,
+    setLastName,
+    setNeighborhood,
+    setBio,
+    setPhoto,
+  } = useClientStore()
 
   async function pickImage() {
     const result = await ImagePicker.launchImageLibraryAsync({

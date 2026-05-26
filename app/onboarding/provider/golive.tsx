@@ -12,13 +12,28 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile from '@/components/ProviderProfile'
 import { useProviderStore } from '@/store/providerStore'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/context/AuthContext'
+
+function parseDurationMinutes(value: string): number {
+  if (!value) return 60
+  const trimmed = value.toLowerCase()
+  const hourMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*hr/)
+  if (hourMatch) return Math.round(parseFloat(hourMatch[1]) * 60)
+  const minMatch = trimmed.match(/(\d+)\s*min/)
+  if (minMatch) return parseInt(minMatch[1], 10)
+  const numMatch = trimmed.match(/(\d+)/)
+  if (numMatch) return parseInt(numMatch[1], 10)
+  return 60
+}
 
 export default function ProviderGoLive() {
   const insets = useSafeAreaInsets()
+  const { user } = useAuth()
   const [isGoingLive, setIsGoingLive] = useState(false)
   const {
     name, businessName, category, customCategory,
-    location, bio, photo, banner,
+    location, bio, photo, banner, isMobile,
     services, portfolioPhotos, reels,
     reset,
   } = useProviderStore()
@@ -42,10 +57,63 @@ export default function ProviderGoLive() {
     isLive: false,
   }
 
-  function handleGoLive() {
+  async function handleGoLive() {
+    if (isGoingLive) return
     setIsGoingLive(true)
+
+    if (!user) {
+      setTimeout(() => {
+        reset()
+        router.replace('/dashboard/provider')
+      }, 1500)
+      return
+    }
+
+    const displayName = name || 'Provider'
+
+    const { error: providerError } = await supabase.from('providers').upsert({
+      id: user.id,
+      display_name: displayName,
+      business_name: businessName || null,
+      category: customCategory || category,
+      location,
+      bio: bio || null,
+      is_mobile: isMobile,
+      is_live: true,
+      phone: user.phone ?? null,
+      created_at: new Date().toISOString(),
+    })
+
+    if (providerError) {
+      console.log('Provider save error:', providerError)
+    }
+
+    if (services.length > 0) {
+      const { error: servicesError } = await supabase
+        .from('provider_services')
+        .upsert(
+          services.map((service) => ({
+            provider_id: user.id,
+            name: service.name,
+            price_cents: Math.round(
+              (parseFloat(service.price) || 0) * 100,
+            ),
+            duration_minutes: parseDurationMinutes(service.duration),
+            deposit_required: service.depositRequired,
+            deposit_cents: service.depositRequired
+              ? Math.round((parseFloat(service.depositAmount) || 0) * 100)
+              : 0,
+          })),
+        )
+
+      if (servicesError) {
+        console.log('Services save error:', servicesError)
+      }
+    }
+
+    reset()
+
     setTimeout(() => {
-      reset()
       router.replace('/dashboard/provider')
     }, 1500)
   }

@@ -5,17 +5,29 @@ import {
   Pressable,
   TextInput,
   TouchableOpacity,
+  ActivityIndicator,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { supabase } from '@/lib/supabase'
 
 const COUNTDOWN_START = 45
 
+function formatPhoneDisplay(phone: string | undefined): string {
+  if (!phone) return 'your phone'
+  return (
+    phone.replace(/(\+1)(\d{3})(\d{3})(\d{4})/, '($2) $3-$4') || phone
+  )
+}
+
 export default function VerifyScreen() {
+  const { phone } = useLocalSearchParams<{ phone: string }>()
   const [code, setCode] = useState('')
   const [seconds, setSeconds] = useState(COUNTDOWN_START)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
   const inputRef = useRef<TextInput>(null)
   const insets = useSafeAreaInsets()
 
@@ -32,6 +44,62 @@ export default function VerifyScreen() {
     const m = Math.floor(s / 60)
     const sec = s % 60
     return `${m}:${sec.toString().padStart(2, '0')}`
+  }
+
+  async function handleVerify() {
+    if (code.length !== 6 || isLoading) return
+
+    setIsLoading(true)
+    setError('')
+
+    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      phone: phone as string,
+      token: code,
+      type: 'sms',
+    })
+
+    if (verifyError || !data.user) {
+      setError('Invalid code. Please try again.')
+      setIsLoading(false)
+      setCode('')
+      inputRef.current?.focus()
+      return
+    }
+
+    // Look up existing profile rows to decide where to route
+    const userId = data.user.id
+
+    const [clientResult, providerResult] = await Promise.all([
+      supabase.from('clients').select('id').eq('id', userId).maybeSingle(),
+      supabase
+        .from('providers')
+        .select('id, is_live')
+        .eq('id', userId)
+        .maybeSingle(),
+    ])
+
+    setIsLoading(false)
+
+    if (providerResult.data) {
+      router.replace('/dashboard/provider')
+    } else if (clientResult.data) {
+      router.replace('/(tabs)/')
+    } else {
+      router.replace('/path-selection')
+    }
+  }
+
+  async function handleResend() {
+    if (!phone || seconds > 0) return
+    const { error: resendError } = await supabase.auth.signInWithOtp({
+      phone: phone as string,
+    })
+    if (!resendError) {
+      setSeconds(COUNTDOWN_START)
+      setError('')
+    } else {
+      setError(resendError.message)
+    }
   }
 
   return (
@@ -54,7 +122,9 @@ export default function VerifyScreen() {
         <Text style={styles.headline}>Check your messages.</Text>
 
         <Text style={styles.subtext}>We sent a 6-digit code to</Text>
-        <Text style={styles.phoneDisplay}>(000) 000-0000</Text>
+        <Text style={styles.phoneDisplay}>
+          {formatPhoneDisplay(phone as string | undefined)}
+        </Text>
 
         <Pressable onPress={() => router.back()}>
           <Text style={styles.wrongNumber}>Wrong number?</Text>
@@ -84,7 +154,10 @@ export default function VerifyScreen() {
         <TextInput
           ref={inputRef}
           value={code}
-          onChangeText={(t) => setCode(t.replace(/\D/g, '').slice(0, 6))}
+          onChangeText={(t) => {
+            setCode(t.replace(/\D/g, '').slice(0, 6))
+            if (error) setError('')
+          }}
           keyboardType="number-pad"
           maxLength={6}
           style={styles.hiddenInput}
@@ -94,12 +167,18 @@ export default function VerifyScreen() {
           autoComplete="sms-otp"
         />
 
-        {/* Countdown */}
-        <Text style={styles.resendText}>
-          {seconds > 0
-            ? `Resend code in ${formatCountdown(seconds)}`
-            : 'Resend code'}
-        </Text>
+        {error.length > 0 && (
+          <Text style={styles.errorText}>{error}</Text>
+        )}
+
+        {/* Countdown / resend */}
+        <Pressable onPress={handleResend} disabled={seconds > 0}>
+          <Text style={styles.resendText}>
+            {seconds > 0
+              ? `Resend code in ${formatCountdown(seconds)}`
+              : 'Resend code'}
+          </Text>
+        </Pressable>
 
         {/* Dev bypass — remove once SMS is wired up */}
         <Pressable
@@ -115,13 +194,18 @@ export default function VerifyScreen() {
         <Pressable
           style={[
             styles.verifyBtn,
-            isValid ? styles.verifyBtnActive : styles.verifyBtnInactive,
+            isValid && !isLoading ? styles.verifyBtnActive : styles.verifyBtnInactive,
           ]}
-          onPress={() => { if (code.length === 6) router.push('/path-selection') }}
+          disabled={!isValid || isLoading}
+          onPress={handleVerify}
         >
-          <Text style={[styles.verifyText, isValid ? styles.verifyTextActive : styles.verifyTextInactive]}>
-            Verify
-          </Text>
+          {isLoading ? (
+            <ActivityIndicator color="#080808" />
+          ) : (
+            <Text style={[styles.verifyText, isValid ? styles.verifyTextActive : styles.verifyTextInactive]}>
+              Verify
+            </Text>
+          )}
         </Pressable>
       </View>
     </View>
@@ -225,6 +309,14 @@ const styles = StyleSheet.create({
   resendText: {
     fontSize: 13,
     color: 'rgba(240,232,213,0.4)',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'center',
+  },
+  errorText: {
+    marginTop: 12,
+    marginBottom: 4,
+    fontSize: 12,
+    color: '#E05C5C',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },

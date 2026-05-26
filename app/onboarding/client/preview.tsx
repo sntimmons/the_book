@@ -1,14 +1,19 @@
+import { useState } from 'react'
 import {
   View,
   Text,
   ScrollView,
   Pressable,
   TouchableOpacity,
+  ActivityIndicator,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/context/AuthContext'
+import { useClientStore } from '@/store/clientStore'
 
 // Reusable person silhouette — centered inside any circle
 function Silhouette({ size = 40, opacity = 0.18 }: { size?: number; opacity?: number }) {
@@ -70,6 +75,38 @@ const grid = StyleSheet.create({
 
 export default function ClientPreview() {
   const insets = useSafeAreaInsets()
+  const { user } = useAuth()
+  const { firstName, lastName, neighborhood, bio, reset } = useClientStore()
+  const [isLoading, setIsLoading] = useState(false)
+
+  async function handleGoLive() {
+    if (isLoading) return
+
+    if (!user) {
+      router.replace('/(tabs)/')
+      return
+    }
+
+    setIsLoading(true)
+
+    const { error } = await supabase.from('clients').upsert({
+      id: user.id,
+      first_name: firstName,
+      last_name: lastName,
+      neighborhood,
+      bio,
+      phone: user.phone ?? null,
+      created_at: new Date().toISOString(),
+    })
+
+    if (error) {
+      console.log('Profile save error:', error)
+    }
+
+    reset()
+    setIsLoading(false)
+    router.replace('/(tabs)/')
+  }
 
   return (
     <View style={s.root}>
@@ -277,9 +314,14 @@ export default function ClientPreview() {
         <Text style={s.ctaEyebrow}>This is what providers see.</Text>
         <Pressable
           style={({ pressed }) => [s.continueBtn, pressed && { opacity: 0.88 }]}
-          onPress={() => router.push('/(tabs)/')}
+          disabled={isLoading}
+          onPress={handleGoLive}
         >
-          <Text style={s.continueBtnText}>Looks good, continue</Text>
+          {isLoading ? (
+            <ActivityIndicator color="#080808" />
+          ) : (
+            <Text style={s.continueBtnText}>Looks good, continue</Text>
+          )}
         </Pressable>
         <TouchableOpacity
           activeOpacity={0.6}

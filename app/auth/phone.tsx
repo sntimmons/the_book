@@ -6,11 +6,13 @@ import {
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
+  ActivityIndicator,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { supabase } from '@/lib/supabase'
 
 function formatPhone(digits: string): string {
   const d = digits.slice(0, 10)
@@ -22,6 +24,8 @@ function formatPhone(digits: string): string {
 export default function PhoneScreen() {
   const [rawDigits, setRawDigits] = useState('')
   const [focused, setFocused] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState('')
   const insets = useSafeAreaInsets()
   const inputRef = useRef<TextInput>(null)
 
@@ -30,6 +34,32 @@ export default function PhoneScreen() {
   function handleChangeText(text: string) {
     const digits = text.replace(/\D/g, '').slice(0, 10)
     setRawDigits(digits)
+    if (error) setError('')
+  }
+
+  async function handleSendOTP() {
+    if (rawDigits.length < 10 || isLoading) return
+
+    setIsLoading(true)
+    setError('')
+
+    const formattedPhone = '+1' + rawDigits
+
+    const { error: otpError } = await supabase.auth.signInWithOtp({
+      phone: formattedPhone,
+    })
+
+    if (otpError) {
+      setError(otpError.message)
+      setIsLoading(false)
+      return
+    }
+
+    setIsLoading(false)
+    router.push({
+      pathname: '/auth/verify',
+      params: { phone: formattedPhone },
+    })
   }
 
   return (
@@ -77,6 +107,10 @@ export default function PhoneScreen() {
             />
             <Text style={styles.inputLabel}>PHONE</Text>
           </Pressable>
+
+          {error.length > 0 && (
+            <Text style={styles.errorText}>{error}</Text>
+          )}
         </View>
 
         <View style={{ flex: 1 }} />
@@ -86,13 +120,18 @@ export default function PhoneScreen() {
           <Pressable
             style={[
               styles.nextBtn,
-              isValid ? styles.nextBtnActive : styles.nextBtnInactive,
+              isValid && !isLoading ? styles.nextBtnActive : styles.nextBtnInactive,
             ]}
-            onPress={() => router.push('/auth/verify')}
+            disabled={!isValid || isLoading}
+            onPress={handleSendOTP}
           >
-            <Text style={[styles.nextText, isValid ? styles.nextTextActive : styles.nextTextInactive]}>
-              Next
-            </Text>
+            {isLoading ? (
+              <ActivityIndicator color="#080808" />
+            ) : (
+              <Text style={[styles.nextText, isValid ? styles.nextTextActive : styles.nextTextInactive]}>
+                Next
+              </Text>
+            )}
           </Pressable>
         </View>
       </KeyboardAvoidingView>
@@ -154,6 +193,12 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 2,
+  },
+  errorText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#E05C5C',
+    fontFamily: 'Manrope_400Regular',
   },
   ctaBar: {
     paddingHorizontal: 24,

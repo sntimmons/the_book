@@ -8,6 +8,7 @@ import {
   Alert,
   Share,
 } from 'react-native'
+import { supabase } from '@/lib/supabase'
 import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 import { router } from 'expo-router'
@@ -60,7 +61,17 @@ export default function MeScreen() {
             style={styles.iconBtn}
             activeOpacity={0.7}
             onPress={() =>
-              Alert.alert('Settings', 'Settings coming soon.', [{ text: 'OK' }])
+              Alert.alert('Settings', '', [
+                {
+                  text: 'Sign Out',
+                  style: 'destructive',
+                  onPress: async () => {
+                    await supabase.auth.signOut()
+                    router.replace('/')
+                  },
+                },
+                { text: 'Cancel', style: 'cancel' },
+              ])
             }
           >
             <Feather name="settings" size={15} color="rgba(240,232,213,0.6)" />

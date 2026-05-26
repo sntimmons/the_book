@@ -7,12 +7,14 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Alert,
   useWindowDimensions,
 } from 'react-native'
 import { Stack, router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons'
 import { PanelContext } from '@/context/PanelContext'
+import { supabase } from '@/lib/supabase'
 
 const NAV_SECTIONS = [
   {
@@ -189,6 +191,32 @@ export default function ProviderDashboardLayout() {
               <Feather name="repeat" size={16} color="rgba(240,232,213,0.4)" />
               <Text style={styles.switchModeText}>Switch to client mode</Text>
             </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.signOutRow}
+              activeOpacity={0.7}
+              onPress={() => {
+                Alert.alert(
+                  'Sign Out',
+                  'Are you sure you want to sign out?',
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Sign Out',
+                      style: 'destructive',
+                      onPress: async () => {
+                        closePanel()
+                        await supabase.auth.signOut()
+                        router.replace('/')
+                      },
+                    },
+                  ],
+                )
+              }}
+            >
+              <Feather name="log-out" size={18} color="rgba(240,232,213,0.35)" />
+              <Text style={styles.signOutText}>Sign Out</Text>
+            </TouchableOpacity>
           </View>
         </Animated.View>
       </View>
@@ -310,6 +338,22 @@ const styles = StyleSheet.create({
   switchModeText: {
     fontSize: 13,
     color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+  },
+  signOutRow: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(240,232,213,0.06)',
+    marginTop: 8,
+    marginHorizontal: -20,
+  },
+  signOutText: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_400Regular',
   },
 })
