@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useLocalSearchParams } from 'expo-router'
 import { router } from 'expo-router'
 import ProviderProfile, { ProviderData } from '@/components/ProviderProfile'
@@ -28,8 +29,14 @@ const MOCK_PROVIDERS: Record<string, ProviderData> = {
 
 export default function ProviderProfilePage() {
   const { id } = useLocalSearchParams<{ id: string }>()
-  const provider = MOCK_PROVIDERS[id ?? ''] ?? MOCK_PROVIDERS.default
+  const baseProvider = MOCK_PROVIDERS[id ?? ''] ?? MOCK_PROVIDERS.default
   const { setProvider } = useBookingStore()
+  const [isFollowing, setIsFollowing] = useState(false)
+
+  const provider: ProviderData = {
+    ...baseProvider,
+    followerCount: (baseProvider.followerCount ?? 0) + (isFollowing ? 1 : 0),
+  }
 
   function handleBookNow() {
     setProvider(id ?? '1', provider.name, provider.category, provider.location)
@@ -40,8 +47,9 @@ export default function ProviderProfilePage() {
     <ProviderProfile
       previewMode={false}
       provider={provider}
+      isFollowing={isFollowing}
       onBookNow={handleBookNow}
-      onFollow={() => console.log('follow', id)}
+      onFollow={() => setIsFollowing((prev) => !prev)}
       // TODO: replace with real provider id from props
       onMessage={() => router.push('/messages/1' as any)}
     />

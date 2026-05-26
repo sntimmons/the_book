@@ -46,6 +46,7 @@ export interface ProviderData {
 export interface ProviderProfileProps {
   previewMode?: boolean
   provider: ProviderData
+  isFollowing?: boolean
   onBookNow?: () => void
   onFollow?: () => void
   onMessage?: () => void
@@ -87,6 +88,7 @@ const MOCK_POSTS = [
 export default function ProviderProfile({
   previewMode = false,
   provider: providerProp,
+  isFollowing = false,
   onBookNow,
   onFollow,
   onMessage,
@@ -195,11 +197,18 @@ export default function ProviderProfile({
           {!previewMode && (
             <View style={styles.actionButtons}>
               <TouchableOpacity
-                style={styles.followBtn}
+                style={[styles.followBtn, isFollowing && styles.followBtnActive]}
                 onPress={onFollow}
                 activeOpacity={0.8}
               >
-                <Text style={styles.followBtnText}>Follow</Text>
+                <Text
+                  style={[
+                    styles.followBtnText,
+                    isFollowing && styles.followBtnTextActive,
+                  ]}
+                >
+                  {isFollowing ? 'Following' : 'Follow'}
+                </Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.messageBtn}
@@ -588,10 +597,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#F0E8D5',
   },
+  followBtnActive: {
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.2)',
+    paddingVertical: 7,
+  },
   followBtnText: {
     fontSize: 13,
     color: '#080808',
     fontFamily: 'Manrope_600SemiBold',
+  },
+  followBtnTextActive: {
+    color: '#F0E8D5',
   },
   messageBtn: {
     width: 36,
