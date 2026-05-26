@@ -10,33 +10,19 @@ import {
   Pressable,
   Switch,
   Keyboard,
+  ActivityIndicator,
+  Image,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-
-type FeatherIcon = keyof typeof Feather.glyphMap
-
-interface Category {
-  icon: FeatherIcon
-  name: string
-  count: string
-}
-
-interface Provider {
-  name: string
-  category: string
-  location: string
-  rating: number
-  reviews: number
-  bookings: number
-  price: string
-  verified: boolean
-  live: boolean
-  mobile: boolean
-  available: string
-}
+import {
+  useProviderSearch,
+  useCategories,
+  Provider,
+  Category,
+} from '../../hooks/useProviders'
 
 const RECENT = ['Lash extensions', 'Barber fade', 'Knotless braids']
 
@@ -49,17 +35,6 @@ const TRENDING = [
   'Mobile massage',
 ]
 
-const CATEGORIES: Category[] = [
-  { icon: 'scissors', name: 'Hair', count: '240 providers' },
-  { icon: 'eye', name: 'Lashes', count: '156 providers' },
-  { icon: 'scissors', name: 'Barber', count: '203 providers' },
-  { icon: 'droplet', name: 'Nails', count: '189 providers' },
-  { icon: 'camera', name: 'Photography', count: '98 providers' },
-  { icon: 'smile', name: 'Makeup', count: '134 providers' },
-  { icon: 'wind', name: 'Massage', count: '67 providers' },
-  { icon: 'more-horizontal', name: 'More', count: '180+ providers' },
-]
-
 const QUICK_FILTERS = ['Available today', '4.5+ stars', 'Near me', 'Mobile providers']
 
 const SORT_OPTIONS = ['Relevance', 'Highest rated', 'Most booked', 'Price: low to high']
@@ -67,93 +42,12 @@ const SORT_OPTIONS = ['Relevance', 'Highest rated', 'Most booked', 'Price: low t
 const AVAILABILITY_OPTIONS = ['Today', 'This week', 'Any time']
 const RATING_OPTIONS = ['Any', '3+', '4+', '4.5+']
 
-const PROVIDERS: Provider[] = [
-  {
-    name: 'Nia Laurent',
-    category: 'Lash Tech',
-    location: 'River Oaks',
-    rating: 4.9,
-    reviews: 127,
-    bookings: 203,
-    price: 'from $85',
-    verified: true,
-    live: false,
-    mobile: false,
-    available: 'Available today',
-  },
-  {
-    name: 'Marcus Blade',
-    category: 'Barber',
-    location: 'Midtown',
-    rating: 5.0,
-    reviews: 89,
-    bookings: 156,
-    price: 'from $35',
-    verified: true,
-    live: true,
-    mobile: true,
-    available: 'Available today',
-  },
-  {
-    name: 'Jade Williams',
-    category: 'Lash & Brows',
-    location: 'Montrose',
-    rating: 4.8,
-    reviews: 64,
-    bookings: 98,
-    price: 'from $95',
-    verified: false,
-    live: false,
-    mobile: false,
-    available: 'Next: Thu',
-  },
-  {
-    name: 'Elena Ross',
-    category: 'Hair Stylist',
-    location: 'Heights',
-    rating: 4.9,
-    reviews: 201,
-    bookings: 312,
-    price: 'from $65',
-    verified: true,
-    live: false,
-    mobile: false,
-    available: 'Available today',
-  },
-  {
-    name: 'Jordan Ellis',
-    category: 'Nail Tech',
-    location: 'EaDo',
-    rating: 4.7,
-    reviews: 43,
-    bookings: 67,
-    price: 'from $55',
-    verified: false,
-    live: true,
-    mobile: true,
-    available: 'Available today',
-  },
-  {
-    name: 'Andre Watts',
-    category: 'Photography',
-    location: 'Museum District',
-    rating: 4.9,
-    reviews: 38,
-    bookings: 52,
-    price: 'from $150',
-    verified: true,
-    live: false,
-    mobile: true,
-    available: 'Next: Fri',
-  },
-]
-
 export default function SearchScreen() {
   const insets = useSafeAreaInsets()
   const inputRef = useRef<TextInput>(null)
 
   const [query, setQuery] = useState('')
-  const [activeCategory, setActiveCategory] = useState<string | null>(null)
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null)
   const [activeFilters, setActiveFilters] = useState<string[]>([])
   const [showFilters, setShowFilters] = useState(false)
   const [showSort, setShowSort] = useState(false)
@@ -161,13 +55,32 @@ export default function SearchScreen() {
   const [focused, setFocused] = useState(false)
 
   // Filter sheet local selections
-  const [sheetCategory, setSheetCategory] = useState<string | null>(null)
+  const [sheetCategoryId, setSheetCategoryId] = useState<string | null>(null)
   const [availability, setAvailability] = useState<string | null>(null)
   const [minRating, setMinRating] = useState('Any')
   const [mobileOnly, setMobileOnly] = useState(false)
 
+  const { categories } = useCategories()
+  const ratingFilter =
+    minRating === '3+' ? 3
+      : minRating === '4+' ? 4
+      : minRating === '4.5+' ? 4.5
+      : undefined
+
+  const { results, loading: searching } = useProviderSearch(
+    query,
+    activeCategoryId ?? undefined,
+    {
+      availableToday: activeFilters.includes('Available today'),
+      minRating: ratingFilter,
+      mobileOnly,
+    },
+  )
+
+  const activeCategoryName = categories.find((c) => c.id === activeCategoryId)?.name
+
   const isSearching =
-    query.length > 0 || activeCategory !== null || activeFilters.length > 0
+    query.length > 0 || activeCategoryId !== null || activeFilters.length > 0
 
   function toggleFilter(filter: string) {
     setActiveFilters((prev) =>
@@ -177,42 +90,18 @@ export default function SearchScreen() {
 
   function handleCancel() {
     setQuery('')
-    setActiveCategory(null)
+    setActiveCategoryId(null)
     setActiveFilters([])
     Keyboard.dismiss()
   }
 
   function resetFilters() {
     setActiveFilters([])
-    setSheetCategory(null)
+    setSheetCategoryId(null)
     setAvailability(null)
     setMinRating('Any')
     setMobileOnly(false)
   }
-
-  const results = PROVIDERS.filter((p) => {
-    if (query.length > 0) {
-      const q = query.toLowerCase()
-      const haystack = `${p.name} ${p.category} ${p.location}`.toLowerCase()
-      if (!haystack.includes(q)) return false
-    }
-    if (activeCategory) {
-      const cat = activeCategory.toLowerCase()
-      const matches =
-        p.category.toLowerCase().includes(cat) ||
-        (cat === 'hair' && p.category.toLowerCase().includes('hair')) ||
-        (cat === 'lashes' && p.category.toLowerCase().includes('lash')) ||
-        (cat === 'makeup' && p.category.toLowerCase().includes('makeup')) ||
-        (cat === 'nails' && p.category.toLowerCase().includes('nail'))
-      if (!matches) return false
-    }
-    if (activeFilters.includes('Available today') && p.available !== 'Available today') {
-      return false
-    }
-    if (activeFilters.includes('4.5+ stars') && p.rating < 4.5) return false
-    if (activeFilters.includes('Mobile providers') && !p.mobile) return false
-    return true
-  })
 
   return (
     <View style={styles.root}>
@@ -309,19 +198,21 @@ export default function SearchScreen() {
       {isSearching ? (
         <ResultsState
           query={query}
-          activeCategory={activeCategory}
+          activeCategoryName={activeCategoryName}
           activeFilters={activeFilters}
           results={results}
+          loading={searching}
           onRemoveFilter={toggleFilter}
           onBrowse={() => {
             setQuery('')
-            setActiveCategory(null)
+            setActiveCategoryId(null)
           }}
         />
       ) : (
         <EmptyState
+          categories={categories}
           onRecent={(term) => setQuery(term)}
-          onCategory={(cat) => setActiveCategory(cat)}
+          onCategory={(catId) => setActiveCategoryId(catId)}
           onTrending={(term) => setQuery(term)}
         />
       )}
@@ -341,14 +232,14 @@ export default function SearchScreen() {
           <ScrollView style={styles.sheetScroll} showsVerticalScrollIndicator={false}>
             <Text style={[styles.sheetLabel, styles.sheetLabelFirst]}>CATEGORY</Text>
             <View style={styles.pillWrap}>
-              {CATEGORIES.map((c) => {
-                const selected = sheetCategory === c.name
+              {categories.map((c) => {
+                const selected = sheetCategoryId === c.id
                 return (
                   <SheetPill
-                    key={c.name}
+                    key={c.id}
                     label={c.name}
                     selected={selected}
-                    onPress={() => setSheetCategory(selected ? null : c.name)}
+                    onPress={() => setSheetCategoryId(selected ? null : c.id)}
                   />
                 )
               })}
@@ -388,7 +279,10 @@ export default function SearchScreen() {
             <TouchableOpacity
               style={styles.applyBtn}
               activeOpacity={0.85}
-              onPress={() => setShowFilters(false)}
+              onPress={() => {
+                setActiveCategoryId(sheetCategoryId)
+                setShowFilters(false)
+              }}
             >
               <Text style={styles.applyBtnText}>Apply Filters</Text>
             </TouchableOpacity>
@@ -432,12 +326,14 @@ export default function SearchScreen() {
 }
 
 function EmptyState({
+  categories,
   onRecent,
   onCategory,
   onTrending,
 }: {
+  categories: Category[]
   onRecent: (term: string) => void
-  onCategory: (cat: string) => void
+  onCategory: (catId: string) => void
   onTrending: (term: string) => void
 }) {
   const [recent, setRecent] = useState(RECENT)
@@ -475,17 +371,17 @@ function EmptyState({
       <View style={styles.categorySection}>
         <Text style={styles.sectionLabel}>BROWSE BY CATEGORY</Text>
         <View style={styles.categoryGrid}>
-          {CATEGORIES.map((c) => (
+          {categories.map((c) => (
             <TouchableOpacity
-              key={c.name}
+              key={c.id}
               style={styles.categoryTile}
               activeOpacity={0.7}
-              onPress={() => onCategory(c.name)}
+              onPress={() => onCategory(c.id)}
             >
-              <Feather name={c.icon} size={18} color="rgba(240,232,213,0.5)" />
+              <Feather name="grid" size={18} color="rgba(240,232,213,0.5)" />
               <View style={styles.categoryTileText}>
                 <Text style={styles.categoryName}>{c.name}</Text>
-                <Text style={styles.categoryCount}>{c.count}</Text>
+                <Text style={styles.categoryCount}>{c.name} providers</Text>
               </View>
             </TouchableOpacity>
           ))}
@@ -518,19 +414,23 @@ function EmptyState({
 
 function ResultsState({
   query,
-  activeCategory,
+  activeCategoryName,
   activeFilters,
   results,
+  loading,
   onRemoveFilter,
   onBrowse,
 }: {
   query: string
-  activeCategory: string | null
+  activeCategoryName: string | undefined
   activeFilters: string[]
   results: Provider[]
+  loading: boolean
   onRemoveFilter: (filter: string) => void
   onBrowse: () => void
 }) {
+  const showNoResults = !loading && results.length === 0 && query.length >= 2
+
   return (
     <ScrollView
       showsVerticalScrollIndicator={false}
@@ -539,9 +439,9 @@ function ResultsState({
     >
       <View style={styles.resultsHeader}>
         {query.length > 0 ? (
-          <Text style={styles.resultsTitle}>Results for "{query}"</Text>
-        ) : activeCategory ? (
-          <Text style={styles.resultsTitle}>{activeCategory} providers</Text>
+          <Text style={styles.resultsTitle}>Results for &quot;{query}&quot;</Text>
+        ) : activeCategoryName ? (
+          <Text style={styles.resultsTitle}>{activeCategoryName} providers</Text>
         ) : (
           <Text style={styles.resultsTitle}>All providers</Text>
         )}
@@ -564,10 +464,14 @@ function ResultsState({
         </View>
       )}
 
-      {results.length === 0 ? (
+      {loading ? (
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color="rgba(240,232,213,0.4)" />
+        </View>
+      ) : showNoResults ? (
         <View style={styles.noResults}>
           <Feather name="search" size={40} color="rgba(240,232,213,0.1)" />
-          <Text style={styles.noResultsTitle}>No results for "{query}"</Text>
+          <Text style={styles.noResultsTitle}>No results for &quot;{query}&quot;</Text>
           <Text style={styles.noResultsSub}>
             Try a different search or browse by category below.
           </Text>
@@ -576,58 +480,47 @@ function ResultsState({
           </TouchableOpacity>
         </View>
       ) : (
-        results.map((p) => <ProviderCard key={p.name} provider={p} />)
+        results.map((p) => <ProviderCard key={p.id} provider={p} />)
       )}
     </ScrollView>
   )
 }
 
 function ProviderCard({ provider: p }: { provider: Provider }) {
-  const availableToday = p.available === 'Available today'
+  const ratingValue = p.average_rating ?? p.rating
   return (
     <TouchableOpacity
       style={styles.providerCard}
       activeOpacity={0.7}
-      onPress={() => router.push('/providers/1')}
+      onPress={() => router.push(`/providers/${p.id}` as any)}
     >
       <View style={styles.avatarWrap}>
-        <View style={styles.avatar}>
-          <Feather name="user" size={22} color="rgba(240,232,213,0.2)" />
-        </View>
-        {p.verified && (
+        {p.profile_photo_url ? (
+          <Image source={{ uri: p.profile_photo_url }} style={styles.avatar} />
+        ) : (
+          <View style={styles.avatar}>
+            <Feather name="user" size={22} color="rgba(240,232,213,0.2)" />
+          </View>
+        )}
+        {p.identity_verified && (
           <View style={styles.verifiedBadge}>
             <Feather name="check" size={8} color="#080808" />
           </View>
         )}
-        {p.live && <View style={styles.liveDot} />}
       </View>
 
       <View style={styles.cardCenter}>
         <View style={styles.cardTopRow}>
-          <Text style={styles.cardName}>{p.name}</Text>
-          {p.mobile && (
-            <View style={styles.mobilePill}>
-              <Text style={styles.mobilePillText}>Mobile</Text>
-            </View>
-          )}
+          <Text style={styles.cardName}>{p.display_name}</Text>
         </View>
-        <Text style={styles.cardMeta}>
-          {p.category} · {p.location}
-        </Text>
+        <Text style={styles.cardMeta}>{p.neighborhood ?? p.location ?? ''}</Text>
         <View style={styles.cardRatingRow}>
           <Feather name="star" size={11} color="#C8922A" />
-          <Text style={styles.cardRating}>{p.rating.toFixed(1)}</Text>
-          <Text style={styles.cardReviews}>({p.reviews})</Text>
-          <View style={styles.dot} />
-          <Text style={styles.cardBookings}>{p.bookings} bookings</Text>
+          <Text style={styles.cardRating}>
+            {ratingValue != null ? ratingValue.toFixed(1) : 'New'}
+          </Text>
+          <Text style={styles.cardReviews}>({p.review_count ?? 0})</Text>
         </View>
-      </View>
-
-      <View style={styles.cardRight}>
-        <Text style={styles.cardPrice}>{p.price}</Text>
-        <Text style={availableToday ? styles.availableGreen : styles.availableNeutral}>
-          {p.available}
-        </Text>
       </View>
     </TouchableOpacity>
   )
@@ -910,6 +803,10 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
   },
+  loadingWrap: {
+    paddingTop: 40,
+    alignItems: 'center',
+  },
   providerCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -944,17 +841,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  liveDot: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#C8922A',
-    borderWidth: 1.5,
-    borderColor: '#080808',
-  },
   cardCenter: {
     flex: 1,
   },
@@ -968,17 +854,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
-  },
-  mobilePill: {
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    borderRadius: 4,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-  },
-  mobilePillText: {
-    fontSize: 9,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
   },
   cardMeta: {
     fontSize: 12,
@@ -998,38 +873,6 @@ const styles = StyleSheet.create({
   },
   cardReviews: {
     fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  dot: {
-    width: 3,
-    height: 3,
-    borderRadius: 1.5,
-    backgroundColor: 'rgba(240,232,213,0.2)',
-    marginHorizontal: 2,
-  },
-  cardBookings: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  cardRight: {
-    alignItems: 'flex-end',
-  },
-  cardPrice: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  availableGreen: {
-    marginTop: 3,
-    fontSize: 10,
-    color: '#4CAF50',
-    fontFamily: 'Manrope_400Regular',
-  },
-  availableNeutral: {
-    marginTop: 3,
-    fontSize: 10,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },

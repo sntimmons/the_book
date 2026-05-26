@@ -31,6 +31,7 @@ export default function ProviderGoLive() {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
   const [isGoingLive, setIsGoingLive] = useState(false)
+  const [showReviewMessage, setShowReviewMessage] = useState(false)
   const {
     name, businessName, category, customCategory,
     location, bio, photo, banner, isMobile,
@@ -62,47 +63,51 @@ export default function ProviderGoLive() {
     setIsGoingLive(true)
 
     if (!user) {
+      setShowReviewMessage(true)
       setTimeout(() => {
         reset()
         router.replace('/dashboard/provider')
-      }, 1500)
+      }, 2000)
       return
     }
 
     const displayName = name || 'Provider'
+    const locationValue = location || null
 
-    const { error: providerError } = await supabase.from('providers').upsert({
-      id: user.id,
-      display_name: displayName,
-      business_name: businessName || null,
-      category: customCategory || category,
-      location,
-      bio: bio || null,
-      is_mobile: isMobile,
-      is_live: true,
-      phone: user.phone ?? null,
-      created_at: new Date().toISOString(),
-    })
+    const { data: providerData, error: providerError } = await supabase
+      .from('providers')
+      .upsert({
+        user_id: user.id,
+        display_name: displayName,
+        bio: bio || null,
+        location: locationValue,
+        neighborhood: locationValue,
+        is_approved: false,
+        verification_status: 'pending',
+        identity_verified: false,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select('id')
+      .single()
 
     if (providerError) {
       console.log('Provider save error:', providerError)
     }
 
-    if (services.length > 0) {
+    const providerDbId = providerData?.id
+
+    if (services.length > 0 && providerDbId) {
       const { error: servicesError } = await supabase
         .from('provider_services')
         .upsert(
           services.map((service) => ({
-            provider_id: user.id,
+            provider_id: providerDbId,
             name: service.name,
-            price_cents: Math.round(
-              (parseFloat(service.price) || 0) * 100,
-            ),
+            description: null,
+            price: Math.round((parseFloat(service.price) || 0) * 100),
             duration_minutes: parseDurationMinutes(service.duration),
-            deposit_required: service.depositRequired,
-            deposit_cents: service.depositRequired
-              ? Math.round((parseFloat(service.depositAmount) || 0) * 100)
-              : 0,
+            is_active: true,
           })),
         )
 
@@ -112,10 +117,11 @@ export default function ProviderGoLive() {
     }
 
     reset()
+    setShowReviewMessage(true)
 
     setTimeout(() => {
       router.replace('/dashboard/provider')
-    }, 1500)
+    }, 2000)
   }
 
   return (
@@ -150,6 +156,15 @@ export default function ProviderGoLive() {
 
       {/* Fixed bottom */}
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
+        {showReviewMessage && (
+          <View style={styles.reviewNote}>
+            <Feather name="check-circle" size={14} color="#4CAF50" />
+            <Text style={styles.reviewText}>
+              Your profile is under review. We will notify you when you are approved and live on The Book.
+            </Text>
+          </View>
+        )}
+
         {/* 14-day note */}
         <View style={styles.verifyNote}>
           <Feather name="clock" size={13} color="#C8922A" />
@@ -264,6 +279,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_400Regular',
+  },
+  reviewNote: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(76,175,80,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(76,175,80,0.2)',
+  },
+  reviewText: {
+    flex: 1,
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.7)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 17,
   },
   goLiveBtn: {
     backgroundColor: '#C8922A',

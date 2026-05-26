@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import {
   View,
   Text,
+  Image,
   ScrollView,
   TouchableOpacity,
-  Pressable,
   Animated,
   StyleSheet,
   useWindowDimensions,
@@ -12,50 +12,13 @@ import {
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
-
-// ── Static data ──────────────────────────────────────────────────────────────
-
-const FEATURED = [
-  { id: '1', name: 'Jasmine Turner', category: 'Lashes and Brows', location: 'Midtown', bg: 'rgba(240,232,213,0.08)' },
-  { id: '2', name: 'Marcus Chen', category: 'Photography', location: 'Heights', bg: 'rgba(240,232,213,0.08)' },
-  { id: '3', name: 'Tanya Robinson', category: 'Hair Styling', location: 'Montrose', bg: 'rgba(240,232,213,0.08)' },
-]
-
-const CATEGORIES = [
-  'All', 'Hair', 'Lashes', 'Nails', 'Barber', 'Makeup',
-  'Massage', 'Photography', 'Bartending', 'Fitness', 'Wellness', 'Mechanics',
-]
-
-const FOR_YOU = [
-  { id: '1', name: 'Maya Reed',     category: 'Braids',       rating: '4.9', verified: false, bg: 'rgba(240,232,213,0.08)' },
-  { id: '2', name: 'Devon Pierce',  category: 'Barber',       rating: '5.0', verified: true,  bg: 'rgba(240,232,213,0.08)' },
-  { id: '3', name: 'Aisha Coleman', category: 'Lashes',       rating: '4.8', verified: false, bg: 'rgba(240,232,213,0.08)' },
-  { id: '4', name: 'Marcus Hall',   category: 'Photography',  rating: '4.9', verified: true,  bg: 'rgba(240,232,213,0.08)' },
-  { id: '5', name: 'Tia Brooks',    category: 'Makeup',       rating: '4.7', verified: false, bg: 'rgba(240,232,213,0.08)' },
-]
-
-const LIVE_NOW = [
-  { id: '1', name: 'Jordan Ellis', category: 'Nails',  watching: 23, bg: 'rgba(240,232,213,0.08)' },
-  { id: '2', name: 'Sasha Mills',  category: 'Hair',   watching: 41, bg: 'rgba(240,232,213,0.08)' },
-  { id: '3', name: 'Ray Tucker',   category: 'Barber', watching: 18, bg: 'rgba(240,232,213,0.08)' },
-  { id: '4', name: 'Naomi Cross',  category: 'Makeup', watching: 9,  bg: 'rgba(240,232,213,0.08)' },
-]
-
-const TRENDING = [
-  { id: '1', name: 'Whitney Adams',  category: 'Lashes',      rating: '4.9', tag: 'Mobile, books fast',  bg: 'rgba(240,232,213,0.08)' },
-  { id: '2', name: 'Trey Morgan',    category: 'Barber',      rating: '5.0', tag: 'Shop in Heights',      bg: 'rgba(240,232,213,0.08)' },
-  { id: '3', name: 'Camille Booker', category: 'Makeup',      rating: '4.8', tag: 'Bridal specialist',    bg: 'rgba(240,232,213,0.08)' },
-  { id: '4', name: 'Andre Watts',    category: 'Photography', rating: '4.9', tag: 'Events and portraits', bg: 'rgba(240,232,213,0.08)' },
-]
-
-const BROWSE = [
-  { id: '1', name: 'Hair',        icon: '✂',  count: 240 },
-  { id: '2', name: 'Lashes',      icon: '✦',  count: 156 },
-  { id: '3', name: 'Nails',       icon: '⬡',  count: 189 },
-  { id: '4', name: 'Barber',      icon: '◈',  count: 203 },
-  { id: '5', name: 'Photography', icon: '⌗',  count: 98  },
-  { id: '6', name: 'Bartending',  icon: '◉',  count: 67  },
-]
+import {
+  useProviders,
+  useCategories,
+  getLiveCount,
+  Provider,
+  Category,
+} from '../../hooks/useProviders'
 
 // ── Animated pulse dot ────────────────────────────────────────────────────────
 
@@ -70,11 +33,33 @@ function PulseDot({ size = 6 }: { size?: number }) {
       ])
     ).start()
     return () => opacity.stopAnimation()
-  }, [])
+  }, [opacity])
 
   return (
     <Animated.View
       style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#C8922A', opacity }}
+    />
+  )
+}
+
+// ── Shimmer skeleton ──────────────────────────────────────────────────────────
+
+function Shimmer({ style }: { style: any }) {
+  const opacity = useRef(new Animated.Value(0.4)).current
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.8, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+      ])
+    ).start()
+    return () => opacity.stopAnimation()
+  }, [opacity])
+
+  return (
+    <Animated.View
+      style={[{ backgroundColor: 'rgba(240,232,213,0.06)', opacity }, style]}
     />
   )
 }
@@ -126,17 +111,65 @@ function SectionHeader({ title, onSeeAll }: { title: string; onSeeAll?: () => vo
   )
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function categoryName(categoryId: string | null | undefined, categories: Category[]) {
+  if (!categoryId) return ''
+  return categories.find((c) => c.id === categoryId)?.name ?? ''
+}
+
+function ratingLabel(p: Provider): string {
+  const r = p.average_rating ?? p.rating
+  return r != null ? r.toFixed(1) : 'New'
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function DiscoveryFeed() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const [activeCategory, setActiveCategory] = useState('All')
+  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null)
   const [currentFeatured, setCurrentFeatured] = useState(0)
+  const [liveCount, setLiveCount] = useState(0)
   const heroRef = useRef<ScrollView>(null)
 
+  const { providers, loading } = useProviders(activeCategoryId ?? undefined)
+  const { categories } = useCategories()
+
+  useEffect(() => {
+    getLiveCount().then(setLiveCount)
+  }, [])
+
   const heroW = width - 48
-  const colW  = (width - 48 - 16) / 2
+  const colW = (width - 48 - 16) / 2
+
+  const featured = useMemo(() => {
+    const flagged = providers.filter((p) => p.is_featured)
+    return (flagged.length > 0 ? flagged : providers).slice(0, 3)
+  }, [providers])
+
+  const forYou = useMemo(() => providers.slice(0, 5), [providers])
+
+  const liveNow = useMemo(
+    () =>
+      [...providers]
+        .sort(
+          (a, b) =>
+            new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+        )
+        .slice(0, 4),
+    [providers]
+  )
+
+  const trending = useMemo(() => {
+    const flagged = providers.filter((p) => p.is_trending)
+    if (flagged.length > 0) return flagged.slice(0, 4)
+    return [...providers]
+      .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
+      .slice(0, 4)
+  }, [providers])
+
+  const showEmptyState = !loading && providers.length === 0
 
   return (
     <View style={s.root}>
@@ -160,228 +193,316 @@ export default function DiscoveryFeed() {
         {/* ── Live ticker ─────────────────────────────────────────────────── */}
         <View style={s.ticker}>
           <PulseDot />
-          <Text style={s.tickerText}>12 providers live right now in Houston</Text>
+          <Text style={s.tickerText}>
+            {liveCount} providers in Houston right now
+          </Text>
         </View>
 
-        {/* ── Featured hero carousel ─────────────────────────────────────── */}
-        <View style={s.heroOuter}>
-          <ScrollView
-            ref={heroRef}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            style={{ width: heroW }}
-            onMomentumScrollEnd={(e) => {
-              const idx = Math.round(e.nativeEvent.contentOffset.x / heroW)
-              setCurrentFeatured(Math.max(0, Math.min(idx, FEATURED.length - 1)))
-            }}
-          >
-            {FEATURED.map((p) => (
-              <View key={p.id} style={[s.heroCard, { width: heroW, backgroundColor: p.bg }]}>
-                <LinearGradient
-                  colors={['transparent', 'rgba(8,8,8,0.85)']}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={s.heroInner}>
-                  <View style={{ flex: 1, marginRight: 12 }}>
-                    <Text style={s.featuredLabel}>FEATURED PROVIDER</Text>
-                    <Text style={s.heroName}>{p.name}</Text>
-                    <Text style={s.heroSub}>{p.category} · {p.location}</Text>
-                  </View>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    style={s.viewBtn}
-                    onPress={() => router.push('/providers/1')}
-                  >
-                    <Text style={s.viewBtnText}>View</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-          </ScrollView>
-
-          {/* Pagination dots */}
-          <View style={s.dots}>
-            {FEATURED.map((_, i) => (
-              <TouchableOpacity
-                key={i}
-                activeOpacity={0.7}
-                onPress={() => {
-                  heroRef.current?.scrollTo({ x: i * heroW, animated: true })
-                  setCurrentFeatured(i)
-                }}
-              >
-                <View style={[s.dot, i === currentFeatured ? s.dotActive : s.dotInactive]} />
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* ── Category nav ───────────────────────────────────────────────── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.categoryRow}
-          style={s.categoryScroll}
-        >
-          {CATEGORIES.map((cat) => {
-            const active = cat === activeCategory
-            return (
-              <TouchableOpacity
-                key={cat}
-                activeOpacity={0.8}
-                onPress={() => setActiveCategory(cat)}
-                style={s.categoryBtn}
-              >
-                <Text style={[s.categoryText, active ? s.catActive : s.catInactive]}>
-                  {cat}
-                </Text>
-                {active && <View style={s.catUnderline} />}
-              </TouchableOpacity>
-            )
-          })}
-        </ScrollView>
-
-        {/* ── For You ────────────────────────────────────────────────────── */}
-        <View style={s.section}>
-          <SectionHeader title="For you, Stephen" onSeeAll={() => {}} />
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.hRow}
-          >
-            {FOR_YOU.map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                activeOpacity={0.8}
-                onPress={() => router.push('/providers/1')}
-                style={[s.forYouCard, { backgroundColor: p.bg }]}
-              >
-                {/* background silhouette */}
-                <View style={s.absCenter}>
-                  <Silhouette size={40} />
-                </View>
-                {/* gradient overlay */}
-                <LinearGradient
-                  colors={['transparent', 'rgba(8,8,8,0.7)']}
-                  start={{ x: 0, y: 0.6 }}
-                  end={{ x: 0, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                {/* verified badge — above gradient */}
-                {p.verified && (
-                  <View style={s.verifiedBadge}>
-                    <Text style={s.verifiedCheck}>✓</Text>
-                  </View>
-                )}
-                {/* info */}
-                <View style={s.cardInfo}>
-                  <Text style={s.cardName} numberOfLines={1}>{p.name}</Text>
-                  <RatingRow rating={p.rating} category={p.category} />
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* ── Live Right Now ──────────────────────────────────────────────── */}
-        <View style={s.section}>
-          <View style={s.sectionHeader}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <PulseDot />
-              <Text style={s.sectionTitle}>Live right now</Text>
-            </View>
-            <TouchableOpacity activeOpacity={0.7}>
-              <Text style={s.seeAll}>See all</Text>
+        {showEmptyState ? (
+          <View style={s.emptyWrap}>
+            <Silhouette size={56} />
+            <Text style={s.emptyTitle}>No providers yet in Houston.</Text>
+            <Text style={s.emptySub}>Be the first to join.</Text>
+            <TouchableOpacity
+              style={s.emptyBtn}
+              activeOpacity={0.85}
+              onPress={() => router.push('/onboarding/provider')}
+            >
+              <Text style={s.emptyBtnText}>Become a provider</Text>
             </TouchableOpacity>
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.hRow}
-          >
-            {LIVE_NOW.map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                activeOpacity={0.8}
-                onPress={() => router.push('/providers/1')}
-                style={[s.liveCard, { backgroundColor: p.bg }]}
-              >
-                {/* background silhouette */}
-                <View style={s.absCenter}>
-                  <Silhouette size={36} />
-                </View>
-                {/* gradient overlay */}
-                <LinearGradient
-                  colors={['transparent', 'rgba(8,8,8,0.7)']}
-                  start={{ x: 0, y: 0.6 }}
-                  end={{ x: 0, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                {/* LIVE badge — above gradient */}
-                <View style={s.liveBadge}>
-                  <Text style={s.liveBadgeText}>LIVE</Text>
-                </View>
-                {/* info */}
-                <View style={s.cardInfo}>
-                  <Text style={s.liveCardName} numberOfLines={1}>{p.name}</Text>
-                  <Text style={s.liveCardDetail}>{p.category}, {p.watching} watching</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
+        ) : (
+          <>
+            {/* ── Featured hero carousel ─────────────────────────────────── */}
+            <View style={s.heroOuter}>
+              {loading ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 12 }}
+                  style={{ width: heroW }}
+                >
+                  {[0, 1, 2].map((i) => (
+                    <Shimmer key={i} style={[s.heroCard, { width: heroW }]} />
+                  ))}
+                </ScrollView>
+              ) : (
+                <>
+                  <ScrollView
+                    ref={heroRef}
+                    horizontal
+                    pagingEnabled
+                    showsHorizontalScrollIndicator={false}
+                    style={{ width: heroW }}
+                    onMomentumScrollEnd={(e) => {
+                      const idx = Math.round(e.nativeEvent.contentOffset.x / heroW)
+                      setCurrentFeatured(Math.max(0, Math.min(idx, featured.length - 1)))
+                    }}
+                  >
+                    {featured.map((p) => (
+                      <View key={p.id} style={[s.heroCard, { width: heroW }]}>
+                        {p.profile_photo_url ? (
+                          <Image
+                            source={{ uri: p.profile_photo_url }}
+                            style={StyleSheet.absoluteFill}
+                            resizeMode="cover"
+                          />
+                        ) : null}
+                        <LinearGradient
+                          colors={['transparent', 'rgba(8,8,8,0.85)']}
+                          style={StyleSheet.absoluteFill}
+                        />
+                        <View style={s.heroInner}>
+                          <View style={{ flex: 1, marginRight: 12 }}>
+                            <Text style={s.featuredLabel}>FEATURED PROVIDER</Text>
+                            <Text style={s.heroName}>{p.display_name}</Text>
+                            <Text style={s.heroSub}>
+                              {categoryName(p.category_id, categories)} ·{' '}
+                              {p.neighborhood ?? p.location ?? ''}
+                            </Text>
+                          </View>
+                          <TouchableOpacity
+                            activeOpacity={0.8}
+                            style={s.viewBtn}
+                            onPress={() => router.push(`/providers/${p.id}` as any)}
+                          >
+                            <Text style={s.viewBtnText}>View</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
 
-        {/* ── Trending in Houston ─────────────────────────────────────────── */}
-        <View style={[s.section, s.padded]}>
-          <SectionHeader title="Trending in Houston" onSeeAll={() => {}} />
-          <View style={s.grid}>
-            {TRENDING.map((p) => (
-              <TouchableOpacity
-                key={p.id}
-                activeOpacity={0.8}
-                onPress={() => router.push('/providers/1')}
-                style={[s.trendCard, { width: colW, backgroundColor: p.bg }]}
-              >
-                <View style={s.absCenter}>
-                  <Silhouette size={48} />
-                </View>
-                <LinearGradient
-                  colors={['transparent', 'rgba(8,8,8,0.8)']}
-                  start={{ x: 0, y: 0.5 }}
-                  end={{ x: 0, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={s.trendInfo}>
-                  <Text style={s.trendName}>{p.name}</Text>
-                  <RatingRow rating={p.rating} category={p.category} />
-                  <Text style={s.trendTag}>{p.tag}</Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+                  {/* Pagination dots */}
+                  <View style={s.dots}>
+                    {featured.map((_, i) => (
+                      <TouchableOpacity
+                        key={i}
+                        activeOpacity={0.7}
+                        onPress={() => {
+                          heroRef.current?.scrollTo({ x: i * heroW, animated: true })
+                          setCurrentFeatured(i)
+                        }}
+                      >
+                        <View style={[s.dot, i === currentFeatured ? s.dotActive : s.dotInactive]} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+            </View>
 
-        {/* ── Browse by category ──────────────────────────────────────────── */}
-        <View style={[s.section, s.padded]}>
-          <Text style={s.sectionTitle}>Browse by category</Text>
-          <View style={[s.grid, { marginTop: 16 }]}>
-            {BROWSE.map((c) => (
+            {/* ── Category nav ───────────────────────────────────────────── */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={s.categoryRow}
+              style={s.categoryScroll}
+            >
               <TouchableOpacity
-                key={c.id}
                 activeOpacity={0.8}
-                onPress={() => router.push('/(tabs)/search')}
-                style={[s.browseCard, { width: colW }]}
+                onPress={() => setActiveCategoryId(null)}
+                style={s.categoryBtn}
               >
-                <Text style={s.browseIcon}>{c.icon}</Text>
-                <View>
-                  <Text style={s.browseName}>{c.name}</Text>
-                  <Text style={s.browseCount}>{c.count} providers</Text>
-                </View>
+                <Text style={[s.categoryText, activeCategoryId === null ? s.catActive : s.catInactive]}>
+                  All
+                </Text>
+                {activeCategoryId === null && <View style={s.catUnderline} />}
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+              {categories.map((cat) => {
+                const active = cat.id === activeCategoryId
+                return (
+                  <TouchableOpacity
+                    key={cat.id}
+                    activeOpacity={0.8}
+                    onPress={() => setActiveCategoryId(cat.id)}
+                    style={s.categoryBtn}
+                  >
+                    <Text style={[s.categoryText, active ? s.catActive : s.catInactive]}>
+                      {cat.name}
+                    </Text>
+                    {active && <View style={s.catUnderline} />}
+                  </TouchableOpacity>
+                )
+              })}
+            </ScrollView>
+
+            {/* ── For You ────────────────────────────────────────────────── */}
+            <View style={s.section}>
+              <SectionHeader title="For you" onSeeAll={() => {}} />
+              {loading ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.hRow}>
+                  {[0, 1, 2].map((i) => (
+                    <Shimmer key={i} style={s.forYouCard} />
+                  ))}
+                </ScrollView>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.hRow}>
+                  {forYou.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      activeOpacity={0.8}
+                      onPress={() => router.push(`/providers/${p.id}` as any)}
+                      style={s.forYouCard}
+                    >
+                      {p.profile_photo_url ? (
+                        <Image
+                          source={{ uri: p.profile_photo_url }}
+                          style={StyleSheet.absoluteFill}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={s.absCenter}>
+                          <Silhouette size={40} />
+                        </View>
+                      )}
+                      <LinearGradient
+                        colors={['transparent', 'rgba(8,8,8,0.7)']}
+                        start={{ x: 0, y: 0.6 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      {p.identity_verified && (
+                        <View style={s.verifiedBadge}>
+                          <Text style={s.verifiedCheck}>✓</Text>
+                        </View>
+                      )}
+                      <View style={s.cardInfo}>
+                        <Text style={s.cardName} numberOfLines={1}>{p.display_name}</Text>
+                        <RatingRow rating={ratingLabel(p)} category={categoryName(p.category_id, categories)} />
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+
+            {/* ── Live Right Now ──────────────────────────────────────────── */}
+            <View style={s.section}>
+              <View style={s.sectionHeader}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <PulseDot />
+                  <Text style={s.sectionTitle}>Live right now</Text>
+                </View>
+                <TouchableOpacity activeOpacity={0.7}>
+                  <Text style={s.seeAll}>See all</Text>
+                </TouchableOpacity>
+              </View>
+              {loading ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.hRow}>
+                  {[0, 1, 2].map((i) => (
+                    <Shimmer key={i} style={s.liveCard} />
+                  ))}
+                </ScrollView>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.hRow}>
+                  {liveNow.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      activeOpacity={0.8}
+                      onPress={() => router.push(`/providers/${p.id}` as any)}
+                      style={s.liveCard}
+                    >
+                      {p.profile_photo_url ? (
+                        <Image
+                          source={{ uri: p.profile_photo_url }}
+                          style={StyleSheet.absoluteFill}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={s.absCenter}>
+                          <Silhouette size={36} />
+                        </View>
+                      )}
+                      <LinearGradient
+                        colors={['transparent', 'rgba(8,8,8,0.7)']}
+                        start={{ x: 0, y: 0.6 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      <View style={s.liveBadge}>
+                        <Text style={s.liveBadgeText}>LIVE</Text>
+                      </View>
+                      <View style={s.cardInfo}>
+                        <Text style={s.liveCardName} numberOfLines={1}>{p.display_name}</Text>
+                        <Text style={s.liveCardDetail}>New provider</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
+            </View>
+
+            {/* ── Trending in Houston ─────────────────────────────────────── */}
+            <View style={[s.section, s.padded]}>
+              <SectionHeader title="Trending in Houston" onSeeAll={() => {}} />
+              {loading ? (
+                <View style={s.grid}>
+                  {[0, 1, 2].map((i) => (
+                    <Shimmer key={i} style={[s.trendCard, { width: colW }]} />
+                  ))}
+                </View>
+              ) : (
+                <View style={s.grid}>
+                  {trending.map((p) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      activeOpacity={0.8}
+                      onPress={() => router.push(`/providers/${p.id}` as any)}
+                      style={[s.trendCard, { width: colW }]}
+                    >
+                      {p.profile_photo_url ? (
+                        <Image
+                          source={{ uri: p.profile_photo_url }}
+                          style={StyleSheet.absoluteFill}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={s.absCenter}>
+                          <Silhouette size={48} />
+                        </View>
+                      )}
+                      <LinearGradient
+                        colors={['transparent', 'rgba(8,8,8,0.8)']}
+                        start={{ x: 0, y: 0.5 }}
+                        end={{ x: 0, y: 1 }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                      <View style={s.trendInfo}>
+                        <Text style={s.trendName}>{p.display_name}</Text>
+                        <RatingRow rating={ratingLabel(p)} category={categoryName(p.category_id, categories)} />
+                        {p.neighborhood || p.location ? (
+                          <Text style={s.trendTag}>{p.neighborhood ?? p.location}</Text>
+                        ) : null}
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* ── Browse by category ──────────────────────────────────────── */}
+            <View style={[s.section, s.padded]}>
+              <Text style={s.sectionTitle}>Browse by category</Text>
+              <View style={[s.grid, { marginTop: 16 }]}>
+                {categories.map((c) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    activeOpacity={0.8}
+                    onPress={() => router.push('/(tabs)/search' as any)}
+                    style={[s.browseCard, { width: colW }]}
+                  >
+                    <Text style={s.browseIcon}>◈</Text>
+                    <View>
+                      <Text style={s.browseName}>{c.name}</Text>
+                      <Text style={s.browseCount}>{c.name} providers</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </>
+        )}
 
         {/* Bottom spacer for tab bar */}
         <View style={{ height: 120 }} />
@@ -456,6 +577,41 @@ const s = StyleSheet.create({
     letterSpacing: -0.05,
   },
 
+  // Empty state
+  emptyWrap: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: 24,
+    gap: 8,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  emptySub: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'center',
+  },
+  emptyBtn: {
+    marginTop: 20,
+    backgroundColor: '#F0E8D5',
+    borderRadius: 14,
+    paddingHorizontal: 20,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyBtnText: {
+    fontSize: 14,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
+  },
+
   // Hero carousel
   heroOuter: {
     paddingHorizontal: 24,
@@ -467,6 +623,7 @@ const s = StyleSheet.create({
     borderCurve: 'continuous',
     overflow: 'hidden',
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(240,232,213,0.08)',
   },
   heroInner: {
     flexDirection: 'row',
@@ -610,6 +767,7 @@ const s = StyleSheet.create({
     borderCurve: 'continuous',
     overflow: 'hidden',
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(240,232,213,0.08)',
   },
   absCenter: {
     position: 'absolute',
@@ -658,6 +816,7 @@ const s = StyleSheet.create({
     borderCurve: 'continuous',
     overflow: 'hidden',
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(240,232,213,0.08)',
   },
   liveBadge: {
     position: 'absolute',
@@ -705,6 +864,7 @@ const s = StyleSheet.create({
     borderCurve: 'continuous',
     overflow: 'hidden',
     justifyContent: 'flex-end',
+    backgroundColor: 'rgba(240,232,213,0.08)',
   },
   trendInfo: {
     padding: 12,
