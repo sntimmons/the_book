@@ -7,6 +7,11 @@ export interface BookingService {
   duration: string
   depositRequired: boolean
   depositAmount: string
+  addOns: Array<{
+    name: string
+    extraTime: string
+    extraPrice: string
+  }>
 }
 
 interface BookingState {

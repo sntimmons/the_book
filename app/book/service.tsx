@@ -37,6 +37,7 @@ export default function BookService() {
       duration: `${service.duration_minutes} min`,
       depositRequired: false,
       depositAmount: '0',
+      addOns: [],
     })
   }
 
