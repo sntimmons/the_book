@@ -1,17 +1,19 @@
-import { Tabs, router } from 'expo-router'
+import { Tabs } from 'expo-router'
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
 
-type TabItem =
-  | { name: 'index' | 'search' | 'new' | 'me'; icon: string | null; label: string; href?: never }
-  | { name: string; icon: string; label: string; href: string }
+type TabItem = {
+  name: 'index' | 'search' | 'new' | 'messages' | 'me'
+  icon: string | null
+  label: string
+}
 
 const TAB_ITEMS: TabItem[] = [
   { name: 'index', icon: '⌂', label: 'Home' },
   { name: 'search', icon: '⌕', label: 'Search' },
   { name: 'new', icon: null, label: '' },
-  { name: 'messages-tab', icon: '✉', label: 'Messages', href: '/messages' },
+  { name: 'messages', icon: '✉', label: 'Messages' },
   { name: 'me', icon: '◯', label: 'Me' },
 ]
 
@@ -26,10 +28,6 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         const isCenter = tab.name === 'new'
 
         function handlePress() {
-          if ('href' in tab && tab.href) {
-            router.push(tab.href as any)
-            return
-          }
           const event = navigation.emit({ type: 'tabPress', target: route?.key ?? '', canPreventDefault: true })
           if (!isFocused && !event.defaultPrevented) {
             navigation.navigate(tab.name as any)
@@ -63,6 +61,7 @@ export default function TabLayout() {
       <Tabs.Screen name="index" options={{ headerShown: false }} />
       <Tabs.Screen name="search" options={{ headerShown: false }} />
       <Tabs.Screen name="new" options={{ headerShown: false }} />
+      <Tabs.Screen name="messages" options={{ headerShown: false }} />
       <Tabs.Screen name="bookings" options={{ headerShown: false, href: null }} />
       <Tabs.Screen name="me" options={{ headerShown: false }} />
     </Tabs>
