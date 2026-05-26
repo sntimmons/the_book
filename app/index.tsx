@@ -123,9 +123,16 @@ const DEV_NAV: NavSection[] = [
     label: 'CLIENT DASHBOARD',
     items: [
       { label: 'Client Dashboard', route: '/dashboard/client' },
-      { label: 'My Bookings', route: '/dashboard/client/bookings' },
-      { label: 'Favorites', route: '/dashboard/client/favorites' },
-      { label: 'Messages', route: '/dashboard/client/messages' },
+      { label: 'Client Bookings', route: '/dashboard/client/bookings' },
+      { label: 'Client Favorites', route: '/dashboard/client/favorites' },
+      { label: 'Client Messages', route: '/dashboard/client/messages' },
+    ],
+  },
+  {
+    label: 'SYSTEM SCREENS',
+    items: [
+      { label: 'Review Detail', route: '/reviews/1' },
+      { label: 'Notifications', route: '/notifications' },
     ],
   },
   {
@@ -161,7 +168,7 @@ const DEV_NAV: NavSection[] = [
     label: 'ADMIN',
     items: [
       { label: 'Admin Providers', route: '/admin/providers' },
-      { label: 'Create Provider', route: '/admin/create-provider' },
+      { label: 'Admin Create Provider', route: '/admin/create-provider' },
     ],
   },
 ]
@@ -196,10 +203,10 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/dashboard/provider/payouts', route: '/dashboard/provider/payouts', status: 'Stub' },
   { label: '/dashboard/provider/services', route: '/dashboard/provider/services', status: 'Stub' },
   { label: '/dashboard/provider/settings', route: '/dashboard/provider/settings', status: 'Stub' },
-  { label: '/dashboard/client', route: '/dashboard/client', status: 'Planned' },
-  { label: '/dashboard/client/bookings', route: '/dashboard/client/bookings', status: 'Planned' },
-  { label: '/dashboard/client/favorites', route: '/dashboard/client/favorites', status: 'Planned' },
-  { label: '/dashboard/client/messages', route: '/dashboard/client/messages', status: 'Planned' },
+  { label: '/dashboard/client', route: '/dashboard/client', status: 'Stub' },
+  { label: '/dashboard/client/bookings', route: '/dashboard/client/bookings', status: 'Stub' },
+  { label: '/dashboard/client/favorites', route: '/dashboard/client/favorites', status: 'Stub' },
+  { label: '/dashboard/client/messages', route: '/dashboard/client/messages', status: 'Stub' },
   { label: '/messages', route: '/messages', status: 'Built' },
   { label: '/messages/[id]', route: '/messages/1', status: 'Built' },
   { label: '/admin/providers', route: '/admin/providers', status: 'Stub' },
@@ -216,8 +223,8 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/post-booking/submitted', route: '/post-booking/submitted', status: 'Built' },
   { label: '/post-booking/issue', route: '/post-booking/issue', status: 'Built' },
   { label: '/post-booking/provider-review', route: '/post-booking/provider-review', status: 'Built' },
-  { label: '/reviews/[id]', route: '/reviews/1', status: 'Planned' },
-  { label: '/notifications', route: '/notifications', status: 'Planned' },
+  { label: '/reviews/[id]', route: '/reviews/1', status: 'Stub' },
+  { label: '/notifications', route: '/notifications', status: 'Stub' },
   { label: '/(tabs)/search', route: '/(tabs)/search', status: 'Built' },
 ]
 
@@ -295,7 +302,7 @@ export default function WelcomeScreen() {
       try {
         router.push(route as any)
       } catch {
-        Alert.alert('Not built yet', `Route ${route} doesn't exist yet.`)
+        Alert.alert('Not available', 'This screen is coming soon.')
       }
     }, 100)
   }
