@@ -5,6 +5,8 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Alert,
+  Share,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
@@ -48,14 +50,18 @@ export default function MeScreen() {
           <TouchableOpacity
             style={styles.iconBtn}
             activeOpacity={0.7}
-            onPress={() => console.log('share profile')}
+            onPress={() =>
+              Share.share({ message: 'Check out my profile on The Book' })
+            }
           >
             <Feather name="share" size={15} color="rgba(240,232,213,0.6)" />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.iconBtn}
             activeOpacity={0.7}
-            onPress={() => console.log('settings')}
+            onPress={() =>
+              Alert.alert('Settings', 'Settings coming soon.', [{ text: 'OK' }])
+            }
           >
             <Feather name="settings" size={15} color="rgba(240,232,213,0.6)" />
           </TouchableOpacity>
@@ -88,7 +94,11 @@ export default function MeScreen() {
           <TouchableOpacity
             style={styles.editBtn}
             activeOpacity={0.8}
-            onPress={() => console.log('edit profile')}
+            onPress={() =>
+              Alert.alert('Edit Profile', 'Profile editing coming soon.', [
+                { text: 'OK' },
+              ])
+            }
           >
             <Feather name="edit-2" size={12} color="rgba(240,232,213,0.5)" />
             <Text style={styles.editBtnText}>Edit Profile</Text>
@@ -210,7 +220,7 @@ function BookingsTab() {
               <TouchableOpacity
                 style={styles.nextActionBtn}
                 activeOpacity={0.7}
-                onPress={() => console.log('view booking')}
+                onPress={() => router.push('/(tabs)/bookings')}
               >
                 <Text style={styles.nextActionText}>View Booking</Text>
               </TouchableOpacity>

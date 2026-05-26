@@ -11,6 +11,7 @@ import {
   Keyboard,
   Platform,
   StyleSheet,
+  Alert,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -161,9 +162,21 @@ export default function ChatScreen() {
               <TouchableOpacity
                 style={styles.infoBtn}
                 activeOpacity={0.7}
-                onPress={() => router.push('/providers/1' as any)}
+                onPress={() =>
+                  Alert.alert('Chat Options', '', [
+                    {
+                      text: 'View Provider Profile',
+                      onPress: () => router.push('/providers/1' as any),
+                    },
+                    {
+                      text: 'Block & Report',
+                      onPress: () => console.log('report'),
+                    },
+                    { text: 'Cancel', style: 'cancel' },
+                  ])
+                }
               >
-                <Feather name="info" size={16} color="rgba(240,232,213,0.5)" />
+                <Feather name="more-horizontal" size={16} color="rgba(240,232,213,0.5)" />
               </TouchableOpacity>
             </View>
 
@@ -192,14 +205,19 @@ export default function ChatScreen() {
                 if (msg.type === 'booking') {
                   return (
                     <View key={msg.id} style={styles.bookingCardWrap}>
-                      <View style={styles.bookingCard}>
+                      <TouchableOpacity
+                        style={styles.bookingCard}
+                        activeOpacity={0.85}
+                        onPress={() => router.push('/(tabs)/bookings')}
+                      >
                         <View style={styles.bookingCardHeader}>
                           <Feather name="check-circle" size={14} color="#4CAF50" />
                           <Text style={styles.bookingCardLabel}>BOOKING CONFIRMED</Text>
+                          <Text style={styles.bookingViewLabel}>View</Text>
                         </View>
                         <Text style={styles.bookingCardContent}>{msg.content}</Text>
                         <Text style={styles.bookingCardTimestamp}>{msg.timestamp}</Text>
-                      </View>
+                      </TouchableOpacity>
                     </View>
                   )
                 }
@@ -434,6 +452,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginBottom: 8,
+  },
+  bookingViewLabel: {
+    marginLeft: 'auto',
+    fontSize: 11,
+    color: '#4CAF50',
+    fontFamily: 'Manrope_600SemiBold',
   },
   bookingCardLabel: {
     fontSize: 10,

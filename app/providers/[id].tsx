@@ -42,7 +42,8 @@ export default function ProviderProfilePage() {
       provider={provider}
       onBookNow={handleBookNow}
       onFollow={() => console.log('follow', id)}
-      onMessage={() => console.log('message', id)}
+      // TODO: replace with real provider id from props
+      onMessage={() => router.push('/messages/1' as any)}
     />
   )
 }

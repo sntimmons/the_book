@@ -90,6 +90,8 @@ export default function VerifyScreen() {
           style={styles.hiddenInput}
           caretHidden
           autoFocus
+          textContentType="oneTimeCode"
+          autoComplete="sms-otp"
         />
 
         {/* Countdown */}
@@ -98,11 +100,6 @@ export default function VerifyScreen() {
             ? `Resend code in ${formatCountdown(seconds)}`
             : 'Resend code'}
         </Text>
-
-        {/* Dev bypass */}
-        <Pressable onPress={() => router.push('/path-selection')} style={{ marginTop: 32, alignItems: 'center' }}>
-          <Text style={styles.devSkip}>Skip verification (dev only)</Text>
-        </Pressable>
       </View>
 
       {/* Verify button */}
@@ -220,12 +217,6 @@ const styles = StyleSheet.create({
   resendText: {
     fontSize: 13,
     color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
-  },
-  devSkip: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.25)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },

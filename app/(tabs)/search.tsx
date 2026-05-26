@@ -231,6 +231,7 @@ export default function SearchScreen() {
               value={query}
               onChangeText={setQuery}
               returnKeyType="search"
+              autoCapitalize="none"
               autoCorrect={false}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}

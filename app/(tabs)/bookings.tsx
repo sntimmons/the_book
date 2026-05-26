@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   ScrollView,
   StyleSheet,
+  Alert,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
@@ -237,13 +238,57 @@ function StatusPill({ status }: { status: Status }) {
   )
 }
 
+function handleReschedule() {
+  Alert.alert(
+    'Reschedule',
+    'To reschedule message your provider directly and they can adjust your appointment.',
+    [
+      {
+        text: 'Message Provider',
+        onPress: () => router.push('/messages/1'),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ],
+  )
+}
+
+function handleCancelBooking() {
+  Alert.alert(
+    'Cancel Booking',
+    "Cancellation fees may apply per your provider's policy. Are you sure you want to cancel?",
+    [
+      { text: 'Keep Booking', style: 'cancel' },
+      {
+        text: 'Cancel Booking',
+        style: 'destructive',
+        onPress: () => console.log('cancel booking'),
+      },
+    ],
+  )
+}
+
+function handleCancelRequest() {
+  Alert.alert(
+    'Cancel Request',
+    'Your booking request will be cancelled. No charge has been made.',
+    [
+      { text: 'Keep Request', style: 'cancel' },
+      {
+        text: 'Cancel Request',
+        style: 'destructive',
+        onPress: () => console.log('cancel request'),
+      },
+    ],
+  )
+}
+
 function CardActions({ status }: { status: Status }) {
   if (status === 'upcoming') {
     return (
       <>
         <ActionButton label="Message" onPress={() => router.push('/messages/1')} />
-        <ActionButton label="Reschedule" onPress={() => console.log('reschedule')} />
-        <ActionButton label="Cancel" muted onPress={() => console.log('cancel')} />
+        <ActionButton label="Reschedule" onPress={handleReschedule} />
+        <ActionButton label="Cancel" muted onPress={handleCancelBooking} />
       </>
     )
   }
@@ -251,7 +296,7 @@ function CardActions({ status }: { status: Status }) {
     return (
       <>
         <ActionButton label="Message" onPress={() => router.push('/messages/1')} />
-        <ActionButton label="Cancel Request" muted onPress={() => console.log('cancel request')} />
+        <ActionButton label="Cancel Request" muted onPress={handleCancelRequest} />
       </>
     )
   }

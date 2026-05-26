@@ -9,6 +9,8 @@ import {
   Modal,
   TextInput,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -288,7 +290,10 @@ export default function ProviderServices() {
         transparent
         onRequestClose={() => { setShowAddService(false); resetDraft() }}
       >
-        <View style={styles.modalRoot}>
+        <KeyboardAvoidingView
+          style={styles.modalRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
           <Pressable
             style={styles.modalBackdrop}
             onPress={() => { setShowAddService(false); resetDraft() }}
@@ -313,6 +318,7 @@ export default function ProviderServices() {
             {/* Modal scroll */}
             <ScrollView
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.modalScrollContent}
             >
@@ -520,7 +526,7 @@ export default function ProviderServices() {
               </Pressable>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   )

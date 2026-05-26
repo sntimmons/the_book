@@ -6,6 +6,8 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -41,7 +43,10 @@ export default function WriteReview() {
   const canPost = reviewText.trim().length > 10
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity
@@ -61,6 +66,7 @@ export default function WriteReview() {
         contentContainerStyle={{ paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {/* Provider header */}
         <View style={styles.providerHeader}>
@@ -186,7 +192,7 @@ export default function WriteReview() {
           <Text style={styles.skipText}>Skip — post without a written review</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

@@ -8,6 +8,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
@@ -44,7 +46,10 @@ export default function ClientProfileSetup() {
   }
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       {/* Progress bar */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
@@ -200,7 +205,7 @@ export default function ClientProfileSetup() {
           Your profile is only visible to providers you book with.
         </Text>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

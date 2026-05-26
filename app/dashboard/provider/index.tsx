@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   Pressable,
   StyleSheet,
+  Alert,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -49,6 +50,35 @@ export default function ProviderDashboard() {
   const insets = useSafeAreaInsets()
   const { openPanel } = usePanelContext()
   const pendingCount = MOCK_REQUESTS.length
+
+  function handleAccept() {
+    Alert.alert(
+      'Accept Booking',
+      'Are you sure you want to accept this booking request?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Accept',
+          onPress: () => router.push('/post-booking/accepted' as any),
+        },
+      ],
+    )
+  }
+
+  function handleDecline() {
+    Alert.alert(
+      'Decline Booking',
+      'Are you sure you want to decline this request?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Decline',
+          style: 'destructive',
+          onPress: () => router.push('/post-booking/declined' as any),
+        },
+      ],
+    )
+  }
 
   return (
     <View style={styles.root}>
@@ -114,7 +144,10 @@ export default function ProviderDashboard() {
               <View style={styles.pulseDot} />
               <Text style={styles.sectionTitle}>Pending Requests</Text>
             </View>
-            <TouchableOpacity activeOpacity={0.7}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => router.push('/dashboard/provider/bookings' as any)}
+            >
               <Text style={styles.seeAll}>See all</Text>
             </TouchableOpacity>
           </View>
@@ -137,10 +170,22 @@ export default function ProviderDashboard() {
               <View style={styles.requestRight}>
                 <Text style={styles.requestPrice}>{req.price}</Text>
                 <View style={styles.requestActions}>
-                  <Pressable style={[styles.requestBtn, styles.requestBtnDecline]}>
+                  <Pressable
+                    style={[styles.requestBtn, styles.requestBtnDecline]}
+                    onPress={handleDecline}
+                  >
                     <Feather name="x" size={14} color="rgba(240,232,213,0.5)" />
                   </Pressable>
-                  <Pressable style={[styles.requestBtn, styles.requestBtnAccept]}>
+                  <Pressable
+                    style={[styles.requestBtn, styles.requestBtnMessage]}
+                    onPress={() => router.push('/messages/1' as any)}
+                  >
+                    <Feather name="message-circle" size={14} color="rgba(240,232,213,0.7)" />
+                  </Pressable>
+                  <Pressable
+                    style={[styles.requestBtn, styles.requestBtnAccept]}
+                    onPress={handleAccept}
+                  >
                     <Feather name="check" size={14} color="#080808" />
                   </Pressable>
                 </View>
@@ -398,6 +443,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   requestBtnDecline: {
+    backgroundColor: 'rgba(240,232,213,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+  },
+  requestBtnMessage: {
     backgroundColor: 'rgba(240,232,213,0.07)',
     borderWidth: 1,
     borderColor: 'rgba(240,232,213,0.1)',

@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   TextInput,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -59,11 +61,17 @@ export default function ProviderPayout() {
   }, [])
 
   function navigate() {
+    // SECURITY: Do not wire to any API.
+    // Replace entire screen with Stripe Connect CardField before launch.
+    // Raw PAN/CVV must never be transmitted.
     router.push('/onboarding/provider/golive')
   }
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       {/* Progress bar — 87.5% */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
@@ -89,6 +97,7 @@ export default function ProviderPayout() {
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 160 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
       >
@@ -299,7 +308,7 @@ export default function ProviderPayout() {
           You must add payout details before receiving your first payment.
         </Text>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

@@ -1,4 +1,4 @@
-import { View, Text, Pressable, StyleSheet, ImageSourcePropType } from 'react-native'
+import { View, Text, Pressable, StyleSheet, ImageSourcePropType, Alert } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import CrossfadeBackground from '../../components/CrossfadeBackground'
@@ -30,14 +30,26 @@ export default function SignupScreen() {
 
         <Pressable
           style={({ pressed }) => [styles.btnPrimary, { marginBottom: 10, opacity: pressed ? 0.86 : 1 }]}
-          onPress={() => router.push('/onboarding/client')}
+          onPress={() =>
+            Alert.alert(
+              'Apple Sign In',
+              'Apple Sign In is coming soon. Please use your phone number to sign in.',
+              [{ text: 'OK' }],
+            )
+          }
         >
           <Text style={styles.btnPrimaryText}>Continue with Apple</Text>
         </Pressable>
 
         <Pressable
           style={({ pressed }) => [styles.btnSecondary, { marginBottom: 10, opacity: pressed ? 0.78 : 1 }]}
-          onPress={() => router.push('/onboarding/client')}
+          onPress={() =>
+            Alert.alert(
+              'Email Sign In',
+              'Email sign in is coming soon. Please use your phone number to sign in.',
+              [{ text: 'OK' }],
+            )
+          }
         >
           <Text style={styles.btnSecondaryText}>Continue with Email</Text>
         </Pressable>

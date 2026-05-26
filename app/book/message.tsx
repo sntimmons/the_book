@@ -8,6 +8,9 @@ import {
   TextInput,
   Image,
   StyleSheet,
+  KeyboardAvoidingView,
+  Keyboard,
+  Platform,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -68,7 +71,10 @@ export default function BookMessage() {
     .join(' · ')
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity
@@ -98,8 +104,10 @@ export default function BookMessage() {
         style={styles.scroll}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 140 }]}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
       >
+        <Pressable onPress={Keyboard.dismiss}>
         {/* Headline */}
         <Text style={styles.headline}>Anything they should know?</Text>
         <Text style={styles.subtext}>
@@ -191,6 +199,7 @@ export default function BookMessage() {
             </Text>
           </View>
         )}
+        </Pressable>
       </ScrollView>
 
       {/* Fixed bottom CTA */}
@@ -210,7 +219,7 @@ export default function BookMessage() {
           <Text style={styles.skipLinkText}>Skip — send request without a message</Text>
         </TouchableOpacity>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

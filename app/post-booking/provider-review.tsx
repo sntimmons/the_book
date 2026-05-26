@@ -2,9 +2,12 @@ import { useState } from 'react'
 import {
   View,
   Text,
+  ScrollView,
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -58,12 +61,22 @@ export default function ProviderReview() {
   const canSubmit = rating > 0
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       {/* Top bar — no back arrow, terminal flow */}
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.topBarTitle}>Rate Your Client</Text>
       </View>
 
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 140 }}
+      >
       <View style={styles.content}>
         {/* Client summary */}
         <View style={styles.avatar}>
@@ -136,6 +149,7 @@ export default function ProviderReview() {
           </View>
         )}
       </View>
+      </ScrollView>
 
       {/* Fixed bottom CTA */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 16 }]}>
@@ -160,7 +174,7 @@ export default function ProviderReview() {
           Client ratings help keep The Book safe for all providers.
         </Text>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

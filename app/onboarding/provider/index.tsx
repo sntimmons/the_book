@@ -10,6 +10,8 @@ import {
   Modal,
   Image,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
@@ -103,9 +105,12 @@ export default function ProviderOnboardingStep1() {
   const displayCategory = category === 'Other' ? 'Other' : category
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       {/* Progress bar — 1 of 8 = 12.5% */}
-      <View style={styles.progressTrack}>
+      <View style={[styles.progressTrack, { top: insets.top }]}>
         <View style={styles.progressFill} />
       </View>
 
@@ -128,6 +133,7 @@ export default function ProviderOnboardingStep1() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         <Text style={styles.headline}>Let's build your profile.</Text>
         <Text style={styles.subtext}>
@@ -360,7 +366,7 @@ export default function ProviderOnboardingStep1() {
           </View>
         </View>
       </Modal>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

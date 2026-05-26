@@ -6,6 +6,8 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -52,7 +54,10 @@ export default function IssueReport() {
   const canSubmit = selectedIssues.length > 0
 
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      style={styles.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity
@@ -72,6 +77,7 @@ export default function IssueReport() {
         contentContainerStyle={{ paddingBottom: 140 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         {/* Headline */}
         <Text style={styles.headline}>What went wrong?</Text>
@@ -174,7 +180,7 @@ export default function IssueReport() {
           </>
         )}
       </View>
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 

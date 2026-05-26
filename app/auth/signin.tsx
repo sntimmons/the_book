@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { View, Text, Pressable, Image, StyleSheet } from 'react-native'
+import { View, Text, Pressable, Image, StyleSheet, Alert } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -44,14 +44,26 @@ export default function SigninScreen() {
 
         <Pressable
           style={({ pressed }) => [styles.btnPrimary, { marginBottom: 10, opacity: pressed ? 0.86 : 1 }]}
-          onPress={() => console.log('apple')}
+          onPress={() =>
+            Alert.alert(
+              'Apple Sign In',
+              'Apple Sign In is coming soon. Please use your phone number to sign in.',
+              [{ text: 'OK' }],
+            )
+          }
         >
           <Text style={styles.btnPrimaryText}>Continue with Apple</Text>
         </Pressable>
 
         <Pressable
           style={({ pressed }) => [styles.btnSecondary, { marginBottom: 10, opacity: pressed ? 0.78 : 1 }]}
-          onPress={() => console.log('email')}
+          onPress={() =>
+            Alert.alert(
+              'Email Sign In',
+              'Email sign in is coming soon. Please use your phone number to sign in.',
+              [{ text: 'OK' }],
+            )
+          }
         >
           <Text style={styles.btnSecondaryText}>Continue with Email</Text>
         </Pressable>

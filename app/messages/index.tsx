@@ -5,6 +5,7 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  Alert,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -67,6 +68,35 @@ export default function MessagesInbox() {
   const insets = useSafeAreaInsets()
   const [activeFilter, setActiveFilter] = useState<FilterTab>('All')
 
+  const filteredConversations =
+    activeFilter === 'All'
+      ? CONVERSATIONS
+      : activeFilter === 'Bookings'
+        ? CONVERSATIONS.filter((c) => c.hasBooking)
+        : []
+
+  function handleCompose() {
+    Alert.alert(
+      'New Message',
+      'Search for a provider to message them directly.',
+      [
+        {
+          text: 'Search Providers',
+          onPress: () => router.push('/(tabs)/search'),
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    )
+  }
+
+  function handleRequests() {
+    Alert.alert(
+      'Message Requests',
+      "You have 2 message requests from people you don't follow.",
+      [{ text: 'OK' }],
+    )
+  }
+
   return (
     <View style={styles.root}>
       {/* Top bar */}
@@ -75,7 +105,7 @@ export default function MessagesInbox() {
         <TouchableOpacity
           style={styles.composeBtn}
           activeOpacity={0.7}
-          onPress={() => console.log('new message')}
+          onPress={handleCompose}
         >
           <Feather name="edit" size={16} color="#F0E8D5" />
         </TouchableOpacity>
@@ -103,7 +133,7 @@ export default function MessagesInbox() {
           <TouchableOpacity
             style={styles.requestsBanner}
             activeOpacity={0.8}
-            onPress={() => console.log('view requests')}
+            onPress={handleRequests}
           >
             <View style={styles.requestsLeft}>
               <View style={styles.requestAvatars}>
@@ -126,8 +156,15 @@ export default function MessagesInbox() {
         {/* Section label */}
         <Text style={styles.sectionLabel}>TODAY</Text>
 
+        {activeFilter === 'Requests' && (
+          <View style={styles.emptyRequests}>
+            <Feather name="inbox" size={36} color="rgba(240,232,213,0.1)" />
+            <Text style={styles.emptyRequestsText}>No message requests</Text>
+          </View>
+        )}
+
         {/* Conversation threads */}
-        {CONVERSATIONS.map((convo) => (
+        {filteredConversations.map((convo) => (
           <TouchableOpacity
             key={convo.id}
             style={styles.threadRow}
@@ -388,6 +425,16 @@ const styles = StyleSheet.create({
   bookingPillText: {
     fontSize: 10,
     color: '#C8922A',
+    fontFamily: 'Manrope_500Medium',
+  },
+  emptyRequests: {
+    paddingVertical: 60,
+    alignItems: 'center',
+  },
+  emptyRequestsText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_500Medium',
   },
 })

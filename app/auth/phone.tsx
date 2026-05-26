@@ -68,6 +68,8 @@ export default function PhoneScreen() {
               placeholderTextColor="rgba(240,232,213,0.3)"
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
+              textContentType="telephoneNumber"
+              autoComplete="tel"
               style={[
                 styles.input,
                 { borderBottomColor: focused ? '#C8922A' : 'rgba(240,232,213,0.2)' },
