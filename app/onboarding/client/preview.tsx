@@ -76,7 +76,7 @@ const grid = StyleSheet.create({
 export default function ClientPreview() {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
-  const { firstName, lastName, neighborhood, bio, reset } = useClientStore()
+  const { name, notes, reset } = useClientStore()
   const [isLoading, setIsLoading] = useState(false)
 
   async function handleGoLive() {
@@ -91,11 +91,8 @@ export default function ClientPreview() {
 
     const { error } = await supabase.from('clients').upsert({
       id: user.id,
-      first_name: firstName,
-      last_name: lastName,
-      neighborhood,
-      bio,
-      phone: user.phone ?? null,
+      name,
+      notes,
       created_at: new Date().toISOString(),
     })
 

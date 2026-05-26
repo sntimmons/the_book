@@ -24,18 +24,12 @@ const BIO_LIMIT = 150
 export default function ClientProfileSetup() {
   const insets = useSafeAreaInsets()
   const [focused, setFocused] = useState<FocusedField>(null)
-  const {
-    firstName,
-    lastName,
-    neighborhood,
-    bio,
-    photo,
-    setFirstName,
-    setLastName,
-    setNeighborhood,
-    setBio,
-    setPhoto,
-  } = useClientStore()
+  const { setName, setNotes } = useClientStore()
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [neighborhood, setNeighborhood] = useState('')
+  const [bio, setBio] = useState('')
+  const [photo, setPhoto] = useState<string | null>(null)
 
   async function pickImage() {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -205,7 +199,11 @@ export default function ClientProfileSetup() {
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16, bottom: 0, left: 0, right: 0, position: 'absolute' }]}>
         <Pressable
           style={({ pressed }) => [styles.continueBtn, pressed && { opacity: 0.88 }]}
-          onPress={() => router.push('/onboarding/client/preferences')}
+          onPress={() => {
+            setName(`${firstName} ${lastName}`.trim())
+            setNotes(bio)
+            router.push('/onboarding/client/preferences')
+          }}
         >
           <Text style={styles.continueBtnText}>Continue</Text>
         </Pressable>
