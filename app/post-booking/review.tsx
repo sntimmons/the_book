@@ -40,7 +40,8 @@ export default function WriteReview() {
     })
   }
 
-  const canPost = reviewText.trim().length > 10
+  const canPost =
+    reviewText.trim().length > 10 || selectedCategories.length > 0
 
   return (
     <KeyboardAvoidingView
