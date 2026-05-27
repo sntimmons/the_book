@@ -2,7 +2,7 @@ import { Image, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 
 export type TabIconProps = {
-  name: 'home' | 'bookings' | 'messages' | 'me'
+  name: 'home' | 'bookings' | 'reels' | 'messages' | 'me'
   focused: boolean
   avatarUrl?: string
   initials?: string
@@ -27,6 +27,14 @@ export default function TabIcon({ name, focused, avatarUrl, initials }: TabIconP
         <Ionicons
           name={focused ? 'calendar-clear' : 'calendar-clear-outline'}
           size={26}
+          color={color}
+        />
+      )
+    case 'reels':
+      return (
+        <Ionicons
+          name={focused ? 'play-circle' : 'play-circle-outline'}
+          size={28}
           color={color}
         />
       )

@@ -1,4 +1,4 @@
-import { Tabs } from 'expo-router'
+import { Tabs, router } from 'expo-router'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
@@ -19,11 +19,19 @@ type CenterTab = {
   routeName: 'new'
 }
 
-type Slot = IconTab | CenterTab
+type PushTab = {
+  kind: 'push'
+  key: 'reels'
+  iconName: 'reels'
+  href: string
+}
+
+type Slot = IconTab | CenterTab | PushTab
 
 const SLOTS: Slot[] = [
   { kind: 'icon', routeName: 'index', iconName: 'home' },
   { kind: 'icon', routeName: 'bookings', iconName: 'bookings' },
+  { kind: 'push', key: 'reels', iconName: 'reels', href: '/reels' },
   { kind: 'center', routeName: 'new' },
   { kind: 'icon', routeName: 'messages', iconName: 'messages' },
   { kind: 'icon', routeName: 'me', iconName: 'me' },
@@ -49,8 +57,22 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       ]}
     >
       {SLOTS.map((slot) => {
+        if (slot.kind === 'push') {
+          return (
+            <Pressable
+              key={slot.key}
+              onPress={() => router.push(slot.href as never)}
+              style={bar.slot}
+              android_ripple={null}
+            >
+              <TabIcon name={slot.iconName} focused={false} />
+            </Pressable>
+          )
+        }
+
         if (slot.kind === 'center') {
-          const route = state.routes.find((r) => r.name === slot.routeName)
+          const routeName = slot.routeName
+          const route = state.routes.find((r) => r.name === routeName)
           const isFocused = route ? state.index === state.routes.indexOf(route) : false
 
           function pressCenter() {
@@ -61,7 +83,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
               canPreventDefault: true,
             })
             if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(slot.routeName as never)
+              navigation.navigate(routeName as never)
             }
           }
 
@@ -80,7 +102,8 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           )
         }
 
-        const route = state.routes.find((r) => r.name === slot.routeName)
+        const routeName = slot.routeName
+        const route = state.routes.find((r) => r.name === routeName)
         const isFocused = route ? state.index === state.routes.indexOf(route) : false
 
         function press() {
@@ -91,7 +114,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             canPreventDefault: true,
           })
           if (!isFocused && !event.defaultPrevented) {
-            navigation.navigate(slot.routeName as never)
+            navigation.navigate(routeName as never)
           }
         }
 
@@ -99,7 +122,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
         return (
           <Pressable
-            key={slot.routeName}
+            key={routeName}
             onPress={press}
             style={bar.slot}
             android_ripple={null}
