@@ -277,7 +277,16 @@ function ReelItem({
 
       {/* Top section */}
       <View style={[styles.topSection, { top: insets.top + 12 }]}>
-        <TouchableOpacity onPress={() => router.back()} activeOpacity={0.7}>
+        <TouchableOpacity
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back()
+            } else {
+              router.replace('/(tabs)/' as any)
+            }
+          }}
+          activeOpacity={0.7}
+        >
           <Feather name="x" size={22} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topWordmark}>Reels</Text>
