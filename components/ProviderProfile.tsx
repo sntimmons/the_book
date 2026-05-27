@@ -178,7 +178,13 @@ export default function ProviderProfile({
               />
             ) : (
               <View style={[styles.photo, styles.photoPlaceholder]}>
-                <Feather name="user" size={30} color="rgba(240,232,213,0.2)" />
+                {provider.name ? (
+                  <Text style={styles.photoInitial}>
+                    {provider.name.trim().charAt(0).toUpperCase()}
+                  </Text>
+                ) : (
+                  <Feather name="user" size={30} color="rgba(240,232,213,0.2)" />
+                )}
               </View>
             )}
             {provider.isVerified && (
@@ -555,9 +561,14 @@ const styles = StyleSheet.create({
     borderColor: '#080808',
   },
   photoPlaceholder: {
-    backgroundColor: 'rgba(240,232,213,0.08)',
+    backgroundColor: 'rgba(240,232,213,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  photoInitial: {
+    fontSize: 28,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
   },
   verifiedBadge: {
     position: 'absolute',

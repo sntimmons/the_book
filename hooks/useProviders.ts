@@ -6,7 +6,7 @@ export interface Provider {
   user_id: string
   display_name: string
   username: string
-  category_id: string
+  category_id: number | null
   bio: string | null
   location: string | null
   neighborhood: string | null
@@ -40,7 +40,7 @@ export interface Service {
 }
 
 export interface Category {
-  id: string
+  id: number
   name: string
   slug: string
 }
@@ -53,7 +53,7 @@ export async function getLiveCount(): Promise<number> {
   return count || 0
 }
 
-export function useProviders(categoryId?: string) {
+export function useProviders(categoryId?: number) {
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -71,7 +71,7 @@ export function useProviders(categoryId?: string) {
         .select('*')
         .eq('is_approved', true)
         .order('is_featured', { ascending: false })
-        .order('rating', { ascending: false })
+        .order('average_rating', { ascending: false, nullsFirst: false })
 
       if (categoryId) {
         query = query.eq('category_id', categoryId)
@@ -159,7 +159,7 @@ export function useCategories() {
 
 export function useProviderSearch(
   query: string,
-  categoryId?: string,
+  categoryId?: number,
   filters?: {
     availableToday?: boolean
     minRating?: number

@@ -21,6 +21,7 @@ interface ProviderOnboardingState {
   businessName: string
   category: string
   customCategory: string
+  categoryId: number | null
   location: string
   bio: string
   photo: string | null
@@ -34,6 +35,7 @@ interface ProviderOnboardingState {
   setBusinessName: (name: string) => void
   setCategory: (category: string) => void
   setCustomCategory: (cat: string) => void
+  setCategoryId: (id: number | null) => void
   setLocation: (location: string) => void
   setBio: (bio: string) => void
   setPhoto: (photo: string | null) => void
@@ -50,6 +52,7 @@ const initialState = {
   businessName: '',
   category: '',
   customCategory: '',
+  categoryId: null,
   location: '',
   bio: '',
   photo: null,
@@ -66,6 +69,7 @@ export const useProviderStore = create<ProviderOnboardingState>((set) => ({
   setBusinessName: (businessName) => set({ businessName }),
   setCategory: (category) => set({ category }),
   setCustomCategory: (customCategory) => set({ customCategory }),
+  setCategoryId: (categoryId) => set({ categoryId }),
   setLocation: (location) => set({ location }),
   setBio: (bio) => set({ bio }),
   setPhoto: (photo) => set({ photo }),

@@ -47,7 +47,7 @@ export default function SearchScreen() {
   const inputRef = useRef<TextInput>(null)
 
   const [query, setQuery] = useState('')
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null)
+  const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
   const [activeFilters, setActiveFilters] = useState<string[]>([])
   const [showFilters, setShowFilters] = useState(false)
   const [showSort, setShowSort] = useState(false)
@@ -55,7 +55,7 @@ export default function SearchScreen() {
   const [focused, setFocused] = useState(false)
 
   // Filter sheet local selections
-  const [sheetCategoryId, setSheetCategoryId] = useState<string | null>(null)
+  const [sheetCategoryId, setSheetCategoryId] = useState<number | null>(null)
   const [availability, setAvailability] = useState<string | null>(null)
   const [minRating, setMinRating] = useState('Any')
   const [mobileOnly, setMobileOnly] = useState(false)
@@ -333,7 +333,7 @@ function EmptyState({
 }: {
   categories: Category[]
   onRecent: (term: string) => void
-  onCategory: (catId: string) => void
+  onCategory: (catId: number) => void
   onTrending: (term: string) => void
 }) {
   const [recent, setRecent] = useState(RECENT)

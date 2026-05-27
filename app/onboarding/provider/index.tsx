@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useProviderStore } from '@/store/providerStore'
+import { useCategories } from '../../../hooks/useProviders'
 
 type FocusedField = 'name' | 'businessName' | 'location' | 'bio' | 'customCategory' | null
 type Errors = { name?: string; category?: string; photo?: string }
@@ -37,12 +38,14 @@ export default function ProviderOnboardingStep1() {
     businessName, setBusinessName,
     category, setCategory,
     customCategory, setCustomCategory,
+    setCategoryId,
     location, setLocation,
     bio, setBio,
     photo, setPhoto,
     banner, setBanner,
     isMobile, setIsMobile,
   } = useProviderStore()
+  const { categories } = useCategories()
   const [showCategorySheet, setShowCategorySheet] = useState(false)
   const [focusedField, setFocusedField] = useState<FocusedField>(null)
   const [errors, setErrors] = useState<Errors>({})
@@ -80,6 +83,8 @@ export default function ProviderOnboardingStep1() {
   function selectCategory(cat: string) {
     setCategory(cat)
     setCustomCategory('')
+    const matched = categories.find((c) => c.name === cat)
+    setCategoryId(matched?.id ?? null)
     setShowCategorySheet(false)
     setErrors((prev) => ({ ...prev, category: undefined }))
   }

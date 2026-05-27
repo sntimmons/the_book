@@ -33,7 +33,7 @@ export default function ProviderGoLive() {
   const [isGoingLive, setIsGoingLive] = useState(false)
   const [showReviewMessage, setShowReviewMessage] = useState(false)
   const {
-    name, businessName, category, customCategory,
+    name, businessName, category, customCategory, categoryId,
     location, bio, photo, banner, isMobile,
     services, portfolioPhotos, reels,
     reset,
@@ -79,6 +79,7 @@ export default function ProviderGoLive() {
       .upsert({
         user_id: user.id,
         display_name: displayName,
+        category_id: categoryId,
         bio: bio || null,
         location: locationValue,
         neighborhood: locationValue,

@@ -113,8 +113,8 @@ function SectionHeader({ title, onSeeAll }: { title: string; onSeeAll?: () => vo
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function categoryName(categoryId: string | null | undefined, categories: Category[]) {
-  if (!categoryId) return ''
+function categoryName(categoryId: number | null | undefined, categories: Category[]) {
+  if (categoryId == null) return ''
   return categories.find((c) => c.id === categoryId)?.name ?? ''
 }
 
@@ -128,7 +128,7 @@ function ratingLabel(p: Provider): string {
 export default function DiscoveryFeed() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const [activeCategoryId, setActiveCategoryId] = useState<string | null>(null)
+  const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
   const [currentFeatured, setCurrentFeatured] = useState(0)
   const [liveCount, setLiveCount] = useState(0)
   const heroRef = useRef<ScrollView>(null)
