@@ -1,10 +1,11 @@
 import { Tabs } from 'expo-router'
+import { router } from 'expo-router'
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
 
 type TabItem = {
-  name: 'index' | 'search' | 'new' | 'messages' | 'me'
+  name: 'index' | 'search' | 'reels' | 'new' | 'messages' | 'me'
   icon: string | null
   label: string
 }
@@ -12,6 +13,7 @@ type TabItem = {
 const TAB_ITEMS: TabItem[] = [
   { name: 'index', icon: '⌂', label: 'Home' },
   { name: 'search', icon: '⌕', label: 'Search' },
+  { name: 'reels', icon: '▶', label: 'Reels' },
   { name: 'new', icon: null, label: '' },
   { name: 'messages', icon: '✉', label: 'Messages' },
   { name: 'me', icon: '◯', label: 'Me' },
@@ -19,16 +21,39 @@ const TAB_ITEMS: TabItem[] = [
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets()
+  let routeIdx = 0
 
   return (
     <View style={[bar.container, { paddingBottom: insets.bottom, height: 56 + insets.bottom }]}>
-      {TAB_ITEMS.map((tab, idx) => {
+      {TAB_ITEMS.map((tab) => {
+        const isCenter = tab.name === 'new'
+        const isReels = tab.name === 'reels'
+
+        if (isReels) {
+          return (
+            <TouchableOpacity
+              key={tab.name}
+              activeOpacity={0.7}
+              onPress={() => router.push('/reels' as any)}
+              style={bar.tab}
+            >
+              <Text style={[bar.icon, bar.iconInactive]}>{tab.icon}</Text>
+              <Text style={[bar.label, bar.labelInactive]}>{tab.label}</Text>
+            </TouchableOpacity>
+          )
+        }
+
+        const idx = routeIdx
         const route = state.routes[idx]
         const isFocused = state.index === idx
-        const isCenter = tab.name === 'new'
+        routeIdx += 1
 
         function handlePress() {
-          const event = navigation.emit({ type: 'tabPress', target: route?.key ?? '', canPreventDefault: true })
+          const event = navigation.emit({
+            type: 'tabPress',
+            target: route?.key ?? '',
+            canPreventDefault: true,
+          })
           if (!isFocused && !event.defaultPrevented) {
             navigation.navigate(tab.name as any)
           }
