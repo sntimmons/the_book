@@ -1,79 +1,117 @@
 import { Tabs } from 'expo-router'
-import { router } from 'expo-router'
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
+import { Pressable, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
+import TabIcon from '@/components/TabIcon'
+import { useAuth } from '@/context/AuthContext'
 
-type TabItem = {
-  name: 'index' | 'search' | 'reels' | 'new' | 'messages' | 'me'
-  icon: string | null
-  label: string
+type IconTabName = 'index' | 'bookings' | 'messages' | 'me'
+
+type IconTab = {
+  kind: 'icon'
+  routeName: IconTabName
+  iconName: 'home' | 'bookings' | 'messages' | 'me'
 }
 
-const TAB_ITEMS: TabItem[] = [
-  { name: 'index', icon: '⌂', label: 'Home' },
-  { name: 'search', icon: '⌕', label: 'Search' },
-  { name: 'reels', icon: '▶', label: 'Reels' },
-  { name: 'new', icon: null, label: '' },
-  { name: 'messages', icon: '✉', label: 'Messages' },
-  { name: 'me', icon: '◯', label: 'Me' },
+type CenterTab = {
+  kind: 'center'
+  routeName: 'new'
+}
+
+type Slot = IconTab | CenterTab
+
+const SLOTS: Slot[] = [
+  { kind: 'icon', routeName: 'index', iconName: 'home' },
+  { kind: 'icon', routeName: 'bookings', iconName: 'bookings' },
+  { kind: 'center', routeName: 'new' },
+  { kind: 'icon', routeName: 'messages', iconName: 'messages' },
+  { kind: 'icon', routeName: 'me', iconName: 'me' },
 ]
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets()
-  let routeIdx = 0
+  const { user } = useAuth()
+
+  // TODO: pull display name/avatar from a profile store once it exists
+  const avatarUrl = (user?.user_metadata?.avatar_url as string | undefined) ?? undefined
+  const email = user?.email ?? ''
+  const derivedInitials = email
+    ? email.charAt(0).toUpperCase()
+    : 'ST'
+  const initials = derivedInitials
 
   return (
-    <View style={[bar.container, { paddingBottom: insets.bottom, height: 56 + insets.bottom }]}>
-      {TAB_ITEMS.map((tab) => {
-        const isCenter = tab.name === 'new'
-        const isReels = tab.name === 'reels'
+    <View
+      style={[
+        bar.container,
+        { paddingBottom: insets.bottom, height: 64 + insets.bottom },
+      ]}
+    >
+      {SLOTS.map((slot) => {
+        if (slot.kind === 'center') {
+          const route = state.routes.find((r) => r.name === slot.routeName)
+          const isFocused = route ? state.index === state.routes.indexOf(route) : false
 
-        if (isReels) {
+          function pressCenter() {
+            if (!route) return
+            const event = navigation.emit({
+              type: 'tabPress',
+              target: route.key,
+              canPreventDefault: true,
+            })
+            if (!isFocused && !event.defaultPrevented) {
+              navigation.navigate(slot.routeName as never)
+            }
+          }
+
           return (
-            <TouchableOpacity
-              key={tab.name}
-              activeOpacity={0.7}
-              onPress={() => router.push('/reels' as any)}
-              style={bar.tab}
-            >
-              <Text style={[bar.icon, bar.iconInactive]}>{tab.icon}</Text>
-              <Text style={[bar.label, bar.labelInactive]}>{tab.label}</Text>
-            </TouchableOpacity>
+            <View key="center" style={bar.slot}>
+              <Pressable
+                onPress={pressCenter}
+                style={({ pressed }) => [
+                  bar.centerBtn,
+                  pressed && { transform: [{ scale: 0.96 }], opacity: 0.95 },
+                ]}
+              >
+                <Ionicons name="add" size={26} color="#080808" />
+              </Pressable>
+            </View>
           )
         }
 
-        const idx = routeIdx
-        const route = state.routes[idx]
-        const isFocused = state.index === idx
-        routeIdx += 1
+        const route = state.routes.find((r) => r.name === slot.routeName)
+        const isFocused = route ? state.index === state.routes.indexOf(route) : false
 
-        function handlePress() {
+        function press() {
+          if (!route) return
           const event = navigation.emit({
             type: 'tabPress',
-            target: route?.key ?? '',
+            target: route.key,
             canPreventDefault: true,
           })
           if (!isFocused && !event.defaultPrevented) {
-            navigation.navigate(tab.name as any)
+            navigation.navigate(slot.routeName as never)
           }
         }
 
-        if (isCenter) {
-          return (
-            <TouchableOpacity key={tab.name} activeOpacity={0.8} onPress={handlePress} style={bar.centerWrap}>
-              <View style={bar.centerBtn}>
-                <Text style={bar.centerIcon}>+</Text>
-              </View>
-            </TouchableOpacity>
-          )
-        }
+        const showAmberBar = isFocused && slot.iconName !== 'me'
 
         return (
-          <TouchableOpacity key={tab.name} activeOpacity={0.7} onPress={handlePress} style={bar.tab}>
-            <Text style={[bar.icon, isFocused ? bar.iconActive : bar.iconInactive]}>{tab.icon}</Text>
-            <Text style={[bar.label, isFocused ? bar.labelActive : bar.labelInactive]}>{tab.label}</Text>
-          </TouchableOpacity>
+          <Pressable
+            key={slot.routeName}
+            onPress={press}
+            style={bar.slot}
+            android_ripple={null}
+          >
+            <TabIcon
+              name={slot.iconName}
+              focused={isFocused}
+              avatarUrl={slot.iconName === 'me' ? avatarUrl : undefined}
+              initials={slot.iconName === 'me' ? initials : undefined}
+            />
+            {showAmberBar && <View style={bar.activeBar} />}
+          </Pressable>
         )
       })}
     </View>
@@ -82,13 +120,16 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
 export default function TabLayout() {
   return (
-    <Tabs tabBar={(props) => <CustomTabBar {...props} />}>
-      <Tabs.Screen name="index" options={{ headerShown: false }} />
-      <Tabs.Screen name="search" options={{ headerShown: false }} />
-      <Tabs.Screen name="new" options={{ headerShown: false }} />
-      <Tabs.Screen name="messages" options={{ headerShown: false }} />
-      <Tabs.Screen name="bookings" options={{ headerShown: false, href: null }} />
-      <Tabs.Screen name="me" options={{ headerShown: false }} />
+    <Tabs
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{ headerShown: false, tabBarShowLabel: false }}
+    >
+      <Tabs.Screen name="index" />
+      <Tabs.Screen name="bookings" />
+      <Tabs.Screen name="new" />
+      <Tabs.Screen name="messages" />
+      <Tabs.Screen name="me" />
+      <Tabs.Screen name="search" options={{ href: null }} />
     </Tabs>
   )
 }
@@ -97,55 +138,36 @@ const bar = StyleSheet.create({
   container: {
     flexDirection: 'row',
     backgroundColor: '#080808',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.06)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(240,232,213,0.08)',
     alignItems: 'center',
   },
-  tab: {
+  slot: {
     flex: 1,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 10,
   },
-  icon: {
-    fontSize: 22,
-    lineHeight: 26,
-  },
-  iconActive: {
-    color: '#F0E8D5',
-  },
-  iconInactive: {
-    color: 'rgba(240,232,213,0.3)',
-  },
-  label: {
-    fontSize: 10,
-    fontFamily: 'Manrope_500Medium',
-    marginTop: 3,
-  },
-  labelActive: {
-    color: '#F0E8D5',
-  },
-  labelInactive: {
-    color: 'rgba(240,232,213,0.3)',
-  },
-  centerWrap: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+  activeBar: {
+    position: 'absolute',
+    bottom: 10,
+    width: 4,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: '#C8922A',
   },
   centerBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F0E8D5',
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#C8922A',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: -16,
-  },
-  centerIcon: {
-    fontSize: 22,
-    color: '#080808',
-    lineHeight: 26,
-    fontFamily: 'Manrope_700Bold',
+    marginTop: -8,
+    shadowColor: '#C8922A',
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
   },
 })

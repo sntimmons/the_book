@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
+  Image,
   FlatList,
   Dimensions,
   TouchableOpacity,
@@ -13,7 +14,7 @@ import {
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
-import { Feather } from '@expo/vector-icons'
+import { Ionicons } from '@expo/vector-icons'
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
 
@@ -23,6 +24,7 @@ interface Reel {
   providerName: string
   providerCategory: string
   providerNeighborhood: string
+  providerAvatarUrl?: string
   providerVerified: boolean
   providerAvailable: boolean
   caption: string
@@ -42,8 +44,7 @@ const MOCK_REELS: Reel[] = [
     providerNeighborhood: 'River Oaks',
     providerVerified: true,
     providerAvailable: true,
-    caption:
-      'Classic full set on my client today. 6 week retention guaranteed. Booking link in bio.',
+    caption: 'Classic full set on my client today. 6 week retention guaranteed.',
     likes: 847,
     comments: 43,
     isLiked: false,
@@ -119,6 +120,21 @@ const MOCK_REELS: Reel[] = [
 function formatCount(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
   return n.toString()
+}
+
+function splitCaption(caption: string): { hook: string; rest: string } {
+  const match = caption.match(/^(.+?[.!?])\s+(.*)$/s)
+  if (match) return { hook: match[1], rest: match[2] }
+  return { hook: caption, rest: '' }
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('')
 }
 
 export default function ReelsScreen() {
@@ -219,6 +235,8 @@ function ReelItem({
   insets,
 }: ReelItemProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current
+  const { hook, rest } = splitCaption(reel.caption)
+  const providerInitials = getInitials(reel.providerName)
 
   useEffect(() => {
     if (!reel.providerAvailable) return
@@ -244,40 +262,44 @@ function ReelItem({
   }, [reel.providerAvailable, pulseAnim])
 
   return (
-    <View
-      style={[
-        styles.reelRoot,
-        { backgroundColor: reel.thumbnailColor },
-      ]}
-    >
+    <View style={[styles.reelRoot, { backgroundColor: reel.thumbnailColor }]}>
       {/* Video placeholder layer */}
       <View
         style={[
           StyleSheet.absoluteFill,
-          { backgroundColor: reel.thumbnailColor, alignItems: 'center', justifyContent: 'center' },
+          {
+            backgroundColor: reel.thumbnailColor,
+            alignItems: 'center',
+            justifyContent: 'center',
+          },
         ]}
       >
-        <Feather name="play-circle" size={48} color="rgba(240,232,213,0.1)" />
+        <Ionicons name="play-circle" size={48} color="rgba(240,232,213,0.1)" />
       </View>
 
-      {/* Gradient overlay */}
+      {/* Top scrim */}
       <LinearGradient
-        colors={[
-          'transparent',
-          'transparent',
-          'rgba(0,0,0,0.3)',
-          'rgba(0,0,0,0.7)',
-          'rgba(0,0,0,0.92)',
-        ]}
+        colors={['rgba(8,8,8,0.65)', 'rgba(8,8,8,0)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={StyleSheet.absoluteFill}
+        style={styles.topGradient}
         pointerEvents="none"
       />
 
-      {/* Top section */}
-      <View style={[styles.topSection, { top: insets.top + 12 }]}>
+      {/* Bottom scrim, longer + softer */}
+      <LinearGradient
+        colors={['rgba(8,8,8,0)', 'rgba(8,8,8,0.55)', 'rgba(8,8,8,0.92)']}
+        locations={[0, 0.6, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.bottomGradient}
+        pointerEvents="none"
+      />
+
+      {/* Top section: X only, top-left */}
+      <View style={[styles.topSection, { top: insets.top + 10 }]}>
         <TouchableOpacity
+          activeOpacity={0.7}
           onPress={() => {
             if (router.canGoBack()) {
               router.back()
@@ -285,26 +307,26 @@ function ReelItem({
               router.replace('/(tabs)/' as any)
             }
           }}
-          activeOpacity={0.7}
+          style={styles.closeBtn}
         >
-          <Feather name="x" size={22} color="#F0E8D5" />
+          <Ionicons name="close" size={20} color="#F0E8D5" />
         </TouchableOpacity>
-        <Text style={styles.topWordmark}>Reels</Text>
-        <View style={{ width: 22 }} />
       </View>
 
-      {/* Progress indicators on the right */}
+      {/* Progress bars on the right */}
       <View style={styles.progressColumn}>
         {Array.from({ length: total }).map((_, i) => (
           <View
             key={i}
             style={{
               width: 2,
-              height: i === currentIndex ? 24 : 8,
+              height: i === currentIndex ? 22 : 8,
               borderRadius: 1,
               backgroundColor:
-                i === currentIndex ? '#F0E8D5' : 'rgba(240,232,213,0.3)',
-              marginVertical: 2,
+                i === currentIndex
+                  ? 'rgba(240,232,213,0.9)'
+                  : 'rgba(240,232,213,0.25)',
+              marginVertical: 1.5,
             }}
           />
         ))}
@@ -314,97 +336,113 @@ function ReelItem({
       <View style={[styles.bottomRow, { bottom: insets.bottom + 16 }]}>
         {/* Left content */}
         <View style={styles.leftContent}>
-          {reel.providerAvailable && (
-            <View style={styles.availPill}>
-              <Animated.View
-                style={{
-                  opacity: pulseAnim,
-                  width: 5,
-                  height: 5,
-                  borderRadius: 2.5,
-                  backgroundColor: '#C8922A',
-                }}
-              />
-              <Text style={styles.availText}>Available now</Text>
-            </View>
-          )}
-
+          {/* Provider row + availability inline */}
+          {/* TODO: design Houston-native trust signal to replace the verification check */}
           <TouchableOpacity
             style={styles.providerRow}
             activeOpacity={0.8}
             onPress={() => router.push(`/providers/${reel.providerId}` as any)}
           >
             <View style={styles.providerAvatar}>
-              <Feather name="user" size={18} color="rgba(240,232,213,0.6)" />
+              {reel.providerAvatarUrl ? (
+                <Image
+                  source={{ uri: reel.providerAvatarUrl }}
+                  style={styles.providerAvatarImg}
+                />
+              ) : (
+                <Text style={styles.providerAvatarInitials}>
+                  {providerInitials}
+                </Text>
+              )}
             </View>
-            <View>
-              <View style={styles.nameRow}>
-                <Text style={styles.providerName}>{reel.providerName}</Text>
-                {reel.providerVerified && (
-                  <Feather
-                    name="check-circle"
-                    size={13}
-                    color="#C8922A"
-                    style={{ marginLeft: 4 }}
-                  />
+
+            <View style={styles.providerInfo}>
+              <View style={styles.providerNameRow}>
+                <Text style={styles.providerName} numberOfLines={1}>
+                  {reel.providerName}
+                </Text>
+                {reel.providerAvailable && (
+                  <View style={styles.availInline}>
+                    <Animated.View
+                      style={{
+                        opacity: pulseAnim,
+                        width: 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: '#C8922A',
+                      }}
+                    />
+                    <Text style={styles.availText}>Available</Text>
+                  </View>
                 )}
               </View>
-              <Text style={styles.providerMeta}>
+              <Text style={styles.providerMeta} numberOfLines={1}>
                 {reel.providerCategory} · {reel.providerNeighborhood}
               </Text>
             </View>
           </TouchableOpacity>
 
-          <Text style={styles.caption} numberOfLines={2} ellipsizeMode="tail">
-            {reel.caption}
+          {/* Caption: hook + rest, max 2 lines */}
+          <Text
+            style={styles.captionRest}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            <Text style={styles.captionHook}>{hook}</Text>
+            {rest ? ' ' + rest : ''}
           </Text>
 
+          {/* 20px gap before Book Now via marginTop */}
           <TouchableOpacity
             style={styles.bookBtn}
-            activeOpacity={0.85}
+            activeOpacity={0.88}
             onPress={() => router.push(`/providers/${reel.providerId}` as any)}
           >
-            <Feather name="calendar" size={14} color="#080808" />
             <Text style={styles.bookBtnText}>Book Now</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Right actions column */}
+        {/* Right rail */}
         <View style={styles.rightActions}>
           <ActionButton
-            icon="heart"
-            iconColor={reel.isLiked ? '#E05C5C' : 'rgba(240,232,213,0.8)'}
+            ionicon={reel.isLiked ? 'heart' : 'heart-outline'}
+            color={reel.isLiked ? '#C8922A' : 'rgba(240,232,213,0.92)'}
             count={formatCount(reel.likes)}
-            countColor={reel.isLiked ? '#E05C5C' : '#F0E8D5'}
             onPress={onLike}
           />
           <ActionButton
-            icon="message-circle"
-            iconColor="rgba(240,232,213,0.8)"
+            ionicon="chatbubble"
+            color="rgba(240,232,213,0.92)"
             count={formatCount(reel.comments)}
-            countColor="#F0E8D5"
             onPress={() => console.log('comments')}
           />
           <ActionButton
-            icon="bookmark"
-            iconColor={reel.isSaved ? '#C8922A' : 'rgba(240,232,213,0.8)'}
+            ionicon={reel.isSaved ? 'bookmark' : 'bookmark-outline'}
+            color={reel.isSaved ? '#C8922A' : 'rgba(240,232,213,0.92)'}
             onPress={onSave}
           />
           <ActionButton
-            icon="share"
-            iconColor="rgba(240,232,213,0.8)"
+            ionicon="paper-plane"
+            color="rgba(240,232,213,0.92)"
+            rotate="-20deg"
             onPress={onShare}
           />
 
           <TouchableOpacity
-            style={styles.profileAction}
             activeOpacity={0.8}
             onPress={() => router.push(`/providers/${reel.providerId}` as any)}
+            style={styles.providerActionAvatar}
           >
-            <View style={styles.profileAvatar}>
-              <Feather name="user" size={18} color="rgba(240,232,213,0.6)" />
-            </View>
-            <Text style={styles.profileLabel}>Visit</Text>
+            {reel.providerAvatarUrl ? (
+              <Image
+                source={{ uri: reel.providerAvatarUrl }}
+                style={styles.providerActionAvatarImg}
+              />
+            ) : (
+              <Text style={styles.providerActionInitials}>
+                {providerInitials}
+              </Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>
@@ -413,30 +451,23 @@ function ReelItem({
 }
 
 interface ActionButtonProps {
-  icon: keyof typeof Feather.glyphMap
-  iconColor: string
+  ionicon: keyof typeof Ionicons.glyphMap
+  color: string
   count?: string
-  countColor?: string
+  rotate?: string
   onPress: () => void
 }
 
-function ActionButton({
-  icon,
-  iconColor,
-  count,
-  countColor,
-  onPress,
-}: ActionButtonProps) {
+function ActionButton({ ionicon, color, count, rotate, onPress }: ActionButtonProps) {
   return (
-    <TouchableOpacity activeOpacity={0.75} onPress={onPress} style={styles.actionWrap}>
-      <View style={styles.actionCircle}>
-        <Feather name={icon} size={20} color={iconColor} />
-      </View>
-      {count != null && (
-        <Text style={[styles.actionCount, countColor ? { color: countColor } : null]}>
-          {count}
-        </Text>
-      )}
+    <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={styles.actionWrap}>
+      <Ionicons
+        name={ionicon}
+        size={28}
+        color={color}
+        style={rotate ? { transform: [{ rotate }] } : undefined}
+      />
+      {count != null && <Text style={styles.actionCount}>{count}</Text>}
     </TouchableOpacity>
   )
 }
@@ -451,150 +482,189 @@ const styles = StyleSheet.create({
     height: SCREEN_HEIGHT,
     position: 'relative',
   },
+
+  // Gradients
+  topGradient: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '12%',
+  },
+  bottomGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    top: '35%',
+  },
+
+  // Top section
   topSection: {
     position: 'absolute',
     left: 16,
     right: 16,
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     zIndex: 5,
   },
-  topWordmark: {
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
+
+  // Progress bars
   progressColumn: {
     position: 'absolute',
-    right: 4,
+    right: 6,
     top: '40%',
     alignItems: 'center',
   },
+
+  // Bottom row
   bottomRow: {
     position: 'absolute',
     left: 0,
     right: 0,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    paddingHorizontal: 16,
+    paddingLeft: 24,
+    paddingRight: 16,
   },
   leftContent: {
     flex: 1,
     marginRight: 16,
   },
-  availPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(200,146,42,0.15)',
-    borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.3)',
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  availText: {
-    fontSize: 11,
-    color: '#C8922A',
-    fontFamily: 'Manrope_500Medium',
-  },
+
+  // Provider row
   providerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 8,
   },
   providerAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(240,232,213,0.15)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(240,232,213,0.3)',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1A1410',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  providerAvatarImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
-  providerName: {
-    fontSize: 15,
+  providerAvatarInitials: {
+    fontSize: 13,
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
   },
-  providerMeta: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.6)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
+  providerInfo: {
+    flex: 1,
   },
-  caption: {
-    fontSize: 13,
+  providerNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  providerName: {
+    fontSize: 17,
     color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 18,
-    marginBottom: 14,
+    fontFamily: 'Manrope_700Bold',
+    flexShrink: 1,
   },
-  bookBtn: {
-    backgroundColor: '#C8922A',
-    borderRadius: 10,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    alignSelf: 'flex-start',
+  availInline: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  bookBtnText: {
+  availText: {
     fontSize: 13,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
+    color: 'rgba(240,232,213,0.7)',
+    fontFamily: 'Manrope_500Medium',
   },
+  providerMeta: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 2,
+  },
+
+  // Caption (8px gap from provider row, single text with mixed weights)
+  captionRest: {
+    marginTop: 8,
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.75)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 20,
+  },
+  captionHook: {
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+    lineHeight: 21,
+  },
+
+  // Book Now (20px gap from caption)
+  bookBtn: {
+    marginTop: 20,
+    height: 48,
+    paddingHorizontal: 22,
+    borderRadius: 14,
+    backgroundColor: '#C8922A',
+    alignSelf: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#C8922A',
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4,
+  },
+  bookBtnText: {
+    fontSize: 15,
+    color: '#080808',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+
+  // Right rail
   rightActions: {
     alignItems: 'center',
-    gap: 20,
+    gap: 22,
     paddingBottom: 4,
   },
   actionWrap: {
     alignItems: 'center',
-    gap: 4,
-  },
-  actionCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    gap: 6,
   },
   actionCount: {
-    fontSize: 11,
-    color: '#F0E8D5',
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.7)',
     fontFamily: 'Manrope_600SemiBold',
   },
-  profileAction: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  profileAvatar: {
+  providerActionAvatar: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(240,232,213,0.12)',
-    borderWidth: 2,
-    borderColor: 'rgba(240,232,213,0.5)',
+    backgroundColor: '#1A1410',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  profileLabel: {
-    fontSize: 9,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
+  providerActionAvatarImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  providerActionInitials: {
+    fontSize: 16,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
   },
 })
