@@ -24,12 +24,11 @@ const BIO_LIMIT = 150
 export default function ClientProfileSetup() {
   const insets = useSafeAreaInsets()
   const [focused, setFocused] = useState<FocusedField>(null)
-  const { setName, setNotes } = useClientStore()
+  const { setName, setNotes, photo, setPhoto } = useClientStore()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
   const [bio, setBio] = useState('')
-  const [photo, setPhoto] = useState<string | null>(null)
 
   async function pickImage() {
     const result = await ImagePicker.launchImageLibraryAsync({

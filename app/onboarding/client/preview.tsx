@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { useClientStore } from '@/store/clientStore'
+import { uploadMedia } from '@/lib/storage'
 
 // Reusable person silhouette — centered inside any circle
 function Silhouette({ size = 40, opacity = 0.18 }: { size?: number; opacity?: number }) {
@@ -76,7 +77,7 @@ const grid = StyleSheet.create({
 export default function ClientPreview() {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
-  const { name, notes, reset } = useClientStore()
+  const { name, notes, photo, reset } = useClientStore()
   const [isLoading, setIsLoading] = useState(false)
 
   async function handleGoLive() {
@@ -89,6 +90,18 @@ export default function ClientPreview() {
 
     setIsLoading(true)
 
+    // Upload client photo if selected. We reuse the provider-media bucket
+    // and put client photos under their own user_id/profile/ prefix.
+    // TODO: add avatar_url column to clients table so the uploaded URL is
+    // actually persisted. For now the upload succeeds and the URL is
+    // dropped on the floor.
+    let avatarUrl: string | null = null
+    if (photo) {
+      const result = await uploadMedia(photo, user.id, 'profile', 'provider-media')
+      avatarUrl = result.url
+    }
+    void avatarUrl
+
     const { error } = await supabase.from('clients').upsert({
       id: user.id,
       name,
@@ -97,7 +110,8 @@ export default function ClientPreview() {
     })
 
     if (error) {
-      console.log('Profile save error:', error)
+      console.log('Client save error:', error)
+      // Non-critical, still navigate forward.
     }
 
     reset()

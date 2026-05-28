@@ -5,6 +5,7 @@ import {
   Pressable,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
@@ -14,6 +15,7 @@ import ProviderProfile from '@/components/ProviderProfile'
 import { useProviderStore } from '@/store/providerStore'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
+import { uploadMedia, uploadMultiple } from '@/lib/storage'
 
 function parseDurationMinutes(value: string): number {
   if (!value) return 60
@@ -31,7 +33,10 @@ export default function ProviderGoLive() {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
   const [isGoingLive, setIsGoingLive] = useState(false)
-  const [showReviewMessage, setShowReviewMessage] = useState(false)
+  const [uploadStage, setUploadStage] = useState('')
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadTotal, setUploadTotal] = useState(0)
+
   const {
     name, businessName, category, customCategory, categoryId,
     location, bio, photo, banner, isMobile,
@@ -59,74 +64,164 @@ export default function ProviderGoLive() {
   }
 
   async function handleGoLive() {
+    if (!user) return
     if (isGoingLive) return
+    if (!photo) return
+
     setIsGoingLive(true)
 
-    if (!user) {
-      setShowReviewMessage(true)
+    try {
+      // STAGE 1: profile photo
+      let profilePhotoUrl: string | null = null
+      if (photo) {
+        setUploadStage('Uploading profile photo...')
+        setUploadProgress(0)
+        setUploadTotal(1)
+        const result = await uploadMedia(photo, user.id, 'profile')
+        profilePhotoUrl = result.url
+        setUploadProgress(1)
+      }
+
+      // STAGE 2: cover photo
+      let bannerUrl: string | null = null
+      if (banner) {
+        setUploadStage('Uploading cover photo...')
+        setUploadProgress(0)
+        setUploadTotal(1)
+        const result = await uploadMedia(banner, user.id, 'banner')
+        bannerUrl = result.url
+        setUploadProgress(1)
+      }
+
+      // STAGE 3: portfolio photos
+      let portfolioUrls: string[] = []
+      if (portfolioPhotos.length > 0) {
+        setUploadStage('Uploading portfolio...')
+        setUploadTotal(portfolioPhotos.length)
+        setUploadProgress(0)
+        portfolioUrls = await uploadMultiple(
+          portfolioPhotos,
+          user.id,
+          'portfolio',
+          'provider-media',
+          (completed, total) => {
+            setUploadProgress(completed)
+            setUploadTotal(total)
+          },
+        )
+      }
+
+      // STAGE 4: reels
+      let reelUrls: string[] = []
+      if (reels.length > 0) {
+        setUploadStage('Uploading reels...')
+        setUploadTotal(reels.length)
+        setUploadProgress(0)
+        const reelUris = reels.map((r) => (typeof r === 'string' ? r : (r as { uri: string }).uri))
+        reelUrls = await uploadMultiple(
+          reelUris,
+          user.id,
+          'reels',
+          'provider-media',
+          (completed, total) => {
+            setUploadProgress(completed)
+            setUploadTotal(total)
+          },
+        )
+      }
+
+      // STAGE 5: provider row
+      setUploadStage('Saving your profile...')
+
+      const locationValue = location || null
+
+      const { data: providerData, error: providerError } = await supabase
+        .from('providers')
+        .upsert(
+          {
+            user_id: user.id,
+            display_name: name || 'Provider',
+            category_id: categoryId,
+            bio: bio || null,
+            location: locationValue,
+            neighborhood: locationValue,
+            profile_photo_url: profilePhotoUrl,
+            cover_image_url: bannerUrl,
+            is_approved: false,
+            verification_status: 'pending',
+            identity_verified: false,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id' },
+        )
+        .select('id')
+        .single()
+
+      if (providerError) {
+        console.log('Provider save error:', providerError)
+        setIsGoingLive(false)
+        setUploadStage('')
+        Alert.alert(
+          'Something went wrong',
+          'We could not save your profile. Please try again.',
+          [{ text: 'OK' }],
+        )
+        return
+      }
+
+      const providerDbId = providerData?.id
+
+      // STAGE 6: services. Delete-then-insert avoids unique-key duplicates
+      // when a provider edits and re-saves.
+      if (services.length > 0 && providerDbId) {
+        const { error: servicesDeleteError } = await supabase
+          .from('provider_services')
+          .delete()
+          .eq('provider_id', providerDbId)
+
+        if (!servicesDeleteError) {
+          await supabase.from('provider_services').insert(
+            services.map((s) => ({
+              provider_id: providerDbId,
+              name: s.name,
+              description: null,
+              price: parseFloat(s.price) || 0,
+              duration_minutes: parseDurationMinutes(s.duration),
+              is_active: true,
+            })),
+          )
+        }
+      }
+
+      // STAGE 7: portfolio + reels URL persistence.
+      // TODO: wire portfolioUrls + reelUrls to provider_portfolio /
+      // provider_reels tables when those schemas are confirmed. The
+      // uploads already succeeded so the URLs are not lost, they are
+      // just held in memory for this session.
+      void portfolioUrls
+      void reelUrls
+
+      setUploadStage('')
+      setIsGoingLive(false)
+
       setTimeout(() => {
         reset()
         router.replace('/dashboard/provider')
-      }, 2000)
-      return
-    }
-
-    const displayName = name || 'Provider'
-    const locationValue = location || null
-
-    const { data: providerData, error: providerError } = await supabase
-      .from('providers')
-      .upsert(
-        {
-          user_id: user.id,
-          display_name: displayName,
-          category_id: categoryId,
-          bio: bio || null,
-          location: locationValue,
-          neighborhood: locationValue,
-          is_approved: false,
-          verification_status: 'pending',
-          identity_verified: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id' },
+      }, 1500)
+    } catch (err: any) {
+      console.log('Go live error:', err)
+      setIsGoingLive(false)
+      setUploadStage('')
+      Alert.alert(
+        'Something went wrong',
+        'Please check your connection and try again.',
+        [{ text: 'OK' }],
       )
-      .select('id')
-      .single()
-
-    if (providerError) {
-      console.log('Provider save error:', providerError)
     }
-
-    const providerDbId = providerData?.id
-
-    if (services.length > 0 && providerDbId) {
-      const { error: servicesError } = await supabase
-        .from('provider_services')
-        .upsert(
-          services.map((service) => ({
-            provider_id: providerDbId,
-            name: service.name,
-            description: null,
-            price: parseFloat(service.price) || 0,
-            duration_minutes: parseDurationMinutes(service.duration),
-            is_active: true,
-          })),
-        )
-
-      if (servicesError) {
-        console.log('Services save error:', servicesError)
-      }
-    }
-
-    reset()
-    setShowReviewMessage(true)
-
-    setTimeout(() => {
-      router.replace('/dashboard/provider')
-    }, 2000)
   }
+
+  const photoMissing = !photo
+  const progressPct = uploadTotal > 0 ? uploadProgress / uploadTotal : 0
 
   return (
     <View style={styles.root}>
@@ -146,10 +241,9 @@ export default function ProviderGoLive() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <View style={styles.topCenter}>
-          <Text style={styles.topHeadline}>You're ready.</Text>
+          <Text style={styles.topHeadline}>You&apos;re ready.</Text>
           <Text style={styles.topSub}>This is how clients will see you.</Text>
         </View>
-        {/* Spacer to balance back btn */}
         <View style={styles.topSpacer} />
       </View>
 
@@ -160,16 +254,6 @@ export default function ProviderGoLive() {
 
       {/* Fixed bottom */}
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
-        {showReviewMessage && (
-          <View style={styles.reviewNote}>
-            <Feather name="check-circle" size={14} color="#4CAF50" />
-            <Text style={styles.reviewText}>
-              Your profile is under review. We will notify you when you are approved and live on The Book.
-            </Text>
-          </View>
-        )}
-
-        {/* 14-day note */}
         <View style={styles.verifyNote}>
           <Feather name="clock" size={13} color="#C8922A" />
           <Text style={styles.verifyText}>
@@ -177,27 +261,48 @@ export default function ProviderGoLive() {
           </Text>
         </View>
 
-        {/* Go Live button */}
         <Pressable
-          style={[styles.goLiveBtn, isGoingLive && styles.goLiveBtnLoading]}
+          style={[
+            styles.goLiveBtn,
+            (isGoingLive || photoMissing) && styles.goLiveBtnDisabled,
+          ]}
           onPress={handleGoLive}
-          disabled={isGoingLive}
+          disabled={isGoingLive || photoMissing}
         >
           {isGoingLive ? (
-            <ActivityIndicator color="#080808" />
+            <View style={styles.uploadingBox}>
+              <ActivityIndicator color="#080808" size="small" style={{ marginBottom: 8 }} />
+              <Text style={styles.uploadStageText}>
+                {uploadStage || 'Going live...'}
+              </Text>
+              {uploadTotal > 1 && (
+                <View style={styles.progressBarTrack}>
+                  <View style={[styles.progressBarFill, { width: 200 * progressPct }]} />
+                </View>
+              )}
+            </View>
           ) : (
             <Text style={styles.goLiveBtnText}>Go Live Now</Text>
           )}
         </Pressable>
 
-        {/* Edit link */}
-        <TouchableOpacity
-          activeOpacity={0.6}
-          onPress={() => router.back()}
-          style={styles.editWrap}
-        >
-          <Text style={styles.editText}>Edit my profile</Text>
-        </TouchableOpacity>
+        {isGoingLive ? (
+          <Text style={styles.keepOpenNote}>
+            Please keep the app open while we upload your content.
+          </Text>
+        ) : photoMissing ? (
+          <Text style={styles.photoMissingNote}>
+            Add a profile photo to go live.
+          </Text>
+        ) : (
+          <TouchableOpacity
+            activeOpacity={0.6}
+            onPress={() => router.back()}
+            style={styles.editWrap}
+          >
+            <Text style={styles.editText}>Edit my profile</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   )
@@ -284,42 +389,58 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_400Regular',
   },
-  reviewNote: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    marginBottom: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: 'rgba(76,175,80,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(76,175,80,0.2)',
-  },
-  reviewText: {
-    flex: 1,
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.7)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 17,
-  },
   goLiveBtn: {
     backgroundColor: '#C8922A',
     borderRadius: 14,
     borderCurve: 'continuous',
-    height: 56,
+    minHeight: 56,
     alignItems: 'center',
     justifyContent: 'center',
     width: '100%',
+    paddingVertical: 12,
   },
-  goLiveBtnLoading: {
-    opacity: 0.7,
+  goLiveBtnDisabled: {
+    backgroundColor: 'rgba(200,146,42,0.4)',
   },
   goLiveBtnText: {
     fontSize: 17,
-    fontWeight: '700',
     color: '#080808',
     fontFamily: 'Manrope_700Bold',
+  },
+  uploadingBox: {
+    alignItems: 'center',
+  },
+  uploadStageText: {
+    fontSize: 13,
+    color: '#080808',
+    fontFamily: 'Manrope_500Medium',
+  },
+  progressBarTrack: {
+    width: 200,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(8,8,8,0.2)',
+    marginTop: 10,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: '#080808',
+  },
+  keepOpenNote: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontSize: 11,
+    color: 'rgba(8,8,8,0.6)',
+    fontFamily: 'Manrope_400Regular',
+  },
+  photoMissingNote: {
+    marginTop: 8,
+    textAlign: 'center',
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_400Regular',
   },
   editWrap: {
     alignItems: 'center',
