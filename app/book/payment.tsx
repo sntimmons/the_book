@@ -34,6 +34,15 @@ export default function BookPayment() {
   function handleConfirm() {
     if (isProcessing) return
     setIsProcessing(true)
+    // INSTANT BOOKING BRANCH:
+    // When the real booking insert is wired up, read
+    // provider_booking_preferences.requires_manual_approval for this provider.
+    // If false (provider has Instant Booking ON in the dashboard Availability
+    // screen), insert the booking with status = 'accepted' so the client
+    // skips the pending request, response-window timer, and Accept/Decline
+    // flow and is taken straight to a confirmed booking.
+    // If true (default), insert with status = 'pending' and run the existing
+    // request, timer, and Accept/Decline flow.
     setTimeout(() => {
       router.push('/book/confirmed')
     }, 1500)
