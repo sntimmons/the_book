@@ -12,40 +12,103 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/context/AuthContext'
+
+// Convert "May 28, 2026" to "2026-05-28" for the date column.
+function toIsoDate(displayDate: string): string {
+  const d = new Date(displayDate)
+  if (Number.isNaN(d.getTime())) return displayDate
+  const yyyy = d.getFullYear()
+  const mm = (d.getMonth() + 1).toString().padStart(2, '0')
+  const dd = d.getDate().toString().padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function money(n: number): string {
+  return '$' + Number(n).toFixed(2)
+}
 
 export default function BookPayment() {
   const insets = useSafeAreaInsets()
+  const { user } = useAuth()
   const {
+    providerId,
     providerName,
     providerCategory,
     providerLocation,
     selectedService,
     selectedDate,
     selectedTime,
+    bookingMessage,
   } = useBookingStore()
   const [isProcessing, setIsProcessing] = useState(false)
+  const [processError, setProcessError] = useState('')
   const [useApplePay, setUseApplePay] = useState(false)
 
-  const depositAmount = selectedService?.depositRequired ? selectedService.depositAmount : '$45'
-  const servicePrice = selectedService?.price ?? '$145'
-  const protectionFee = '$7.25'
-  const dueAtAppointment = '$107.25'
+  // Calculated price breakdown
+  const servicePrice = parseFloat(selectedService?.price ?? '0') || 0
+  const protectionFeeAmount = servicePrice * 0.05
+  const depositAmount = selectedService?.depositRequired
+    ? parseFloat(selectedService.depositAmount ?? '0') || 0
+    : 0
+  const dueAtAppointment = servicePrice - depositAmount
+  const ctaAmount = depositAmount > 0 ? depositAmount : servicePrice
 
-  function handleConfirm() {
+  async function handleConfirm() {
+    if (!user || !selectedService || !selectedDate || !selectedTime) {
+      setProcessError(
+        'Missing booking details. Please go back and try again.',
+      )
+      return
+    }
     if (isProcessing) return
+
     setIsProcessing(true)
-    // INSTANT BOOKING BRANCH:
-    // When the real booking insert is wired up, read
-    // provider_booking_preferences.requires_manual_approval for this provider.
-    // If false (provider has Instant Booking ON in the dashboard Availability
-    // screen), insert the booking with status = 'accepted' so the client
-    // skips the pending request, response-window timer, and Accept/Decline
-    // flow and is taken straight to a confirmed booking.
-    // If true (default), insert with status = 'pending' and run the existing
-    // request, timer, and Accept/Decline flow.
-    setTimeout(() => {
-      router.push('/book/confirmed')
-    }, 1500)
+    setProcessError('')
+
+    try {
+      // selectedDate is "May 28, 2026", selectedTime is "1:00 PM"
+      const appointmentTime = new Date(
+        `${selectedDate} ${selectedTime}`,
+      ).toISOString()
+
+      const { data: booking, error } = await supabase
+        .from('bookings')
+        .insert({
+          user_id: user.id,
+          provider_id: providerId,
+          service_id: selectedService.id || null,
+          service_name: selectedService.name,
+          requested_date: toIsoDate(selectedDate),
+          requested_time: selectedTime,
+          appointment_time: appointmentTime,
+          message: bookingMessage || null,
+          status: 'pending',
+          payment_status: 'not_charged',
+          payment_amount: servicePrice,
+          created_at: new Date().toISOString(),
+        })
+        .select('id')
+        .single()
+
+      if (error) {
+        console.log('Booking insert error:', error)
+        setProcessError('Something went wrong. Please try again.')
+        setIsProcessing(false)
+        return
+      }
+
+      setIsProcessing(false)
+      router.push({
+        pathname: '/book/confirmed',
+        params: { bookingId: booking.id },
+      })
+    } catch (err: any) {
+      console.log('Booking error:', err)
+      setProcessError('Something went wrong. Please try again.')
+      setIsProcessing(false)
+    }
   }
 
   return (
@@ -72,23 +135,25 @@ export default function BookPayment() {
         bounces={true}
         scrollEventThrottle={16}
       >
-        {/* Subtext */}
         <Text style={styles.headerSubtext}>
-          Your card is saved securely. Nothing is charged until your provider confirms your booking.
+          Your card is saved. Nothing is charged until your provider confirms your booking.
         </Text>
 
         {/* Order summary */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>ORDER SUMMARY</Text>
 
-          {/* Provider row */}
           <View style={styles.providerRow}>
             <View style={styles.providerAvatar}>
               <Feather name="user" size={16} color="rgba(240,232,213,0.4)" />
             </View>
             <View style={styles.providerInfo}>
-              <Text style={styles.providerName}>{providerName}</Text>
-              <Text style={styles.providerMeta}>{providerCategory} · {providerLocation}</Text>
+              <Text style={styles.providerName}>{providerName || 'Your provider'}</Text>
+              <Text style={styles.providerMeta}>
+                {providerCategory}
+                {providerCategory && providerLocation ? ' · ' : ''}
+                {providerLocation}
+              </Text>
             </View>
           </View>
 
@@ -101,8 +166,8 @@ export default function BookPayment() {
               <Text style={styles.detailLabel}>Service</Text>
             </View>
             <View style={styles.detailRight}>
-              <Text style={styles.detailValue}>{selectedService?.name ?? 'Classic Full Set'}</Text>
-              <Text style={styles.detailSub}>{selectedService?.duration ?? '90 min'}</Text>
+              <Text style={styles.detailValue}>{selectedService?.name ?? '-'}</Text>
+              <Text style={styles.detailSub}>{selectedService?.duration ?? ''}</Text>
             </View>
           </View>
           <View style={styles.detailRow}>
@@ -110,41 +175,45 @@ export default function BookPayment() {
               <Feather name="calendar" size={12} color="rgba(240,232,213,0.45)" />
               <Text style={styles.detailLabel}>Date</Text>
             </View>
-            <Text style={styles.detailValue}>{selectedDate || 'May 28, 2026'}</Text>
+            <Text style={styles.detailValue}>{selectedDate || '-'}</Text>
           </View>
           <View style={styles.detailRow}>
             <View style={styles.detailLeft}>
               <Feather name="clock" size={12} color="rgba(240,232,213,0.45)" />
               <Text style={styles.detailLabel}>Time</Text>
             </View>
-            <Text style={styles.detailValue}>{selectedTime || '1:00 PM'}</Text>
+            <Text style={styles.detailValue}>{selectedTime || '-'}</Text>
           </View>
 
           <View style={styles.separator} />
 
           {/* Price breakdown */}
           <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>{selectedService?.name ?? 'Classic Full Set'}</Text>
-            <Text style={styles.priceValue}>{servicePrice}.00</Text>
+            <Text style={styles.priceLabel}>{selectedService?.name ?? 'Service'}</Text>
+            <Text style={styles.priceValue}>{money(servicePrice)}</Text>
           </View>
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Booking protection (5%)</Text>
-            <Text style={styles.priceSub}>+{protectionFee}</Text>
+            <Text style={styles.priceSub}>+{money(protectionFeeAmount)}</Text>
           </View>
 
           <View style={styles.priceSeparator} />
 
           <View style={styles.priceRow}>
-            <Text style={styles.depositLabel}>Deposit (saved, not charged yet)</Text>
-            <Text style={styles.depositValue}>{depositAmount}</Text>
+            <Text style={styles.depositLabel}>
+              {depositAmount > 0 ? 'Deposit (saved, not charged yet)' : 'Total (saved, not charged yet)'}
+            </Text>
+            <Text style={styles.depositValue}>{money(ctaAmount)}</Text>
           </View>
           <Text style={styles.holdHelperText}>
             Only charged when provider confirms.
           </Text>
-          <View style={[styles.priceRow, { marginTop: 6 }]}>
-            <Text style={styles.remainingLabel}>Balance due at appointment</Text>
-            <Text style={styles.remainingValue}>{dueAtAppointment}</Text>
-          </View>
+          {depositAmount > 0 && (
+            <View style={[styles.priceRow, { marginTop: 6 }]}>
+              <Text style={styles.remainingLabel}>Balance due at appointment</Text>
+              <Text style={styles.remainingValue}>{money(dueAtAppointment)}</Text>
+            </View>
+          )}
         </View>
 
         {/* Payment method */}
@@ -178,7 +247,6 @@ export default function BookPayment() {
           </TouchableOpacity>
         </View>
 
-        {/* Info box — inside scroll so it's always reachable */}
         <View style={styles.authInfoBox}>
           <Feather name="shield" size={13} color="#4CAF50" style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
@@ -189,19 +257,20 @@ export default function BookPayment() {
           </View>
         </View>
 
-        {/* Security note */}
         <View style={styles.securityNote}>
           <Feather name="lock" size={13} color="rgba(240,232,213,0.3)" />
           <Text style={styles.securityText}>
-            Your card details are encrypted and stored securely by Stripe. Nothing is charged until your provider confirms your booking request.
+            Your card details are encrypted and stored securely. Nothing is charged until your provider confirms your booking request.
           </Text>
         </View>
       </ScrollView>
 
-      {/* Fixed bottom CTA — outside ScrollView, always visible */}
+      {/* Fixed bottom CTA */}
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
-        <Text style={styles.ctaLabel}>Deposit saved, not charged:</Text>
-        <Text style={styles.ctaAmount}>{depositAmount}</Text>
+        <Text style={styles.ctaLabel}>
+          {depositAmount > 0 ? 'Deposit saved, not charged:' : 'Total saved, not charged:'}
+        </Text>
+        <Text style={styles.ctaAmount}>{money(ctaAmount)}</Text>
 
         <Pressable
           style={[styles.confirmBtn, isProcessing && styles.confirmBtnProcessing]}
@@ -217,6 +286,10 @@ export default function BookPayment() {
             <Text style={styles.confirmBtnText}>Save Card & Send Request</Text>
           )}
         </Pressable>
+
+        {processError.length > 0 && (
+          <Text style={styles.errorText}>{processError}</Text>
+        )}
       </View>
     </View>
   )
@@ -242,7 +315,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 4,
-    paddingBottom: 180,
+    paddingBottom: 220,
   },
   backBtn: {
     width: 36,
@@ -521,5 +594,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  errorText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#E05C5C',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'center',
   },
 })

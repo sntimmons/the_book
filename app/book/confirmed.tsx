@@ -6,12 +6,13 @@ import {
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
 
 export default function BookConfirmed() {
   const insets = useSafeAreaInsets()
+  useLocalSearchParams<{ bookingId: string }>()
   const {
     providerName,
     selectedService,
@@ -20,22 +21,24 @@ export default function BookConfirmed() {
     reset,
   } = useBookingStore()
 
-  const firstName = providerName.split(' ')[0]
-  const depositAmount = selectedService?.depositRequired ? selectedService.depositAmount : '$45'
+  const displayProviderName = providerName || 'Your provider'
+  const firstName = displayProviderName.split(' ')[0]
+  const depositAmount = selectedService?.depositRequired
+    ? '$' + (parseFloat(selectedService.depositAmount || '0') || 0).toFixed(2)
+    : '$0.00'
 
-  function getResponseWindow(_dateStr: string): string {
-    return '24 hours'
-  }
-  const responseWindow = getResponseWindow(selectedDate)
+  const responseWindow = '24 hours'
   const bookingSummary = [
-    selectedService?.name ?? 'Classic Full Set',
-    selectedDate || 'May 28',
-    selectedTime || '1:00 PM',
-  ].join(' · ')
+    selectedService?.name ?? 'Service',
+    selectedDate || '',
+    selectedTime || '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
 
   function handleBackToHome() {
     reset()
-    router.push('/(tabs)/')
+    router.replace('/(tabs)/')
   }
 
   return (
@@ -66,7 +69,7 @@ export default function BookConfirmed() {
         <Text style={styles.subtext}>
           {firstName} typically responds within 2 hours.{'\n'}
           Your card will not be charged until{'\n'}
-          she confirms. If she declines nothing{'\n'}
+          they confirm. If they decline nothing{'\n'}
           happens to your account.
         </Text>
 
@@ -77,18 +80,22 @@ export default function BookConfirmed() {
         </View>
 
         {/* Booking summary pill */}
-        <View style={styles.summaryPill}>
-          <View style={styles.pillAvatar}>
-            <Feather name="user" size={12} color="rgba(240,232,213,0.4)" />
+        {bookingSummary.length > 0 && (
+          <View style={styles.summaryPill}>
+            <View style={styles.pillAvatar}>
+              <Feather name="user" size={12} color="rgba(240,232,213,0.4)" />
+            </View>
+            <Text style={styles.summaryPillText}>{bookingSummary}</Text>
           </View>
-          <Text style={styles.summaryPillText}>{bookingSummary}</Text>
-        </View>
+        )}
 
         {/* Deposit confirmation */}
-        <View style={styles.depositConfirm}>
-          <Feather name="shield" size={13} color="#4CAF50" />
-          <Text style={styles.depositConfirmText}>{depositAmount} authorized · not charged yet</Text>
-        </View>
+        {selectedService?.depositRequired && (
+          <View style={styles.depositConfirm}>
+            <Feather name="shield" size={13} color="#4CAF50" />
+            <Text style={styles.depositConfirmText}>{depositAmount} authorized, not charged yet</Text>
+          </View>
+        )}
 
         {/* What happens next */}
         <View style={styles.nextSteps}>
@@ -98,18 +105,20 @@ export default function BookConfirmed() {
             {
               n: '1',
               title: 'Provider reviews your request',
-              desc: `${firstName} will review your profile and confirm or suggest an alternative time. She has 24 hours to respond.`,
+              desc: `${firstName} will review your profile and confirm or suggest an alternative time. They have 24 hours to respond.`,
               green: false,
             },
             {
               n: '2',
               title: 'You get notified instantly',
-              desc: `The moment ${firstName} responds you get a notification. If she accepts your ${depositAmount} deposit is charged automatically.`,
+              desc: selectedService?.depositRequired
+                ? `The moment ${firstName} responds you get a notification. If they accept your ${depositAmount} deposit is charged automatically.`
+                : `The moment ${firstName} responds you get a notification. If they accept your card is charged automatically.`,
               green: false,
             },
             {
               n: '3',
-              title: 'If declined — zero charge',
+              title: 'If declined, zero charge',
               desc: `If ${firstName} declines or does not respond in time your hold releases instantly. Nothing is charged. Ever.`,
               green: true,
             },

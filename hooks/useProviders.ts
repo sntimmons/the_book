@@ -53,6 +53,16 @@ export async function getLiveCount(): Promise<number> {
   return count || 0
 }
 
+export async function getTodayBookingCount(): Promise<number> {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const { count } = await supabase
+    .from('bookings')
+    .select('*', { count: 'exact', head: true })
+    .gte('created_at', today.toISOString())
+  return count || 0
+}
+
 export function useProviders(categoryId?: number) {
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)

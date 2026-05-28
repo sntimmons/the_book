@@ -1,83 +1,33 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  View,
-  Text,
-  TouchableOpacity,
+  Alert,
+  Animated,
   ScrollView,
   StyleSheet,
-  Alert,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/context/AuthContext'
 
 type Status = 'upcoming' | 'pending' | 'past' | 'cancelled'
 
-interface Booking {
-  provider: string
-  service: string
-  date: string
-  location?: string
-  price: string
-  timer?: string
-  rated?: number
-  cancelNote?: string
+interface BookingRow {
+  id: string
+  service_name: string | null
+  requested_date: string | null
+  requested_time: string | null
+  status: string
+  payment_amount: number | null
+  provider_id: string
+  message: string | null
+  created_at: string
 }
-
-const UPCOMING: Booking[] = [
-  {
-    provider: 'Elena Ross',
-    service: 'Silk Press',
-    date: 'Today · 2:30 PM',
-    location: 'Midtown Studio',
-    price: '$130',
-  },
-  {
-    provider: 'Marcus Blade',
-    service: 'Fade + Lineup',
-    date: 'May 30 · 11:00 AM',
-    location: 'Blade Cuts Studio',
-    price: '$65',
-  },
-]
-
-const PENDING: Booking[] = [
-  {
-    provider: 'Nia Laurent',
-    service: 'Classic Full Set',
-    date: 'May 28 · 1:00 PM',
-    location: 'River Oaks Studio',
-    price: '$145',
-    timer: 'Nia has 18 hours to respond',
-  },
-]
-
-const PAST: Booking[] = [
-  {
-    provider: 'Jade Williams',
-    service: 'Volume Full Set',
-    date: 'May 15 · 10:00 AM',
-    price: '$185',
-    rated: 5,
-  },
-  {
-    provider: 'Camille Brooks',
-    service: 'Knotless Braids',
-    date: 'May 8 · 9:00 AM',
-    price: '$220',
-  },
-]
-
-const CANCELLED: Booking[] = [
-  {
-    provider: 'Sienna James',
-    service: 'Soft Glam Makeup',
-    date: 'May 20 · 3:00 PM',
-    price: '$150',
-    cancelNote: 'Cancelled by you · May 18',
-  },
-]
 
 const STATUS_TABS: { key: Status; label: string }[] = [
   { key: 'upcoming', label: 'Upcoming' },
@@ -93,29 +43,116 @@ const EMPTY_CONFIG: Record<Status, { icon: keyof typeof Feather.glyphMap; sub: s
   cancelled: { icon: 'x-circle', sub: 'Cancelled bookings.' },
 }
 
+const CANCELLED_STATUSES = new Set([
+  'cancelled',
+  'cancelled_by_client',
+  'cancelled_by_provider',
+  'late_cancelled',
+  'no_show',
+])
+const PAST_STATUSES = new Set(['completed', 'checked_in'])
+
+function money(n: number | null): string {
+  if (n == null) return '$0'
+  return '$' + Number(n).toFixed(0)
+}
+
+function SkeletonCard() {
+  const opacity = useRef(new Animated.Value(0.4)).current
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(opacity, { toValue: 0.8, duration: 800, useNativeDriver: true }),
+        Animated.timing(opacity, { toValue: 0.4, duration: 800, useNativeDriver: true }),
+      ]),
+    )
+    loop.start()
+    return () => {
+      loop.stop()
+      opacity.stopAnimation()
+    }
+  }, [opacity])
+  return <Animated.View style={[styles.skeletonCard, { opacity }]} />
+}
+
 export default function BookingsScreen() {
   const insets = useSafeAreaInsets()
+  const { user } = useAuth()
   const [activeStatus, setActiveStatus] = useState<Status>('upcoming')
+  const [bookings, setBookings] = useState<BookingRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [providerNames, setProviderNames] = useState<Record<string, string>>({})
+
+  const fetchBookings = useCallback(async () => {
+    if (!user) {
+      setLoading(false)
+      return
+    }
+    try {
+      const { data, error } = await supabase
+        .from('bookings')
+        .select(
+          'id, service_name, requested_date, requested_time, status, payment_amount, provider_id, message, created_at',
+        )
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        console.log('Bookings fetch error:', error)
+        return
+      }
+
+      const rows = (data ?? []) as BookingRow[]
+      setBookings(rows)
+
+      // Lazy-fetch provider display names.
+      // TODO: replace with a joined select once we know foreign-key
+      // names are configured for the embed.
+      const ids = Array.from(new Set(rows.map((b) => b.provider_id))).filter(Boolean)
+      if (ids.length > 0) {
+        const { data: providers } = await supabase
+          .from('providers')
+          .select('id, display_name')
+          .in('id', ids)
+        const next: Record<string, string> = {}
+        for (const p of providers ?? []) {
+          next[p.id] = p.display_name ?? 'Provider'
+        }
+        setProviderNames(next)
+      }
+    } catch (err) {
+      console.log('Bookings error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [user])
+
+  useEffect(() => {
+    fetchBookings()
+  }, [fetchBookings])
+
+  const upcomingBookings = bookings.filter((b) => b.status === 'accepted' || b.status === 'arriving')
+  const pendingBookings = bookings.filter((b) => b.status === 'pending')
+  const pastBookings = bookings.filter((b) => PAST_STATUSES.has(b.status))
+  const cancelledBookings = bookings.filter((b) => CANCELLED_STATUSES.has(b.status))
 
   const data =
     activeStatus === 'upcoming'
-      ? UPCOMING
+      ? upcomingBookings
       : activeStatus === 'pending'
-        ? PENDING
+        ? pendingBookings
         : activeStatus === 'past'
-          ? PAST
-          : CANCELLED
+          ? pastBookings
+          : cancelledBookings
 
   return (
     <View style={styles.root}>
       <StatusBar style="light" />
 
-      {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.headerTitle}>My Bookings</Text>
       </View>
 
-      {/* Status tabs */}
       <View style={styles.tabs}>
         {STATUS_TABS.map((tab) => {
           const active = activeStatus === tab.key
@@ -126,8 +163,12 @@ export default function BookingsScreen() {
               activeOpacity={0.7}
               onPress={() => setActiveStatus(tab.key)}
             >
-              <Text style={active ? styles.tabTextActive : styles.tabTextInactive}>{tab.label}</Text>
-              {tab.key === 'pending' && <View style={styles.pendingDot} />}
+              <Text style={active ? styles.tabTextActive : styles.tabTextInactive}>
+                {tab.label}
+              </Text>
+              {tab.key === 'pending' && pendingBookings.length > 0 && (
+                <View style={styles.pendingDot} />
+              )}
             </TouchableOpacity>
           )
         })}
@@ -138,7 +179,13 @@ export default function BookingsScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
-        {data.length === 0 ? (
+        {loading ? (
+          <View style={styles.list}>
+            <SkeletonCard />
+            <SkeletonCard />
+            <SkeletonCard />
+          </View>
+        ) : data.length === 0 ? (
           <EmptyState status={activeStatus} />
         ) : (
           <View style={styles.list}>
@@ -155,8 +202,13 @@ export default function BookingsScreen() {
               <Text style={styles.sectionLabel}>COMPLETED APPOINTMENTS</Text>
             )}
 
-            {data.map((b, i) => (
-              <BookingCard key={`${b.provider}-${i}`} booking={b} status={activeStatus} />
+            {data.map((b) => (
+              <BookingCard
+                key={b.id}
+                booking={b}
+                status={activeStatus}
+                providerName={providerNames[b.provider_id]}
+              />
             ))}
           </View>
         )}
@@ -165,37 +217,37 @@ export default function BookingsScreen() {
   )
 }
 
-function BookingCard({ booking, status }: { booking: Booking; status: Status }) {
+function BookingCard({
+  booking,
+  status,
+  providerName,
+}: {
+  booking: BookingRow
+  status: Status
+  providerName?: string
+}) {
+  const dateLine = [booking.requested_date, booking.requested_time].filter(Boolean).join(' · ')
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
         <View style={styles.avatar}>
-          <Feather name="user" size={18} color="rgba(240,232,213,0.4)" />
+          <Text style={styles.avatarText}>
+            {(providerName ?? 'P').charAt(0).toUpperCase()}
+          </Text>
         </View>
         <View style={styles.cardCenter}>
           <Text style={styles.cardProvider}>
-            {booking.provider} · {booking.service}
+            {(providerName ?? 'Provider') + ' · ' + (booking.service_name ?? 'Service')}
           </Text>
-          <Text style={styles.cardDate}>{booking.date}</Text>
-          {booking.location && <Text style={styles.cardLocation}>{booking.location}</Text>}
-          {booking.timer && (
-            <View style={styles.timerRow}>
-              <Feather name="clock" size={11} color="#C8922A" />
-              <Text style={styles.timerText}>{booking.timer}</Text>
-            </View>
-          )}
-          {booking.rated != null && (
-            <View style={styles.ratedRow}>
-              {Array.from({ length: booking.rated }).map((_, i) => (
-                <Feather key={i} name="star" size={10} color="#C8922A" />
-              ))}
-              <Text style={styles.ratedText}>You rated {booking.rated} stars</Text>
-            </View>
-          )}
-          {booking.cancelNote && <Text style={styles.cancelNote}>{booking.cancelNote}</Text>}
+          {dateLine.length > 0 && <Text style={styles.cardDate}>{dateLine}</Text>}
+          {booking.message ? (
+            <Text style={styles.cardMessage} numberOfLines={1}>
+              {booking.message}
+            </Text>
+          ) : null}
         </View>
         <View style={styles.cardRight}>
-          <Text style={styles.cardPrice}>{booking.price}</Text>
+          <Text style={styles.cardPrice}>{money(booking.payment_amount)}</Text>
           <StatusPill status={status} />
         </View>
       </View>
@@ -203,7 +255,7 @@ function BookingCard({ booking, status }: { booking: Booking; status: Status }) 
       <View style={styles.cardSeparator} />
 
       <View style={styles.actionRow}>
-        <CardActions status={status} />
+        <CardActions status={status} bookingId={booking.id} providerId={booking.provider_id} />
       </View>
     </View>
   )
@@ -238,14 +290,14 @@ function StatusPill({ status }: { status: Status }) {
   )
 }
 
-function handleReschedule() {
+function handleReschedule(providerId: string) {
   Alert.alert(
     'Reschedule',
     'To reschedule message your provider directly and they can adjust your appointment.',
     [
       {
         text: 'Message Provider',
-        onPress: () => router.push('/messages/1'),
+        onPress: () => router.push(`/messages/${providerId}` as never),
       },
       { text: 'Cancel', style: 'cancel' },
     ],
@@ -282,12 +334,19 @@ function handleCancelRequest() {
   )
 }
 
-function CardActions({ status }: { status: Status }) {
+function CardActions({
+  status,
+  providerId,
+}: {
+  status: Status
+  bookingId: string
+  providerId: string
+}) {
   if (status === 'upcoming') {
     return (
       <>
-        <ActionButton label="Message" onPress={() => router.push('/messages/1')} />
-        <ActionButton label="Reschedule" onPress={handleReschedule} />
+        <ActionButton label="Message" onPress={() => router.push(`/messages/${providerId}` as never)} />
+        <ActionButton label="Reschedule" onPress={() => handleReschedule(providerId)} />
         <ActionButton label="Cancel" muted onPress={handleCancelBooking} />
       </>
     )
@@ -295,7 +354,7 @@ function CardActions({ status }: { status: Status }) {
   if (status === 'pending') {
     return (
       <>
-        <ActionButton label="Message" onPress={() => router.push('/messages/1')} />
+        <ActionButton label="Message" onPress={() => router.push(`/messages/${providerId}` as never)} />
         <ActionButton label="Cancel Request" muted onPress={handleCancelRequest} />
       </>
     )
@@ -303,15 +362,15 @@ function CardActions({ status }: { status: Status }) {
   if (status === 'past') {
     return (
       <>
-        <ActionButton label="Book Again" onPress={() => router.push('/book/service')} />
-        <ActionButton label="Leave Review" onPress={() => router.push('/post-booking/satisfaction')} />
+        <ActionButton label="Book Again" onPress={() => router.push(`/providers/${providerId}` as never)} />
+        <ActionButton label="Leave Review" onPress={() => router.push('/post-booking/satisfaction' as never)} />
       </>
     )
   }
   return (
     <>
-      <ActionButton label="Find Similar" onPress={() => router.push('/(tabs)/search')} />
-      <ActionButton label="Book Again" onPress={() => router.push('/book/service')} />
+      <ActionButton label="Find Similar" onPress={() => router.push('/(tabs)/search' as never)} />
+      <ActionButton label="Book Again" onPress={() => router.push(`/providers/${providerId}` as never)} />
     </>
   )
 }
@@ -434,6 +493,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     lineHeight: 16,
   },
+  skeletonCard: {
+    height: 124,
+    borderRadius: 14,
+    backgroundColor: 'rgba(240,232,213,0.06)',
+    marginBottom: 12,
+  },
   card: {
     backgroundColor: 'rgba(240,232,213,0.04)',
     borderWidth: 1,
@@ -457,6 +522,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  avatarText: {
+    fontSize: 17,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
   cardCenter: {
     flex: 1,
   },
@@ -471,38 +541,9 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },
-  cardLocation: {
-    marginTop: 1,
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  timerRow: {
+  cardMessage: {
     marginTop: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  timerText: {
-    fontSize: 11,
-    color: '#C8922A',
-    fontFamily: 'Manrope_400Regular',
-  },
-  ratedRow: {
-    marginTop: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  ratedText: {
-    marginLeft: 4,
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  cancelNote: {
-    marginTop: 4,
-    fontSize: 11,
+    fontSize: 12,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },

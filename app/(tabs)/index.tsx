@@ -15,7 +15,7 @@ import { router } from 'expo-router'
 import {
   useProviders,
   useCategories,
-  getLiveCount,
+  getTodayBookingCount,
   Provider,
   Category,
 } from '../../hooks/useProviders'
@@ -130,14 +130,14 @@ export default function DiscoveryFeed() {
   const { width } = useWindowDimensions()
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
   const [currentFeatured, setCurrentFeatured] = useState(0)
-  const [liveCount, setLiveCount] = useState(0)
+  const [todayCount, setTodayCount] = useState(0)
   const heroRef = useRef<ScrollView>(null)
 
   const { providers, loading } = useProviders(activeCategoryId ?? undefined)
   const { categories } = useCategories()
 
   useEffect(() => {
-    getLiveCount().then(setLiveCount)
+    getTodayBookingCount().then(setTodayCount)
   }, [])
 
   const heroW = width - 48
@@ -194,7 +194,7 @@ export default function DiscoveryFeed() {
         <View style={s.ticker}>
           <PulseDot />
           <Text style={s.tickerText}>
-            {liveCount} providers in Houston right now
+            {todayCount} booked in Houston today
           </Text>
         </View>
 
