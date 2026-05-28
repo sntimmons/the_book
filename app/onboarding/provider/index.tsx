@@ -23,12 +23,6 @@ import { useCategories } from '../../../hooks/useProviders'
 type FocusedField = 'name' | 'businessName' | 'location' | 'bio' | 'customCategory' | null
 type Errors = { name?: string; category?: string; photo?: string }
 
-const CATEGORIES = [
-  'Hair', 'Lashes', 'Brows', 'Nails', 'Makeup',
-  'Barber', 'Massage', 'Skincare', 'Waxing',
-  'Photography', 'Videography', 'Bartending',
-  'Mechanics', 'Event Hosting', 'Fitness', 'Wellness', 'Other',
-]
 
 export default function ProviderOnboardingStep1() {
   const insets = useSafeAreaInsets()
@@ -354,18 +348,27 @@ export default function ProviderOnboardingStep1() {
             <View style={styles.sheetHandle} />
             <Text style={styles.sheetTitle}>Select your category</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
-              {CATEGORIES.map((cat, i) => (
+              {categories.map((cat) => (
                 <Pressable
-                  key={cat}
-                  style={[styles.categoryRow, i < CATEGORIES.length - 1 && styles.categoryRowBorder]}
-                  onPress={() => selectCategory(cat)}
+                  key={cat.id}
+                  style={[styles.categoryRow, styles.categoryRowBorder]}
+                  onPress={() => selectCategory(cat.name)}
                 >
-                  <Text style={styles.categoryName}>{cat}</Text>
-                  {category === cat && (
+                  <Text style={styles.categoryName}>{cat.name}</Text>
+                  {category === cat.name && (
                     <Feather name="check" size={16} color="#C8922A" />
                   )}
                 </Pressable>
               ))}
+              <Pressable
+                style={styles.categoryRow}
+                onPress={() => selectCategory('Other')}
+              >
+                <Text style={styles.categoryName}>Other</Text>
+                {category === 'Other' && (
+                  <Feather name="check" size={16} color="#C8922A" />
+                )}
+              </Pressable>
               <View style={{ height: 40 }} />
             </ScrollView>
           </View>

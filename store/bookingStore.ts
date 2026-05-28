@@ -37,10 +37,10 @@ interface BookingState {
 }
 
 export const useBookingStore = create<BookingState>((set) => ({
-  providerId: '1',
-  providerName: 'Nia Laurent',
-  providerCategory: 'Lash Tech',
-  providerLocation: 'River Oaks',
+  providerId: '',
+  providerName: '',
+  providerCategory: '',
+  providerLocation: '',
   selectedService: null,
   selectedDate: '',
   selectedTime: '',
@@ -57,6 +57,10 @@ export const useBookingStore = create<BookingState>((set) => ({
   setBookingPhotos: (photos) => set({ bookingPhotos: photos }),
   setAgreedToPolicy: (agreed) => set({ agreedToPolicy: agreed }),
   reset: () => set({
+    providerId: '',
+    providerName: '',
+    providerCategory: '',
+    providerLocation: '',
     selectedService: null,
     selectedDate: '',
     selectedTime: '',

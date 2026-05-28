@@ -76,19 +76,22 @@ export default function ProviderGoLive() {
 
     const { data: providerData, error: providerError } = await supabase
       .from('providers')
-      .upsert({
-        user_id: user.id,
-        display_name: displayName,
-        category_id: categoryId,
-        bio: bio || null,
-        location: locationValue,
-        neighborhood: locationValue,
-        is_approved: false,
-        verification_status: 'pending',
-        identity_verified: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+      .upsert(
+        {
+          user_id: user.id,
+          display_name: displayName,
+          category_id: categoryId,
+          bio: bio || null,
+          location: locationValue,
+          neighborhood: locationValue,
+          is_approved: false,
+          verification_status: 'pending',
+          identity_verified: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id' },
+      )
       .select('id')
       .single()
 
@@ -106,7 +109,7 @@ export default function ProviderGoLive() {
             provider_id: providerDbId,
             name: service.name,
             description: null,
-            price: Math.round((parseFloat(service.price) || 0) * 100),
+            price: parseFloat(service.price) || 0,
             duration_minutes: parseDurationMinutes(service.duration),
             is_active: true,
           })),

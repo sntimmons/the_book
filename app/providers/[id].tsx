@@ -61,7 +61,7 @@ export default function ProviderProfilePage() {
   const profileServices: ProviderService[] = services.map((svc) => ({
     id: svc.id,
     name: svc.name,
-    price: (svc.price / 100).toFixed(2),
+    price: svc.price.toFixed(2),
     duration: `${svc.duration_minutes} min`,
     depositRequired: false,
     depositAmount: '0',

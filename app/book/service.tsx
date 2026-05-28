@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -26,6 +26,12 @@ export default function BookService() {
   const { services, loading } = useProvider(providerId)
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (!providerId) {
+      router.replace('/(tabs)/' as never)
+    }
+  }, [providerId])
+
   const activeServices = services.filter((s) => s.is_active)
 
   function handleSelect(service: Service) {
@@ -33,7 +39,7 @@ export default function BookService() {
     setSelectedService({
       id: service.id,
       name: service.name,
-      price: (service.price / 100).toFixed(2),
+      price: service.price.toFixed(2),
       duration: `${service.duration_minutes} min`,
       depositRequired: false,
       depositAmount: '0',
@@ -124,7 +130,7 @@ export default function BookService() {
                   </View>
                   <View style={styles.serviceRight}>
                     <Text style={styles.servicePrice}>
-                      ${(service.price / 100).toFixed(0)}
+                      ${service.price.toFixed(0)}
                     </Text>
                   </View>
                 </View>
@@ -147,7 +153,7 @@ export default function BookService() {
           <View style={styles.selectedSummary}>
             <Text style={styles.selectedSummaryName}>{selectedService.name}</Text>
             <Text style={styles.selectedSummaryPrice}>
-              ${(selectedService.price / 100).toFixed(0)}
+              ${selectedService.price.toFixed(0)}
             </Text>
           </View>
         )}

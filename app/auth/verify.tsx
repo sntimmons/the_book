@@ -73,8 +73,8 @@ export default function VerifyScreen() {
       supabase.from('clients').select('id').eq('id', userId).maybeSingle(),
       supabase
         .from('providers')
-        .select('id, is_live')
-        .eq('id', userId)
+        .select('id')
+        .eq('user_id', userId)
         .maybeSingle(),
     ])
 
