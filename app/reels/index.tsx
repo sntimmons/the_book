@@ -554,6 +554,7 @@ const styles = StyleSheet.create({
   },
   railAvatarGroup: {
     alignItems: 'center',
+    marginBottom: 28,
   },
   railAvatarWrap: {
     width: 48,
