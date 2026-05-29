@@ -122,12 +122,6 @@ function formatCount(n: number): string {
   return n.toString()
 }
 
-function splitCaption(caption: string): { hook: string; rest: string } {
-  const match = caption.match(/^(.+?[.!?])\s+(.*)$/s)
-  if (match) return { hook: match[1], rest: match[2] }
-  return { hook: caption, rest: '' }
-}
-
 function getInitials(name: string): string {
   return name
     .split(/\s+/)
@@ -230,13 +224,14 @@ function ReelItem({
   currentIndex,
   total,
   onLike,
-  onSave,
   onShare,
   insets,
 }: ReelItemProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current
-  const { hook, rest } = splitCaption(reel.caption)
   const providerInitials = getInitials(reel.providerName)
+
+  // Horizontal scrubber: no real video time yet, so reflect progress through the feed.
+  const progressPct = total > 0 ? ((currentIndex + 1) / total) * 100 : 0
 
   useEffect(() => {
     if (!reel.providerAvailable) return
@@ -261,6 +256,10 @@ function ReelItem({
     }
   }, [reel.providerAvailable, pulseAnim])
 
+  function goToProvider() {
+    router.push(`/providers/${reel.providerId}` as any)
+  }
+
   return (
     <View style={[styles.reelRoot, { backgroundColor: reel.thumbnailColor }]}>
       {/* Video placeholder layer */}
@@ -277,174 +276,187 @@ function ReelItem({
         <Ionicons name="play-circle" size={48} color="rgba(240,232,213,0.1)" />
       </View>
 
-      {/* Top scrim */}
+      {/* Top scrim: 128px, 0.5 -> 0 */}
       <LinearGradient
-        colors={['rgba(8,8,8,0.65)', 'rgba(8,8,8,0)']}
+        colors={['rgba(8,8,8,0.5)', 'rgba(8,8,8,0)']}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.topGradient}
         pointerEvents="none"
       />
 
-      {/* Bottom scrim, longer + softer */}
+      {/* Bottom scrim: transparent until 65%, 0.3 at 80%, 0.7 at bottom */}
       <LinearGradient
-        colors={['rgba(8,8,8,0)', 'rgba(8,8,8,0.55)', 'rgba(8,8,8,0.92)']}
-        locations={[0, 0.6, 1]}
+        colors={[
+          'rgba(8,8,8,0)',
+          'rgba(8,8,8,0)',
+          'rgba(8,8,8,0.3)',
+          'rgba(8,8,8,0.7)',
+        ]}
+        locations={[0, 0.65, 0.8, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
-        style={styles.bottomGradient}
+        style={StyleSheet.absoluteFill}
         pointerEvents="none"
       />
 
-      {/* Top section: X only, top-left */}
-      <View style={[styles.topSection, { top: insets.top + 10 }]}>
+      {/* Top header: back chevron + Reels wordmark, For You tab, camera */}
+      <View style={[styles.header, { top: insets.top + 8 }]}>
+        <View style={styles.headerLeft}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back()
+              } else {
+                router.replace('/(tabs)/' as any)
+              }
+            }}
+          >
+            <Ionicons name="chevron-back" size={22} color="#F0E8D5" />
+          </TouchableOpacity>
+          <Text style={styles.wordmark}>Reels</Text>
+        </View>
+
+        <View style={styles.tab}>
+          <Text style={styles.tabText}>For You</Text>
+          <View style={styles.tabUnderline} />
+        </View>
+
         <TouchableOpacity
           activeOpacity={0.7}
-          onPress={() => {
-            if (router.canGoBack()) {
-              router.back()
-            } else {
-              router.replace('/(tabs)/' as any)
-            }
-          }}
-          style={styles.closeBtn}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={styles.cameraBtn}
+          onPress={() => {}}
         >
-          <Ionicons name="close" size={20} color="#F0E8D5" />
+          <Ionicons name="camera" size={22} color="#F0E8D5" />
         </TouchableOpacity>
       </View>
 
-      {/* Progress bars on the right */}
-      <View style={styles.progressColumn}>
-        {Array.from({ length: total }).map((_, i) => (
-          <View
-            key={i}
-            style={{
-              width: 2,
-              height: i === currentIndex ? 22 : 8,
-              borderRadius: 1,
-              backgroundColor:
-                i === currentIndex
-                  ? 'rgba(240,232,213,0.9)'
-                  : 'rgba(240,232,213,0.25)',
-              marginVertical: 1.5,
-            }}
-          />
-        ))}
-      </View>
-
-      {/* Bottom content */}
-      <View style={[styles.bottomRow, { bottom: insets.bottom + 16 }]}>
-        {/* Left content */}
-        <View style={styles.leftContent}>
-          {/* Provider row + availability inline */}
-          {/* TODO: design Houston-native trust signal to replace the verification check */}
+      {/* Right rail: avatar+Follow, heart, comment, share, Book */}
+      <View style={[styles.rightActions, { bottom: insets.bottom + 128 }]}>
+        {/* Provider avatar + follow */}
+        <View style={styles.railAvatarGroup}>
           <TouchableOpacity
-            style={styles.providerRow}
-            activeOpacity={0.8}
-            onPress={() => router.push(`/providers/${reel.providerId}` as any)}
+            activeOpacity={0.85}
+            onPress={goToProvider}
+            style={styles.railAvatarWrap}
           >
-            <View style={styles.providerAvatar}>
+            <View style={styles.railAvatar}>
               {reel.providerAvatarUrl ? (
                 <Image
                   source={{ uri: reel.providerAvatarUrl }}
-                  style={styles.providerAvatarImg}
+                  style={styles.railAvatarImg}
                 />
               ) : (
-                <Text style={styles.providerAvatarInitials}>
-                  {providerInitials}
-                </Text>
+                <Text style={styles.railAvatarInitials}>{providerInitials}</Text>
               )}
             </View>
-
-            <View style={styles.providerInfo}>
-              <View style={styles.providerNameRow}>
-                <Text style={styles.providerName} numberOfLines={1}>
-                  {reel.providerName}
-                </Text>
-                {reel.providerAvailable && (
-                  <View style={styles.availInline}>
-                    <Animated.View
-                      style={{
-                        opacity: pulseAnim,
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: '#C8922A',
-                      }}
-                    />
-                    <Text style={styles.availText}>Available</Text>
-                  </View>
-                )}
-              </View>
-              <Text style={styles.providerMeta} numberOfLines={1}>
-                {reel.providerCategory} · {reel.providerNeighborhood}
-              </Text>
+            <View style={styles.followBadge}>
+              <Ionicons name="add" size={14} color="#080808" />
             </View>
           </TouchableOpacity>
-
-          {/* Caption: hook + rest, max 2 lines */}
-          <Text
-            style={styles.captionRest}
-            numberOfLines={2}
-            ellipsizeMode="tail"
-          >
-            <Text style={styles.captionHook}>{hook}</Text>
-            {rest ? ' ' + rest : ''}
-          </Text>
-
-          {/* 20px gap before Book Now via marginTop */}
-          <TouchableOpacity
-            style={styles.bookBtn}
-            activeOpacity={0.88}
-            onPress={() => router.push(`/providers/${reel.providerId}` as any)}
-          >
-            <Text style={styles.bookBtnText}>Book Now</Text>
-          </TouchableOpacity>
+          <Text style={styles.followLabel}>Follow</Text>
         </View>
 
-        {/* Right rail */}
-        <View style={styles.rightActions}>
-          <ActionButton
-            ionicon={reel.isLiked ? 'heart' : 'heart-outline'}
-            color={reel.isLiked ? '#C8922A' : 'rgba(240,232,213,0.92)'}
-            count={formatCount(reel.likes)}
-            onPress={onLike}
-          />
-          <ActionButton
-            ionicon="chatbubble"
-            color="rgba(240,232,213,0.92)"
-            count={formatCount(reel.comments)}
-            onPress={() => console.log('comments')}
-          />
-          <ActionButton
-            ionicon={reel.isSaved ? 'bookmark' : 'bookmark-outline'}
-            color={reel.isSaved ? '#C8922A' : 'rgba(240,232,213,0.92)'}
-            onPress={onSave}
-          />
-          <ActionButton
-            ionicon="paper-plane"
-            color="rgba(240,232,213,0.92)"
-            rotate="-20deg"
-            onPress={onShare}
-          />
+        {/* Like */}
+        <ActionButton
+          ionicon={reel.isLiked ? 'heart' : 'heart-outline'}
+          size={28}
+          color="#F0E8D5"
+          label={formatCount(reel.likes)}
+          onPress={onLike}
+        />
 
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => router.push(`/providers/${reel.providerId}` as any)}
-            style={styles.providerActionAvatar}
-          >
+        {/* Comment */}
+        <ActionButton
+          ionicon="chatbubble"
+          size={28}
+          color="#F0E8D5"
+          label={formatCount(reel.comments)}
+          onPress={() => console.log('comments')}
+        />
+
+        {/* Share */}
+        <ActionButton
+          ionicon="paper-plane"
+          size={26}
+          color="#F0E8D5"
+          label="Share"
+          onPress={onShare}
+        />
+
+        {/* Book */}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={goToProvider}
+          style={styles.bookWrap}
+        >
+          <View style={styles.bookCircle}>
+            <Ionicons name="calendar" size={24} color="#C8922A" />
+          </View>
+          <Text style={styles.bookLabel}>Book</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Bottom-left content */}
+      <View style={[styles.leftContent, { bottom: insets.bottom + 24 }]}>
+        {/* Provider row + availability inline */}
+        {/* TODO: design Houston-native trust signal to replace the verification check */}
+        <TouchableOpacity
+          style={styles.providerRow}
+          activeOpacity={0.8}
+          onPress={goToProvider}
+        >
+          <View style={styles.providerAvatar}>
             {reel.providerAvatarUrl ? (
               <Image
                 source={{ uri: reel.providerAvatarUrl }}
-                style={styles.providerActionAvatarImg}
+                style={styles.providerAvatarImg}
               />
             ) : (
-              <Text style={styles.providerActionInitials}>
+              <Text style={styles.providerAvatarInitials}>
                 {providerInitials}
               </Text>
             )}
-          </TouchableOpacity>
-        </View>
+          </View>
+
+          <View style={styles.providerInfo}>
+            <View style={styles.providerNameRow}>
+              <Text style={styles.providerName} numberOfLines={1}>
+                {reel.providerName}
+              </Text>
+              {reel.providerAvailable && (
+                <View style={styles.availInline}>
+                  <Animated.View
+                    style={{
+                      opacity: pulseAnim,
+                      width: 6,
+                      height: 6,
+                      borderRadius: 3,
+                      backgroundColor: '#C8922A',
+                    }}
+                  />
+                  <Text style={styles.availText}>Available</Text>
+                </View>
+              )}
+            </View>
+            <Text style={styles.providerMeta} numberOfLines={1}>
+              {reel.providerCategory} · {reel.providerNeighborhood}
+            </Text>
+          </View>
+        </TouchableOpacity>
+
+        {/* Caption: plain, max 2 lines */}
+        <Text style={styles.caption} numberOfLines={2} ellipsizeMode="tail">
+          {reel.caption}
+        </Text>
+      </View>
+
+      {/* Bottom horizontal scrubber */}
+      <View style={styles.scrubberTrack}>
+        <View style={[styles.scrubberFill, { width: `${progressPct}%` }]} />
       </View>
     </View>
   )
@@ -453,21 +465,16 @@ function ReelItem({
 interface ActionButtonProps {
   ionicon: keyof typeof Ionicons.glyphMap
   color: string
-  count?: string
-  rotate?: string
+  size?: number
+  label?: string
   onPress: () => void
 }
 
-function ActionButton({ ionicon, color, count, rotate, onPress }: ActionButtonProps) {
+function ActionButton({ ionicon, color, size = 28, label, onPress }: ActionButtonProps) {
   return (
     <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={styles.actionWrap}>
-      <Ionicons
-        name={ionicon}
-        size={28}
-        color={color}
-        style={rotate ? { transform: [{ rotate }] } : undefined}
-      />
-      {count != null && <Text style={styles.actionCount}>{count}</Text>}
+      <Ionicons name={ionicon} size={size} color={color} />
+      {label != null && <Text style={styles.actionLabel}>{label}</Text>}
     </TouchableOpacity>
   )
 }
@@ -475,7 +482,7 @@ function ActionButton({ ionicon, color, count, rotate, onPress }: ActionButtonPr
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: '#080808',
   },
   reelRoot: {
     width: SCREEN_WIDTH,
@@ -489,67 +496,159 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: '12%',
+    height: 128,
   },
-  bottomGradient: {
+
+  // Top header
+  header: {
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
-    top: '35%',
-  },
-
-  // Top section
-  topSection: {
-    position: 'absolute',
-    left: 16,
-    right: 16,
+    height: 44,
+    paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     zIndex: 5,
   },
-  closeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+  headerLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+  },
+  wordmark: {
+    fontSize: 18,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: 0.16,
+  },
+  tab: {
+    alignItems: 'center',
+  },
+  tabText: {
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 0.04,
+  },
+  tabUnderline: {
+    marginTop: 4,
+    height: 2,
+    width: '100%',
+    borderRadius: 9999,
+    backgroundColor: '#F0E8D5',
+  },
+  cameraBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'flex-end',
     justifyContent: 'center',
   },
 
-  // Progress bars
-  progressColumn: {
+  // Right rail
+  rightActions: {
     position: 'absolute',
-    right: 6,
-    top: '40%',
+    right: 16,
+    alignItems: 'center',
+    gap: 24,
+  },
+  railAvatarGroup: {
     alignItems: 'center',
   },
-
-  // Bottom row
-  bottomRow: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingLeft: 24,
-    paddingRight: 16,
+  railAvatarWrap: {
+    width: 48,
+    height: 48,
+    position: 'relative',
   },
+  railAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: '#C8922A',
+    backgroundColor: '#1A1410',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  railAvatarImg: {
+    width: '100%',
+    height: '100%',
+  },
+  railAvatarInitials: {
+    fontSize: 16,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  followBadge: {
+    position: 'absolute',
+    bottom: -4,
+    left: 14,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#C8922A',
+    borderWidth: 2,
+    borderColor: '#080808',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followLabel: {
+    marginTop: 12,
+    fontSize: 10,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+  actionWrap: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  actionLabel: {
+    fontSize: 13,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  bookWrap: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  bookCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(200,146,42,0.2)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bookLabel: {
+    fontSize: 13,
+    color: '#C8922A',
+    fontFamily: 'Manrope_700Bold',
+  },
+
+  // Bottom-left content
   leftContent: {
-    flex: 1,
-    marginRight: 16,
+    position: 'absolute',
+    left: 16,
+    right: 80,
   },
 
   // Provider row
   providerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
   providerAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.2)',
     backgroundColor: '#1A1410',
     alignItems: 'center',
     justifyContent: 'center',
@@ -574,7 +673,7 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   providerName: {
-    fontSize: 17,
+    fontSize: 15,
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
     flexShrink: 1,
@@ -596,75 +695,26 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Caption (8px gap from provider row, single text with mixed weights)
-  captionRest: {
-    marginTop: 8,
+  // Caption (Figma: plain Manrope Regular 14, ~11px gap from provider row)
+  caption: {
+    marginTop: 11,
     fontSize: 14,
-    color: 'rgba(240,232,213,0.75)',
+    color: 'rgba(240,232,213,0.9)',
     fontFamily: 'Manrope_400Regular',
-    lineHeight: 20,
-  },
-  captionHook: {
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-    lineHeight: 21,
+    lineHeight: 23,
   },
 
-  // Book Now (20px gap from caption)
-  bookBtn: {
-    marginTop: 20,
-    height: 48,
-    paddingHorizontal: 22,
-    borderRadius: 14,
-    backgroundColor: '#C8922A',
-    alignSelf: 'flex-start',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#C8922A',
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+  // Bottom horizontal scrubber
+  scrubberTrack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 2,
+    backgroundColor: 'rgba(240,232,213,0.2)',
   },
-  bookBtnText: {
-    fontSize: 15,
-    color: '#080808',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-
-  // Right rail
-  rightActions: {
-    alignItems: 'center',
-    gap: 22,
-    paddingBottom: 4,
-  },
-  actionWrap: {
-    alignItems: 'center',
-    gap: 6,
-  },
-  actionCount: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.7)',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  providerActionAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#1A1410',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  providerActionAvatarImg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-  },
-  providerActionInitials: {
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
+  scrubberFill: {
+    height: 2,
+    backgroundColor: '#F0E8D5',
   },
 })
