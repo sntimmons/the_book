@@ -162,11 +162,6 @@ export default function DiscoveryFeed() {
   const heroW = width - 48
   const colW = (width - 48 - 16) / 2
 
-  const featured = useMemo(() => {
-    const flagged = providers.filter((p) => p.is_featured)
-    return (flagged.length > 0 ? flagged : providers).slice(0, 3)
-  }, [providers])
-
   const forYou = useMemo(() => providers.slice(0, 5), [providers])
 
   const storyProviders = useMemo(() => providers.slice(0, 8), [providers])
@@ -189,6 +184,54 @@ export default function DiscoveryFeed() {
       .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
       .slice(0, 4)
   }, [providers])
+
+  const topRated = useMemo(() => {
+    return [...providers].sort((a, b) => {
+      const ar = a.average_rating ?? a.rating ?? 0
+      const br = b.average_rating ?? b.rating ?? 0
+      if (br !== ar) return br - ar
+      return (b.review_count ?? 0) - (a.review_count ?? 0)
+    })
+  }, [providers])
+
+  // Hero showcase: one slide each for Featured, Top Rated, Trending.
+  // Featured and Trending open the provider; Top Rated opens the Top Rated page.
+  const heroSlides = useMemo(() => {
+    const slides: {
+      key: string
+      label: string
+      provider: Provider
+      onPress: () => void
+    }[] = []
+    const feat = providers.find((p) => p.is_featured) ?? providers[0]
+    if (feat) {
+      slides.push({
+        key: 'featured',
+        label: 'Featured',
+        provider: feat,
+        onPress: () => router.push(`/providers/${feat.id}` as any),
+      })
+    }
+    const top = topRated[0]
+    if (top) {
+      slides.push({
+        key: 'top-rated',
+        label: 'Top Rated',
+        provider: top,
+        onPress: () => router.push('/top-rated' as any),
+      })
+    }
+    const trend = providers.find((p) => p.is_trending) ?? trending[0]
+    if (trend) {
+      slides.push({
+        key: 'trending',
+        label: 'Trending',
+        provider: trend,
+        onPress: () => router.push(`/providers/${trend.id}` as any),
+      })
+    }
+    return slides
+  }, [providers, topRated, trending])
 
   const showEmptyState = !loading && providers.length === 0
 
@@ -300,60 +343,63 @@ export default function DiscoveryFeed() {
                     style={{ width: heroW }}
                     onMomentumScrollEnd={(e) => {
                       const idx = Math.round(e.nativeEvent.contentOffset.x / heroW)
-                      setCurrentFeatured(Math.max(0, Math.min(idx, featured.length - 1)))
+                      setCurrentFeatured(Math.max(0, Math.min(idx, heroSlides.length - 1)))
                     }}
                   >
-                    {featured.map((p) => (
-                      <TouchableOpacity
-                        key={p.id}
-                        activeOpacity={0.9}
-                        onPress={() => router.push(`/providers/${p.id}` as any)}
-                        style={[s.heroCard, { width: heroW }]}
-                      >
-                        {p.profile_photo_url ? (
-                          <Image
-                            source={{ uri: p.profile_photo_url }}
+                    {heroSlides.map((slide) => {
+                      const p = slide.provider
+                      return (
+                        <TouchableOpacity
+                          key={slide.key}
+                          activeOpacity={0.9}
+                          onPress={slide.onPress}
+                          style={[s.heroCard, { width: heroW }]}
+                        >
+                          {p.profile_photo_url ? (
+                            <Image
+                              source={{ uri: p.profile_photo_url }}
+                              style={StyleSheet.absoluteFill}
+                              resizeMode="cover"
+                            />
+                          ) : null}
+                          <LinearGradient
+                            colors={['transparent', 'rgba(8,8,8,0.85)']}
                             style={StyleSheet.absoluteFill}
-                            resizeMode="cover"
                           />
-                        ) : null}
-                        <LinearGradient
-                          colors={['transparent', 'rgba(8,8,8,0.85)']}
-                          style={StyleSheet.absoluteFill}
-                        />
-                        <View style={s.heroInner}>
-                          <View style={s.featuredPill}>
-                            <Text style={s.featuredPillText}>Featured</Text>
-                          </View>
-                          <Text style={s.heroName} numberOfLines={1}>
-                            {p.display_name}
-                          </Text>
-                          <View style={s.heroMeta}>
-                            <Text style={s.heroRole} numberOfLines={1}>
-                              {categoryName(p.category_id, categories) ||
-                                (p.neighborhood ?? p.location ?? '')}
+                          <View style={s.heroInner}>
+                            <View style={s.featuredPill}>
+                              <Text style={s.featuredPillText}>{slide.label}</Text>
+                            </View>
+                            <Text style={s.heroName} numberOfLines={1}>
+                              {p.display_name}
                             </Text>
-                            {(p.average_rating ?? p.rating) != null && (
-                              <View style={s.heroRatingWrap}>
-                                <Text style={s.heroStar}>★</Text>
-                                <Text style={s.heroRating}>{ratingLabel(p)}</Text>
-                              </View>
-                            )}
-                            {isAvailableNow(p) && (
-                              <View style={s.heroAvail}>
-                                <View style={s.heroAvailDot} />
-                                <Text style={s.heroAvailText}>Available now</Text>
-                              </View>
-                            )}
+                            <View style={s.heroMeta}>
+                              <Text style={s.heroRole} numberOfLines={1}>
+                                {categoryName(p.category_id, categories) ||
+                                  (p.neighborhood ?? p.location ?? '')}
+                              </Text>
+                              {(p.average_rating ?? p.rating) != null && (
+                                <View style={s.heroRatingWrap}>
+                                  <Text style={s.heroStar}>★</Text>
+                                  <Text style={s.heroRating}>{ratingLabel(p)}</Text>
+                                </View>
+                              )}
+                              {isAvailableNow(p) && (
+                                <View style={s.heroAvail}>
+                                  <View style={s.heroAvailDot} />
+                                  <Text style={s.heroAvailText}>Available now</Text>
+                                </View>
+                              )}
+                            </View>
                           </View>
-                        </View>
-                      </TouchableOpacity>
-                    ))}
+                        </TouchableOpacity>
+                      )
+                    })}
                   </ScrollView>
 
                   {/* Pagination dots */}
                   <View style={s.dots}>
-                    {featured.map((_, i) => (
+                    {heroSlides.map((_, i) => (
                       <TouchableOpacity
                         key={i}
                         activeOpacity={0.7}
@@ -587,6 +633,62 @@ export default function DiscoveryFeed() {
               )}
             </View>
 
+            {/* ── Top Rated ───────────────────────────────────────────────── */}
+            {topRated.length > 0 && (
+              <View style={[s.section, s.padded]}>
+                <View style={s.topRatedHead}>
+                  <Text style={s.sectionTitle}>Top Rated</Text>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={() => router.push('/top-rated' as any)}
+                  >
+                    <Text style={s.seeAll}>View all</Text>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ gap: 12, marginTop: 16 }}>
+                  {topRated.slice(0, 3).map((p, i) => (
+                    <TouchableOpacity
+                      key={p.id}
+                      activeOpacity={0.8}
+                      onPress={() => router.push(`/providers/${p.id}` as any)}
+                      style={s.topRatedCard}
+                    >
+                      <Text style={s.topRatedRank}>{i + 1}</Text>
+                      <View style={s.topRatedAvatar}>
+                        {p.profile_photo_url ? (
+                          <Image
+                            source={{ uri: p.profile_photo_url }}
+                            style={s.topRatedAvatarImg}
+                          />
+                        ) : (
+                          <Text style={s.topRatedInitials}>
+                            {getInitials(p.display_name)}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={s.topRatedBody}>
+                        <Text style={s.topRatedName} numberOfLines={1}>
+                          {p.display_name}
+                        </Text>
+                        <Text style={s.topRatedMeta} numberOfLines={1}>
+                          {[
+                            categoryName(p.category_id, categories),
+                            p.neighborhood ?? p.location ?? '',
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </Text>
+                      </View>
+                      <View style={s.topRatedRating}>
+                        <Text style={s.heroStar}>★</Text>
+                        <Text style={s.topRatedRatingText}>{ratingLabel(p)}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
             {/* ── Browse by category ──────────────────────────────────────── */}
             <View style={[s.section, s.padded]}>
               <Text style={s.sectionTitle}>Browse by category</Text>
@@ -810,6 +912,80 @@ const s = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     letterSpacing: -0.5,
     textTransform: 'uppercase',
+  },
+
+  // Top Rated section (bottom of discovery)
+  topRatedHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  topRatedCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 12,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(240,232,213,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.08)',
+  },
+  topRatedRank: {
+    width: 20,
+    fontSize: 18,
+    color: '#C8922A',
+    fontFamily: 'Manrope_700Bold',
+    textAlign: 'center',
+  },
+  topRatedAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  topRatedAvatarImg: {
+    width: 48,
+    height: 48,
+  },
+  topRatedInitials: {
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  topRatedBody: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 2,
+  },
+  topRatedName: {
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: -0.1,
+  },
+  topRatedMeta: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+  },
+  topRatedRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(200,146,42,0.12)',
+  },
+  topRatedRatingText: {
+    fontSize: 13,
+    color: '#C8922A',
+    fontFamily: 'Manrope_700Bold',
   },
   heroName: {
     fontSize: 26,
