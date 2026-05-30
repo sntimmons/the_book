@@ -20,6 +20,7 @@ import {
   Provider,
   Category,
 } from '../../hooks/useProviders'
+import { useNotifications } from '../../hooks/useNotifications'
 
 // ── Animated pulse dot ────────────────────────────────────────────────────────
 
@@ -154,6 +155,7 @@ export default function DiscoveryFeed() {
 
   const { providers, loading } = useProviders(activeCategoryId ?? undefined)
   const { categories } = useCategories()
+  const { unreadCount } = useNotifications()
 
   useEffect(() => {
     getTodayBookingCount().then(setTodayCount)
@@ -252,9 +254,13 @@ export default function DiscoveryFeed() {
             >
               <Ionicons name="search" size={20} color="rgba(240,232,213,0.8)" />
             </TouchableOpacity>
-            <TouchableOpacity activeOpacity={0.7} style={s.iconBtn}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={s.iconBtn}
+              onPress={() => router.push('/notifications' as any)}
+            >
               <Ionicons name="notifications" size={20} color="rgba(240,232,213,0.8)" />
-              <View style={s.notifDot} />
+              {unreadCount > 0 && <View style={s.notifDot} />}
             </TouchableOpacity>
           </View>
         </View>

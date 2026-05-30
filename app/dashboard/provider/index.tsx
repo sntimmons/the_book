@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePanelContext } from '@/context/PanelContext'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { useNotifications } from '@/hooks/useNotifications'
 
 interface BookingRequest {
   id: string
@@ -104,6 +105,7 @@ export default function ProviderDashboard() {
   const insets = useSafeAreaInsets()
   const { openPanel } = usePanelContext()
   const { user } = useAuth()
+  const { unreadCount: notifUnreadCount } = useNotifications()
 
   const [providerDbId, setProviderDbId] = useState<string | null>(null)
   const [providerName, setProviderName] = useState('')
@@ -311,9 +313,13 @@ export default function ProviderDashboard() {
           <Feather name="menu" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Dashboard</Text>
-        <TouchableOpacity style={styles.menuBtn} activeOpacity={0.8}>
+        <TouchableOpacity
+          style={styles.menuBtn}
+          activeOpacity={0.8}
+          onPress={() => router.push('/notifications' as never)}
+        >
           <Feather name="bell" size={18} color="#F0E8D5" />
-          {pendingCount > 0 && <View style={styles.notifDot} />}
+          {notifUnreadCount > 0 && <View style={styles.notifDot} />}
         </TouchableOpacity>
       </View>
 
