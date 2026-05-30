@@ -9,6 +9,7 @@ import {
   StyleSheet,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useProviders, useCategories, Provider, Category } from '../../hooks/useProviders'
@@ -42,10 +43,10 @@ function formatCount(n: number): string {
   return n.toString()
 }
 
-function reviewsLabel(p: Provider): string {
-  const n = p.review_count ?? 0
-  if (n <= 0) return 'New provider'
-  return formatCount(n) + (n === 1 ? ' review' : ' reviews')
+function subtitleFor(p: Provider, categories: Category[]): string {
+  return [categoryName(p.category_id, categories), providerHood(p)]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
@@ -68,11 +69,13 @@ function Skeleton() {
   }, [opacity])
 
   return (
-    <View style={{ gap: 12 }}>
+    <View>
+      <Animated.View style={[s.heroCard, s.skeletonBlock, { opacity }]} />
+      <View style={{ height: 24 }} />
       {[0, 1, 2, 3, 4].map((i) => (
-        <Animated.View key={i} style={[s.card, { opacity }]}>
-          <View style={[s.rankCol, s.skeletonBlock, { height: 20, borderRadius: 4 }]} />
-          <View style={[s.avatar, s.skeletonBlock]} />
+        <Animated.View key={i} style={[s.row, { opacity }]}>
+          <View style={[s.rankCol, s.skeletonBlock, { height: 22, borderRadius: 4 }]} />
+          <View style={[s.rowAvatar, s.skeletonBlock]} />
           <View style={{ flex: 1, justifyContent: 'center', gap: 8 }}>
             <View style={[s.skeletonLine, { width: '55%' }]} />
             <View style={[s.skeletonLine, { width: '42%' }]} />
@@ -84,9 +87,74 @@ function Skeleton() {
   )
 }
 
-// ── Rank card ─────────────────────────────────────────────────────────────────
+// ── Featured #1 hero ──────────────────────────────────────────────────────────
 
-function RankCard({
+function FeaturedHero({
+  provider,
+  categories,
+}: {
+  provider: Provider
+  categories: Category[]
+}) {
+  const rating = ratingValue(provider)
+  const reviews = provider.review_count ?? 0
+  const image = provider.cover_image_url ?? provider.profile_photo_url
+
+  function goToProvider() {
+    router.push('/providers/' + provider.id)
+  }
+
+  return (
+    <View style={s.heroCard}>
+      {image ? (
+        <Image source={{ uri: image }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, s.heroFallback]}>
+          <Text style={s.heroFallbackText}>{getInitials(provider.display_name)}</Text>
+        </View>
+      )}
+      <LinearGradient
+        colors={['rgba(8,8,8,0)', 'rgba(8,8,8,0.85)']}
+        locations={[0.35, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+
+      <View style={s.heroBadge}>
+        <Text style={s.heroBadgeText}>#1 in Houston</Text>
+      </View>
+
+      <View style={s.heroContent}>
+        <Text style={s.heroName} numberOfLines={1}>
+          {provider.display_name}
+        </Text>
+        <Text style={s.heroSub} numberOfLines={1}>
+          {subtitleFor(provider, categories)}
+        </Text>
+        <View style={s.heroMeta}>
+          <Ionicons name="star" size={13} color="#C8922A" />
+          <Text style={s.heroRating}>{rating != null ? rating.toFixed(1) : 'New'}</Text>
+          {reviews > 0 && (
+            <Text style={s.heroReviews}>
+              {formatCount(reviews)} {reviews === 1 ? 'review' : 'reviews'}
+            </Text>
+          )}
+        </View>
+        <View style={s.heroButtons}>
+          <TouchableOpacity style={s.heroBtnOutline} activeOpacity={0.85} onPress={goToProvider}>
+            <Text style={s.heroBtnOutlineText}>View Profile</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={s.heroBtnFilled} activeOpacity={0.85} onPress={goToProvider}>
+            <Text style={s.heroBtnFilledText}>Book Now</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  )
+}
+
+// ── Ranked row ────────────────────────────────────────────────────────────────
+
+function RankRow({
   provider,
   rank,
   categories,
@@ -96,51 +164,46 @@ function RankCard({
   categories: Category[]
 }) {
   const rating = ratingValue(provider)
-  const role = categoryName(provider.category_id, categories)
-  const hood = providerHood(provider)
-  const subtitle = [role, hood].filter(Boolean).join(' · ')
+  const reviews = provider.review_count ?? 0
 
   return (
     <TouchableOpacity
-      style={s.card}
+      style={s.row}
       activeOpacity={0.8}
       onPress={() => router.push('/providers/' + provider.id)}
     >
       <Text style={s.rankCol}>{rank}</Text>
 
-      <View style={s.avatarWrap}>
-        <View style={s.avatar}>
+      <View style={s.rowAvatarWrap}>
+        <View style={s.rowAvatar}>
           {provider.profile_photo_url ? (
-            <Image source={{ uri: provider.profile_photo_url }} style={s.avatarImg} />
+            <Image source={{ uri: provider.profile_photo_url }} style={s.rowAvatarImg} />
           ) : (
-            <Text style={s.avatarInitials}>{getInitials(provider.display_name)}</Text>
+            <Text style={s.rowInitials}>{getInitials(provider.display_name)}</Text>
           )}
         </View>
         {provider.identity_verified && (
           <View style={s.verifiedBadge}>
-            <Ionicons name="checkmark" size={11} color="#080808" />
+            <Ionicons name="checkmark" size={10} color="#080808" />
           </View>
         )}
       </View>
 
-      <View style={s.body}>
-        <Text style={s.name} numberOfLines={1}>
+      <View style={s.rowBody}>
+        <Text style={s.rowName} numberOfLines={1}>
           {provider.display_name}
         </Text>
-        {subtitle ? (
-          <Text style={s.category} numberOfLines={1}>
-            {subtitle}
-          </Text>
-        ) : null}
-        <Text style={s.meta} numberOfLines={1}>
-          {reviewsLabel(provider)}
+        <Text style={s.rowSub} numberOfLines={1}>
+          {subtitleFor(provider, categories)}
         </Text>
+        <View style={s.rowMeta}>
+          <Ionicons name="star" size={11} color="#C8922A" />
+          <Text style={s.rowRating}>{rating != null ? rating.toFixed(1) : 'New'}</Text>
+          {reviews > 0 && <Text style={s.rowReviews}>({formatCount(reviews)})</Text>}
+        </View>
       </View>
 
-      <View style={s.ratingPill}>
-        <Ionicons name="star" size={12} color="#C8922A" />
-        <Text style={s.ratingText}>{rating != null ? rating.toFixed(1) : 'New'}</Text>
-      </View>
+      <Ionicons name="chevron-forward" size={18} color="rgba(240,232,213,0.45)" />
     </TouchableOpacity>
   )
 }
@@ -170,22 +233,22 @@ export default function TopRatedScreen() {
     })
   }, [providers, activeCategoryId])
 
+  const hero = ranked[0]
+
   return (
     <View style={s.root}>
       {/* Header */}
       <View style={[s.header, { paddingTop: insets.top + 4 }]}>
         <TouchableOpacity
-          style={s.backBtn}
+          style={s.headerSide}
           activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={() => router.back()}
         >
-          <Ionicons name="chevron-back" size={20} color="#F0E8D5" />
+          <Ionicons name="chevron-back" size={22} color="#F0E8D5" />
         </TouchableOpacity>
-        <View style={s.headerText}>
-          <Text style={s.title}>Top Rated</Text>
-          <Text style={s.subtitle}>Houston's highest rated providers</Text>
-        </View>
+        <Text style={s.headerTitle}>Top Rated</Text>
+        <View style={s.headerSide} />
       </View>
 
       {/* Filter chips */}
@@ -219,6 +282,8 @@ export default function TopRatedScreen() {
         })}
       </ScrollView>
 
+      <View style={s.divider} />
+
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[
@@ -235,11 +300,19 @@ export default function TopRatedScreen() {
             <Text style={s.emptySub}>Try a different category or check back soon.</Text>
           </View>
         ) : (
-          <View style={{ gap: 12 }}>
-            {ranked.map((p, i) => (
-              <RankCard key={p.id} provider={p} rank={i + 1} categories={categories} />
-            ))}
-          </View>
+          <>
+            {hero && <FeaturedHero provider={hero} categories={categories} />}
+
+            <Text style={s.listLabel}>Houston's Best</Text>
+            <View>
+              {ranked.map((p, i) => (
+                <View key={p.id}>
+                  <RankRow provider={p} rank={i + 1} categories={categories} />
+                  {i < ranked.length - 1 && <View style={s.rowDivider} />}
+                </View>
+              ))}
+            </View>
+          </>
         )}
       </ScrollView>
     </View>
@@ -256,38 +329,26 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 24,
-    paddingBottom: 12,
-    gap: 12,
+    paddingBottom: 8,
   },
-  backBtn: {
+  headerSide: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
   },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 28,
+  headerTitle: {
+    fontSize: 18,
     color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: -0.4,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 0.1,
   },
 
   // Filter chips
   chipsScroll: {
     flexGrow: 0,
-    marginBottom: 4,
   },
   chipsRow: {
     paddingHorizontal: 24,
@@ -320,52 +381,159 @@ const s = StyleSheet.create({
     fontFamily: 'Manrope_500Medium',
   },
 
-  // List
-  scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 12,
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(240,232,213,0.05)',
   },
 
-  // Rank card
-  card: {
+  // Scroll
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+  },
+
+  // Featured hero
+  heroCard: {
+    height: 280,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+    backgroundColor: 'rgba(240,232,213,0.06)',
+    justifyContent: 'flex-end',
+  },
+  heroFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroFallbackText: {
+    fontSize: 48,
+    color: 'rgba(240,232,213,0.2)',
+    fontFamily: 'Manrope_700Bold',
+  },
+  heroBadge: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    backgroundColor: '#C8922A',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  heroBadgeText: {
+    fontSize: 11,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: 0.2,
+  },
+  heroContent: {
+    padding: 20,
+  },
+  heroName: {
+    fontSize: 28,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: -0.4,
+  },
+  heroSub: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.7)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 4,
+  },
+  heroMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 10,
+  },
+  heroRating: {
+    fontSize: 14,
+    color: '#C8922A',
+    fontFamily: 'Manrope_700Bold',
+  },
+  heroReviews: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.7)',
+    fontFamily: 'Manrope_400Regular',
+    marginLeft: 4,
+  },
+  heroButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  heroBtnOutline: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroBtnOutlineText: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  heroBtnFilled: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: '#C8922A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroBtnFilledText: {
+    fontSize: 14,
+    color: '#080808',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+
+  // List label
+  listLabel: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_500Medium',
+    marginTop: 24,
+    marginBottom: 8,
+  },
+
+  // Ranked row
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    padding: 16,
-    borderRadius: 16,
-    borderCurve: 'continuous',
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.08)',
+    paddingVertical: 14,
   },
   rankCol: {
-    width: 24,
+    width: 22,
     fontSize: 20,
     color: '#C8922A',
     fontFamily: 'Manrope_700Bold',
     textAlign: 'center',
   },
-  avatarWrap: {
-    width: 64,
-    height: 64,
+  rowAvatarWrap: {
+    width: 52,
+    height: 52,
     position: 'relative',
   },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 14,
+  rowAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
     borderCurve: 'continuous',
     overflow: 'hidden',
     backgroundColor: 'rgba(240,232,213,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarImg: {
-    width: 64,
-    height: 64,
+  rowAvatarImg: {
+    width: 52,
+    height: 52,
   },
-  avatarInitials: {
-    fontSize: 20,
+  rowInitials: {
+    fontSize: 16,
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
   },
@@ -373,50 +541,52 @@ const s = StyleSheet.create({
     position: 'absolute',
     right: -2,
     bottom: -2,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
     backgroundColor: '#C8922A',
     borderWidth: 2,
     borderColor: '#080808',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  body: {
+  rowBody: {
     flex: 1,
     justifyContent: 'center',
     gap: 2,
   },
-  name: {
+  rowName: {
     fontSize: 16,
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
     letterSpacing: -0.1,
   },
-  category: {
+  rowSub: {
     fontSize: 13,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },
-  meta: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 1,
-  },
-  ratingPill: {
+  rowMeta: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 5,
-    borderRadius: 8,
-    backgroundColor: 'rgba(200,146,42,0.12)',
+    marginTop: 1,
   },
-  ratingText: {
+  rowRating: {
     fontSize: 13,
     color: '#C8922A',
     fontFamily: 'Manrope_700Bold',
+  },
+  rowReviews: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+    marginLeft: 2,
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    marginLeft: 86,
   },
 
   // Empty state
