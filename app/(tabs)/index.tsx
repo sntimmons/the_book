@@ -405,6 +405,26 @@ export default function DiscoveryFeed() {
               })}
             </ScrollView>
 
+            {/* ── Near You entry ─────────────────────────────────────────── */}
+            <TouchableOpacity
+              style={s.nearbyBtn}
+              activeOpacity={0.85}
+              onPress={() => router.push('/nearby' as any)}
+            >
+              <View style={s.nearbyIcon}>
+                <Ionicons name="location" size={18} color="#C8922A" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.nearbyTitle}>Near You</Text>
+                <Text style={s.nearbySub}>Providers in your area</Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={18}
+                color="rgba(240,232,213,0.45)"
+              />
+            </TouchableOpacity>
+
             {/* ── For You ────────────────────────────────────────────────── */}
             <View style={s.section}>
               <SectionHeader title="For you" onSeeAll={() => {}} />
@@ -918,6 +938,39 @@ const s = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
     letterSpacing: -0.2,
+  },
+  nearbyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 24,
+    marginBottom: 40,
+    padding: 14,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(240,232,213,0.04)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.08)',
+  },
+  nearbyIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(200,146,42,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nearbyTitle: {
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: -0.1,
+  },
+  nearbySub: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 1,
   },
   seeAll: {
     fontSize: 13,
