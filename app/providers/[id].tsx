@@ -11,6 +11,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile, { ProviderData, ProviderService } from '@/components/ProviderProfile'
 import { useBookingStore } from '@/store/bookingStore'
 import { useProvider, useCategories } from '../../hooks/useProviders'
+import { useAuth } from '@/context/AuthContext'
+import { getOrCreateConversation } from '../../hooks/useMessaging'
 
 export default function ProviderProfilePage() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -18,6 +20,7 @@ export default function ProviderProfilePage() {
   const { provider, services, loading } = useProvider(id as string)
   const { categories } = useCategories()
   const { setProvider } = useBookingStore()
+  const { user } = useAuth()
   const [isFollowing, setIsFollowing] = useState(false)
 
   if (loading) {
@@ -98,7 +101,11 @@ export default function ProviderProfilePage() {
       isFollowing={isFollowing}
       onBookNow={handleBookNow}
       onFollow={() => setIsFollowing((prev) => !prev)}
-      onMessage={() => router.push(`/messages/${provider.id}` as any)}
+      onMessage={async () => {
+        if (!user) return
+        const convoId = await getOrCreateConversation(user.id, provider.id)
+        if (convoId) router.push(`/messages/${convoId}` as any)
+      }}
     />
   )
 }

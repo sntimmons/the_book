@@ -14,6 +14,7 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
+import { getOrCreateConversation } from '@/hooks/useMessaging'
 
 type Status = 'upcoming' | 'pending' | 'past' | 'cancelled'
 
@@ -208,6 +209,7 @@ export default function BookingsScreen() {
                 booking={b}
                 status={activeStatus}
                 providerName={providerNames[b.provider_id]}
+                userId={user?.id ?? ''}
               />
             ))}
           </View>
@@ -221,10 +223,12 @@ function BookingCard({
   booking,
   status,
   providerName,
+  userId,
 }: {
   booking: BookingRow
   status: Status
   providerName?: string
+  userId: string
 }) {
   const dateLine = [booking.requested_date, booking.requested_time].filter(Boolean).join(' · ')
   return (
@@ -260,7 +264,12 @@ function BookingCard({
       <View style={styles.cardSeparator} />
 
       <View style={styles.actionRow}>
-        <CardActions status={status} bookingId={booking.id} providerId={booking.provider_id} />
+        <CardActions
+          status={status}
+          bookingId={booking.id}
+          providerId={booking.provider_id}
+          userId={userId}
+        />
       </View>
     </View>
   )
@@ -295,14 +304,28 @@ function StatusPill({ status }: { status: Status }) {
   )
 }
 
-function handleReschedule(providerId: string) {
+async function openChat(
+  userId: string,
+  providerId: string,
+  bookingId: string,
+) {
+  if (!userId) return
+  const convoId = await getOrCreateConversation(userId, providerId, bookingId)
+  if (convoId) router.push(`/messages/${convoId}` as never)
+}
+
+function handleReschedule(
+  userId: string,
+  providerId: string,
+  bookingId: string,
+) {
   Alert.alert(
     'Reschedule',
     'To reschedule message your provider directly and they can adjust your appointment.',
     [
       {
         text: 'Message Provider',
-        onPress: () => router.push(`/messages/${providerId}` as never),
+        onPress: () => openChat(userId, providerId, bookingId),
       },
       { text: 'Cancel', style: 'cancel' },
     ],
@@ -342,16 +365,25 @@ function handleCancelRequest() {
 function CardActions({
   status,
   providerId,
+  bookingId,
+  userId,
 }: {
   status: Status
   bookingId: string
   providerId: string
+  userId: string
 }) {
   if (status === 'upcoming') {
     return (
       <>
-        <ActionButton label="Message" onPress={() => router.push(`/messages/${providerId}` as never)} />
-        <ActionButton label="Reschedule" onPress={() => handleReschedule(providerId)} />
+        <ActionButton
+          label="Message"
+          onPress={() => openChat(userId, providerId, bookingId)}
+        />
+        <ActionButton
+          label="Reschedule"
+          onPress={() => handleReschedule(userId, providerId, bookingId)}
+        />
         <ActionButton label="Cancel" muted onPress={handleCancelBooking} />
       </>
     )
@@ -359,7 +391,10 @@ function CardActions({
   if (status === 'pending') {
     return (
       <>
-        <ActionButton label="Message" onPress={() => router.push(`/messages/${providerId}` as never)} />
+        <ActionButton
+          label="Message"
+          onPress={() => openChat(userId, providerId, bookingId)}
+        />
         <ActionButton label="Cancel Request" muted onPress={handleCancelRequest} />
       </>
     )

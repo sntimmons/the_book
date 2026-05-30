@@ -112,10 +112,10 @@ export default function BookingAccepted() {
         <TouchableOpacity
           style={styles.messageBtn}
           activeOpacity={0.8}
-          onPress={() => router.push('/messages/1')}
+          onPress={() => router.push('/(tabs)/messages' as never)}
         >
           <Feather name="message-circle" size={18} color="#F0E8D5" />
-          <Text style={styles.messageBtnText}>Message Nia</Text>
+          <Text style={styles.messageBtnText}>Message Provider</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.homeBtn}

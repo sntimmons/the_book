@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { getOrCreateConversation } from '../../hooks/useMessaging'
 
 interface BookingDetail {
   id: string
@@ -300,12 +301,15 @@ export default function BookingDetailScreen() {
     )
   }
 
-  function messageOtherParty() {
+  async function messageOtherParty() {
     if (!booking) return
-    if (isProvider) {
-      router.push(`/messages/${booking.user_id}` as never)
-    } else {
-      router.push(`/messages/${booking.provider_id}` as never)
+    const convoId = await getOrCreateConversation(
+      booking.user_id,
+      booking.provider_id,
+      booking.id,
+    )
+    if (convoId) {
+      router.push(`/messages/${convoId}` as never)
     }
   }
 

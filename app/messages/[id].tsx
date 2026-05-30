@@ -1,313 +1,310 @@
-import { useState, useRef, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  TouchableWithoutFeedback,
-  TextInput,
-  KeyboardAvoidingView,
+  ActivityIndicator,
+  FlatList,
   InputAccessoryView,
   Keyboard,
+  KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  Alert,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native'
-import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-
-interface Message {
-  id: string
-  senderId: 'client' | 'provider' | 'system'
-  type: 'text' | 'booking' | 'system'
-  content: string
-  timestamp: string
-  read: boolean
-}
-
-const MOCK_MESSAGES: Message[] = [
-  {
-    id: '1',
-    senderId: 'system',
-    type: 'system',
-    content: 'Conversation started',
-    timestamp: 'May 24',
-    read: true,
-  },
-  {
-    id: '2',
-    senderId: 'client',
-    type: 'text',
-    content: 'Hi Nia! I sent a booking request for a classic full set. I have short natural lashes, is that okay?',
-    timestamp: '10:22 AM',
-    read: true,
-  },
-  {
-    id: '3',
-    senderId: 'provider',
-    type: 'text',
-    content: 'Hey! Yes absolutely, I work with all lash types. Your classic set will look amazing.',
-    timestamp: '10:45 AM',
-    read: true,
-  },
-  {
-    id: '4',
-    senderId: 'system',
-    type: 'booking',
-    content: 'Nia accepted your booking for Classic Full Set on May 28 at 1:00 PM',
-    timestamp: '11:02 AM',
-    read: true,
-  },
-  {
-    id: '5',
-    senderId: 'provider',
-    type: 'text',
-    content: 'Just accepted your request. See you on the 28th! Please arrive 5 minutes early.',
-    timestamp: '11:03 AM',
-    read: false,
-  },
-]
-
-const PROVIDER_NAMES: Record<string, string> = {
-  '1': 'Nia Laurent',
-  '2': 'Marcus Blade',
-  '3': 'Camille Brooks',
-}
+import { Ionicons } from '@expo/vector-icons'
+import { Message, useMessages } from '../../hooks/useMessaging'
+import { useAuth } from '../../context/AuthContext'
+import { supabase } from '../../lib/supabase'
 
 const INPUT_ACCESSORY_ID = 'chatInput'
+const GROUP_WINDOW_MS = 5 * 60 * 1000
+
+function formatMessageTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  })
+}
 
 export default function ChatScreen() {
-  const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
-  const providerName = PROVIDER_NAMES[id ?? '1'] ?? 'Nia Laurent'
-  const firstName = providerName.split(' ')[0]
+  const { user } = useAuth()
+  const insets = useSafeAreaInsets()
 
-  const [message, setMessage] = useState('')
-  const [messages, setMessages] = useState<Message[]>(MOCK_MESSAGES)
-  const [isTyping, setIsTyping] = useState(false)
-  const scrollRef = useRef<ScrollView>(null)
+  const { messages, loading, sending, sendMessage } = useMessages(id as string)
+  const [inputText, setInputText] = useState('')
+  const [otherPartyName, setOtherPartyName] = useState('')
+  const [bookingService, setBookingService] = useState('')
+  const [convoFound, setConvoFound] = useState<boolean | null>(null)
+  const flatListRef = useRef<FlatList<Message>>(null)
 
   useEffect(() => {
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: false }), 80)
-  }, [])
+    let cancelled = false
+    async function fetchConversationDetails() {
+      if (!id || !user) return
+      const { data: convo } = await supabase
+        .from('conversation')
+        .select('client_id, provider_id, booking_id')
+        .eq('id', id)
+        .maybeSingle()
 
-  function sendMessage() {
-    const text = message.trim()
-    if (!text) return
-    const newMsg: Message = {
-      id: String(Date.now()),
-      senderId: 'client',
-      type: 'text',
-      content: text,
-      timestamp: 'Now',
-      read: false,
-    }
-    setMessages((prev) => [...prev, newMsg])
-    setMessage('')
+      if (cancelled) return
 
-    setIsTyping(true)
-    setTimeout(() => {
-      setIsTyping(false)
-      const reply: Message = {
-        id: String(Date.now() + 1),
-        senderId: 'provider',
-        type: 'text',
-        content: 'Got it! See you soon.',
-        timestamp: 'Now',
-        read: false,
+      if (!convo) {
+        setConvoFound(false)
+        return
       }
-      setMessages((prev) => [...prev, reply])
-    }, 2000)
+      setConvoFound(true)
+
+      const isClient = convo.client_id === user.id
+      const otherPartyId = isClient ? convo.provider_id : convo.client_id
+
+      if (isClient) {
+        const { data: provider } = await supabase
+          .from('providers')
+          .select('display_name')
+          .eq('id', otherPartyId)
+          .maybeSingle()
+        if (!cancelled) setOtherPartyName(provider?.display_name || 'Provider')
+      } else {
+        const { data: client } = await supabase
+          .from('clients')
+          .select('name')
+          .eq('id', otherPartyId)
+          .maybeSingle()
+        if (!cancelled) setOtherPartyName(client?.name || 'Client')
+      }
+
+      if (convo.booking_id) {
+        const { data: booking } = await supabase
+          .from('bookings')
+          .select('service_name')
+          .eq('id', convo.booking_id)
+          .maybeSingle()
+        if (!cancelled) setBookingService(booking?.service_name || '')
+      }
+    }
+    fetchConversationDetails()
+    return () => {
+      cancelled = true
+    }
+  }, [id, user])
+
+  useEffect(() => {
+    if (messages.length > 0) {
+      const t = setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true })
+      }, 100)
+      return () => clearTimeout(t)
+    }
+  }, [messages])
+
+  async function handleSend() {
+    const text = inputText.trim()
+    if (!text || sending) return
+    setInputText('')
+    const ok = await sendMessage(text)
+    if (!ok) setInputText(text)
   }
 
-  const hasText = message.trim().length > 0
+  const hasText = inputText.trim().length > 0
+  const avatarInitial = (otherPartyName || 'C').charAt(0).toUpperCase()
+
+  // Conversation not found state
+  if (convoFound === false) {
+    return (
+      <View style={styles.root}>
+        <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="chevron-back" size={24} color="#F0E8D5" />
+          </TouchableOpacity>
+          <Text style={styles.topBarTitle}>Conversation</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={styles.centerWrap}>
+          <Ionicons
+            name="chatbubble-outline"
+            size={40}
+            color="rgba(240,232,213,0.2)"
+          />
+          <Text style={styles.notFoundTitle}>Conversation not found</Text>
+          <TouchableOpacity
+            style={styles.findBtn}
+            onPress={() => router.replace('/(tabs)/messages' as never)}
+          >
+            <Text style={styles.findBtnText}>Back to Messages</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    )
+  }
 
   return (
     <>
       <KeyboardAvoidingView
         style={styles.root}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={0}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={styles.inner}>
+        {/* Top bar */}
+        <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{ marginRight: 12 }}
+          >
+            <Ionicons name="chevron-back" size={24} color="#F0E8D5" />
+          </TouchableOpacity>
+          <View style={styles.topAvatar}>
+            <Text style={styles.topAvatarText}>{avatarInitial}</Text>
+          </View>
+          <View style={styles.topCenter}>
+            <Text style={styles.otherName} numberOfLines={1}>
+              {otherPartyName || ' '}
+            </Text>
+            {bookingService ? (
+              <Text style={styles.bookingMeta} numberOfLines={1}>
+                {bookingService}
+              </Text>
+            ) : null}
+          </View>
+          <TouchableOpacity activeOpacity={0.7}>
+            <Ionicons
+              name="information-circle-outline"
+              size={22}
+              color="rgba(240,232,213,0.4)"
+            />
+          </TouchableOpacity>
+        </View>
 
-            {/* Top bar */}
-            <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-              <TouchableOpacity
-                style={styles.backBtn}
-                onPress={() => router.back()}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                activeOpacity={0.7}
-              >
-                <Feather name="chevron-left" size={18} color="#F0E8D5" />
-              </TouchableOpacity>
+        {loading && messages.length === 0 ? (
+          <View style={styles.centerWrap}>
+            <ActivityIndicator color="#C8922A" />
+          </View>
+        ) : messages.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <Ionicons
+              name="chatbubble-outline"
+              size={40}
+              color="rgba(240,232,213,0.15)"
+              style={{ marginBottom: 12 }}
+            />
+            <Text style={styles.emptyTitle}>No messages yet</Text>
+            <Text style={styles.emptySub}>
+              Send a message to start the conversation.
+            </Text>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            keyExtractor={(m) => m.id}
+            contentContainerStyle={styles.list}
+            renderItem={({ item, index }) => {
+              const prev = messages[index - 1]
+              const next = messages[index + 1]
+              const sameSenderAsPrev =
+                prev &&
+                prev.sender_id === item.sender_id &&
+                new Date(item.created_at).getTime() -
+                  new Date(prev.created_at).getTime() <
+                  GROUP_WINDOW_MS
+              const sameSenderAsNext =
+                next &&
+                next.sender_id === item.sender_id &&
+                new Date(next.created_at).getTime() -
+                  new Date(item.created_at).getTime() <
+                  GROUP_WINDOW_MS
+              const showTime = !sameSenderAsNext
+              const wrapStyle: any[] = [
+                { marginBottom: sameSenderAsNext ? 2 : 8 },
+              ]
+              if (sameSenderAsPrev) wrapStyle.push({ marginTop: 0 })
 
-              <TouchableOpacity
-                style={styles.providerRow}
-                activeOpacity={0.8}
-                onPress={() => router.push('/providers/1' as any)}
-              >
-                <View style={styles.providerAvatar}>
-                  <Feather name="user" size={16} color="rgba(240,232,213,0.4)" />
-                  <View style={styles.avatarOnlineDot} />
-                </View>
-                <View>
-                  <Text style={styles.providerName}>{providerName}</Text>
-                  <Text style={styles.providerStatus}>Active now</Text>
-                </View>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.infoBtn}
-                activeOpacity={0.7}
-                onPress={() =>
-                  Alert.alert('Chat Options', '', [
-                    {
-                      text: 'View Provider Profile',
-                      onPress: () => router.push('/providers/1' as any),
-                    },
-                    {
-                      text: 'Block & Report',
-                      onPress: () => console.log('report'),
-                    },
-                    { text: 'Cancel', style: 'cancel' },
-                  ])
-                }
-              >
-                <Feather name="more-horizontal" size={16} color="rgba(240,232,213,0.5)" />
-              </TouchableOpacity>
-            </View>
-
-            {/* Messages scroll area */}
-            <ScrollView
-              ref={scrollRef}
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardDismissMode="interactive"
-              keyboardShouldPersistTaps="handled"
-              onContentSizeChange={() =>
-                scrollRef.current?.scrollToEnd({ animated: true })
-              }
-            >
-              {messages.map((msg) => {
-                if (msg.type === 'system') {
-                  return (
-                    <View key={msg.id} style={styles.systemRow}>
-                      <Text style={styles.systemTimestamp}>{msg.timestamp}</Text>
-                      <Text style={styles.systemText}>{msg.content}</Text>
-                    </View>
-                  )
-                }
-
-                if (msg.type === 'booking') {
-                  return (
-                    <View key={msg.id} style={styles.bookingCardWrap}>
-                      <TouchableOpacity
-                        style={styles.bookingCard}
-                        activeOpacity={0.85}
-                        onPress={() => router.push('/(tabs)/bookings')}
-                      >
-                        <View style={styles.bookingCardHeader}>
-                          <Feather name="check-circle" size={14} color="#4CAF50" />
-                          <Text style={styles.bookingCardLabel}>BOOKING CONFIRMED</Text>
-                          <Text style={styles.bookingViewLabel}>View</Text>
-                        </View>
-                        <Text style={styles.bookingCardContent}>{msg.content}</Text>
-                        <Text style={styles.bookingCardTimestamp}>{msg.timestamp}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  )
-                }
-
-                const isClient = msg.senderId === 'client'
+              if (item.is_mine) {
                 return (
-                  <View
-                    key={msg.id}
-                    style={[styles.messageRow, isClient ? styles.messageRowRight : styles.messageRowLeft]}
-                  >
-                    {!isClient && (
-                      <View style={styles.messageAvatar}>
-                        <Feather name="user" size={12} color="rgba(240,232,213,0.3)" />
-                      </View>
-                    )}
-                    <View style={[styles.bubble, isClient ? styles.bubbleClient : styles.bubbleProvider]}>
-                      <Text style={[styles.bubbleText, isClient ? styles.bubbleTextClient : styles.bubbleTextProvider]}>
-                        {msg.content}
-                      </Text>
-                      <Text style={[styles.bubbleTime, isClient ? styles.bubbleTimeClient : styles.bubbleTimeProvider]}>
-                        {msg.timestamp}
-                      </Text>
+                  <View style={[styles.myWrap, ...wrapStyle]}>
+                    <View style={styles.myBubble}>
+                      <Text style={styles.myBubbleText}>{item.content}</Text>
                     </View>
+                    {showTime && (
+                      <Text style={styles.myTime}>
+                        {formatMessageTime(item.created_at)}
+                      </Text>
+                    )}
                   </View>
                 )
-              })}
-
-              {isTyping && (
-                <View style={[styles.messageRow, styles.messageRowLeft]}>
-                  <View style={styles.messageAvatar}>
-                    <Feather name="user" size={12} color="rgba(240,232,213,0.3)" />
+              }
+              return (
+                <View style={[styles.theirWrap, ...wrapStyle]}>
+                  <View style={styles.theirBubble}>
+                    <Text style={styles.theirBubbleText}>{item.content}</Text>
                   </View>
-                  <View style={[styles.bubble, styles.bubbleProvider, styles.typingBubble]}>
-                    <Text style={styles.typingDots}>•  •  •</Text>
-                  </View>
+                  {showTime && (
+                    <Text style={styles.theirTime}>
+                      {formatMessageTime(item.created_at)}
+                    </Text>
+                  )}
                 </View>
-              )}
+              )
+            }}
+          />
+        )}
 
-              <View style={{ height: 8 }} />
-            </ScrollView>
-
-            {/* Input bar — sits naturally at bottom, KAV lifts it */}
-            <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
-              <TouchableOpacity
-                style={styles.attachBtn}
-                activeOpacity={0.7}
-                onPress={() => {}}
-              >
-                <Feather name="plus" size={18} color="rgba(240,232,213,0.4)" />
-              </TouchableOpacity>
-
-              <View style={styles.inputWrap}>
-                <TextInput
-                  style={styles.input}
-                  value={message}
-                  onChangeText={setMessage}
-                  placeholder={`Message ${firstName}...`}
-                  placeholderTextColor="rgba(240,232,213,0.3)"
-                  multiline
-                  maxLength={1000}
-                  inputAccessoryViewID={Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined}
-                />
-              </View>
-
-              <TouchableOpacity
-                style={[styles.sendBtn, hasText && styles.sendBtnActive]}
-                activeOpacity={0.7}
-                onPress={sendMessage}
-              >
-                <Feather
-                  name="send"
-                  size={16}
-                  color={hasText ? '#080808' : 'rgba(240,232,213,0.25)'}
-                />
-              </TouchableOpacity>
-            </View>
-
-          </View>
-        </TouchableWithoutFeedback>
+        {/* Input bar */}
+        <View style={[styles.inputBar, { paddingBottom: insets.bottom + 12 }]}>
+          <TextInput
+            style={styles.input}
+            value={inputText}
+            onChangeText={setInputText}
+            placeholder="Message..."
+            placeholderTextColor="rgba(240,232,213,0.25)"
+            multiline
+            maxLength={1000}
+            inputAccessoryViewID={
+              Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined
+            }
+            onSubmitEditing={handleSend}
+            blurOnSubmit={false}
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, hasText && styles.sendBtnActive]}
+            onPress={handleSend}
+            disabled={sending || !hasText}
+            activeOpacity={0.8}
+          >
+            {sending ? (
+              <ActivityIndicator
+                color={hasText ? '#080808' : 'rgba(240,232,213,0.3)'}
+                size="small"
+              />
+            ) : (
+              <Ionicons
+                name="send"
+                size={18}
+                color={hasText ? '#080808' : 'rgba(240,232,213,0.2)'}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
       </KeyboardAvoidingView>
 
-      {/* iOS keyboard toolbar */}
       {Platform.OS === 'ios' && (
         <InputAccessoryView nativeID={INPUT_ACCESSORY_ID} backgroundColor="#111111">
           <View style={styles.accessoryBar}>
-            <Text style={[
-              styles.accessoryCount,
-              message.length > 800 && styles.accessoryCountWarning,
-            ]}>
-              {message.length} / 1000
+            <Text
+              style={[
+                styles.accessoryCount,
+                inputText.length > 800 && styles.accessoryCountWarning,
+              ]}
+            >
+              {inputText.length} / 1000
             </Text>
             <View style={styles.accessoryActions}>
               <TouchableOpacity
@@ -319,14 +316,19 @@ export default function ChatScreen() {
               <TouchableOpacity
                 onPress={() => {
                   if (hasText) {
-                    sendMessage()
+                    handleSend()
                     Keyboard.dismiss()
                   }
                 }}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                disabled={!hasText}
+                disabled={!hasText || sending}
               >
-                <Text style={[styles.accessorySend, !hasText && styles.accessorySendDisabled]}>
+                <Text
+                  style={[
+                    styles.accessorySend,
+                    (!hasText || sending) && styles.accessorySendDisabled,
+                  ]}
+                >
                   Send
                 </Text>
               </TouchableOpacity>
@@ -343,261 +345,192 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#080808',
   },
-  inner: {
-    flex: 1,
-  },
   topBar: {
+    paddingHorizontal: 24,
+    paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(240,232,213,0.08)',
   },
-  backBtn: {
+  topBarTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 16,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  topAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
+    backgroundColor: '#1A1410',
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 10,
   },
-  providerRow: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  providerAvatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  avatarOnlineDot: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#4CAF50',
-    borderWidth: 2,
-    borderColor: '#080808',
-  },
-  providerName: {
-    fontSize: 15,
+  topAvatarText: {
+    fontSize: 13,
     color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
+    fontFamily: 'Manrope_700Bold',
   },
-  providerStatus: {
-    fontSize: 11,
-    color: '#4CAF50',
+  topCenter: {
+    flex: 1,
+    marginRight: 12,
+  },
+  otherName: {
+    fontSize: 16,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  bookingMeta: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.5)',
     fontFamily: 'Manrope_400Regular',
     marginTop: 1,
   },
-  infoBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  centerWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 40,
+    gap: 12,
+  },
+  notFoundTitle: {
+    fontSize: 16,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_500Medium',
+    marginTop: 8,
+  },
+  findBtn: {
+    marginTop: 8,
+    paddingHorizontal: 22,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#F0E8D5',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  scroll: {
+  findBtnText: {
+    fontSize: 14,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
+  },
+  emptyWrap: {
     flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 16,
-  },
-  systemRow: {
     alignItems: 'center',
-    marginVertical: 12,
-    gap: 4,
+    justifyContent: 'center',
+    paddingHorizontal: 32,
   },
-  systemTimestamp: {
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.25)',
-    fontFamily: 'Manrope_400Regular',
-    letterSpacing: 0.5,
+  emptyTitle: {
+    fontSize: 15,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_500Medium',
+    marginBottom: 4,
   },
-  systemText: {
-    fontSize: 11,
+  emptySub: {
+    fontSize: 13,
     color: 'rgba(240,232,213,0.3)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },
-  bookingCardWrap: {
-    alignItems: 'center',
-    marginVertical: 8,
+  list: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 16,
   },
-  bookingCard: {
-    backgroundColor: 'rgba(76,175,80,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(76,175,80,0.18)',
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    padding: 14,
-    width: '90%',
-  },
-  bookingCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-  },
-  bookingViewLabel: {
-    marginLeft: 'auto',
-    fontSize: 11,
-    color: '#4CAF50',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  bookingCardLabel: {
-    fontSize: 10,
-    color: '#4CAF50',
-    fontFamily: 'Manrope_600SemiBold',
-    letterSpacing: 1,
-  },
-  bookingCardContent: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-    lineHeight: 18,
-  },
-  bookingCardTimestamp: {
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.3)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 6,
-  },
-  messageRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
+
+  // My (amber) bubble
+  myWrap: {
     alignItems: 'flex-end',
-    gap: 8,
   },
-  messageRowLeft: {
-    justifyContent: 'flex-start',
-  },
-  messageRowRight: {
-    justifyContent: 'flex-end',
-  },
-  messageAvatar: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: 'rgba(240,232,213,0.07)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  bubble: {
+  myBubble: {
     maxWidth: '75%',
+    backgroundColor: '#C8922A',
     borderRadius: 18,
-    borderCurve: 'continuous',
+    borderBottomRightRadius: 4,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  bubbleClient: {
-    backgroundColor: '#F0E8D5',
-    borderBottomRightRadius: 4,
-  },
-  bubbleProvider: {
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderBottomLeftRadius: 4,
-  },
-  bubbleText: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontFamily: 'Manrope_400Regular',
-  },
-  bubbleTextClient: {
+  myBubbleText: {
+    fontSize: 15,
+    lineHeight: 21,
     color: '#080808',
-  },
-  bubbleTextProvider: {
-    color: '#F0E8D5',
-  },
-  bubbleTime: {
-    fontSize: 10,
     fontFamily: 'Manrope_400Regular',
-    marginTop: 4,
   },
-  bubbleTimeClient: {
-    color: 'rgba(8,8,8,0.4)',
+  myTime: {
+    marginTop: 2,
+    marginRight: 4,
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.3)',
+    fontFamily: 'Manrope_400Regular',
     textAlign: 'right',
   },
-  bubbleTimeProvider: {
-    color: 'rgba(240,232,213,0.3)',
+
+  // Their bubble
+  theirWrap: {
+    alignItems: 'flex-start',
   },
-  typingBubble: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+  theirBubble: {
+    maxWidth: '75%',
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    borderRadius: 18,
+    borderBottomLeftRadius: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
   },
-  typingDots: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.4)',
+  theirBubbleText: {
+    fontSize: 15,
+    lineHeight: 21,
+    color: '#F0E8D5',
     fontFamily: 'Manrope_400Regular',
-    letterSpacing: 2,
   },
+  theirTime: {
+    marginTop: 2,
+    marginLeft: 4,
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.3)',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'left',
+  },
+
+  // Input bar
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 10,
     paddingHorizontal: 16,
     paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.06)',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(240,232,213,0.08)',
     backgroundColor: '#080808',
   },
-  attachBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    marginBottom: 2,
-  },
-  inputWrap: {
+  input: {
     flex: 1,
     backgroundColor: 'rgba(240,232,213,0.06)',
     borderWidth: 1,
     borderColor: 'rgba(240,232,213,0.1)',
-    borderRadius: 20,
-    borderCurve: 'continuous',
-    paddingHorizontal: 14,
+    borderRadius: 22,
+    paddingHorizontal: 16,
     paddingVertical: 10,
-    minHeight: 40,
-    justifyContent: 'center',
-  },
-  input: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#F0E8D5',
     fontFamily: 'Manrope_400Regular',
     maxHeight: 100,
-    padding: 0,
   },
   sendBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: 'rgba(240,232,213,0.06)',
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
-    marginBottom: 2,
   },
   sendBtnActive: {
     backgroundColor: '#C8922A',
   },
+
+  // iOS accessory
   accessoryBar: {
     flexDirection: 'row',
     alignItems: 'center',

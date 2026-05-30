@@ -14,6 +14,7 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { getOrCreateConversation } from '../../hooks/useMessaging'
 
 type MeTab = 'bookings' | 'saved' | 'following'
 
@@ -386,6 +387,7 @@ function BookingsTab({
   nextBooking: NextBooking | null
   upcoming: UpcomingRow[]
 }) {
+  const { user } = useAuth()
   if (loading) {
     return (
       <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
@@ -428,9 +430,17 @@ function BookingsTab({
                 <TouchableOpacity
                   style={styles.nextActionBtn}
                   activeOpacity={0.7}
-                  onPress={() =>
-                    router.push(`/messages/${nextBooking.provider_id}` as never)
-                  }
+                  onPress={async () => {
+                    if (!user) return
+                    const convoId = await getOrCreateConversation(
+                      user.id,
+                      nextBooking.provider_id,
+                      nextBooking.id,
+                    )
+                    if (convoId) {
+                      router.push(`/messages/${convoId}` as never)
+                    }
+                  }}
                 >
                   <Feather name="message-circle" size={14} color="#F0E8D5" />
                   <Text style={styles.nextActionText}>Message</Text>

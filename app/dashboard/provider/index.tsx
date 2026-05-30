@@ -16,6 +16,7 @@ import { usePanelContext } from '@/context/PanelContext'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useNotifications } from '@/hooks/useNotifications'
+import { getOrCreateConversation } from '@/hooks/useMessaging'
 
 interface BookingRequest {
   id: string
@@ -443,7 +444,17 @@ export default function ProviderDashboard() {
                     </Pressable>
                     <Pressable
                       style={[styles.requestBtn, styles.requestBtnMessage]}
-                      onPress={() => router.push(`/messages/${req.user_id}` as never)}
+                      onPress={async () => {
+                        if (!providerDbId) return
+                        const convoId = await getOrCreateConversation(
+                          req.user_id,
+                          providerDbId,
+                          req.id,
+                        )
+                        if (convoId) {
+                          router.push(`/messages/${convoId}` as never)
+                        }
+                      }}
                     >
                       <Feather name="message-circle" size={14} color="rgba(240,232,213,0.7)" />
                     </Pressable>
