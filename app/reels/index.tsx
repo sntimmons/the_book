@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -12,7 +12,7 @@ import {
   StatusBar,
   Share,
 } from 'react-native'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
@@ -260,6 +260,7 @@ export default function ReelsScreen() {
   const insets = useSafeAreaInsets()
   const [reels, setReels] = useState<Reel[]>(MOCK_REELS)
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [screenFocused, setScreenFocused] = useState(true)
 
   // Make video sound play even when the iOS silent switch is on, matching
   // TikTok / Instagram Reels behavior. Without this, every iPhone in
@@ -268,6 +269,17 @@ export default function ReelsScreen() {
   useEffect(() => {
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {})
   }, [])
+
+  // Pause every video the moment the user navigates away (e.g. taps Book
+  // and lands on a provider profile). expo-router keeps this screen
+  // mounted in the stack so without this the audio keeps playing under
+  // whatever screen is on top.
+  useFocusEffect(
+    useCallback(() => {
+      setScreenFocused(true)
+      return () => setScreenFocused(false)
+    }, []),
+  )
 
   function likeReel(id: string) {
     setReels((prev) =>
@@ -337,7 +349,7 @@ export default function ReelsScreen() {
         renderItem={({ item, index }) => (
           <ReelItem
             reel={item}
-            isActive={index === currentIndex}
+            isActive={index === currentIndex && screenFocused}
             currentIndex={currentIndex}
             total={reels.length}
             onLike={() => toggleLike(item.id)}
@@ -383,11 +395,14 @@ function ReelItem({
   // Horizontal scrubber: no real video time yet, so reflect progress through the feed.
   const progressPct = total > 0 ? ((currentIndex + 1) / total) * 100 : 0
 
-  // Restart the video from the top every time this card becomes active.
-  // Without this, scrolling away and back resumes from wherever you left
-  // off; TikTok always plays from frame 0.
+  // Restart the video from the top every time this card becomes active,
+  // and force a pause + rewind when it goes inactive so audio cannot
+  // bleed under a pushed screen.
   useEffect(() => {
     if (isActive) {
+      videoRef.current?.setPositionAsync(0).catch(() => {})
+    } else {
+      videoRef.current?.pauseAsync().catch(() => {})
       videoRef.current?.setPositionAsync(0).catch(() => {})
     }
   }, [isActive])
@@ -421,13 +436,13 @@ function ReelItem({
       Animated.spring(burst, {
         toValue: 1,
         useNativeDriver: true,
-        speed: 18,
-        bounciness: 14,
+        speed: 28,
+        bounciness: 10,
       }),
       Animated.timing(burst, {
         toValue: 0,
-        duration: 380,
-        delay: 220,
+        duration: 180,
+        delay: 40,
         useNativeDriver: true,
       }),
     ]).start()
