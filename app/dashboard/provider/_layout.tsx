@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Alert,
+  Image,
   useWindowDimensions,
 } from 'react-native'
 import { Stack, router } from 'expo-router'
@@ -15,6 +16,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons'
 import { PanelContext } from '@/context/PanelContext'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/context/AuthContext'
+
+interface ProviderProfileLite {
+  id: string
+  display_name: string | null
+  category_id: number | null
+  neighborhood: string | null
+  profile_photo_url: string | null
+}
 
 const NAV_SECTIONS = [
   {
@@ -54,10 +64,52 @@ export default function ProviderDashboardLayout() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const panelWidth = Math.min(width * 0.82, 320)
+  const { user } = useAuth()
 
   const [panelOpen, setPanelOpen] = useState(false)
   const slideAnim = useRef(new Animated.Value(-panelWidth)).current
   const overlayAnim = useRef(new Animated.Value(0)).current
+
+  const [providerProfile, setProviderProfile] = useState<ProviderProfileLite | null>(null)
+  const [categoryName, setCategoryName] = useState('')
+
+  useEffect(() => {
+    if (!user) return
+    supabase
+      .from('providers')
+      .select('id, display_name, category_id, neighborhood, profile_photo_url')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setProviderProfile(data as ProviderProfileLite)
+      })
+  }, [user])
+
+  useEffect(() => {
+    const categoryId = providerProfile?.category_id
+    if (categoryId == null) {
+      setCategoryName('')
+      return
+    }
+    supabase
+      .from('categories')
+      .select('name')
+      .eq('id', categoryId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.name) setCategoryName(data.name)
+      })
+  }, [providerProfile?.category_id])
+
+  const displayName =
+    providerProfile?.display_name?.trim() ||
+    user?.email?.split('@')[0] ||
+    'Provider'
+  const metaParts = [categoryName, providerProfile?.neighborhood].filter(
+    (s): s is string => !!s && s.length > 0,
+  )
+  const metaLine = metaParts.join(' · ')
+  const avatarInitial = displayName.charAt(0).toUpperCase()
 
   function openPanel() {
     setPanelOpen(true)
@@ -130,15 +182,36 @@ export default function ProviderDashboardLayout() {
         >
           {/* Provider mini profile */}
           <View style={[styles.panelProfile, { paddingTop: insets.top + 16 }]}>
-            <View style={styles.panelAvatar}>
-              <Feather name="user" size={22} color="rgba(240,232,213,0.4)" />
-            </View>
-            <Text style={styles.panelName}>Marcus Johnson</Text>
-            <Text style={styles.panelMeta}>Barber · Midtown</Text>
+            {providerProfile?.profile_photo_url ? (
+              <Image
+                source={{ uri: providerProfile.profile_photo_url }}
+                style={styles.panelAvatarImg}
+              />
+            ) : (
+              <View style={[styles.panelAvatar, styles.panelAvatarFallback]}>
+                <Text style={styles.panelAvatarInitial}>{avatarInitial}</Text>
+              </View>
+            )}
+            <Text style={styles.panelName} numberOfLines={1}>
+              {displayName}
+            </Text>
+            {metaLine.length > 0 && (
+              <Text style={styles.panelMeta} numberOfLines={1}>
+                {metaLine}
+              </Text>
+            )}
             <TouchableOpacity
-              style={styles.viewProfileLink}
+              style={[
+                styles.viewProfileLink,
+                !providerProfile?.id && styles.viewProfileLinkDisabled,
+              ]}
               activeOpacity={0.7}
-              onPress={() => handleNavItem('/providers/1')}
+              disabled={!providerProfile?.id}
+              onPress={() => {
+                if (providerProfile?.id) {
+                  handleNavItem('/providers/' + providerProfile.id)
+                }
+              }}
             >
               <Text style={styles.viewProfileText}>View my profile</Text>
               <Feather name="external-link" size={11} color="#C8922A" />
@@ -258,6 +331,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  panelAvatarFallback: {
+    backgroundColor: '#1A1410',
+  },
+  panelAvatarInitial: {
+    fontSize: 22,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  panelAvatarImg: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: '#1A1410',
+  },
   panelName: {
     fontSize: 16,
     color: '#F0E8D5',
@@ -275,6 +362,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 4,
     marginTop: 8,
+  },
+  viewProfileLinkDisabled: {
+    opacity: 0.4,
   },
   viewProfileText: {
     fontSize: 12,

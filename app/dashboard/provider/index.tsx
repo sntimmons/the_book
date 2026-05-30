@@ -29,6 +29,33 @@ interface BookingRequest {
   client_name?: string
 }
 
+interface TodayBooking {
+  id: string
+  service_name: string | null
+  requested_time: string | null
+  user_id: string
+  payment_amount: number | null
+  status: string
+}
+
+interface Earnings {
+  total: number
+  month: number
+  completedCount: number
+  pendingCount: number
+}
+
+const ZERO_EARNINGS: Earnings = {
+  total: 0,
+  month: 0,
+  completedCount: 0,
+  pendingCount: 0,
+}
+
+function todayIsoDate(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
 const QUICK_ACTIONS = [
   { icon: 'plus-circle', label: 'Add Service', route: '/dashboard/provider/services' },
   { icon: 'clock', label: 'Set Hours', route: '/dashboard/provider/availability' },
@@ -81,9 +108,11 @@ export default function ProviderDashboard() {
   const [providerDbId, setProviderDbId] = useState<string | null>(null)
   const [providerName, setProviderName] = useState('')
   const [pendingRequests, setPendingRequests] = useState<BookingRequest[]>([])
+  const [todayBookings, setTodayBookings] = useState<TodayBooking[]>([])
+  const [earnings, setEarnings] = useState<Earnings>(ZERO_EARNINGS)
   const [requestsLoading, setRequestsLoading] = useState(true)
 
-  const fetchPendingRequests = useCallback(async () => {
+  const fetchAllDashboardData = useCallback(async () => {
     if (!user) {
       setRequestsLoading(false)
       return
@@ -102,24 +131,28 @@ export default function ProviderDashboard() {
       setProviderDbId(provider.id)
       if (provider.display_name) setProviderName(provider.display_name)
 
-      const { data: bookings, error } = await supabase
+      // All bookings for this provider, used to derive pending list,
+      // earnings totals, and today's schedule from a single query.
+      const { data: allBookings, error } = await supabase
         .from('bookings')
         .select(
           'id, user_id, service_name, requested_date, requested_time, message, status, payment_amount, created_at',
         )
         .eq('provider_id', provider.id)
-        .eq('status', 'pending')
         .order('created_at', { ascending: false })
 
       if (error) {
-        console.log('Fetch requests error:', error)
+        console.log('Fetch bookings error:', error)
         setRequestsLoading(false)
         return
       }
 
-      const rows = (bookings ?? []) as BookingRequest[]
-      const bookingsWithNames = await Promise.all(
-        rows.map(async (b) => {
+      const rows = (allBookings ?? []) as BookingRequest[]
+
+      // Pending list with looked-up client names.
+      const pendingRows = rows.filter((b) => b.status === 'pending')
+      const pendingWithNames = await Promise.all(
+        pendingRows.map(async (b) => {
           const { data: client } = await supabase
             .from('clients')
             .select('name')
@@ -128,17 +161,59 @@ export default function ProviderDashboard() {
           return { ...b, client_name: client?.name || 'New Client' }
         }),
       )
+      setPendingRequests(pendingWithNames)
 
-      setPendingRequests(bookingsWithNames)
+      // Earnings: completed bookings only. payment_amount is dollars,
+      // not cents (per schema confirmation in the audit).
+      const completed = rows.filter((b) => b.status === 'completed')
+      const totalEarnings = completed.reduce(
+        (sum, b) => sum + (b.payment_amount ?? 0),
+        0,
+      )
+      const now = new Date()
+      const thisMonthEarnings = completed.reduce((sum, b) => {
+        const d = new Date(b.created_at)
+        if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) {
+          return sum
+        }
+        return sum + (b.payment_amount ?? 0)
+      }, 0)
+      setEarnings({
+        total: totalEarnings,
+        month: thisMonthEarnings,
+        completedCount: completed.length,
+        pendingCount: pendingRows.length,
+      })
+
+      // Today's schedule: accepted / arriving / checked_in for today.
+      const todayStr = todayIsoDate()
+      const todayRows = rows
+        .filter(
+          (b) =>
+            b.requested_date === todayStr &&
+            (b.status === 'accepted' ||
+              b.status === 'arriving' ||
+              b.status === 'checked_in'),
+        )
+        .sort((a, b) => (a.requested_time ?? '').localeCompare(b.requested_time ?? ''))
+        .map((b) => ({
+          id: b.id,
+          service_name: b.service_name,
+          requested_time: b.requested_time,
+          user_id: b.user_id,
+          payment_amount: b.payment_amount,
+          status: b.status,
+        }))
+      setTodayBookings(todayRows)
     } catch (err) {
-      console.log('Requests error:', err)
+      console.log('Dashboard fetch error:', err)
     } finally {
       setRequestsLoading(false)
     }
   }, [user])
 
   useEffect(() => {
-    fetchPendingRequests()
+    fetchAllDashboardData()
 
     // Realtime: refetch on any INSERT into bookings. The fetch itself
     // filters by provider_id so spurious events for other providers are
@@ -150,7 +225,7 @@ export default function ProviderDashboard() {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'bookings' },
         () => {
-          fetchPendingRequests()
+          fetchAllDashboardData()
         },
       )
       .subscribe()
@@ -158,7 +233,7 @@ export default function ProviderDashboard() {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fetchPendingRequests])
+  }, [fetchAllDashboardData])
 
   function handleAccept(booking: BookingRequest) {
     Alert.alert(
@@ -183,6 +258,8 @@ export default function ProviderDashboard() {
               return
             }
             setPendingRequests((prev) => prev.filter((r) => r.id !== booking.id))
+            // Pull again so Today's Schedule + earnings counts catch up.
+            fetchAllDashboardData()
           },
         },
       ],
@@ -258,19 +335,21 @@ export default function ProviderDashboard() {
         </View>
 
         <View style={styles.earningsCard}>
-          <Text style={styles.earningsLabel}>THIS WEEK</Text>
-          <Text style={styles.earningsAmount}>$0.00</Text>
+          <Text style={styles.earningsLabel}>LIFETIME EARNINGS</Text>
+          <Text style={styles.earningsAmount}>${earnings.total.toFixed(2)}</Text>
           <View style={styles.earningsStats}>
             <View style={styles.earningStat}>
-              <Text style={styles.earningStatValue}>0</Text>
-              <Text style={styles.earningStatLabel}>appointments</Text>
+              <Text style={styles.earningStatValue}>{earnings.completedCount}</Text>
+              <Text style={styles.earningStatLabel}>completed</Text>
             </View>
             <View style={styles.earningStat}>
-              <Text style={styles.earningStatValue}>{pendingCount}</Text>
+              <Text style={styles.earningStatValue}>{earnings.pendingCount}</Text>
               <Text style={styles.earningStatLabel}>pending</Text>
             </View>
             <View style={styles.earningStat}>
-              <Text style={styles.earningStatValue}>$0</Text>
+              <Text style={styles.earningStatValue}>
+                ${earnings.month.toFixed(0)}
+              </Text>
               <Text style={styles.earningStatLabel}>this month</Text>
             </View>
           </View>
@@ -391,14 +470,57 @@ export default function ProviderDashboard() {
           </View>
         </View>
 
-        {/* Today's schedule (placeholder for now) */}
+        {/* Today's schedule */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Today&apos;s Schedule</Text>
-          <View style={styles.emptySchedule}>
-            <Feather name="calendar" size={28} color="rgba(240,232,213,0.1)" />
-            <Text style={styles.emptyScheduleText}>No appointments today</Text>
-            <Text style={styles.emptyScheduleSub}>Accepted bookings will appear here.</Text>
-          </View>
+          {todayBookings.length === 0 ? (
+            <View style={styles.emptySchedule}>
+              <Feather name="calendar" size={28} color="rgba(240,232,213,0.1)" />
+              <Text style={styles.emptyScheduleText}>No appointments today</Text>
+              <Text style={styles.emptyScheduleSub}>Accepted bookings will appear here.</Text>
+            </View>
+          ) : (
+            todayBookings.map((b, i) => {
+              const pill =
+                b.status === 'checked_in'
+                  ? styles.statusPillGreen
+                  : b.status === 'arriving'
+                    ? styles.statusPillBlue
+                    : styles.statusPillAmber
+              const pillText =
+                b.status === 'checked_in'
+                  ? styles.statusPillTextGreen
+                  : b.status === 'arriving'
+                    ? styles.statusPillTextBlue
+                    : styles.statusPillTextAmber
+              return (
+                <View
+                  key={b.id}
+                  style={[
+                    styles.todayCard,
+                    i < todayBookings.length - 1 && styles.todayCardBorder,
+                  ]}
+                >
+                  <Text style={styles.todayTime}>{b.requested_time ?? '-'}</Text>
+                  <View style={styles.todayCenter}>
+                    <Text style={styles.todayService}>
+                      {b.service_name ?? 'Booking'}
+                    </Text>
+                    <View style={[styles.statusPill, pill]}>
+                      <Text style={[styles.statusPillText, pillText]}>
+                        {b.status === 'checked_in' ? 'Checked in' : b.status}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.todayPrice}>
+                    {b.payment_amount != null
+                      ? '$' + Number(b.payment_amount).toFixed(0)
+                      : '$0'}
+                  </Text>
+                </View>
+              )
+            })
+          )}
         </View>
 
         {providerDbId == null && !requestsLoading && (
@@ -702,6 +824,66 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
+  },
+  todayCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    paddingVertical: 14,
+  },
+  todayCardBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(240,232,213,0.05)',
+  },
+  todayTime: {
+    width: 78,
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  todayCenter: {
+    flex: 1,
+    gap: 4,
+  },
+  todayService: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+  },
+  todayPrice: {
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  statusPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  statusPillAmber: {
+    backgroundColor: 'rgba(200,146,42,0.12)',
+  },
+  statusPillBlue: {
+    backgroundColor: 'rgba(73,143,225,0.12)',
+  },
+  statusPillGreen: {
+    backgroundColor: 'rgba(76,175,80,0.12)',
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 0.5,
+    textTransform: 'capitalize',
+  },
+  statusPillTextAmber: {
+    color: '#C8922A',
+  },
+  statusPillTextBlue: {
+    color: '#7AB3F2',
+  },
+  statusPillTextGreen: {
+    color: '#7CCB80',
   },
   emptySchedule: {
     paddingVertical: 32,
