@@ -15,6 +15,7 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
+import { Video, ResizeMode } from 'expo-av'
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
 
@@ -33,6 +34,25 @@ interface Reel {
   isLiked: boolean
   isSaved: boolean
   thumbnailColor: string
+  // Bundled video asset. `require()` returns a number that expo-av's Video
+  // accepts directly as source. Replace with { uri } once provider_reels
+  // lands and we read URLs from Supabase Storage.
+  video: number
+}
+
+// Bundled reel assets. 11 files in /assets/videos.
+const REEL_ASSETS: Record<string, number> = {
+  reel1: require('../../assets/videos/reel1.mp4'),
+  reel2: require('../../assets/videos/reel2.mp4'),
+  reel3: require('../../assets/videos/reel3.mp4'),
+  reel4: require('../../assets/videos/reel4.mp4'),
+  reel5: require('../../assets/videos/reel5.mp4'),
+  reel6: require('../../assets/videos/reel6.mp4'),
+  reel7: require('../../assets/videos/reel7.mp4'),
+  reel8: require('../../assets/videos/reel8.mp4'),
+  reel9: require('../../assets/videos/reel9.mp4'),
+  reel10: require('../../assets/videos/reel10.mp4'),
+  reel11: require('../../assets/videos/reel11.mp4'),
 }
 
 const MOCK_REELS: Reel[] = [
@@ -50,6 +70,7 @@ const MOCK_REELS: Reel[] = [
     isLiked: false,
     isSaved: false,
     thumbnailColor: '#1a0d0d',
+    video: REEL_ASSETS.reel1,
   },
   {
     id: '2',
@@ -66,6 +87,7 @@ const MOCK_REELS: Reel[] = [
     isLiked: true,
     isSaved: false,
     thumbnailColor: '#0d0d1a',
+    video: REEL_ASSETS.reel2,
   },
   {
     id: '3',
@@ -82,6 +104,7 @@ const MOCK_REELS: Reel[] = [
     isLiked: false,
     isSaved: true,
     thumbnailColor: '#0a1a0a',
+    video: REEL_ASSETS.reel3,
   },
   {
     id: '4',
@@ -98,6 +121,7 @@ const MOCK_REELS: Reel[] = [
     isLiked: false,
     isSaved: false,
     thumbnailColor: '#1a0d1a',
+    video: REEL_ASSETS.reel4,
   },
   {
     id: '5',
@@ -114,6 +138,103 @@ const MOCK_REELS: Reel[] = [
     isLiked: false,
     isSaved: false,
     thumbnailColor: '#0d1a1a',
+    video: REEL_ASSETS.reel5,
+  },
+  {
+    id: '6',
+    providerId: '6',
+    providerName: 'Aaliyah Bryant',
+    providerCategory: 'Nail Tech',
+    providerNeighborhood: 'EaDo',
+    providerVerified: true,
+    providerAvailable: true,
+    caption: 'Chrome ombre with a chrome French. Two-hour set, walk out glowing.',
+    likes: 1102,
+    comments: 58,
+    isLiked: false,
+    isSaved: false,
+    thumbnailColor: '#1a0a0a',
+    video: REEL_ASSETS.reel6,
+  },
+  {
+    id: '7',
+    providerId: '7',
+    providerName: 'Camille Booker',
+    providerCategory: 'MUA',
+    providerNeighborhood: 'Museum District',
+    providerVerified: true,
+    providerAvailable: false,
+    caption: 'Soft glam, full glam, bridal, whatever the moment calls for.',
+    likes: 1876,
+    comments: 94,
+    isLiked: false,
+    isSaved: false,
+    thumbnailColor: '#0d0d0d',
+    video: REEL_ASSETS.reel7,
+  },
+  {
+    id: '8',
+    providerId: '8',
+    providerName: 'Whitney Adams',
+    providerCategory: 'Lash Tech',
+    providerNeighborhood: 'Heights',
+    providerVerified: true,
+    providerAvailable: true,
+    caption: 'Wispy hybrid set. Light, fluffy, and they last.',
+    likes: 643,
+    comments: 27,
+    isLiked: false,
+    isSaved: false,
+    thumbnailColor: '#0a0a1a',
+    video: REEL_ASSETS.reel8,
+  },
+  {
+    id: '9',
+    providerId: '9',
+    providerName: 'Trey Morgan',
+    providerCategory: 'Barber',
+    providerNeighborhood: 'Heights',
+    providerVerified: false,
+    providerAvailable: true,
+    caption: 'Skin fade with a beard line-up. Quick, sharp, on-time.',
+    likes: 521,
+    comments: 22,
+    isLiked: false,
+    isSaved: false,
+    thumbnailColor: '#101010',
+    video: REEL_ASSETS.reel9,
+  },
+  {
+    id: '10',
+    providerId: '10',
+    providerName: 'Maya Reed',
+    providerCategory: 'Braider',
+    providerNeighborhood: 'Third Ward',
+    providerVerified: true,
+    providerAvailable: true,
+    caption: 'Boho knotless with the human-hair curls. Took five hours, worth it.',
+    likes: 2098,
+    comments: 113,
+    isLiked: false,
+    isSaved: false,
+    thumbnailColor: '#0d1a14',
+    video: REEL_ASSETS.reel10,
+  },
+  {
+    id: '11',
+    providerId: '11',
+    providerName: 'Andre Watts',
+    providerCategory: 'Photographer',
+    providerNeighborhood: 'Montrose',
+    providerVerified: true,
+    providerAvailable: true,
+    caption: 'Behind the scenes from a portrait session last week.',
+    likes: 412,
+    comments: 19,
+    isLiked: false,
+    isSaved: false,
+    thumbnailColor: '#141414',
+    video: REEL_ASSETS.reel11,
   },
 ]
 
@@ -221,6 +342,7 @@ interface ReelItemProps {
 
 function ReelItem({
   reel,
+  isActive,
   currentIndex,
   total,
   onLike,
@@ -262,18 +384,27 @@ function ReelItem({
 
   return (
     <View style={[styles.reelRoot, { backgroundColor: reel.thumbnailColor }]}>
-      {/* Video placeholder layer */}
+      {/* Bundled video. Only the active card plays, others stay paused at
+          their first frame to keep memory + battery sane on long scrolls. */}
+      <Video
+        source={reel.video}
+        style={StyleSheet.absoluteFill}
+        resizeMode={ResizeMode.COVER}
+        shouldPlay={isActive}
+        isLooping
+        isMuted
+        useNativeControls={false}
+      />
+      {/* Fallback play icon if a video fails to load. Sits below the
+          scrims so it disappears the moment the video shows a frame. */}
       <View
+        pointerEvents="none"
         style={[
           StyleSheet.absoluteFill,
-          {
-            backgroundColor: reel.thumbnailColor,
-            alignItems: 'center',
-            justifyContent: 'center',
-          },
+          { alignItems: 'center', justifyContent: 'center' },
         ]}
       >
-        <Ionicons name="play-circle" size={48} color="rgba(240,232,213,0.1)" />
+        <Ionicons name="play-circle" size={48} color="rgba(240,232,213,0.05)" />
       </View>
 
       {/* Top scrim: 128px, 0.5 -> 0 */}
