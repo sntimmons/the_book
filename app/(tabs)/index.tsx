@@ -245,7 +245,11 @@ export default function DiscoveryFeed() {
         <View style={s.topBar}>
           <Text style={s.wordmark}>The Book</Text>
           <View style={s.topRight}>
-            <TouchableOpacity activeOpacity={0.7} style={s.iconBtn}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={s.iconBtn}
+              onPress={() => router.push('/(tabs)/search' as any)}
+            >
               <Ionicons name="search" size={20} color="rgba(240,232,213,0.8)" />
             </TouchableOpacity>
             <TouchableOpacity activeOpacity={0.7} style={s.iconBtn}>

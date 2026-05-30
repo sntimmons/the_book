@@ -19,6 +19,7 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   useProviderSearch,
+  useProviders,
   useCategories,
   Provider,
   Category,
@@ -61,6 +62,8 @@ export default function SearchScreen() {
   const [mobileOnly, setMobileOnly] = useState(false)
 
   const { categories } = useCategories()
+  // Separate read for the empty-state "Near You" row; does not touch search logic.
+  const { providers: nearbyProviders } = useProviders()
   const ratingFilter =
     minRating === '3+' ? 3
       : minRating === '4+' ? 4
@@ -109,13 +112,14 @@ export default function SearchScreen() {
 
       {/* Top bar */}
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+        {!isSearching && <Text style={styles.exploreTitle}>Explore</Text>}
         <View style={styles.searchRow}>
           <View style={[styles.searchContainer, focused && styles.searchContainerFocused]}>
             <Feather name="search" size={18} color="rgba(240,232,213,0.35)" />
             <TextInput
               ref={inputRef}
               style={styles.searchInput}
-              placeholder="Search providers, services..."
+              placeholder="Search styles, providers, categories..."
               placeholderTextColor="rgba(240,232,213,0.25)"
               value={query}
               onChangeText={setQuery}
@@ -211,6 +215,7 @@ export default function SearchScreen() {
       ) : (
         <EmptyState
           categories={categories}
+          nearby={nearbyProviders}
           onRecent={(term) => setQuery(term)}
           onCategory={(catId) => setActiveCategoryId(catId)}
           onTrending={(term) => setQuery(term)}
@@ -327,16 +332,19 @@ export default function SearchScreen() {
 
 function EmptyState({
   categories,
+  nearby,
   onRecent,
   onCategory,
   onTrending,
 }: {
   categories: Category[]
+  nearby: Provider[]
   onRecent: (term: string) => void
   onCategory: (catId: number) => void
   onTrending: (term: string) => void
 }) {
   const [recent, setRecent] = useState(RECENT)
+  const nearbyTop = nearby.slice(0, 8)
 
   return (
     <ScrollView
@@ -366,7 +374,22 @@ function EmptyState({
         </View>
       )}
 
-      <View style={styles.separator} />
+      {/* Trending (Figma: heading + wrapped pills, above categories) */}
+      <View style={styles.trendingSection}>
+        <Text style={styles.trendingHeading}>Trending</Text>
+        <View style={styles.trendingWrap}>
+          {TRENDING.map((term) => (
+            <TouchableOpacity
+              key={term}
+              style={styles.trendingChip}
+              activeOpacity={0.7}
+              onPress={() => onTrending(term)}
+            >
+              <Text style={styles.trendingTerm}>{term}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
 
       <View style={styles.categorySection}>
         <Text style={styles.sectionLabel}>BROWSE BY CATEGORY</Text>
@@ -388,26 +411,46 @@ function EmptyState({
         </View>
       </View>
 
-      <View style={styles.trendingSection}>
-        <Text style={styles.sectionLabel}>TRENDING IN HOUSTON</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.trendingContent}
-        >
-          {TRENDING.map((term) => (
-            <TouchableOpacity
-              key={term}
-              style={styles.trendingChip}
-              activeOpacity={0.7}
-              onPress={() => onTrending(term)}
-            >
-              <Feather name="trending-up" size={11} color="#C8922A" />
-              <Text style={styles.trendingTerm}>{term}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+      {/* Near You (Figma: provider avatars + rating) */}
+      {nearbyTop.length > 0 && (
+        <View style={styles.nearSection}>
+          <Text style={styles.nearHeading}>Near You</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.nearContent}
+          >
+            {nearbyTop.map((p) => {
+              const ratingValue = p.average_rating ?? p.rating
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  style={styles.nearItem}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/providers/${p.id}` as any)}
+                >
+                  <View style={styles.nearAvatar}>
+                    {p.profile_photo_url ? (
+                      <Image source={{ uri: p.profile_photo_url }} style={styles.nearAvatarImg} />
+                    ) : (
+                      <Feather name="user" size={22} color="rgba(240,232,213,0.2)" />
+                    )}
+                  </View>
+                  <Text style={styles.nearName} numberOfLines={1}>
+                    {p.display_name}
+                  </Text>
+                  <View style={styles.nearRatingRow}>
+                    <Feather name="star" size={9} color="#C8922A" />
+                    <Text style={styles.nearRating}>
+                      {ratingValue != null ? ratingValue.toFixed(1) : 'New'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              )
+            })}
+          </ScrollView>
+        </View>
+      )}
     </ScrollView>
   )
 }
@@ -556,6 +599,13 @@ const styles = StyleSheet.create({
   topBar: {
     paddingHorizontal: 20,
     paddingBottom: 12,
+  },
+  exploreTitle: {
+    fontSize: 28,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: -0.4,
+    marginBottom: 14,
   },
   searchRow: {
     flexDirection: 'row',
@@ -737,15 +787,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginTop: 24,
   },
-  trendingContent: {
-    gap: 8,
-    marginTop: 12,
+  trendingHeading: {
+    fontSize: 18,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: -0.2,
+    marginBottom: 14,
+  },
+  trendingWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
   },
   trendingChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
+    paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
@@ -753,7 +808,59 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(240,232,213,0.03)',
   },
   trendingTerm: {
-    fontSize: 12,
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.7)',
+    fontFamily: 'Manrope_500Medium',
+  },
+  // Near You
+  nearSection: {
+    paddingHorizontal: 20,
+    marginTop: 28,
+  },
+  nearHeading: {
+    fontSize: 18,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: -0.2,
+    marginBottom: 14,
+  },
+  nearContent: {
+    gap: 16,
+  },
+  nearItem: {
+    width: 64,
+    alignItems: 'center',
+  },
+  nearAvatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  nearAvatarImg: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+  },
+  nearName: {
+    marginTop: 7,
+    fontSize: 11,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+    textAlign: 'center',
+    maxWidth: 64,
+  },
+  nearRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    marginTop: 2,
+  },
+  nearRating: {
+    fontSize: 10,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },
