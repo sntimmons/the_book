@@ -179,14 +179,6 @@ export default function VerifyScreen() {
               : 'Resend code'}
           </Text>
         </Pressable>
-
-        {/* Dev bypass — remove once SMS is wired up */}
-        <Pressable
-          onPress={() => router.push('/path-selection')}
-          style={styles.devSkipWrap}
-        >
-          <Text style={styles.devSkip}>Skip verification (dev only)</Text>
-        </Pressable>
       </View>
 
       {/* Verify button */}
@@ -317,16 +309,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     fontSize: 12,
     color: '#E05C5C',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
-  },
-  devSkipWrap: {
-    marginTop: 32,
-    alignItems: 'center',
-  },
-  devSkip: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.25)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },

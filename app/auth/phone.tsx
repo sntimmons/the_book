@@ -62,6 +62,38 @@ export default function PhoneScreen() {
     })
   }
 
+  // Dev-only: skip phone + OTP entirely and route as if auth completed.
+  // Returning users (with an existing session) go to their destination;
+  // everyone else is treated as a new user.
+  async function handleDevBypass() {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (session?.user) {
+      const userId = session.user.id
+      const [clientResult, providerResult] = await Promise.all([
+        supabase.from('clients').select('id').eq('id', userId).maybeSingle(),
+        supabase
+          .from('providers')
+          .select('id')
+          .eq('user_id', userId)
+          .maybeSingle(),
+      ])
+
+      if (providerResult.data) {
+        router.replace('/dashboard/provider')
+        return
+      }
+      if (clientResult.data) {
+        router.replace('/(tabs)/')
+        return
+      }
+    }
+
+    router.replace('/path-selection')
+  }
+
   return (
     <View style={[styles.root, { backgroundColor: '#080808' }]}>
       {/* Wordmark */}
@@ -133,6 +165,12 @@ export default function PhoneScreen() {
               </Text>
             )}
           </Pressable>
+
+          {__DEV__ && (
+            <Pressable onPress={handleDevBypass} style={styles.devSkipWrap}>
+              <Text style={styles.devSkip}>Skip for now (dev)</Text>
+            </Pressable>
+          )}
         </View>
       </KeyboardAvoidingView>
     </View>
@@ -226,5 +264,14 @@ const styles = StyleSheet.create({
   },
   nextTextInactive: {
     color: 'rgba(240,232,213,0.4)',
+  },
+  devSkipWrap: {
+    marginTop: 16,
+  },
+  devSkip: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.3)',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'center',
   },
 })
