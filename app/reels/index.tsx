@@ -5,6 +5,7 @@ import {
   Image,
   FlatList,
   Dimensions,
+  Pressable,
   TouchableOpacity,
   StyleSheet,
   Animated,
@@ -15,7 +16,10 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
-import { Video, ResizeMode } from 'expo-av'
+import { Audio, Video, ResizeMode } from 'expo-av'
+
+const LIKE_RED = '#FF2D55'
+const DOUBLE_TAP_MS = 280
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
 
@@ -257,6 +261,24 @@ export default function ReelsScreen() {
   const [reels, setReels] = useState<Reel[]>(MOCK_REELS)
   const [currentIndex, setCurrentIndex] = useState(0)
 
+  // Make video sound play even when the iOS silent switch is on, matching
+  // TikTok / Instagram Reels behavior. Without this, every iPhone in
+  // silent mode (most of them) plays the reels muted regardless of the
+  // isMuted prop.
+  useEffect(() => {
+    Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {})
+  }, [])
+
+  function likeReel(id: string) {
+    setReels((prev) =>
+      prev.map((r) =>
+        r.id === id && !r.isLiked
+          ? { ...r, isLiked: true, likes: r.likes + 1 }
+          : r,
+      ),
+    )
+  }
+
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ index: number | null }> }) => {
@@ -319,6 +341,7 @@ export default function ReelsScreen() {
             currentIndex={currentIndex}
             total={reels.length}
             onLike={() => toggleLike(item.id)}
+            onDoubleTapLike={() => likeReel(item.id)}
             onSave={() => toggleSave(item.id)}
             onShare={() => handleShare(item)}
             insets={insets}
@@ -335,6 +358,7 @@ interface ReelItemProps {
   currentIndex: number
   total: number
   onLike: () => void
+  onDoubleTapLike: () => void
   onSave: () => void
   onShare: () => void
   insets: { top: number; bottom: number; left: number; right: number }
@@ -346,14 +370,27 @@ function ReelItem({
   currentIndex,
   total,
   onLike,
+  onDoubleTapLike,
   onShare,
   insets,
 }: ReelItemProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current
   const providerInitials = getInitials(reel.providerName)
+  const videoRef = useRef<Video>(null)
+  const lastTapAt = useRef(0)
+  const burst = useRef(new Animated.Value(0)).current
 
   // Horizontal scrubber: no real video time yet, so reflect progress through the feed.
   const progressPct = total > 0 ? ((currentIndex + 1) / total) * 100 : 0
+
+  // Restart the video from the top every time this card becomes active.
+  // Without this, scrolling away and back resumes from wherever you left
+  // off; TikTok always plays from frame 0.
+  useEffect(() => {
+    if (isActive) {
+      videoRef.current?.setPositionAsync(0).catch(() => {})
+    }
+  }, [isActive])
 
   useEffect(() => {
     if (!reel.providerAvailable) return
@@ -378,23 +415,59 @@ function ReelItem({
     }
   }, [reel.providerAvailable, pulseAnim])
 
+  function playBurst() {
+    burst.setValue(0)
+    Animated.sequence([
+      Animated.spring(burst, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 18,
+        bounciness: 14,
+      }),
+      Animated.timing(burst, {
+        toValue: 0,
+        duration: 380,
+        delay: 220,
+        useNativeDriver: true,
+      }),
+    ]).start()
+  }
+
+  function handleVideoTap() {
+    const now = Date.now()
+    if (now - lastTapAt.current < DOUBLE_TAP_MS) {
+      // Double-tap: like (never unlike, matching TikTok).
+      onDoubleTapLike()
+      playBurst()
+      lastTapAt.current = 0
+      return
+    }
+    lastTapAt.current = now
+  }
+
   function goToProvider() {
     router.push(`/providers/${reel.providerId}` as any)
   }
 
   return (
     <View style={[styles.reelRoot, { backgroundColor: reel.thumbnailColor }]}>
-      {/* Bundled video. Only the active card plays, others stay paused at
-          their first frame to keep memory + battery sane on long scrolls. */}
-      <Video
-        source={reel.video}
-        style={StyleSheet.absoluteFill}
-        resizeMode={ResizeMode.COVER}
-        shouldPlay={isActive}
-        isLooping
-        isMuted
-        useNativeControls={false}
-      />
+      {/* Bundled video wrapped in a Pressable to catch double-taps. The
+          right rail and header render after this Pressable so their
+          touches take priority in their own regions. */}
+      <Pressable onPress={handleVideoTap} style={StyleSheet.absoluteFill}>
+        <Video
+          ref={videoRef}
+          source={reel.video}
+          style={StyleSheet.absoluteFill}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={isActive}
+          isLooping
+          isMuted={false}
+          volume={1.0}
+          useNativeControls={false}
+        />
+      </Pressable>
+
       {/* Fallback play icon if a video fails to load. Sits below the
           scrims so it disappears the moment the video shows a frame. */}
       <View
@@ -406,6 +479,27 @@ function ReelItem({
       >
         <Ionicons name="play-circle" size={48} color="rgba(240,232,213,0.05)" />
       </View>
+
+      {/* Double-tap heart burst */}
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.burstWrap,
+          {
+            opacity: burst,
+            transform: [
+              {
+                scale: burst.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.4, 1.25],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
+        <Ionicons name="heart" size={120} color={LIKE_RED} />
+      </Animated.View>
 
       {/* Top scrim: 128px, 0.5 -> 0 */}
       <LinearGradient
@@ -495,7 +589,8 @@ function ReelItem({
         <ActionButton
           ionicon={reel.isLiked ? 'heart' : 'heart-outline'}
           size={28}
-          color="#F0E8D5"
+          color={reel.isLiked ? LIKE_RED : '#F0E8D5'}
+          labelColor={reel.isLiked ? LIKE_RED : undefined}
           label={formatCount(reel.likes)}
           onPress={onLike}
         />
@@ -598,14 +693,19 @@ interface ActionButtonProps {
   color: string
   size?: number
   label?: string
+  labelColor?: string
   onPress: () => void
 }
 
-function ActionButton({ ionicon, color, size = 28, label, onPress }: ActionButtonProps) {
+function ActionButton({ ionicon, color, size = 28, label, labelColor, onPress }: ActionButtonProps) {
   return (
     <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={styles.actionWrap}>
       <Ionicons name={ionicon} size={size} color={color} />
-      {label != null && <Text style={styles.actionLabel}>{label}</Text>}
+      {label != null && (
+        <Text style={[styles.actionLabel, labelColor ? { color: labelColor } : null]}>
+          {label}
+        </Text>
+      )}
     </TouchableOpacity>
   )
 }
@@ -619,6 +719,15 @@ const styles = StyleSheet.create({
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
     position: 'relative',
+  },
+  burstWrap: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // Gradients
