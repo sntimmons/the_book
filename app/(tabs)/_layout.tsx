@@ -153,6 +153,7 @@ export default function TabLayout() {
       <Tabs.Screen name="messages" />
       <Tabs.Screen name="me" />
       <Tabs.Screen name="search" options={{ href: null }} />
+      <Tabs.Screen name="nearby" options={{ href: null }} />
     </Tabs>
   )
 }

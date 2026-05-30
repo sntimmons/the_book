@@ -3,7 +3,6 @@ import {
   View,
   Text,
   Image,
-  TextInput,
   ScrollView,
   TouchableOpacity,
   Animated,
@@ -25,6 +24,10 @@ function getInitials(name: string): string {
     .join('')
 }
 
+function firstName(name: string): string {
+  return name.split(/\s+/).filter(Boolean)[0] ?? name
+}
+
 function ratingValue(p: Provider): number | null {
   return p.average_rating ?? p.rating
 }
@@ -33,14 +36,18 @@ function providerHood(p: Provider): string {
   return p.neighborhood ?? p.location ?? ''
 }
 
-// useCategories may be a stub in this codebase; guard against a non-array result.
-function categoryName(
-  categoryId: number | null,
-  categories: Category[],
-): string {
+// No boolean availability field on Provider; derive from next_available slot.
+function isAvailableNow(p: Provider): boolean {
+  return p.next_available != null
+}
+
+function categoryName(categoryId: number | null, categories: Category[]): string {
   if (categoryId == null) return ''
   return categories.find((c) => c.id === categoryId)?.name ?? ''
 }
+
+// Distance radius chips are decorative — no geolocation data is available.
+const DISTANCE_CHIPS = ['1 mi', '5 mi', '10 mi', '25 mi']
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
 
@@ -62,14 +69,14 @@ function Skeleton() {
   }, [opacity])
 
   return (
-    <View style={{ gap: 12 }}>
+    <View>
       {[0, 1, 2, 3, 4].map((i) => (
-        <Animated.View key={i} style={[s.card, s.skeletonCard, { opacity }]}>
-          <View style={[s.avatar, s.skeletonBlock]} />
+        <Animated.View key={i} style={[s.row, { opacity }]}>
+          <View style={[s.rowAvatar, s.skeletonBlock]} />
           <View style={{ flex: 1, justifyContent: 'center', gap: 8 }}>
-            <View style={[s.skeletonLine, { width: '55%' }]} />
-            <View style={[s.skeletonLine, { width: '40%' }]} />
-            <View style={[s.skeletonLine, { width: '32%' }]} />
+            <View style={[s.skeletonLine, { width: '50%' }]} />
+            <View style={[s.skeletonLine, { width: '38%' }]} />
+            <View style={[s.skeletonLine, { width: '30%' }]} />
           </View>
         </Animated.View>
       ))}
@@ -77,9 +84,46 @@ function Skeleton() {
   )
 }
 
-// ── Provider card ─────────────────────────────────────────────────────────────
+// ── Available-now story (avatar carousel item) ────────────────────────────────
 
-function NearbyCard({
+function StoryItem({
+  provider,
+  categories,
+}: {
+  provider: Provider
+  categories: Category[]
+}) {
+  const role = categoryName(provider.category_id, categories)
+  return (
+    <TouchableOpacity
+      style={s.story}
+      activeOpacity={0.85}
+      onPress={() => router.push('/providers/' + provider.id)}
+    >
+      <View style={s.storyRing}>
+        <View style={s.storyAvatar}>
+          {provider.profile_photo_url ? (
+            <Image source={{ uri: provider.profile_photo_url }} style={s.storyAvatarImg} />
+          ) : (
+            <Text style={s.storyInitials}>{getInitials(provider.display_name)}</Text>
+          )}
+        </View>
+      </View>
+      <Text style={s.storyName} numberOfLines={1}>
+        {firstName(provider.display_name)}
+      </Text>
+      {role ? (
+        <Text style={s.storyRole} numberOfLines={1}>
+          {role}
+        </Text>
+      ) : null}
+    </TouchableOpacity>
+  )
+}
+
+// ── Provider row ──────────────────────────────────────────────────────────────
+
+function ProviderRow({
   provider,
   categories,
 }: {
@@ -89,51 +133,50 @@ function NearbyCard({
   const role = categoryName(provider.category_id, categories)
   const hood = providerHood(provider)
   const rating = ratingValue(provider)
+  const available = isAvailableNow(provider)
 
-  function goToProvider() {
-    router.push('/providers/' + provider.id)
-  }
+  const subtitle = [role, hood].filter(Boolean).join(' · ')
 
   return (
-    <TouchableOpacity style={s.card} activeOpacity={0.8} onPress={goToProvider}>
-      <View style={s.avatar}>
-        {provider.profile_photo_url ? (
-          <Image source={{ uri: provider.profile_photo_url }} style={s.avatarImg} />
-        ) : (
-          <Text style={s.avatarInitials}>{getInitials(provider.display_name)}</Text>
-        )}
+    <TouchableOpacity
+      style={s.row}
+      activeOpacity={0.8}
+      onPress={() => router.push('/providers/' + provider.id)}
+    >
+      <View style={s.rowAvatarWrap}>
+        <View style={s.rowAvatar}>
+          {provider.profile_photo_url ? (
+            <Image source={{ uri: provider.profile_photo_url }} style={s.rowAvatarImg} />
+          ) : (
+            <Text style={s.rowInitials}>{getInitials(provider.display_name)}</Text>
+          )}
+        </View>
+        {available && <View style={s.statusDot} />}
       </View>
 
-      <View style={s.cardBody}>
-        <Text style={s.name} numberOfLines={1}>
+      <View style={s.rowBody}>
+        <Text style={s.rowName} numberOfLines={1}>
           {provider.display_name}
         </Text>
-        {role ? (
-          <Text style={s.role} numberOfLines={1}>
-            {role}
+        {subtitle ? (
+          <Text style={s.rowSub} numberOfLines={1}>
+            {subtitle}
           </Text>
         ) : null}
-        <View style={s.metaRow}>
-          <Ionicons name="location" size={12} color="rgba(240,232,213,0.45)" />
-          <Text style={s.metaText} numberOfLines={1}>
-            {hood || 'Houston'}
-          </Text>
-        </View>
+        {available && (
+          <View style={s.rowMeta}>
+            <View style={s.metaDot} />
+            <Text style={s.metaText}>Available now</Text>
+          </View>
+        )}
       </View>
 
-      <View style={s.cardRight}>
-        {rating != null ? (
-          <View style={s.ratingRow}>
-            <Ionicons name="star" size={11} color="#C8922A" />
-            <Text style={s.ratingText}>{rating.toFixed(1)}</Text>
-          </View>
-        ) : (
-          <View />
-        )}
-        <TouchableOpacity style={s.bookBtn} activeOpacity={0.85} onPress={goToProvider}>
-          <Text style={s.bookText}>Book</Text>
-        </TouchableOpacity>
-      </View>
+      {rating != null && (
+        <View style={s.rowRating}>
+          <Ionicons name="star" size={11} color="#C8922A" />
+          <Text style={s.ratingText}>{rating.toFixed(1)}</Text>
+        </View>
+      )}
     </TouchableOpacity>
   )
 }
@@ -148,46 +191,28 @@ export default function NearbyScreen() {
     ? categoriesResult.categories
     : []
 
-  const [query, setQuery] = useState('')
-  const [activeHood, setActiveHood] = useState<string | null>(null)
+  const [activeDistance, setActiveDistance] = useState('5 mi')
 
-  const neighborhoods = useMemo(() => {
-    const set = new Set<string>()
-    providers.forEach((p) => {
-      const hood = providerHood(p)
-      if (hood) set.add(hood)
-    })
-    return Array.from(set).sort()
-  }, [providers])
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return providers.filter((p) => {
-      const hood = providerHood(p)
-      if (activeHood && hood !== activeHood) return false
-      if (q) {
-        const haystack = (p.display_name + ' ' + hood).toLowerCase()
-        if (!haystack.includes(q)) return false
-      }
-      return true
-    })
-  }, [providers, activeHood, query])
+  const availableNow = useMemo(
+    () => providers.filter(isAvailableNow).slice(0, 10),
+    [providers],
+  )
 
   return (
     <View style={s.root}>
       {/* Header */}
-      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
+      <View style={[s.header, { paddingTop: insets.top + 4 }]}>
         <TouchableOpacity
-          style={s.backBtn}
+          style={s.headerSide}
           activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={() => router.back()}
         >
-          <Ionicons name="chevron-back" size={20} color="#F0E8D5" />
+          <Ionicons name="chevron-back" size={22} color="#F0E8D5" />
         </TouchableOpacity>
-        <View style={s.headerText}>
-          <Text style={s.title}>Nearby</Text>
-          <Text style={s.subtitle}>Providers near you in Houston</Text>
+        <Text style={s.headerTitle}>Near You</Text>
+        <View style={[s.headerSide, s.headerSideRight]}>
+          <Ionicons name="location" size={20} color="#C8922A" />
         </View>
       </View>
 
@@ -197,80 +222,92 @@ export default function NearbyScreen() {
           s.scrollContent,
           { paddingBottom: insets.bottom + 100 },
         ]}
-        keyboardShouldPersistTaps="handled"
       >
-        {/* Search bar */}
-        <View style={s.searchBar}>
-          <Ionicons name="search" size={18} color="rgba(240,232,213,0.4)" />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder="Search neighborhoods"
-            placeholderTextColor="rgba(240,232,213,0.4)"
-            style={s.searchInput}
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="search"
-          />
+        {/* Location row */}
+        <View style={s.locationRow}>
+          <View style={s.locationLeft}>
+            <Ionicons name="location" size={14} color="#C8922A" />
+            <Text style={s.locationText}>Houston, TX · Midtown</Text>
+          </View>
+          <TouchableOpacity activeOpacity={0.7}>
+            <Text style={s.changeLink}>Change</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Filter chips */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.chipsRow}
-          style={s.chipsScroll}
-        >
-          <TouchableOpacity
-            activeOpacity={0.8}
-            onPress={() => setActiveHood(null)}
-            style={[s.chip, activeHood === null ? s.chipActive : s.chipInactive]}
-          >
-            <Text style={activeHood === null ? s.chipTextActive : s.chipTextInactive}>
-              All
-            </Text>
-          </TouchableOpacity>
-          {neighborhoods.map((hood) => {
-            const active = hood === activeHood
-            return (
-              <TouchableOpacity
-                key={hood}
-                activeOpacity={0.8}
-                onPress={() => setActiveHood(hood)}
-                style={[s.chip, active ? s.chipActive : s.chipInactive]}
-              >
-                <Text style={active ? s.chipTextActive : s.chipTextInactive}>
-                  {hood}
-                </Text>
-              </TouchableOpacity>
-            )
-          })}
-        </ScrollView>
+        <View style={s.divider} />
 
-        {/* List */}
-        <View style={s.list}>
-          {loading ? (
+        {/* Distance chips (decorative — no geolocation data) */}
+        <View style={s.distanceRow}>
+          <Text style={s.withinLabel}>Within</Text>
+          <View style={s.chipsRow}>
+            {DISTANCE_CHIPS.map((d) => {
+              const active = d === activeDistance
+              return (
+                <TouchableOpacity
+                  key={d}
+                  activeOpacity={0.8}
+                  onPress={() => setActiveDistance(d)}
+                  style={[s.chip, active ? s.chipActive : s.chipInactive]}
+                >
+                  <Text style={active ? s.chipTextActive : s.chipTextInactive}>{d}</Text>
+                </TouchableOpacity>
+              )
+            })}
+          </View>
+        </View>
+
+        <View style={s.divider} />
+
+        {loading ? (
+          <View style={{ marginTop: 8 }}>
             <Skeleton />
-          ) : filtered.length === 0 ? (
-            <View style={s.emptyWrap}>
-              <Ionicons
-                name="location-outline"
-                size={40}
-                color="rgba(240,232,213,0.25)"
-              />
-              <Text style={s.emptyTitle}>No providers nearby.</Text>
-              <Text style={s.emptySub}>
-                Try a different neighborhood or clear your search.
-              </Text>
-            </View>
-          ) : (
-            <View style={{ gap: 12 }}>
-              {filtered.map((p) => (
-                <NearbyCard key={p.id} provider={p} categories={categories} />
+          </View>
+        ) : providers.length === 0 ? (
+          <View style={s.emptyWrap}>
+            <Ionicons name="location-outline" size={40} color="rgba(240,232,213,0.25)" />
+            <Text style={s.emptyTitle}>No providers nearby.</Text>
+            <Text style={s.emptySub}>Check back soon as more providers join in Houston.</Text>
+          </View>
+        ) : (
+          <>
+            {/* Available now carousel */}
+            {availableNow.length > 0 && (
+              <View style={s.section}>
+                <View style={s.sectionHead}>
+                  <View style={s.sectionHeadLeft}>
+                    <Text style={s.sectionTitle}>Available Now</Text>
+                    <View style={s.titleDot} />
+                  </View>
+                  <Text style={s.sectionCount}>
+                    {availableNow.length}{' '}
+                    {availableNow.length === 1 ? 'provider' : 'providers'}
+                  </Text>
+                </View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={s.storyRowContent}
+                >
+                  {availableNow.map((p) => (
+                    <StoryItem key={p.id} provider={p} categories={categories} />
+                  ))}
+                </ScrollView>
+                <View style={s.divider} />
+              </View>
+            )}
+
+            {/* Providers near you list */}
+            <Text style={s.listLabel}>Providers Near You</Text>
+            <View>
+              {providers.map((p, i) => (
+                <View key={p.id}>
+                  <ProviderRow provider={p} categories={categories} />
+                  {i < providers.length - 1 && <View style={s.rowDivider} />}
+                </View>
               ))}
             </View>
-          )}
-        </View>
+          </>
+        )}
       </ScrollView>
     </View>
   )
@@ -286,182 +323,291 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingBottom: 12,
-    gap: 12,
   },
-  backBtn: {
+  headerSide: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'center',
   },
-  headerText: {
-    flex: 1,
+  headerSideRight: {
+    alignItems: 'flex-end',
   },
-  title: {
-    fontSize: 28,
+  headerTitle: {
+    fontSize: 18,
     color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: -0.4,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 0.1,
   },
 
-  // Scroll content
   scrollContent: {
     paddingHorizontal: 24,
-    paddingTop: 8,
   },
 
-  // Search bar
-  searchBar: {
+  // Location row
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 44,
+  },
+  locationLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    height: 44,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
+    flexShrink: 1,
   },
-  searchInput: {
-    flex: 1,
+  locationText: {
     fontSize: 14,
     color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
-    padding: 0,
+    fontFamily: 'Manrope_500Medium',
+    flexShrink: 1,
+  },
+  changeLink: {
+    fontSize: 13,
+    color: '#C8922A',
+    fontFamily: 'Manrope_500Medium',
   },
 
-  // Filter chips
-  chipsScroll: {
-    marginTop: 16,
+  divider: {
+    height: 1,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+  },
+
+  // Distance chips
+  distanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    height: 64,
+  },
+  withinLabel: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
   },
   chipsRow: {
+    flexDirection: 'row',
     gap: 8,
-    paddingRight: 8,
+    flex: 1,
   },
   chip: {
     height: 32,
-    paddingHorizontal: 16,
-    borderRadius: 16,
+    paddingHorizontal: 12,
+    borderRadius: 8,
     alignItems: 'center',
     justifyContent: 'center',
   },
   chipActive: {
-    backgroundColor: '#C8922A',
+    backgroundColor: '#F0E8D5',
   },
   chipInactive: {
-    backgroundColor: 'rgba(240,232,213,0.06)',
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
   },
   chipTextActive: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#080808',
     fontFamily: 'Manrope_600SemiBold',
   },
   chipTextInactive: {
-    fontSize: 13,
-    color: '#F0E8D5',
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_500Medium',
   },
 
-  // List
-  list: {
-    marginTop: 20,
+  // Sections
+  section: {
+    marginTop: 16,
   },
-
-  // Card
-  card: {
+  sectionHead: {
     flexDirection: 'row',
-    gap: 12,
-    padding: 12,
-    borderRadius: 16,
-    borderCurve: 'continuous',
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.08)',
-  },
-  avatar: {
-    width: 64,
-    height: 64,
-    borderRadius: 12,
-    borderCurve: 'continuous',
-    backgroundColor: 'rgba(240,232,213,0.08)',
     alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+    justifyContent: 'space-between',
+    marginBottom: 16,
   },
-  avatarImg: {
-    width: 64,
-    height: 64,
+  sectionHeadLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  avatarInitials: {
-    fontSize: 20,
+  sectionTitle: {
+    fontSize: 18,
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
+    letterSpacing: 0.1,
   },
-  cardBody: {
-    flex: 1,
-    justifyContent: 'center',
-    gap: 2,
+  titleDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#C8922A',
   },
-  name: {
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: -0.1,
-  },
-  role: {
+  sectionCount: {
     fontSize: 13,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },
-  metaRow: {
+
+  // Available-now story
+  storyRowContent: {
+    gap: 16,
+    paddingBottom: 16,
+  },
+  story: {
+    alignItems: 'center',
+    width: 72,
+  },
+  storyRing: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2,
+    borderColor: '#C8922A',
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyAvatarImg: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  storyInitials: {
+    fontSize: 18,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  storyName: {
+    fontSize: 11,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+    marginTop: 7,
+    maxWidth: 72,
+    textAlign: 'center',
+  },
+  storyRole: {
+    fontSize: 10,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 1,
+    maxWidth: 72,
+    textAlign: 'center',
+  },
+
+  // List
+  listLabel: {
+    fontSize: 10,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_500Medium',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+
+  // Provider row
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    marginTop: 2,
+    gap: 16,
+    paddingVertical: 14,
+  },
+  rowAvatarWrap: {
+    width: 52,
+    height: 52,
+    position: 'relative',
+  },
+  rowAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rowAvatarImg: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
+  rowInitials: {
+    fontSize: 17,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  statusDot: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: '#C8922A',
+    borderWidth: 2,
+    borderColor: '#080808',
+  },
+  rowBody: {
+    flex: 1,
+    justifyContent: 'center',
+    gap: 3,
+  },
+  rowName: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+  },
+  rowSub: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+  },
+  rowMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 1,
+  },
+  metaDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: '#C8922A',
   },
   metaText: {
     fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    flexShrink: 1,
+    color: '#C8922A',
+    fontFamily: 'Manrope_500Medium',
   },
-  cardRight: {
-    alignSelf: 'stretch',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-  },
-  ratingRow: {
+  rowRating: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
   ratingText: {
-    fontSize: 13,
-    color: '#C8922A',
-    fontFamily: 'Manrope_700Bold',
+    fontSize: 12,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+    opacity: 0.8,
   },
-  bookBtn: {
-    height: 32,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#C8922A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bookText: {
-    fontSize: 13,
-    color: '#080808',
-    fontFamily: 'Manrope_600SemiBold',
+  rowDivider: {
+    height: 1,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    marginLeft: 68,
   },
 
   // Empty state
@@ -484,9 +630,6 @@ const s = StyleSheet.create({
   },
 
   // Skeleton
-  skeletonCard: {
-    alignItems: 'center',
-  },
   skeletonBlock: {
     backgroundColor: 'rgba(240,232,213,0.08)',
   },
