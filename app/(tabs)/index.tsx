@@ -11,6 +11,7 @@ import {
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import {
   useProviders,
@@ -123,6 +124,24 @@ function ratingLabel(p: Provider): string {
   return r != null ? r.toFixed(1) : 'New'
 }
 
+function firstName(name: string): string {
+  return name.split(/\s+/).filter(Boolean)[0] ?? name
+}
+
+function getInitials(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('')
+}
+
+// No boolean availability field on Provider; derive from next_available slot.
+function isAvailableNow(p: Provider): boolean {
+  return p.next_available != null
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function DiscoveryFeed() {
@@ -149,6 +168,8 @@ export default function DiscoveryFeed() {
   }, [providers])
 
   const forYou = useMemo(() => providers.slice(0, 5), [providers])
+
+  const storyProviders = useMemo(() => providers.slice(0, 8), [providers])
 
   const liveNow = useMemo(
     () =>
@@ -182,11 +203,12 @@ export default function DiscoveryFeed() {
           <Text style={s.wordmark}>The Book</Text>
           <View style={s.topRight}>
             <TouchableOpacity activeOpacity={0.7} style={s.iconBtn}>
-              <Text style={s.bellIcon}>♔</Text>
+              <Ionicons name="search" size={20} color="rgba(240,232,213,0.8)" />
             </TouchableOpacity>
-            <View style={s.avatarCircle}>
-              <Silhouette size={16} />
-            </View>
+            <TouchableOpacity activeOpacity={0.7} style={s.iconBtn}>
+              <Ionicons name="notifications" size={20} color="rgba(240,232,213,0.8)" />
+              <View style={s.notifDot} />
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -213,6 +235,48 @@ export default function DiscoveryFeed() {
           </View>
         ) : (
           <>
+            {/* ── Story rings ────────────────────────────────────────────── */}
+            {storyProviders.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={s.storyRow}
+                style={s.storyScroll}
+              >
+                {storyProviders.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    activeOpacity={0.8}
+                    onPress={() => router.push(`/providers/${p.id}` as any)}
+                    style={s.storyItem}
+                  >
+                    <View
+                      style={[
+                        s.storyRing,
+                        isAvailableNow(p) ? s.storyRingActive : s.storyRingInactive,
+                      ]}
+                    >
+                      <View style={s.storyAvatar}>
+                        {p.profile_photo_url ? (
+                          <Image
+                            source={{ uri: p.profile_photo_url }}
+                            style={s.storyAvatarImg}
+                          />
+                        ) : (
+                          <Text style={s.storyInitials}>
+                            {getInitials(p.display_name)}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    <Text style={s.storyName} numberOfLines={1}>
+                      {firstName(p.display_name)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
             {/* ── Featured hero carousel ─────────────────────────────────── */}
             <View style={s.heroOuter}>
               {loading ? (
@@ -240,7 +304,12 @@ export default function DiscoveryFeed() {
                     }}
                   >
                     {featured.map((p) => (
-                      <View key={p.id} style={[s.heroCard, { width: heroW }]}>
+                      <TouchableOpacity
+                        key={p.id}
+                        activeOpacity={0.9}
+                        onPress={() => router.push(`/providers/${p.id}` as any)}
+                        style={[s.heroCard, { width: heroW }]}
+                      >
                         {p.profile_photo_url ? (
                           <Image
                             source={{ uri: p.profile_photo_url }}
@@ -253,23 +322,32 @@ export default function DiscoveryFeed() {
                           style={StyleSheet.absoluteFill}
                         />
                         <View style={s.heroInner}>
-                          <View style={{ flex: 1, marginRight: 12 }}>
-                            <Text style={s.featuredLabel}>FEATURED PROVIDER</Text>
-                            <Text style={s.heroName}>{p.display_name}</Text>
-                            <Text style={s.heroSub}>
-                              {categoryName(p.category_id, categories)} ·{' '}
-                              {p.neighborhood ?? p.location ?? ''}
-                            </Text>
+                          <View style={s.featuredPill}>
+                            <Text style={s.featuredPillText}>Featured</Text>
                           </View>
-                          <TouchableOpacity
-                            activeOpacity={0.8}
-                            style={s.viewBtn}
-                            onPress={() => router.push(`/providers/${p.id}` as any)}
-                          >
-                            <Text style={s.viewBtnText}>View</Text>
-                          </TouchableOpacity>
+                          <Text style={s.heroName} numberOfLines={1}>
+                            {p.display_name}
+                          </Text>
+                          <View style={s.heroMeta}>
+                            <Text style={s.heroRole} numberOfLines={1}>
+                              {categoryName(p.category_id, categories) ||
+                                (p.neighborhood ?? p.location ?? '')}
+                            </Text>
+                            {(p.average_rating ?? p.rating) != null && (
+                              <View style={s.heroRatingWrap}>
+                                <Text style={s.heroStar}>★</Text>
+                                <Text style={s.heroRating}>{ratingLabel(p)}</Text>
+                              </View>
+                            )}
+                            {isAvailableNow(p) && (
+                              <View style={s.heroAvail}>
+                                <View style={s.heroAvailDot} />
+                                <Text style={s.heroAvailText}>Available now</Text>
+                              </View>
+                            )}
+                          </View>
                         </View>
-                      </View>
+                      </TouchableOpacity>
                     ))}
                   </ScrollView>
 
@@ -382,7 +460,7 @@ export default function DiscoveryFeed() {
               <View style={s.sectionHeader}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   <PulseDot />
-                  <Text style={s.sectionTitle}>Live right now</Text>
+                  <Text style={s.sectionTitle}>Available Right Now</Text>
                 </View>
                 <TouchableOpacity activeOpacity={0.7}>
                   <Text style={s.seeAll}>See all</Text>
@@ -435,7 +513,7 @@ export default function DiscoveryFeed() {
 
             {/* ── Trending in Houston ─────────────────────────────────────── */}
             <View style={[s.section, s.padded]}>
-              <SectionHeader title="Trending in Houston" onSeeAll={() => {}} />
+              <SectionHeader title="Trending Now" onSeeAll={() => {}} />
               {loading ? (
                 <View style={s.grid}>
                   {[0, 1, 2].map((i) => (
@@ -444,13 +522,18 @@ export default function DiscoveryFeed() {
                 </View>
               ) : (
                 <View style={s.grid}>
-                  {trending.map((p) => (
+                  {trending.map((p, i) => (
                     <TouchableOpacity
                       key={p.id}
                       activeOpacity={0.8}
                       onPress={() => router.push(`/providers/${p.id}` as any)}
                       style={[s.trendCard, { width: colW }]}
                     >
+                      {i === 0 && (
+                        <View style={s.hotBadge}>
+                          <Text style={s.hotText}>HOT</Text>
+                        </View>
+                      )}
                       {p.profile_photo_url ? (
                         <Image
                           source={{ uri: p.profile_photo_url }}
@@ -528,53 +611,114 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
-    height: 56,
+    height: 52,
   },
   wordmark: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
-    letterSpacing: -0.2,
+    letterSpacing: -0.5,
   },
   topRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 8,
   },
   iconBtn: {
-    width: 36,
-    height: 36,
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    position: 'relative',
   },
-  bellIcon: {
-    fontSize: 22,
-    color: 'rgba(240,232,213,0.8)',
-  },
-  avatarCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(240,232,213,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
+  notifDot: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#C8922A',
+    borderWidth: 1.5,
+    borderColor: '#080808',
   },
 
   // Live ticker
   ticker: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     paddingHorizontal: 24,
-    height: 36,
+    height: 28,
     marginBottom: 12,
+    backgroundColor: 'rgba(200,146,42,0.1)',
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: 'rgba(200,146,42,0.2)',
   },
   tickerText: {
-    fontSize: 13,
+    fontSize: 11,
     color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
-    letterSpacing: -0.05,
+    letterSpacing: 0.275,
+    textTransform: 'uppercase',
+  },
+
+  // Story rings
+  storyScroll: {
+    marginBottom: 20,
+  },
+  storyRow: {
+    paddingHorizontal: 24,
+    gap: 16,
+    paddingTop: 4,
+  },
+  storyItem: {
+    alignItems: 'center',
+    width: 62,
+  },
+  storyRing: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    borderWidth: 2,
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyRingActive: {
+    borderColor: '#C8922A',
+  },
+  storyRingInactive: {
+    borderColor: 'rgba(240,232,213,0.15)',
+  },
+  storyAvatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  storyAvatarImg: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+  },
+  storyInitials: {
+    fontSize: 18,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  storyName: {
+    fontSize: 10,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+    marginTop: 6,
+    maxWidth: 62,
+    textAlign: 'center',
   },
 
   // Empty state
@@ -626,48 +770,72 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(240,232,213,0.08)',
   },
   heroInner: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    padding: 12,
+    alignItems: 'flex-start',
+    padding: 16,
   },
-  featuredLabel: {
+  featuredPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#C8922A',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    marginBottom: 8,
+  },
+  featuredPillText: {
     fontSize: 10,
-    fontWeight: '600',
-    color: '#C8922A',
-    fontFamily: 'Manrope_600SemiBold',
-    letterSpacing: 1.5,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: -0.5,
     textTransform: 'uppercase',
-    marginBottom: 6,
   },
   heroName: {
-    fontSize: 22,
+    fontSize: 26,
     fontWeight: '700',
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
-    letterSpacing: -0.2,
-    marginBottom: 4,
+    letterSpacing: -0.4,
+    marginBottom: 6,
   },
-  heroSub: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.7)',
-    fontFamily: 'Manrope_400Regular',
-    letterSpacing: -0.05,
-  },
-  viewBtn: {
-    width: 80,
-    height: 36,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.3)',
+  heroMeta: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 12,
   },
-  viewBtnText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
+  heroRole: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+    flexShrink: 1,
+  },
+  heroRatingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  heroStar: {
+    fontSize: 12,
+    color: '#C8922A',
+  },
+  heroRating: {
+    fontSize: 14,
+    color: '#C8922A',
+    fontFamily: 'Manrope_700Bold',
+  },
+  heroAvail: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  heroAvailDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#C8922A',
+  },
+  heroAvailText: {
+    fontSize: 12,
+    color: '#C8922A',
+    fontFamily: 'Manrope_500Medium',
   },
 
   // Pagination dots
@@ -845,7 +1013,7 @@ const s = StyleSheet.create({
   },
   liveCardDetail: {
     fontSize: 11,
-    color: 'rgba(240,232,213,0.6)',
+    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
     letterSpacing: -0.05,
   },
@@ -860,18 +1028,35 @@ const s = StyleSheet.create({
   // Trending cards
   trendCard: {
     height: 230,
-    borderRadius: 14,
+    borderRadius: 16,
     borderCurve: 'continuous',
     overflow: 'hidden',
     justifyContent: 'flex-end',
     backgroundColor: 'rgba(240,232,213,0.08)',
+  },
+  hotBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    backgroundColor: '#C8922A',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+    zIndex: 2,
+  },
+  hotText: {
+    fontSize: 10,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: 0.2,
+    textTransform: 'uppercase',
   },
   trendInfo: {
     padding: 12,
     gap: 4,
   },
   trendName: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
@@ -887,7 +1072,7 @@ const s = StyleSheet.create({
 
   // Browse cards
   browseCard: {
-    height: 100,
+    height: 112,
     borderRadius: 14,
     borderCurve: 'continuous',
     backgroundColor: 'rgba(240,232,213,0.04)',
