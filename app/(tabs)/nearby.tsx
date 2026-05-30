@@ -36,7 +36,7 @@ function providerHood(p: Provider): string {
   return p.neighborhood ?? p.location ?? ''
 }
 
-// No boolean availability field on Provider; derive from next_available slot.
+// No boolean availability field on Provider; derive it from the next_available slot.
 function isAvailableNow(p: Provider): boolean {
   return p.next_available != null
 }
@@ -46,7 +46,7 @@ function categoryName(categoryId: number | null, categories: Category[]): string
   return categories.find((c) => c.id === categoryId)?.name ?? ''
 }
 
-// Distance radius chips are decorative — no geolocation data is available.
+// Distance radius chips are decorative; no geolocation data is available.
 const DISTANCE_CHIPS = ['1 mi', '5 mi', '10 mi', '25 mi']
 
 // ── Loading skeleton ──────────────────────────────────────────────────────────
@@ -236,7 +236,7 @@ export default function NearbyScreen() {
 
         <View style={s.divider} />
 
-        {/* Distance chips (decorative — no geolocation data) */}
+        {/* Distance chips (decorative; no geolocation data) */}
         <View style={s.distanceRow}>
           <Text style={s.withinLabel}>Within</Text>
           <View style={s.chipsRow}>
