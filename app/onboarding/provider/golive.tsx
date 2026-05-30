@@ -64,9 +64,33 @@ export default function ProviderGoLive() {
   }
 
   async function handleGoLive() {
-    if (!user) return
     if (isGoingLive) return
-    if (!photo) return
+    if (!photo) {
+      Alert.alert('Add a profile photo', 'You need a profile photo before going live.')
+      return
+    }
+
+    // Dev-mode bypass: when DEV_MODE is on in app/_layout.tsx the auth gate
+    // is open and there is no signed-in user. Let the tester complete the
+    // flow optimistically (no DB write) so the dashboard is reachable.
+    // Once DEV_MODE is flipped to false before TestFlight this branch
+    // becomes unreachable in practice.
+    if (!user) {
+      Alert.alert(
+        'Signed-out preview',
+        'You are not signed in. Skipping save and continuing to your dashboard.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              reset()
+              router.replace('/dashboard/provider')
+            },
+          },
+        ],
+      )
+      return
+    }
 
     setIsGoingLive(true)
 
