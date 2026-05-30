@@ -21,6 +21,9 @@ interface BookingState {
   providerLocation: string
   selectedService: BookingService | null
   selectedDate: string
+  // YYYY-MM-DD form of selectedDate, used for the bookings.requested_date
+  // column. selectedDate stays as the display string ("May 31, 2026").
+  rawDate: string
   selectedTime: string
   bookingMessage: string
   bookingPhotos: string[]
@@ -29,6 +32,7 @@ interface BookingState {
   setProvider: (id: string, name: string, category: string, location: string) => void
   setSelectedService: (service: BookingService) => void
   setSelectedDate: (date: string) => void
+  setRawDate: (date: string) => void
   setSelectedTime: (time: string) => void
   setBookingMessage: (msg: string) => void
   setBookingPhotos: (photos: string[]) => void
@@ -43,6 +47,7 @@ export const useBookingStore = create<BookingState>((set) => ({
   providerLocation: '',
   selectedService: null,
   selectedDate: '',
+  rawDate: '',
   selectedTime: '',
   bookingMessage: '',
   bookingPhotos: [],
@@ -52,6 +57,7 @@ export const useBookingStore = create<BookingState>((set) => ({
     set({ providerId: id, providerName: name, providerCategory: category, providerLocation: location }),
   setSelectedService: (service) => set({ selectedService: service }),
   setSelectedDate: (date) => set({ selectedDate: date }),
+  setRawDate: (date) => set({ rawDate: date }),
   setSelectedTime: (time) => set({ selectedTime: time }),
   setBookingMessage: (msg) => set({ bookingMessage: msg }),
   setBookingPhotos: (photos) => set({ bookingPhotos: photos }),
@@ -63,6 +69,7 @@ export const useBookingStore = create<BookingState>((set) => ({
     providerLocation: '',
     selectedService: null,
     selectedDate: '',
+    rawDate: '',
     selectedTime: '',
     bookingMessage: '',
     bookingPhotos: [],

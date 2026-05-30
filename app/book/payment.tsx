@@ -39,6 +39,7 @@ export default function BookPayment() {
     providerLocation,
     selectedService,
     selectedDate,
+    rawDate,
     selectedTime,
     bookingMessage,
   } = useBookingStore()
@@ -68,7 +69,11 @@ export default function BookPayment() {
     setProcessError('')
 
     try {
-      // selectedDate is "May 28, 2026", selectedTime is "1:00 PM"
+      // rawDate is YYYY-MM-DD (set in book/datetime.tsx). selectedDate is
+      // the display string ("May 28, 2026") and selectedTime is "1:00 PM".
+      // Build appointment_time from the display strings since the Date
+      // constructor parses them reliably on iOS.
+      const dateForRow = rawDate || toIsoDate(selectedDate)
       const appointmentTime = new Date(
         `${selectedDate} ${selectedTime}`,
       ).toISOString()
@@ -80,7 +85,7 @@ export default function BookPayment() {
           provider_id: providerId,
           service_id: selectedService.id || null,
           service_name: selectedService.name,
-          requested_date: toIsoDate(selectedDate),
+          requested_date: dateForRow,
           requested_time: selectedTime,
           appointment_time: appointmentTime,
           message: bookingMessage || null,
