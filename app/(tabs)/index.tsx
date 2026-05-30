@@ -462,7 +462,10 @@ export default function DiscoveryFeed() {
                   <PulseDot />
                   <Text style={s.sectionTitle}>Available Right Now</Text>
                 </View>
-                <TouchableOpacity activeOpacity={0.7}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => router.push('/nearby' as any)}
+                >
                   <Text style={s.seeAll}>See all</Text>
                 </TouchableOpacity>
               </View>
