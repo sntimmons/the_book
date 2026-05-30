@@ -229,28 +229,33 @@ function BookingCard({
   const dateLine = [booking.requested_date, booking.requested_time].filter(Boolean).join(' · ')
   return (
     <View style={styles.card}>
-      <View style={styles.cardTop}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {(providerName ?? 'P').charAt(0).toUpperCase()}
-          </Text>
-        </View>
-        <View style={styles.cardCenter}>
-          <Text style={styles.cardProvider}>
-            {(providerName ?? 'Provider') + ' · ' + (booking.service_name ?? 'Service')}
-          </Text>
-          {dateLine.length > 0 && <Text style={styles.cardDate}>{dateLine}</Text>}
-          {booking.message ? (
-            <Text style={styles.cardMessage} numberOfLines={1}>
-              {booking.message}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => router.push(`/bookings/${booking.id}` as never)}
+      >
+        <View style={styles.cardTop}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {(providerName ?? 'P').charAt(0).toUpperCase()}
             </Text>
-          ) : null}
+          </View>
+          <View style={styles.cardCenter}>
+            <Text style={styles.cardProvider}>
+              {(providerName ?? 'Provider') + ' · ' + (booking.service_name ?? 'Service')}
+            </Text>
+            {dateLine.length > 0 && <Text style={styles.cardDate}>{dateLine}</Text>}
+            {booking.message ? (
+              <Text style={styles.cardMessage} numberOfLines={1}>
+                {booking.message}
+              </Text>
+            ) : null}
+          </View>
+          <View style={styles.cardRight}>
+            <Text style={styles.cardPrice}>{money(booking.payment_amount)}</Text>
+            <StatusPill status={status} />
+          </View>
         </View>
-        <View style={styles.cardRight}>
-          <Text style={styles.cardPrice}>{money(booking.payment_amount)}</Text>
-          <StatusPill status={status} />
-        </View>
-      </View>
+      </TouchableOpacity>
 
       <View style={styles.cardSeparator} />
 

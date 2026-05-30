@@ -403,7 +403,11 @@ export default function ProviderDashboard() {
                     {(req.client_name ?? 'C').charAt(0).toUpperCase()}
                   </Text>
                 </View>
-                <View style={styles.requestInfo}>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  style={styles.requestInfo}
+                  onPress={() => router.push(`/bookings/${req.id}` as never)}
+                >
                   <Text style={styles.requestClient}>{req.client_name}</Text>
                   <Text style={styles.requestService}>{req.service_name ?? 'Booking'}</Text>
                   <Text style={styles.requestTime}>
@@ -417,7 +421,7 @@ export default function ProviderDashboard() {
                   <View style={styles.timerPill}>
                     <Text style={styles.timerPillText}>{timeRemaining(req.created_at)}</Text>
                   </View>
-                </View>
+                </TouchableOpacity>
                 <View style={styles.requestRight}>
                   <Text style={styles.requestPrice}>
                     {req.payment_amount != null
