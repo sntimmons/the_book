@@ -54,8 +54,9 @@ const NAV_SECTIONS = [
   {
     label: 'ACCOUNT',
     items: [
-      { icon: 'settings',    label: 'Settings', route: '/dashboard/provider/settings', badge: null },
-      { icon: 'help-circle', label: 'Help',     route: null,                           badge: null },
+      { icon: 'user',        label: 'Edit Profile', route: '/dashboard/provider/edit-profile', badge: null },
+      { icon: 'settings',    label: 'Settings',     route: '/dashboard/provider/settings',     badge: null },
+      { icon: 'help-circle', label: 'Help',         route: null,                               badge: null },
     ],
   },
 ]
@@ -200,22 +201,32 @@ export default function ProviderDashboardLayout() {
                 {metaLine}
               </Text>
             )}
-            <TouchableOpacity
-              style={[
-                styles.viewProfileLink,
-                !providerProfile?.id && styles.viewProfileLinkDisabled,
-              ]}
-              activeOpacity={0.7}
-              disabled={!providerProfile?.id}
-              onPress={() => {
-                if (providerProfile?.id) {
-                  handleNavItem('/providers/' + providerProfile.id)
-                }
-              }}
-            >
-              <Text style={styles.viewProfileText}>View my profile</Text>
-              <Feather name="external-link" size={11} color="#C8922A" />
-            </TouchableOpacity>
+            <View style={styles.profileLinksRow}>
+              <TouchableOpacity
+                style={[
+                  styles.viewProfileLink,
+                  !providerProfile?.id && styles.viewProfileLinkDisabled,
+                ]}
+                activeOpacity={0.7}
+                disabled={!providerProfile?.id}
+                onPress={() => {
+                  if (providerProfile?.id) {
+                    handleNavItem('/providers/' + providerProfile.id)
+                  }
+                }}
+              >
+                <Text style={styles.viewProfileText}>View profile</Text>
+                <Feather name="external-link" size={11} color="#C8922A" />
+              </TouchableOpacity>
+              <Text style={styles.profileLinksDot}>·</Text>
+              <TouchableOpacity
+                style={styles.viewProfileLink}
+                activeOpacity={0.7}
+                onPress={() => handleNavItem('/dashboard/provider/edit-profile')}
+              >
+                <Text style={styles.viewProfileText}>Edit profile</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {/* Nav items */}
@@ -357,11 +368,21 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     marginTop: 3,
   },
+  profileLinksRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 8,
+  },
+  profileLinksDot: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.25)',
+    fontFamily: 'Manrope_400Regular',
+  },
   viewProfileLink: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 8,
   },
   viewProfileLinkDisabled: {
     opacity: 0.4,
