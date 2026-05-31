@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -7,12 +7,21 @@ import {
   Animated,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import { supabase } from '../../lib/supabase'
+
+interface ReviewedProvider {
+  id: string
+  name: string
+}
 
 export default function ReviewSubmitted() {
   const insets = useSafeAreaInsets()
+  const { id } = useLocalSearchParams<{ id?: string }>()
   const scale = useRef(new Animated.Value(0.5)).current
+
+  const [provider, setProvider] = useState<ReviewedProvider | null>(null)
 
   useEffect(() => {
     Animated.spring(scale, {
@@ -23,51 +32,81 @@ export default function ReviewSubmitted() {
     }).start()
   }, [scale])
 
+  const loadProvider = useCallback(async () => {
+    if (!id) return
+    try {
+      const { data: booking } = await supabase
+        .from('bookings')
+        .select('provider_id')
+        .eq('id', id)
+        .maybeSingle<{ provider_id: string }>()
+      if (!booking) return
+
+      const { data: prov } = await supabase
+        .from('providers')
+        .select('id, display_name')
+        .eq('id', booking.provider_id)
+        .maybeSingle<{ id: string; display_name: string | null }>()
+      if (!prov) return
+
+      setProvider({ id: prov.id, name: prov.display_name ?? 'this provider' })
+    } catch (err) {
+      console.log('Submitted load error:', err)
+    }
+  }, [id])
+
+  useEffect(() => {
+    loadProvider()
+  }, [loadProvider])
+
+  // Provider context is only shown when we can identify the reviewed provider
+  // from the booking id. Without it the rebook CTA + profile link would be
+  // hardcoded "Nia" text, so hide them entirely.
+  const firstName = provider?.name.split(' ')[0] ?? null
+
   return (
     <View style={styles.root}>
       <SafeAreaView style={styles.safe}>
         <View style={styles.content}>
-          {/* Status icon */}
           <Animated.View style={[styles.outerRing, { transform: [{ scale }] }]}>
             <View style={styles.innerCircle}>
               <Feather name="star" size={28} color="#C8922A" />
             </View>
           </Animated.View>
 
-          {/* Headline */}
           <Text style={styles.headline}>Review posted.</Text>
 
-          {/* Subtext */}
           <Text style={styles.subtext}>
             Your review helps the Houston community find great providers. Thank you.
           </Text>
 
-          {/* Impact note */}
           <View style={styles.impactNote}>
             <Text style={styles.impactTitle}>
-              Your review is now live on Nia's profile.
+              {provider != null
+                ? `Your review is now live on ${firstName}'s profile.`
+                : 'Your review is now live on the provider profile.'}
             </Text>
             <Text style={styles.impactSub}>
               Other Houston clients can now see your experience before booking.
             </Text>
           </View>
 
-          {/* Rebook CTA */}
-          <TouchableOpacity
-            style={styles.rebookCta}
-            activeOpacity={0.7}
-            onPress={() => router.push('/book/service')}
-          >
-            <View style={styles.rebookLeft}>
-              <Text style={styles.rebookTitle}>Book Nia again</Text>
-              <Text style={styles.rebookSub}>She has slots next week</Text>
-            </View>
-            <Feather name="chevron-right" size={16} color="rgba(240,232,213,0.3)" />
-          </TouchableOpacity>
+          {provider != null && (
+            <TouchableOpacity
+              style={styles.rebookCta}
+              activeOpacity={0.7}
+              onPress={() => router.push(('/providers/' + provider.id) as never)}
+            >
+              <View style={styles.rebookLeft}>
+                <Text style={styles.rebookTitle}>Book {firstName} again</Text>
+                <Text style={styles.rebookSub}>Open profile to book</Text>
+              </View>
+              <Feather name="chevron-right" size={16} color="rgba(240,232,213,0.3)" />
+            </TouchableOpacity>
+          )}
         </View>
       </SafeAreaView>
 
-      {/* Bottom buttons */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 20 }]}>
         <TouchableOpacity
           style={styles.homeBtn}
@@ -76,27 +115,23 @@ export default function ReviewSubmitted() {
         >
           <Text style={styles.homeBtnText}>Back to Home</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.profileLink}
-          activeOpacity={0.7}
-          // TODO: wire to real provider id
-          onPress={() => router.push('/(tabs)/')}
-        >
-          <Text style={styles.profileLinkText}>View Nia's Profile</Text>
-        </TouchableOpacity>
+        {provider != null && (
+          <TouchableOpacity
+            style={styles.profileLink}
+            activeOpacity={0.7}
+            onPress={() => router.push(('/providers/' + provider.id) as never)}
+          >
+            <Text style={styles.profileLinkText}>View {firstName}'s Profile</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </View>
   )
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#080808',
-  },
-  safe: {
-    flex: 1,
-  },
+  root: { flex: 1, backgroundColor: '#080808' },
+  safe: { flex: 1 },
   content: {
     flex: 1,
     justifyContent: 'center',
@@ -173,9 +208,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  rebookLeft: {
-    flex: 1,
-  },
+  rebookLeft: { flex: 1 },
   rebookTitle: {
     fontSize: 14,
     color: '#F0E8D5',

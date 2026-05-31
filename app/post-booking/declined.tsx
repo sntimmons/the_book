@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -6,26 +7,98 @@ import {
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { supabase } from '../../lib/supabase'
 
-const ALTERNATIVES = [
-  {
-    name: 'Camille Brooks',
-    meta: 'Lash Tech · Montrose',
-    rating: '4.9',
-    availability: 'Available today',
-  },
-  {
-    name: 'Jade Williams',
-    meta: 'Lash & Brows · Midtown',
-    rating: '4.8',
-    availability: 'Available Thu',
-  },
-]
+interface AlternativeProvider {
+  id: string
+  name: string
+  meta: string
+  rating: string | null
+}
 
 export default function BookingDeclined() {
   const insets = useSafeAreaInsets()
+  const { id } = useLocalSearchParams<{ id?: string }>()
+
+  const [alternatives, setAlternatives] = useState<AlternativeProvider[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const loadAlternatives = useCallback(async () => {
+    if (!id) {
+      // No booking context, can't compute "similar" providers. Hide section.
+      setAlternatives([])
+      return
+    }
+    setLoading(true)
+    try {
+      const { data: booking } = await supabase
+        .from('bookings')
+        .select('provider_id')
+        .eq('id', id)
+        .maybeSingle<{ provider_id: string }>()
+
+      if (!booking) {
+        setAlternatives([])
+        return
+      }
+
+      const { data: declinedProvider } = await supabase
+        .from('providers')
+        .select('id, category_id')
+        .eq('id', booking.provider_id)
+        .maybeSingle<{ id: string; category_id: number | null }>()
+
+      if (!declinedProvider || declinedProvider.category_id == null) {
+        setAlternatives([])
+        return
+      }
+
+      const { data: similar } = await supabase
+        .from('providers')
+        .select('id, display_name, neighborhood, average_rating, category_id')
+        .eq('category_id', declinedProvider.category_id)
+        .eq('is_approved', true)
+        .neq('id', declinedProvider.id)
+        .order('average_rating', { ascending: false, nullsFirst: false })
+        .limit(3)
+
+      let categoryName: string | null = null
+      const { data: cat } = await supabase
+        .from('categories')
+        .select('name')
+        .eq('id', declinedProvider.category_id)
+        .maybeSingle()
+      categoryName = (cat?.name as string) ?? null
+
+      const rows: AlternativeProvider[] = (similar ?? []).map((p) => {
+        const metaBits = [categoryName, p.neighborhood].filter(Boolean) as string[]
+        return {
+          id: p.id as string,
+          name: (p.display_name as string) ?? 'Provider',
+          meta: metaBits.join(' · '),
+          rating:
+            p.average_rating != null
+              ? Number(p.average_rating).toFixed(1)
+              : null,
+        }
+      })
+
+      setAlternatives(rows)
+    } catch (err) {
+      console.log('Declined alternatives load error:', err)
+      setAlternatives([])
+    } finally {
+      setLoading(false)
+    }
+  }, [id])
+
+  useEffect(() => {
+    loadAlternatives()
+  }, [loadAlternatives])
+
+  const showAlternatives = alternatives.length > 0 || loading
 
   return (
     <View style={styles.root}>
@@ -34,67 +107,78 @@ export default function BookingDeclined() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 180 }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Status mark */}
         <View style={styles.statusMark}>
           <Feather name="x" size={26} color="rgba(240,232,213,0.35)" />
         </View>
 
-        {/* Status badge */}
         <View style={styles.statusBadge}>
           <Text style={styles.statusBadgeText}>NOT AVAILABLE</Text>
         </View>
 
-        {/* Headline */}
         <Text style={styles.headline}>
-          She isn't available{'\n'}for this one.
+          Not available{'\n'}for this one.
         </Text>
 
-        {/* Subtext */}
         <Text style={styles.subtext}>
           No charge was made to your account.{'\n'}
           Let's find you someone just as good.
         </Text>
 
-        {/* Refund confirmation */}
         <View style={styles.refundBox}>
           <Feather name="check-circle" size={14} color="#4CAF50" />
           <Text style={styles.refundText}>No charge made to your account</Text>
         </View>
 
-        <View style={styles.separator} />
-
-        {/* Alternative providers */}
-        <View style={styles.altSection}>
-          <Text style={styles.sectionLabel}>TRY ONE OF THESE INSTEAD</Text>
-
-          {ALTERNATIVES.map((p, i) => (
-            <TouchableOpacity
-              key={p.name}
-              style={[styles.altRow, i > 0 && styles.altRowBorder]}
-              activeOpacity={0.7}
-              // TODO: wire to real provider id
-              onPress={() => router.push('/(tabs)/')}
-            >
-              <View style={styles.altAvatar}>
-                <Feather name="user" size={20} color="rgba(240,232,213,0.4)" />
-              </View>
-              <View style={styles.altCenter}>
-                <Text style={styles.altName}>{p.name}</Text>
-                <Text style={styles.altMeta}>{p.meta}</Text>
-              </View>
-              <View style={styles.altRight}>
-                <View style={styles.altStarRow}>
-                  <Feather name="star" size={10} color="#C8922A" />
-                  <Text style={styles.altRating}>{p.rating}</Text>
+        {showAlternatives && (
+          <>
+            <View style={styles.separator} />
+            <View style={styles.altSection}>
+              <Text style={styles.sectionLabel}>TRY ONE OF THESE INSTEAD</Text>
+              {loading ? (
+                <View style={styles.skeletonRow}>
+                  <View style={styles.skeletonAvatar} />
+                  <View style={styles.skeletonStack}>
+                    <View style={styles.skeletonLineWide} />
+                    <View style={styles.skeletonLineNarrow} />
+                  </View>
                 </View>
-                <Text style={styles.altAvailability}>{p.availability}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+              ) : (
+                alternatives.map((p, i) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={[styles.altRow, i > 0 && styles.altRowBorder]}
+                    activeOpacity={0.7}
+                    onPress={() => router.push(('/providers/' + p.id) as never)}
+                  >
+                    <View style={styles.altAvatar}>
+                      <Feather name="user" size={20} color="rgba(240,232,213,0.4)" />
+                    </View>
+                    <View style={styles.altCenter}>
+                      <Text style={styles.altName} numberOfLines={1}>
+                        {p.name}
+                      </Text>
+                      {p.meta.length > 0 && (
+                        <Text style={styles.altMeta} numberOfLines={1}>
+                          {p.meta}
+                        </Text>
+                      )}
+                    </View>
+                    {p.rating != null && (
+                      <View style={styles.altRight}>
+                        <View style={styles.altStarRow}>
+                          <Feather name="star" size={10} color="#C8922A" />
+                          <Text style={styles.altRating}>{p.rating}</Text>
+                        </View>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
 
-      {/* Bottom buttons */}
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 20 }]}>
         <TouchableOpacity
           style={styles.findBtn}
@@ -117,13 +201,8 @@ export default function BookingDeclined() {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#080808',
-  },
-  scroll: {
-    flex: 1,
-  },
+  root: { flex: 1, backgroundColor: '#080808' },
+  scroll: { flex: 1 },
   statusMark: {
     width: 72,
     height: 72,
@@ -221,9 +300,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  altCenter: {
-    flex: 1,
-  },
+  altCenter: { flex: 1 },
   altName: {
     fontSize: 14,
     color: '#F0E8D5',
@@ -235,9 +312,7 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },
-  altRight: {
-    alignItems: 'flex-end',
-  },
+  altRight: { alignItems: 'flex-end' },
   altStarRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -247,12 +322,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
-  },
-  altAvailability: {
-    marginTop: 3,
-    fontSize: 10,
-    color: '#C8922A',
-    fontFamily: 'Manrope_400Regular',
   },
   bottomBar: {
     position: 'absolute',
@@ -291,5 +360,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_500Medium',
+  },
+  skeletonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 14,
+  },
+  skeletonAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+  },
+  skeletonStack: { flex: 1, gap: 6 },
+  skeletonLineWide: {
+    height: 14,
+    width: '60%',
+    borderRadius: 4,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+  },
+  skeletonLineNarrow: {
+    height: 11,
+    width: '40%',
+    borderRadius: 4,
+    backgroundColor: 'rgba(240,232,213,0.05)',
   },
 })
