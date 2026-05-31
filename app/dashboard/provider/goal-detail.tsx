@@ -24,6 +24,7 @@ import {
   BookingRow,
   inMonth,
   isEarning,
+  getProviderDbId,
 } from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
@@ -71,25 +72,19 @@ export default function GoalDetail() {
   const [data, setData] = useState<GoalData | null>(null)
   const [editing, setEditing] = useState(false)
   const [goalInput, setGoalInput] = useState('')
+  const [providerDbId, setProviderDbIdState] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    if (!user) {
-      setLoading(false)
-      return
-    }
     setLoading(true)
     try {
-      const { data: prov } = await supabase
-        .from('providers')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-      const providerDbId = prov?.id
+      const providerDbId = await getProviderDbId(user?.id)
       if (!providerDbId) {
+        setProviderDbIdState(null)
         setData(null)
         setLoading(false)
         return
       }
+      setProviderDbIdState(providerDbId)
 
       const { data: bRows } = await supabase
         .from('bookings')
@@ -97,7 +92,8 @@ export default function GoalDetail() {
         .eq('provider_id', providerDbId)
       const bookings = (bRows ?? []) as BookingRow[]
 
-      const goalStr = (await AsyncStorage.getItem(goalKey(user.id))) || '2000'
+      const goalStr =
+        (await AsyncStorage.getItem(goalKey(user?.id ?? providerDbId))) || '2000'
       const goalAmount = parseFloat(goalStr) || 2000
 
       const cur = currentMonthRange()
@@ -166,13 +162,14 @@ export default function GoalDetail() {
   }, [load])
 
   async function saveGoal() {
-    if (!user) return
+    const keyOwner = user?.id ?? providerDbId
+    if (!keyOwner) return
     const parsed = parseFloat(goalInput)
     if (Number.isNaN(parsed) || parsed <= 0) {
       setEditing(false)
       return
     }
-    await AsyncStorage.setItem(goalKey(user.id), String(parsed))
+    await AsyncStorage.setItem(goalKey(keyOwner), String(parsed))
     setEditing(false)
     load()
   }

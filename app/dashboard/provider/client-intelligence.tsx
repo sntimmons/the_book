@@ -13,7 +13,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../context/AuthContext'
 import { getOrCreateConversation } from '../../../hooks/useMessaging'
-import { money, daysSince, monthRange, BookingRow, inMonth, isEarning } from './analytics-utils'
+import {
+  money,
+  daysSince,
+  monthRange,
+  BookingRow,
+  inMonth,
+  isEarning,
+  getProviderDbId,
+} from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
   const opacity = useRef(new Animated.Value(0.4)).current
@@ -83,19 +91,10 @@ export default function ClientIntelligence() {
   const [sending, setSending] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    if (!user) {
-      setLoading(false)
-      return
-    }
     setLoading(true)
     try {
-      const { data: prov } = await supabase
-        .from('providers')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-      const pid = prov?.id
-      setProviderDbId(pid ?? null)
+      const pid = await getProviderDbId(user?.id)
+      setProviderDbId(pid)
       if (!pid) {
         setData(null)
         setLoading(false)

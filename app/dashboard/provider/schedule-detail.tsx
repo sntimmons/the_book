@@ -24,6 +24,7 @@ import {
   CANCEL_STATUSES,
   BookingRow,
   isEarning,
+  getProviderDbId,
 } from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
@@ -98,18 +99,9 @@ export default function ScheduleDetail() {
   const [data, setData] = useState<SchedData | null>(null)
 
   const load = useCallback(async () => {
-    if (!user) {
-      setLoading(false)
-      return
-    }
     setLoading(true)
     try {
-      const { data: prov } = await supabase
-        .from('providers')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-      const pid = prov?.id
+      const pid = await getProviderDbId(user?.id)
       if (!pid) {
         setData(null)
         setLoading(false)

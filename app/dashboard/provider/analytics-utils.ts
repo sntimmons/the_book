@@ -1,5 +1,35 @@
 // Shared analytics helpers used across the provider analytics screens.
 
+import { supabase } from '../../../lib/supabase'
+
+// Look up the providers.id for the current session. In dev with DEV_MODE
+// auth bypass there is no real session, so fall back to the first approved
+// provider so the analytics screens render real data instead of "No data yet".
+export async function getProviderDbId(
+  userId: string | undefined,
+): Promise<string | null> {
+  if (userId) {
+    const { data: prov } = await supabase
+      .from('providers')
+      .select('id')
+      .eq('user_id', userId)
+      .maybeSingle()
+    return prov?.id ?? null
+  }
+  if (__DEV__) {
+    const { data: prov } = await supabase
+      .from('providers')
+      .select('id')
+      .eq('is_approved', true)
+      .limit(1)
+      .maybeSingle()
+    const id = prov?.id ?? null
+    console.log('[analytics] DEV MODE: using provider', id)
+    return id
+  }
+  return null
+}
+
 export const money = (n: number) => '$' + Number(n || 0).toFixed(0)
 
 export const money2 = (n: number) => '$' + Number(n || 0).toFixed(2)

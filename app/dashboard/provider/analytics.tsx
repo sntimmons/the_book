@@ -24,6 +24,7 @@ import {
   ServiceRow,
   inMonth,
   isEarning,
+  getProviderDbId,
 } from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
@@ -70,18 +71,9 @@ export default function ProviderAnalytics() {
   const [data, setData] = useState<HubData | null>(null)
 
   const load = useCallback(async () => {
-    if (!user) {
-      setLoading(false)
-      return
-    }
     setLoading(true)
     try {
-      const { data: prov } = await supabase
-        .from('providers')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-      const providerDbId = prov?.id
+      const providerDbId = await getProviderDbId(user?.id)
       if (!providerDbId) {
         setData(null)
         setLoading(false)
@@ -134,7 +126,8 @@ export default function ProviderAnalytics() {
 
       const clientIds = new Set(bookings.map((b) => b.user_id).filter(Boolean))
 
-      const goalStr = (await AsyncStorage.getItem(goalKey(user.id))) || '2000'
+      const goalStr =
+        (await AsyncStorage.getItem(goalKey(user?.id ?? providerDbId))) || '2000'
       const goalAmount = parseFloat(goalStr) || 2000
       const progressPct = Math.min((thisMonthRevenue / goalAmount) * 100, 100)
 

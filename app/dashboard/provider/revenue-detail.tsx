@@ -21,6 +21,7 @@ import {
   ServiceRow,
   inMonth,
   isEarning,
+  getProviderDbId,
 } from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
@@ -76,18 +77,9 @@ export default function RevenueDetail() {
   const [data, setData] = useState<RevData | null>(null)
 
   const load = useCallback(async () => {
-    if (!user) {
-      setLoading(false)
-      return
-    }
     setLoading(true)
     try {
-      const { data: prov } = await supabase
-        .from('providers')
-        .select('id')
-        .eq('user_id', user.id)
-        .single()
-      const providerDbId = prov?.id
+      const providerDbId = await getProviderDbId(user?.id)
       if (!providerDbId) {
         setData(null)
         setLoading(false)
