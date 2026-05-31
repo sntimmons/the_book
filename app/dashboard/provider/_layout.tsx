@@ -48,7 +48,7 @@ const NAV_SECTIONS = [
     label: 'MONEY',
     items: [
       { icon: 'dollar-sign', label: 'Payouts', route: '/dashboard/provider/payouts',  badge: null },
-      { icon: 'percent',     label: 'Pricing', route: '/dashboard/provider/services', badge: null },
+      { icon: 'tag',         label: 'Services', route: '/dashboard/provider/services', badge: null },
     ],
   },
   {
