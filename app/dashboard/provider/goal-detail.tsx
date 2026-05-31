@@ -23,6 +23,7 @@ import {
   goalKey,
   BookingRow,
   inMonth,
+  isEarning,
 } from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
@@ -100,7 +101,9 @@ export default function GoalDetail() {
       const goalAmount = parseFloat(goalStr) || 2000
 
       const cur = currentMonthRange()
-      const completed = bookings.filter((b) => b.status === 'completed')
+      // TODO: revert to completed only
+      // before production launch
+      const completed = bookings.filter((b) => isEarning(b.status))
       const thisMonthCompleted = completed.filter((b) =>
         inMonth(b.created_at, cur.start, cur.end),
       )

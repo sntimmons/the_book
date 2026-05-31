@@ -13,7 +13,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../context/AuthContext'
 import { getOrCreateConversation } from '../../../hooks/useMessaging'
-import { money, daysSince, monthRange, BookingRow, inMonth } from './analytics-utils'
+import { money, daysSince, monthRange, BookingRow, inMonth, isEarning } from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
   const opacity = useRef(new Animated.Value(0.4)).current
@@ -128,8 +128,10 @@ export default function ClientIntelligence() {
 
       const aggs: ClientAgg[] = clientIds.map((id) => {
         const cb = bookings.filter((b) => b.user_id === id)
+        // TODO: revert to completed only
+        // before production launch
         const completed = cb
-          .filter((b) => b.status === 'completed')
+          .filter((b) => isEarning(b.status))
           .filter((b) => b.requested_date)
           .sort(
             (a, b) =>

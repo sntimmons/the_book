@@ -23,6 +23,7 @@ import {
   DAY_LABELS_FULL,
   CANCEL_STATUSES,
   BookingRow,
+  isEarning,
 } from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
@@ -187,7 +188,9 @@ export default function ScheduleDetail() {
         const db = bookings.filter(
           (b) => b.requested_date && getDayOfWeek(b.requested_date) === d,
         )
-        const completed = db.filter((b) => b.status === 'completed')
+        // TODO: revert to completed only
+        // before production launch
+        const completed = db.filter((b) => isEarning(b.status))
         const revenue = completed.reduce((s, b) => s + (b.payment_amount || 0), 0)
         const cancels = db.filter((b) => CANCEL_STATUSES.includes(b.status || '')).length
         const cancelRate = db.length > 0 ? (cancels / db.length) * 100 : 0
@@ -195,9 +198,9 @@ export default function ScheduleDetail() {
       }).filter((d) => d.count > 0)
 
       // Capacity: bookedHours from accepted + completed; availableHours from open days.
-      const bookedBookings = bookings.filter(
-        (b) => b.status === 'completed' || b.status === 'accepted',
-      )
+      // TODO: revert to completed only
+      // before production launch
+      const bookedBookings = bookings.filter((b) => isEarning(b.status))
       const bookedHours = bookedBookings.length * HOURS_PER_BOOKING
       // Available hours: open days * estimated 8h window (no start/end columns confirmed).
       const openDayCount =

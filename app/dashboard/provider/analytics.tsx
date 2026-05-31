@@ -23,6 +23,7 @@ import {
   BookingRow,
   ServiceRow,
   inMonth,
+  isEarning,
 } from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
@@ -102,7 +103,9 @@ export default function ProviderAnalytics() {
       const cur = currentMonthRange()
       const last = monthRange(1)
 
-      const completed = bookings.filter((b) => b.status === 'completed')
+      // TODO: revert to completed only
+      // before production launch
+      const completed = bookings.filter((b) => isEarning(b.status))
       const totalRevenue = completed.reduce((s, b) => s + (b.payment_amount || 0), 0)
       const thisMonthRevenue = completed
         .filter((b) => inMonth(b.created_at, cur.start, cur.end))

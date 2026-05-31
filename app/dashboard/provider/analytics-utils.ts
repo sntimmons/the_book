@@ -78,6 +78,22 @@ export const CANCEL_STATUSES = [
   'late_cancelled',
 ]
 
+// TODO: revert to completed only
+// before production launch
+// During dev/testing, any booking in an active status counts toward analytics
+// so the screens show real data. Production should treat only 'completed' as
+// revenue-earning. Use isEarning() in place of `status === 'completed'`.
+export const DEV_EARNING_STATUSES = [
+  'completed',
+  'accepted',
+  'pending',
+  'checked_in',
+  'arriving',
+]
+
+export const isEarning = (status: string | null | undefined): boolean =>
+  DEV_EARNING_STATUSES.includes(status || '')
+
 export interface BookingRow {
   id: string
   provider_id: string

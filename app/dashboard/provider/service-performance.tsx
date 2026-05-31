@@ -23,6 +23,7 @@ import {
   CANCEL_STATUSES,
   BookingRow,
   ServiceRow,
+  isEarning,
 } from './analytics-utils'
 
 function Shimmer({ style }: { style: any }) {
@@ -116,7 +117,9 @@ export default function ServicePerformance() {
       const ranked: SvcPerf[] = names
         .map((name) => {
           const sb = bookings.filter((b) => b.service_name === name)
-          const completed = sb.filter((b) => b.status === 'completed')
+          // TODO: revert to completed only
+          // before production launch
+          const completed = sb.filter((b) => isEarning(b.status))
           const cancel = sb.filter((b) => CANCEL_STATUSES.includes(b.status || ''))
           const noShow = sb.filter((b) => b.status === 'no_show')
           const totalRevenue = completed.reduce((s, b) => s + (b.payment_amount || 0), 0)
