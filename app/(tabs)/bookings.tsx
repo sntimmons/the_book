@@ -332,46 +332,6 @@ function handleReschedule(
   )
 }
 
-function handleCancelBooking() {
-  Alert.alert(
-    'Cancel Booking',
-    "Cancellation fees may apply per your provider's policy. Are you sure you want to cancel?",
-    [
-      { text: 'Keep Booking', style: 'cancel' },
-      {
-        text: 'Cancel Booking',
-        style: 'destructive',
-        onPress: () =>
-          Alert.alert(
-            'Coming soon',
-            'This feature is coming in the next update.',
-            [{ text: 'OK' }],
-          ),
-      },
-    ],
-  )
-}
-
-function handleCancelRequest() {
-  Alert.alert(
-    'Cancel Request',
-    'Your booking request will be cancelled. No charge has been made.',
-    [
-      { text: 'Keep Request', style: 'cancel' },
-      {
-        text: 'Cancel Request',
-        style: 'destructive',
-        onPress: () =>
-          Alert.alert(
-            'Coming soon',
-            'This feature is coming in the next update.',
-            [{ text: 'OK' }],
-          ),
-      },
-    ],
-  )
-}
-
 function CardActions({
   status,
   providerId,
@@ -394,7 +354,11 @@ function CardActions({
           label="Reschedule"
           onPress={() => handleReschedule(userId, providerId, bookingId)}
         />
-        <ActionButton label="Cancel" muted onPress={handleCancelBooking} />
+        <ActionButton
+          label="Cancel"
+          muted
+          onPress={() => router.push('/bookings/' + bookingId)}
+        />
       </>
     )
   }
@@ -405,7 +369,11 @@ function CardActions({
           label="Message"
           onPress={() => openChat(userId, providerId, bookingId)}
         />
-        <ActionButton label="Cancel Request" muted onPress={handleCancelRequest} />
+        <ActionButton
+          label="Cancel Request"
+          muted
+          onPress={() => router.push('/bookings/' + bookingId)}
+        />
       </>
     )
   }
