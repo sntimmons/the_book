@@ -154,3 +154,10 @@ export const inMonth = (dateStr: string | null, startIso: string, endIso: string
   const t = new Date(dateStr).getTime()
   return t >= new Date(startIso).getTime() && t < new Date(endIso).getTime()
 }
+
+// Expo Router treats every file under app/ as a route and warns when it has
+// no default export. This file is utilities only, but lives here so the
+// analytics screens can colocate it. The dummy component silences the warning.
+export default function AnalyticsUtils() {
+  return null
+}
