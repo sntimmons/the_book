@@ -281,6 +281,13 @@ export function useNotifications() {
           fetchNotifications()
         },
       )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'messages' },
+        () => {
+          fetchNotifications()
+        },
+      )
       .subscribe()
 
     return () => {
