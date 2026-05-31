@@ -12,6 +12,7 @@ export type NotificationType =
   | 'booking_cancelled'
   | 'new_booking_request'
   | 'booking_completed'
+  | 'new_message'
 
 export interface AppNotification {
   id: string
@@ -160,6 +161,77 @@ export function useNotifications() {
         }
       }
 
+      // MESSAGE NOTIFICATIONS: one per conversation with unread messages
+      // the current user did not send. Uses the singular `conversation`
+      // table (the live DB name; the plural form does not exist).
+      const { data: userConvos } = await supabase
+        .from('conversation')
+        .select('id, client_id, provider_id')
+        .or(`client_id.eq.${user.id},provider_id.eq.${user.id}`)
+
+      if (userConvos && userConvos.length > 0) {
+        const convoIds = userConvos.map((c) => c.id)
+        const { data: unreadMessages } = await supabase
+          .from('messages')
+          .select('id, conversation_id, sender_id, content, created_at')
+          .in('conversation_id', convoIds)
+          .eq('is_read', false)
+          .neq('sender_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(10)
+
+        const seenConvos = new Set<string>()
+        for (const msg of (unreadMessages ?? []) as Array<{
+          id: string
+          conversation_id: string
+          sender_id: string
+          content: string
+          created_at: string
+        }>) {
+          if (seenConvos.has(msg.conversation_id)) continue
+          seenConvos.add(msg.conversation_id)
+
+          const convo = userConvos.find((c) => c.id === msg.conversation_id)
+          if (!convo) continue
+
+          const isClient = convo.client_id === user.id
+          const otherId = isClient ? convo.provider_id : convo.client_id
+
+          let senderName = 'Someone'
+          if (isClient) {
+            const { data: provider } = await supabase
+              .from('providers')
+              .select('display_name')
+              .eq('id', otherId)
+              .maybeSingle()
+            senderName = provider?.display_name || 'Provider'
+          } else {
+            const { data: client } = await supabase
+              .from('clients')
+              .select('name')
+              .eq('id', otherId)
+              .maybeSingle()
+            senderName = client?.name || 'Client'
+          }
+
+          const preview =
+            msg.content.length > 50
+              ? msg.content.substring(0, 50) + '...'
+              : msg.content
+
+          notifs.push({
+            // bookingId field carries the conversation_id for routing.
+            id: 'msg_' + msg.conversation_id,
+            bookingId: msg.conversation_id,
+            type: 'new_message',
+            title: `${senderName} sent you a message`,
+            body: preview,
+            isRead: false,
+            createdAt: msg.created_at,
+          })
+        }
+      }
+
       notifs.sort(
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       )
@@ -198,6 +270,13 @@ export function useNotifications() {
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'bookings' },
+        () => {
+          fetchNotifications()
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'messages' },
         () => {
           fetchNotifications()
         },

@@ -50,6 +50,12 @@ function getIcon(type: NotificationType): IconConfig {
         color: '#C8922A',
         bg: 'rgba(200,146,42,0.1)',
       }
+    case 'new_message':
+      return {
+        name: 'chatbubble',
+        color: '#F0E8D5',
+        bg: 'rgba(240,232,213,0.08)',
+      }
     default:
       return {
         name: 'notifications',
@@ -86,6 +92,11 @@ export default function NotificationsScreen() {
   }
 
   function handleNotificationTap(notif: AppNotification) {
+    // For new_message, bookingId is repurposed to carry the conversation id.
+    if (notif.type === 'new_message') {
+      router.push(`/messages/${notif.bookingId}` as never)
+      return
+    }
     router.push(`/bookings/${notif.bookingId}` as never)
   }
 
