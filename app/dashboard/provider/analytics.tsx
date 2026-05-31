@@ -452,7 +452,7 @@ export default function ProviderAnalytics() {
 
           {/* Top content (stub - no data source) */}
           <View style={s.sectionHead}>
-            <Text style={s.sectionLabelInline}>Top Content</Text>
+            <Text style={[s.sectionLabel, { marginBottom: 0 }]}>Top Content</Text>
           </View>
           <View style={[s.card, s.stubCard]}>
             <Feather name="image" size={22} color="rgba(240,232,213,0.2)" />
@@ -631,9 +631,11 @@ const s = StyleSheet.create({
   headerTitle: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 17,
+    fontSize: 18,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 1.8,
+    textTransform: 'uppercase',
   },
 
   // Period toggle
@@ -675,15 +677,16 @@ const s = StyleSheet.create({
   periodLabel: {
     fontSize: 10,
     color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_600SemiBold',
-    letterSpacing: 1.2,
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: 2,
+    lineHeight: 15,
     textTransform: 'uppercase',
     marginBottom: 8,
   },
   periodHeadRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 12, marginBottom: 24 },
-  bigValue: { fontSize: 40, color: '#F0E8D5', fontFamily: 'Manrope_700Bold', letterSpacing: -1 },
-  deltaUp: { fontSize: 13, color: '#4CAF50', fontFamily: 'Manrope_500Medium', marginBottom: 8 },
-  deltaDown: { fontSize: 13, color: '#E05C5C', fontFamily: 'Manrope_500Medium', marginBottom: 8 },
+  bigValue: { fontSize: 48, lineHeight: 60, color: '#F0E8D5', fontFamily: 'Manrope_700Bold', letterSpacing: 0.19 },
+  deltaUp: { fontSize: 12, lineHeight: 18, color: '#C8922A', fontFamily: 'Manrope_600SemiBold', marginBottom: 12 },
+  deltaDown: { fontSize: 12, lineHeight: 18, color: '#E05C5C', fontFamily: 'Manrope_600SemiBold', marginBottom: 12 },
 
   card: {
     backgroundColor: 'rgba(240,232,213,0.04)',
@@ -699,8 +702,9 @@ const s = StyleSheet.create({
   sectionLabel: {
     fontSize: 10,
     color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-    letterSpacing: 1.2,
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: 2,
+    lineHeight: 15,
     textTransform: 'uppercase',
     marginBottom: 8,
   },
@@ -710,8 +714,8 @@ const s = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
-  sectionLabelInline: { fontSize: 16, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
-  link: { fontSize: 13, color: '#C8922A', fontFamily: 'Manrope_500Medium' },
+  sectionLabelInline: { fontSize: 20, lineHeight: 30, color: '#F0E8D5', fontFamily: 'Manrope_700Bold', letterSpacing: 0.16 },
+  link: { fontSize: 13, lineHeight: 19.5, color: '#C8922A', fontFamily: 'Manrope_500Medium' },
 
   // Weekly bars
   weeklyRow: { flexDirection: 'row', alignItems: 'flex-end', height: 160, gap: 8 },
@@ -724,7 +728,8 @@ const s = StyleSheet.create({
     minHeight: 4,
   },
   weeklyLabel: {
-    fontSize: 11,
+    fontSize: 10,
+    lineHeight: 15,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
     marginTop: 8,
@@ -737,16 +742,16 @@ const s = StyleSheet.create({
     paddingVertical: 18,
     paddingRight: 12,
   },
-  statValue: { fontSize: 28, color: '#F0E8D5', fontFamily: 'Manrope_700Bold', letterSpacing: -0.5 },
+  statValue: { fontSize: 24, lineHeight: 36, color: '#F0E8D5', fontFamily: 'Manrope_700Bold', letterSpacing: 0.45 },
   statValueStub: { fontSize: 16, color: 'rgba(240,232,213,0.35)', fontFamily: 'Manrope_600SemiBold' },
-  statName: { fontSize: 13, color: '#F0E8D5', fontFamily: 'Manrope_500Medium', marginTop: 6 },
-  statHint: { fontSize: 11, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular', marginTop: 3 },
+  statName: { fontSize: 11, lineHeight: 16.5, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_500Medium', marginTop: 6 },
+  statHint: { fontSize: 10, lineHeight: 15, color: '#C8922A', fontFamily: 'Manrope_700Bold', marginTop: 5 },
 
   // Heatmap
-  heatRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  heatDayLabel: { width: 36, fontSize: 12, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular' },
-  heatCells: { flex: 1, flexDirection: 'row', gap: 4 },
-  heatCell: { flex: 1, height: 22, borderRadius: 5 },
+  heatRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
+  heatDayLabel: { width: 36, fontSize: 10, lineHeight: 15, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular', textAlign: 'right', paddingRight: 12 },
+  heatCells: { flex: 1, flexDirection: 'row', gap: 2 },
+  heatCell: { flex: 1, height: 24, borderRadius: 2 },
   heatLabelsRow: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   heatTimeLabel: {
     flex: 1,
@@ -759,22 +764,22 @@ const s = StyleSheet.create({
   // Services
   svcRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingVertical: 14 },
   rowBorder: { borderBottomWidth: 1, borderBottomColor: 'rgba(240,232,213,0.06)' },
-  svcRank: { fontSize: 16, color: '#C8922A', fontFamily: 'Manrope_700Bold', width: 24 },
+  svcRank: { fontSize: 14, lineHeight: 21, color: '#C8922A', fontFamily: 'Manrope_700Bold', width: 32 },
   flex1: { flex: 1 },
   svcTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  svcName: { fontSize: 14, color: '#F0E8D5', fontFamily: 'Manrope_600SemiBold' },
-  svcRevenue: { fontSize: 15, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
+  svcName: { fontSize: 14, lineHeight: 17.5, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
+  svcRevenue: { fontSize: 14, lineHeight: 21, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
   svcMetaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 },
-  svcMeta: { fontSize: 12, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular' },
+  svcMeta: { fontSize: 12, lineHeight: 18, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular' },
   topEarnerPill: {
-    backgroundColor: 'rgba(200,146,42,0.12)',
+    backgroundColor: 'rgba(76,175,80,0.1)',
     paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: 9999,
   },
-  topEarnerText: { fontSize: 11, color: '#C8922A', fontFamily: 'Manrope_600SemiBold' },
+  topEarnerText: { fontSize: 10, lineHeight: 15, color: '#4CAF50', fontFamily: 'Manrope_700Bold' },
   viewAllRow: { alignItems: 'center', paddingTop: 14 },
-  viewAllText: { fontSize: 13, color: '#C8922A', fontFamily: 'Manrope_500Medium' },
+  viewAllText: { fontSize: 13, lineHeight: 19.5, color: '#C8922A', fontFamily: 'Manrope_500Medium' },
 
   // Clients
   clientRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -786,19 +791,19 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: { fontSize: 14, color: '#C8922A', fontFamily: 'Manrope_700Bold' },
-  clientName: { fontSize: 14, color: '#F0E8D5', fontFamily: 'Manrope_600SemiBold' },
-  clientMeta: { fontSize: 12, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular', marginTop: 2 },
+  avatarText: { fontSize: 14, lineHeight: 21, color: '#C8922A', fontFamily: 'Manrope_700Bold' },
+  clientName: { fontSize: 14, lineHeight: 21, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
+  clientMeta: { fontSize: 12, lineHeight: 18, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular', marginTop: 2 },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  dueTitle: { fontSize: 14, color: '#F0E8D5', fontFamily: 'Manrope_600SemiBold' },
-  dueSub: { fontSize: 12, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular', marginTop: 2 },
+  dueTitle: { fontSize: 14, lineHeight: 21, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
+  dueSub: { fontSize: 12, lineHeight: 18, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular', marginTop: 2 },
   sendRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
 
   // Split bar
   splitRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  splitValue: { fontSize: 24, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
-  splitLabel: { fontSize: 12, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular', marginTop: 2 },
-  splitTrack: { height: 8, borderRadius: 4, flexDirection: 'row', overflow: 'hidden', backgroundColor: 'rgba(240,232,213,0.08)' },
-  splitReturning: { height: 8, backgroundColor: '#C8922A' },
-  splitNew: { height: 8, backgroundColor: 'rgba(240,232,213,0.3)' },
+  splitValue: { fontSize: 18, lineHeight: 27, color: '#F0E8D5', fontFamily: 'Manrope_700Bold', letterSpacing: 0.28 },
+  splitLabel: { fontSize: 10, lineHeight: 15, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_700Bold', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 2 },
+  splitTrack: { height: 8, borderRadius: 9999, flexDirection: 'row', overflow: 'hidden', backgroundColor: 'rgba(240,232,213,0.1)' },
+  splitReturning: { height: 8, backgroundColor: 'rgba(200,146,42,0.7)' },
+  splitNew: { height: 8, backgroundColor: 'transparent' },
 })
