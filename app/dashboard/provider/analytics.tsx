@@ -74,6 +74,7 @@ export default function ProviderAnalytics() {
     setLoading(true)
     try {
       const providerDbId = await getProviderDbId(user?.id)
+      console.log('[analytics] providerDbId:', providerDbId)
       if (!providerDbId) {
         setData(null)
         setLoading(false)
@@ -91,6 +92,11 @@ export default function ProviderAnalytics() {
 
       const bookings = (bookingsRes.data ?? []) as BookingRow[]
       const services = (servicesRes.data ?? []) as ServiceRow[]
+      const bookingsError = bookingsRes.error
+      console.log('[analytics] bookings count:', bookings?.length)
+      console.log('[analytics] bookings error:', bookingsError)
+      console.log('[analytics] first booking:', bookings?.[0])
+      console.log('[analytics] services count:', services?.length, 'error:', servicesRes.error)
 
       const cur = currentMonthRange()
       const last = monthRange(1)
@@ -139,6 +145,10 @@ export default function ProviderAnalytics() {
         dayOfMonth > 0 ? (thisMonthRevenue / dayOfMonth) * daysInMonth : 0
       const onTrack = projected >= goalAmount
 
+      console.log('[analytics] thisMonthRevenue:', thisMonthRevenue)
+      console.log('[analytics] completedCount:', completed.length)
+      console.log('[analytics] loading state (stale closure):', loading)
+
       setData({
         totalRevenue,
         thisMonthRevenue,
@@ -171,6 +181,8 @@ export default function ProviderAnalytics() {
     data && data.lastMonthRevenue > 0
       ? ((data.thisMonthRevenue - data.lastMonthRevenue) / data.lastMonthRevenue) * 100
       : null
+
+  console.log('[analytics] rendering:', { loading, hasData: !!data, data })
 
   return (
     <View style={s.root}>
