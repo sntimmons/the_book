@@ -97,6 +97,16 @@ export default function NotificationsScreen() {
       router.push(`/messages/${notif.bookingId}` as never)
       return
     }
+    // Decision-phase handoffs land on the post-booking confirmation/decline
+    // screens, which already accept ?id= and load real booking data.
+    if (notif.type === 'booking_accepted') {
+      router.push(`/post-booking/accepted?id=${notif.bookingId}` as never)
+      return
+    }
+    if (notif.type === 'booking_declined') {
+      router.push(`/post-booking/declined?id=${notif.bookingId}` as never)
+      return
+    }
     router.push(`/bookings/${notif.bookingId}` as never)
   }
 
