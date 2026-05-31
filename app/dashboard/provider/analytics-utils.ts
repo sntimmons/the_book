@@ -20,8 +20,7 @@ export async function getProviderDbId(
     const { data: prov } = await supabase
       .from('providers')
       .select('id')
-      .eq('is_approved', true)
-      .limit(1)
+      .eq('display_name', 'Stephen')
       .maybeSingle()
     const id = prov?.id ?? null
     console.log('[analytics] DEV MODE: using provider', id)
