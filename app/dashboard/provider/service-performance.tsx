@@ -110,8 +110,10 @@ export default function ServicePerformance() {
         ]),
       ) as string[]
 
+      // TODO: revert to completed only
+      // before production launch
       const allServicesRevenue = bookings
-        .filter((b) => b.status === 'completed')
+        .filter((b) => isEarning(b.status))
         .reduce((s, b) => s + (b.payment_amount || 0), 0)
 
       const ranked: SvcPerf[] = names
