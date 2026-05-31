@@ -95,14 +95,14 @@ const DEV_NAV: NavSection[] = [
   {
     label: 'PROVIDER ONBOARDING',
     items: [
-      { label: 'Step 1 — Profile Basics', route: '/onboarding/provider' },
-      { label: 'Step 2 — Portfolio', route: '/onboarding/provider/portfolio' },
-      { label: 'Step 3 — Reels', route: '/onboarding/provider/reels' },
-      { label: 'Step 4 — Services', route: '/onboarding/provider/services' },
-      { label: 'Step 5 — Availability', route: '/onboarding/provider/availability' },
-      { label: 'Step 6 — Policy', route: '/onboarding/provider/policy' },
-      { label: 'Step 7 — Payout', route: '/onboarding/provider/payout' },
-      { label: 'Step 8 — Go Live', route: '/onboarding/provider/golive' },
+      { label: 'Step 1. Profile Basics', route: '/onboarding/provider' },
+      { label: 'Step 2. Portfolio', route: '/onboarding/provider/portfolio' },
+      { label: 'Step 3. Reels', route: '/onboarding/provider/reels' },
+      { label: 'Step 4. Services', route: '/onboarding/provider/services' },
+      { label: 'Step 5. Availability', route: '/onboarding/provider/availability' },
+      { label: 'Step 6. Policy', route: '/onboarding/provider/policy' },
+      { label: 'Step 7. Payout', route: '/onboarding/provider/payout' },
+      { label: 'Step 8. Go Live', route: '/onboarding/provider/golive' },
     ],
   },
   {
@@ -139,11 +139,11 @@ const DEV_NAV: NavSection[] = [
   {
     label: 'BOOKING FLOW',
     items: [
-      { label: 'Step 1 — Select Service', route: '/book/service' },
-      { label: 'Step 2 — Pick Date & Time', route: '/book/datetime' },
-      { label: 'Step 3 — Review Policy', route: '/book/policy' },
-      { label: 'Step 4 — Confirm & Pay', route: '/book/payment' },
-      { label: 'Step 5 — Confirmed', route: '/book/confirmed' },
+      { label: 'Step 1. Select Service', route: '/book/service' },
+      { label: 'Step 2. Pick Date & Time', route: '/book/datetime' },
+      { label: 'Step 3. Review Policy', route: '/book/policy' },
+      { label: 'Step 4. Confirm & Pay', route: '/book/payment' },
+      { label: 'Step 5. Confirmed', route: '/book/confirmed' },
     ],
   },
   {
@@ -284,6 +284,7 @@ export default function WelcomeScreen() {
   }, [])
 
   function handleSecretTap() {
+    if (!__DEV__) return
     const now = Date.now()
     if (now - lastTap.current > 500) {
       tapCount.current = 1
@@ -336,7 +337,7 @@ export default function WelcomeScreen() {
         />
       )}
 
-      {/* Dark scrim — always on top */}
+      {/* Dark scrim, always on top */}
       <LinearGradient
         colors={['transparent', 'rgba(8,8,8,0.2)', 'rgba(8,8,8,0.7)', '#080808']}
         start={{ x: 0, y: 0 }}
@@ -345,7 +346,7 @@ export default function WelcomeScreen() {
         pointerEvents="none"
       />
 
-      {/* Secret dev tap zone — top-right corner, invisible */}
+      {/* Secret dev tap zone, top-right corner, invisible */}
       <TouchableOpacity
         activeOpacity={1}
         onPress={handleSecretTap}
@@ -393,7 +394,7 @@ export default function WelcomeScreen() {
 
       {/* ── Dev Menu Modal ─────────────────────────────────────────── */}
       <Modal
-        visible={showDevMenu}
+        visible={__DEV__ && showDevMenu}
         transparent
         animationType="slide"
         onRequestClose={() => setShowDevMenu(false)}

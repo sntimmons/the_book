@@ -65,7 +65,7 @@ export default function ProviderReview() {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Top bar — no back arrow, terminal flow */}
+      {/* Top bar, no back arrow, terminal flow */}
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.topBarTitle}>Rate Your Client</Text>
       </View>

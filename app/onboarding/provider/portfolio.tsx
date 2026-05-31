@@ -42,7 +42,7 @@ export default function ProviderPortfolio() {
   const { portfolioPhotos: photos, setPortfolioPhotos } = useProviderStore()
   const scrollRef = useRef<ScrollView>(null)
 
-  // Force scroll to top on mount — prevents Stack navigator from injecting a content offset
+  // Force scroll to top on mount, prevents Stack navigator from injecting a content offset
   useEffect(() => {
     const t = setTimeout(() => {
       scrollRef.current?.scrollTo({ y: 0, animated: false })
@@ -90,7 +90,7 @@ export default function ProviderPortfolio() {
         <View style={styles.progressFill} />
       </View>
 
-      {/* Top bar — in flow, above ScrollView */}
+      {/* Top bar, in flow, above ScrollView */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -123,7 +123,7 @@ export default function ProviderPortfolio() {
           </Text>
         </View>
 
-        {/* Photo grid — 3×3 */}
+        {/* Photo grid: 3×3 */}
         <View style={styles.grid}>
           {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
             const uri = photos[i]

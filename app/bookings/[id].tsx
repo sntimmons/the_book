@@ -400,7 +400,7 @@ export default function BookingDetailScreen() {
               style={styles.detailIcon}
             />
             <Text style={styles.detailText}>
-              {booking.requested_date ?? '—'}
+              {booking.requested_date ?? '-'}
             </Text>
           </View>
 
@@ -412,7 +412,7 @@ export default function BookingDetailScreen() {
               style={styles.detailIcon}
             />
             <Text style={styles.detailText}>
-              {booking.requested_time ?? '—'}
+              {booking.requested_time ?? '-'}
             </Text>
           </View>
 

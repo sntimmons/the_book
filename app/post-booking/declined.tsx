@@ -72,7 +72,8 @@ export default function BookingDeclined() {
               key={p.name}
               style={[styles.altRow, i > 0 && styles.altRowBorder]}
               activeOpacity={0.7}
-              onPress={() => router.push('/providers/1')}
+              // TODO: wire to real provider id
+              onPress={() => router.push('/(tabs)/')}
             >
               <View style={styles.altAvatar}>
                 <Feather name="user" size={20} color="rgba(240,232,213,0.4)" />

@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Animated,
+  Alert,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -99,7 +100,13 @@ export default function BookingAccepted() {
           <TouchableOpacity
             style={styles.calendarBtn}
             activeOpacity={0.7}
-            onPress={() => console.log('add to calendar')}
+            onPress={() =>
+              Alert.alert(
+                'Coming soon',
+                'This feature is coming in the next update.',
+                [{ text: 'OK' }],
+              )
+            }
           >
             <Feather name="calendar" size={15} color="#C8922A" />
             <Text style={styles.calendarBtnText}>Add to Calendar</Text>

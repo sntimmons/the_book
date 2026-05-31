@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   StyleSheet,
+  Alert,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -16,7 +17,7 @@ import { useAuth } from '@/context/AuthContext'
 import { useClientStore } from '@/store/clientStore'
 import { uploadMedia } from '@/lib/storage'
 
-// Reusable person silhouette — centered inside any circle
+// Reusable person silhouette, centered inside any circle
 function Silhouette({ size = 40, opacity = 0.18 }: { size?: number; opacity?: number }) {
   const head = size * 0.38
   const bodyW = size * 0.55
@@ -132,7 +133,17 @@ export default function ClientPreview() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={s.topTitle}>Me</Text>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => console.log('settings')} style={[s.navBtn, { alignItems: 'flex-end' }]}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() =>
+            Alert.alert(
+              'Coming soon',
+              'This feature is coming in the next update.',
+              [{ text: 'OK' }],
+            )
+          }
+          style={[s.navBtn, { alignItems: 'flex-end' }]}
+        >
           <Text style={s.gearIcon}>⚙</Text>
         </TouchableOpacity>
       </View>
@@ -316,7 +327,7 @@ export default function ClientPreview() {
           </TouchableOpacity>
         </View>
 
-        {/* Bottom spacer — clears fixed CTA */}
+        {/* Bottom spacer, clears fixed CTA */}
         <View style={{ height: 140 }} />
       </ScrollView>
 

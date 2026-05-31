@@ -163,7 +163,7 @@ export default function WriteReview() {
             style={styles.communityIcon}
           />
           <Text style={styles.communityText}>
-            Reviews are public and help the Houston creator community. Offensive or false reviews are removed by our team.
+            Reviews are public and help the Houston provider community. Offensive or false reviews are removed by our team.
           </Text>
         </View>
       </ScrollView>
@@ -190,7 +190,7 @@ export default function WriteReview() {
           activeOpacity={0.7}
           onPress={() => router.push('/post-booking/submitted')}
         >
-          <Text style={styles.skipText}>Skip — post without a written review</Text>
+          <Text style={styles.skipText}>Skip, post without a written review</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>

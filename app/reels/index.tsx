@@ -11,6 +11,7 @@ import {
   Animated,
   StatusBar,
   Share,
+  Alert,
 } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -616,7 +617,13 @@ function ReelItem({
           size={28}
           color="#F0E8D5"
           label={formatCount(reel.comments)}
-          onPress={() => console.log('comments')}
+          onPress={() =>
+            Alert.alert(
+              'Coming soon',
+              'This feature is coming in the next update.',
+              [{ text: 'OK' }],
+            )
+          }
         />
 
         {/* Share */}

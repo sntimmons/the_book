@@ -216,7 +216,7 @@ export default function BookMessage() {
           activeOpacity={0.6}
           onPress={handleSkip}
         >
-          <Text style={styles.skipLinkText}>Skip — send request without a message</Text>
+          <Text style={styles.skipLinkText}>Skip, send request without a message</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>

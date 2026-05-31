@@ -136,7 +136,7 @@ export default function BookConfirmed() {
         </View>
       </View>
 
-      {/* Bottom buttons — inside scroll so they never overlap content */}
+      {/* Bottom buttons, inside scroll so they never overlap content */}
       <View style={styles.bottomButtons}>
         <TouchableOpacity
           style={styles.homeBtn}

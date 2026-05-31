@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Pressable, TouchableOpacity, StyleSheet } from 'react-native'
+import { View, Text, ScrollView, Pressable, TouchableOpacity, StyleSheet, Alert } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -44,7 +44,13 @@ export default function ClientPayment() {
           <TouchableOpacity
             activeOpacity={0.8}
             style={styles.optionCard}
-            onPress={() => console.log('open card input')}
+            onPress={() =>
+              Alert.alert(
+                'Coming soon',
+                'This feature is coming in the next update.',
+                [{ text: 'OK' }],
+              )
+            }
           >
             <View style={styles.optionIconWrap}>
               <Text style={styles.optionIcon}>▣</Text>
@@ -59,7 +65,13 @@ export default function ClientPayment() {
           <TouchableOpacity
             activeOpacity={0.8}
             style={styles.optionCard}
-            onPress={() => console.log('apple pay')}
+            onPress={() =>
+              Alert.alert(
+                'Coming soon',
+                'This feature is coming in the next update.',
+                [{ text: 'OK' }],
+              )
+            }
           >
             <View style={styles.optionIconWrap}>
               <Text style={styles.optionIcon}>⊛</Text>

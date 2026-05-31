@@ -108,7 +108,7 @@ export default function ProviderOnboardingStep1() {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Progress bar — 1 of 8 = 12.5% */}
+      {/* Progress bar: 1 of 8 = 12.5% */}
       <View style={[styles.progressTrack, { top: insets.top }]}>
         <View style={styles.progressFill} />
       </View>

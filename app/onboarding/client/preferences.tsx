@@ -98,7 +98,7 @@ export default function ClientPreferences() {
 
   return (
     <View style={styles.root}>
-      {/* Progress bar — 100% */}
+      {/* Progress bar: 100% */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>
@@ -169,7 +169,7 @@ export default function ClientPreferences() {
           <View style={styles.notifRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.locationTitle}>Show mobile providers</Text>
-              <Text style={styles.locationSubtext}>Creators that come to you</Text>
+              <Text style={styles.locationSubtext}>Providers that come to you</Text>
             </View>
             <Switch
               value={mobileProv}
@@ -200,7 +200,7 @@ export default function ClientPreferences() {
           <View style={styles.divider} />
           <View style={styles.notifRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.notifTitle}>New creators nearby</Text>
+              <Text style={styles.notifTitle}>New providers nearby</Text>
               <Text style={styles.notifSubtext}>When providers join your area</Text>
             </View>
             <Switch

@@ -72,7 +72,7 @@ export default function ProviderPayout() {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      {/* Progress bar — 87.5% */}
+      {/* Progress bar: 87.5% */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>

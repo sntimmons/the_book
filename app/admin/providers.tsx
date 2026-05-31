@@ -16,13 +16,13 @@ export default function AdminProviders() {
         >
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Admin — Providers</Text>
+        <Text style={styles.headerTitle}>Admin: Providers</Text>
         <View style={styles.headerSpacer} />
       </View>
 
       <View style={styles.body}>
         <Feather name="shield" size={36} color="rgba(240,232,213,0.1)" />
-        <Text style={styles.title}>Admin — Providers</Text>
+        <Text style={styles.title}>Admin: Providers</Text>
         <Text style={styles.subtitle}>Coming in the next update.</Text>
       </View>
     </View>

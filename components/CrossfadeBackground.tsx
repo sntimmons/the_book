@@ -75,7 +75,7 @@ export default function CrossfadeBackground({ images, fallback = false }: Props)
         </>
       )}
 
-      {/* Dark gradient overlay — always on top */}
+      {/* Dark gradient overlay, always on top */}
       <LinearGradient
         colors={[
           'rgba(8,8,8,0.1)',

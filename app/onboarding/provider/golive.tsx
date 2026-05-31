@@ -249,7 +249,7 @@ export default function ProviderGoLive() {
 
   return (
     <View style={styles.root}>
-      {/* Progress bar — 100% */}
+      {/* Progress bar: 100% */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>

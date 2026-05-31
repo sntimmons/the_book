@@ -341,7 +341,12 @@ function handleCancelBooking() {
       {
         text: 'Cancel Booking',
         style: 'destructive',
-        onPress: () => console.log('cancel booking'),
+        onPress: () =>
+          Alert.alert(
+            'Coming soon',
+            'This feature is coming in the next update.',
+            [{ text: 'OK' }],
+          ),
       },
     ],
   )
@@ -356,7 +361,12 @@ function handleCancelRequest() {
       {
         text: 'Cancel Request',
         style: 'destructive',
-        onPress: () => console.log('cancel request'),
+        onPress: () =>
+          Alert.alert(
+            'Coming soon',
+            'This feature is coming in the next update.',
+            [{ text: 'OK' }],
+          ),
       },
     ],
   )

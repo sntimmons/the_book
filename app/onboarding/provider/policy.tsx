@@ -14,7 +14,7 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 
-// No global store yet — default true so travel section is visible
+// No global store yet, default true so travel section is visible
 const IS_MOBILE = true
 
 // --- Dropdown config ---
@@ -157,7 +157,7 @@ export default function ProviderPolicy() {
 
   return (
     <View style={styles.root}>
-      {/* Progress bar — 75% */}
+      {/* Progress bar: 75% */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>
@@ -332,7 +332,7 @@ export default function ProviderPolicy() {
                 [
                   { key: 'flat' as TravelFeeType,     label: 'Flat fee',                  desc: 'Same rate every appointment' },
                   { key: 'per-mile' as TravelFeeType, label: 'Per mile',                  desc: 'Rate based on distance' },
-                  { key: 'free' as TravelFeeType,     label: 'Free — included in price',  desc: 'No separate travel charge' },
+                  { key: 'free' as TravelFeeType,     label: 'Free, included in price',  desc: 'No separate travel charge' },
                 ] as const
               ).map((opt) => (
                 <Pressable

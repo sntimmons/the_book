@@ -80,7 +80,7 @@ function RootNavigator() {
           contentStyle: { backgroundColor: '#080808' },
         }}
       />
-      {DEV_MODE && <DevBadge />}
+      {__DEV__ && DEV_MODE && <DevBadge />}
     </View>
   )
 }

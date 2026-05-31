@@ -79,7 +79,8 @@ export default function ReviewSubmitted() {
         <TouchableOpacity
           style={styles.profileLink}
           activeOpacity={0.7}
-          onPress={() => router.push('/providers/1')}
+          // TODO: wire to real provider id
+          onPress={() => router.push('/(tabs)/')}
         >
           <Text style={styles.profileLinkText}>View Nia's Profile</Text>
         </TouchableOpacity>

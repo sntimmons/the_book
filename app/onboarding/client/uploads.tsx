@@ -1,4 +1,4 @@
-import { View, Text, ScrollView, Pressable, TouchableOpacity, StyleSheet } from 'react-native'
+import { View, Text, ScrollView, Pressable, TouchableOpacity, StyleSheet, Alert } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -53,7 +53,13 @@ export default function ClientUploads() {
                 styles.photoBox,
                 pressed && styles.photoBoxPressed,
               ]}
-              onPress={() => console.log('open photo picker')}
+              onPress={() =>
+                Alert.alert(
+                  'Coming soon',
+                  'This feature is coming in the next update.',
+                  [{ text: 'OK' }],
+                )
+              }
             >
               <Text style={styles.photoIcon}>⊞</Text>
               <Text style={styles.photoBoxLabel}>Add photo</Text>
@@ -74,7 +80,13 @@ export default function ClientUploads() {
                 styles.reelBox,
                 pressed && styles.reelBoxPressed,
               ]}
-              onPress={() => console.log('open video picker')}
+              onPress={() =>
+                Alert.alert(
+                  'Coming soon',
+                  'This feature is coming in the next update.',
+                  [{ text: 'OK' }],
+                )
+              }
             >
               <Text style={styles.videoIcon}>▷</Text>
               <Text style={styles.reelLabel}>Add reel</Text>

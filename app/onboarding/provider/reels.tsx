@@ -88,12 +88,12 @@ export default function ProviderReels() {
 
   return (
     <View style={styles.root}>
-      {/* Progress bar — 37.5% */}
+      {/* Progress bar: 37.5% */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>
 
-      {/* Top bar — fixed above scroll */}
+      {/* Top bar, fixed above scroll */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
         <TouchableOpacity
           onPress={() => router.back()}
@@ -129,7 +129,7 @@ export default function ProviderReels() {
           </Text>
         </View>
 
-        {/* Reels grid — 2 columns */}
+        {/* Reels grid: 2 columns */}
         <View style={styles.grid}>
           {Array.from({ length: TOTAL_SLOTS }).map((_, i) => {
             const reel = reels[i]

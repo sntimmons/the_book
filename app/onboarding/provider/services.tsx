@@ -158,7 +158,7 @@ export default function ProviderServices() {
 
   return (
     <View style={styles.root}>
-      {/* Progress bar — 50% */}
+      {/* Progress bar: 50% */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>
