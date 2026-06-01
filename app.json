@@ -33,7 +33,8 @@
       "expo-secure-store",
       "expo-font",
       "expo-asset",
-      ["expo-image-picker", {"photosPermission": "Allow The Book to access your photos to set your profile picture."}]
+      ["expo-image-picker", {"photosPermission": "Allow The Book to access your photos to set your profile picture."}],
+      ["expo-calendar", {"calendarPermission": "Allow The Book to add your booking to your calendar."}]
     ]
   }
 }

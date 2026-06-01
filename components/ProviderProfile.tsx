@@ -9,6 +9,8 @@ import {
   Share,
   StyleSheet,
   useWindowDimensions,
+  Modal,
+  FlatList,
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Feather } from '@expo/vector-icons'
@@ -96,6 +98,7 @@ export default function ProviderProfile({
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
   const [activeTab, setActiveTab] = useState<'portfolio' | 'posts'>('portfolio')
+  const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
   const provider = previewMode ? { ...MOCK_PROVIDER, ...providerProp } : providerProp
   const cellSize = width / 3
@@ -373,7 +376,7 @@ export default function ProviderProfile({
                     <Pressable
                       key={i}
                       style={{ width: cellSize, height: cellSize }}
-                      onPress={() => console.log('open photo', i)}
+                      onPress={() => setLightboxIndex(i)}
                     >
                       <Image
                         source={{ uri }}
@@ -488,6 +491,56 @@ export default function ProviderProfile({
           </Pressable>
         </View>
       )}
+
+      <Modal
+        visible={lightboxIndex !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLightboxIndex(null)}
+      >
+        <View style={styles.lightboxRoot}>
+          <FlatList
+            data={portfolioPhotos.slice(0, 9)}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={lightboxIndex ?? 0}
+            getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+            keyExtractor={(_, i) => String(i)}
+            onMomentumScrollEnd={(e) => {
+              const next = Math.round(e.nativeEvent.contentOffset.x / width)
+              if (next !== lightboxIndex) setLightboxIndex(next)
+            }}
+            renderItem={({ item }) => (
+              <Pressable
+                style={{ width, height: '100%', justifyContent: 'center' }}
+                onPress={() => setLightboxIndex(null)}
+              >
+                <Image
+                  source={{ uri: item }}
+                  style={{ width, height: width }}
+                  resizeMode="contain"
+                />
+              </Pressable>
+            )}
+          />
+          <TouchableOpacity
+            style={[styles.lightboxClose, { top: insets.top + 12 }]}
+            onPress={() => setLightboxIndex(null)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Feather name="x" size={22} color="#F0E8D5" />
+          </TouchableOpacity>
+          {portfolioPhotos.length > 1 && lightboxIndex != null && (
+            <View style={[styles.lightboxCounter, { bottom: insets.bottom + 24 }]}>
+              <Text style={styles.lightboxCounterText}>
+                {(lightboxIndex + 1) + ' of ' + Math.min(portfolioPhotos.length, 9)}
+              </Text>
+            </View>
+          )}
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -1010,5 +1063,34 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#080808',
     fontFamily: 'Manrope_700Bold',
+  },
+
+  lightboxRoot: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+  },
+  lightboxClose: {
+    position: 'absolute',
+    right: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(8,8,8,0.7)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lightboxCounter: {
+    position: 'absolute',
+    alignSelf: 'center',
+    backgroundColor: 'rgba(8,8,8,0.6)',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  lightboxCounterText: {
+    fontSize: 12,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
   },
 })

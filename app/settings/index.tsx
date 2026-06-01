@@ -152,7 +152,7 @@ export default function SettingsScreen() {
           <NavRow
             icon="person-outline"
             label="Personal Information"
-            onPress={() => stub('Personal Information')}
+            onPress={() => router.push('/settings/personal-info' as never)}
           />
           <NavRow
             icon="call-outline"

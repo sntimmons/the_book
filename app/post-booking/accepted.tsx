@@ -7,10 +7,12 @@ import {
   Animated,
   Alert,
   ScrollView,
+  Platform,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
+import * as Calendar from 'expo-calendar'
 import { supabase } from '../../lib/supabase'
 
 interface BookingRow {
@@ -47,8 +49,10 @@ interface AcceptedData {
   rating: number | null
   serviceName: string
   servicePrice: number | null
+  serviceDurationMinutes: number | null
   dateLabel: string | null
   timeLabel: string | null
+  requestedDateIso: string | null
   depositAmount: number
   balanceAmount: number | null
 }
@@ -67,6 +71,23 @@ function formatDate(iso: string | null): string | null {
 function money(n: number | null | undefined): string {
   const v = Number(n ?? 0)
   return '$' + v.toFixed(2)
+}
+
+// Parse the booking flow's time strings ("1:00 PM", "1 PM", "13:00") into
+// minutes-since-midnight. Returns null if the format is unrecognized so the
+// calendar handler can fall back to noon.
+function parseTimeToMinutes(timeStr: string | null): number | null {
+  if (!timeStr) return null
+  const trimmed = timeStr.trim()
+  const m = trimmed.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i)
+  if (!m) return null
+  let hours = parseInt(m[1], 10)
+  const minutes = m[2] ? parseInt(m[2], 10) : 0
+  const period = m[3] ? m[3].toLowerCase() : null
+  if (period === 'pm' && hours !== 12) hours += 12
+  if (period === 'am' && hours === 12) hours = 0
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null
+  return hours * 60 + minutes
 }
 
 export default function BookingAccepted() {
@@ -134,6 +155,7 @@ export default function BookingAccepted() {
       }
 
       let servicePrice: number | null = null
+      let serviceDurationMinutes: number | null = null
       if (booking.service_id) {
         const { data: service } = await supabase
           .from('provider_services')
@@ -141,6 +163,7 @@ export default function BookingAccepted() {
           .eq('id', booking.service_id)
           .maybeSingle<ServiceRow>()
         servicePrice = service?.price ?? null
+        serviceDurationMinutes = service?.duration_minutes ?? null
       }
 
       const deposit = Number(booking.payment_amount ?? 0)
@@ -154,8 +177,10 @@ export default function BookingAccepted() {
         rating: provider.average_rating,
         serviceName: booking.service_name ?? 'Service',
         servicePrice,
+        serviceDurationMinutes,
         dateLabel: formatDate(booking.requested_date),
         timeLabel: booking.requested_time,
+        requestedDateIso: booking.requested_date,
         depositAmount: deposit,
         balanceAmount: balance,
       })
@@ -177,6 +202,79 @@ export default function BookingAccepted() {
       return
     }
     router.push('/(tabs)/messages' as never)
+  }
+
+  async function handleAddToCalendar() {
+    if (!data || !data.requestedDateIso) {
+      Alert.alert(
+        'Date not set',
+        'This booking has no scheduled date yet.',
+        [{ text: 'OK' }],
+      )
+      return
+    }
+    try {
+      const { status } = await Calendar.requestCalendarPermissionsAsync()
+      if (status !== 'granted') {
+        Alert.alert(
+          'Calendar access needed',
+          'To add this booking to your calendar, allow calendar access in Settings.',
+          [{ text: 'OK' }],
+        )
+        return
+      }
+
+      const calendars = await Calendar.getCalendarsAsync(
+        Calendar.EntityTypes.EVENT,
+      )
+      const defaultCal =
+        (Platform.OS === 'ios'
+          ? (await Calendar.getDefaultCalendarAsync().catch(() => null))
+          : null) ??
+        calendars.find((c) => c.allowsModifications) ??
+        calendars[0]
+
+      if (!defaultCal) {
+        Alert.alert(
+          'No calendar available',
+          'We could not find a writable calendar on this device.',
+          [{ text: 'OK' }],
+        )
+        return
+      }
+
+      const startMinutes = parseTimeToMinutes(data.timeLabel) ?? 12 * 60
+      const startDate = new Date(data.requestedDateIso + 'T00:00:00')
+      startDate.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0)
+
+      const durationMinutes = data.serviceDurationMinutes ?? 60
+      const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000)
+
+      await Calendar.createEventAsync(defaultCal.id, {
+        title: data.serviceName + ' with ' + data.providerName,
+        startDate,
+        endDate,
+        location: data.providerLocation ?? undefined,
+        notes:
+          'Booked on The Book.' +
+          (data.depositAmount > 0
+            ? ' Deposit charged: ' + money(data.depositAmount) + '.'
+            : ''),
+      })
+
+      Alert.alert(
+        'Added to calendar',
+        'This booking is on your calendar.',
+        [{ text: 'OK' }],
+      )
+    } catch (err) {
+      console.log('Add to calendar error:', err)
+      Alert.alert(
+        'Could not add event',
+        'Something went wrong adding this booking to your calendar.',
+        [{ text: 'OK' }],
+      )
+    }
   }
 
   // --- Missing-id state: screen opened directly without a booking ref ---
@@ -340,17 +438,10 @@ export default function BookingAccepted() {
             </View>
           </View>
 
-          {/* "Add to Calendar" stub stays per pass 2 scope; pass 3 wires expo-calendar. */}
           <TouchableOpacity
             style={styles.calendarBtn}
             activeOpacity={0.7}
-            onPress={() =>
-              Alert.alert(
-                'Coming soon',
-                'This feature is coming in the next update.',
-                [{ text: 'OK' }],
-              )
-            }
+            onPress={handleAddToCalendar}
           >
             <Feather name="calendar" size={15} color="#C8922A" />
             <Text style={styles.calendarBtnText}>Add to Calendar</Text>
