@@ -478,36 +478,25 @@ export default function WelcomeScreen() {
         onRequestClose={() => setShowDevMenu(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.devMenuSheet, { paddingBottom: insets.bottom + 16 }]}>
-            {/* Header */}
+          <View style={[styles.devMenuSheet, { marginTop: insets.top }]}>
+            {/* Header (pinned, close stays reachable) */}
             <View style={styles.devMenuHeader}>
               <View>
                 <Text style={styles.devMenuTitle}>DEV MENU</Text>
-                <Text style={styles.devMenuSub}>Jump to any screen instantly</Text>
+                <Text style={styles.devMenuSub}>Act as an account or jump to any screen</Text>
               </View>
               <TouchableOpacity onPress={() => setShowDevMenu(false)} style={styles.devCloseBtn}>
                 <Feather name="x" size={16} color="#F0E8D5" />
               </TouchableOpacity>
             </View>
 
-            {/* Site map shortcut */}
-            <TouchableOpacity
-              style={styles.siteMapBtn}
-              activeOpacity={0.8}
-              onPress={() => { setShowDevMenu(false); setShowSiteMap(true) }}
-            >
-              <Feather name="map" size={14} color="#C8922A" />
-              <Text style={styles.siteMapBtnText}>View full site map</Text>
-              <Feather name="chevron-right" size={14} color="#C8922A" />
-            </TouchableOpacity>
-
-            {/* Nav sections */}
+            {/* Scrollable body: account picker first, then site map, then nav */}
             <ScrollView
               style={styles.devMenuScroll}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 8 }}
+              showsVerticalScrollIndicator
+              contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
             >
-              {/* DEV-ONLY: Act as account impersonation picker */}
+              {/* DEV-ONLY: Act as account impersonation picker (kept at the top) */}
               <Text style={styles.devSectionLabel}>ACT AS ACCOUNT (DEV)</Text>
               <View style={styles.impersonateActiveRow}>
                 <Feather
@@ -558,6 +547,17 @@ export default function WelcomeScreen() {
                 <Text style={[styles.devNavLabel, { color: '#C8922A' }]}>
                   Stop impersonating / clear
                 </Text>
+              </TouchableOpacity>
+
+              {/* Site map shortcut (now scrolls with the rest) */}
+              <TouchableOpacity
+                style={styles.siteMapBtn}
+                activeOpacity={0.8}
+                onPress={() => { setShowDevMenu(false); setShowSiteMap(true) }}
+              >
+                <Feather name="map" size={14} color="#C8922A" />
+                <Text style={styles.siteMapBtnText}>View full site map</Text>
+                <Feather name="chevron-right" size={14} color="#C8922A" />
               </TouchableOpacity>
 
               {DEV_NAV.map((section) => (
@@ -734,15 +734,14 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
   },
   devMenuSheet: {
+    flex: 1,
     backgroundColor: '#0E0E0E',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
     borderColor: 'rgba(240,232,213,0.08)',
-    maxHeight: '85%',
     paddingTop: 20,
     paddingHorizontal: 20,
   },
@@ -782,7 +781,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    marginBottom: 16,
+    marginTop: 20,
+    marginBottom: 8,
   },
   siteMapBtnText: {
     flex: 1,
