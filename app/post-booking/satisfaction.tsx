@@ -6,7 +6,7 @@ import {
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 
 const RATING_RESPONSE: Record<number, string> = {
@@ -18,10 +18,24 @@ const RATING_RESPONSE: Record<number, string> = {
 }
 
 export default function SatisfactionCheck() {
+  const { id } = useLocalSearchParams<{ id?: string }>()
   const [rating, setRating] = useState(0)
   const [hoveredRating, setHoveredRating] = useState(0)
 
   const canContinue = rating > 0
+
+  // Thread the booking id + the star chosen here into the review screen.
+  // Param-only change, no UI edits.
+  function reviewHref() {
+    const parts: string[] = []
+    if (id) parts.push('id=' + id)
+    if (rating > 0) parts.push('rating=' + rating)
+    return '/post-booking/review' + (parts.length ? '?' + parts.join('&') : '')
+  }
+
+  function issueHref() {
+    return id ? '/post-booking/issue?id=' + id : '/post-booking/issue'
+  }
 
   return (
     <View style={styles.root}>
@@ -64,7 +78,7 @@ export default function SatisfactionCheck() {
               style={[styles.primaryBtn, !canContinue && styles.primaryBtnInactive]}
               activeOpacity={canContinue ? 0.85 : 1}
               disabled={!canContinue}
-              onPress={() => router.push('/post-booking/review')}
+              onPress={() => router.push(reviewHref() as never)}
             >
               <Text
                 style={[
@@ -79,7 +93,7 @@ export default function SatisfactionCheck() {
             <TouchableOpacity
               style={styles.secondaryBtn}
               activeOpacity={0.7}
-              onPress={() => router.push('/post-booking/issue')}
+              onPress={() => router.push(issueHref() as never)}
             >
               <Text style={styles.secondaryBtnText}>Something wasn't right</Text>
             </TouchableOpacity>

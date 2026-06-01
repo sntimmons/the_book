@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -8,10 +8,13 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
 
 const CATEGORIES = [
   'Great results',
@@ -26,9 +29,45 @@ const CATEGORIES = [
 
 export default function WriteReview() {
   const insets = useSafeAreaInsets()
+  const { user } = useAuth()
+  const { id, rating: ratingParam } = useLocalSearchParams<{
+    id?: string
+    rating?: string
+  }>()
+
   const [reviewText, setReviewText] = useState('')
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [focused, setFocused] = useState(false)
+  const [bookingProviderId, setBookingProviderId] = useState<string | null>(null)
+  const [posting, setPosting] = useState(false)
+
+  // Parsed star rating carried from satisfaction. Clamp to 1-5; default to
+  // null if missing or invalid so we can warn instead of inserting bad data.
+  const parsedRating = (() => {
+    const n = parseInt(ratingParam ?? '', 10)
+    if (Number.isFinite(n) && n >= 1 && n <= 5) return n
+    return null
+  })()
+
+  // Silently fetch the booking's provider_id so we can INSERT with the
+  // correct FK. No UI change.
+  const loadBooking = useCallback(async () => {
+    if (!id) return
+    try {
+      const { data } = await supabase
+        .from('bookings')
+        .select('provider_id')
+        .eq('id', id)
+        .maybeSingle<{ provider_id: string }>()
+      if (data?.provider_id) setBookingProviderId(data.provider_id)
+    } catch (err) {
+      console.log('Review load booking error:', err)
+    }
+  }, [id])
+
+  useEffect(() => {
+    loadBooking()
+  }, [loadBooking])
 
   function toggleCategory(cat: string) {
     setSelectedCategories((prev) => {
@@ -42,6 +81,85 @@ export default function WriteReview() {
 
   const canPost =
     reviewText.trim().length > 10 || selectedCategories.length > 0
+
+  async function handlePost() {
+    if (!canPost || posting) return
+    // Pre-flight guards. If any of these are missing the INSERT cannot
+    // satisfy the FK + RLS constraints, so warn instead of silently navigating
+    // to a "Review posted" screen that lies.
+    if (!id) {
+      Alert.alert(
+        'Missing booking',
+        'Open this review from a booking notification to post it.',
+        [{ text: 'OK' }],
+      )
+      return
+    }
+    if (!bookingProviderId) {
+      Alert.alert(
+        'Booking not found',
+        'We could not find the booking for this review.',
+        [{ text: 'OK' }],
+      )
+      return
+    }
+    if (!user) {
+      Alert.alert(
+        'Sign in needed',
+        'Sign in to post your review.',
+        [{ text: 'OK' }],
+      )
+      return
+    }
+    if (parsedRating == null) {
+      Alert.alert(
+        'Rating missing',
+        'Tap a star on the previous screen before posting.',
+        [{ text: 'OK' }],
+      )
+      return
+    }
+
+    setPosting(true)
+    try {
+      const { error } = await supabase.from('provider_reviews').insert({
+        booking_id: id,
+        provider_id: bookingProviderId,
+        reviewer_user_id: user.id,
+        rating: parsedRating,
+        review_text: reviewText.trim() || null,
+        tags: selectedCategories.length > 0 ? selectedCategories : null,
+      })
+
+      if (error) {
+        console.log('Post review error:', error)
+        Alert.alert(
+          'Could not post review',
+          'Something went wrong. Please try again.',
+          [{ text: 'OK' }],
+        )
+        setPosting(false)
+        return
+      }
+
+      setPosting(false)
+      router.push(('/post-booking/submitted?id=' + id) as never)
+    } catch (err) {
+      console.log('Post review exception:', err)
+      Alert.alert(
+        'Something went wrong',
+        'Please check your connection and try again.',
+        [{ text: 'OK' }],
+      )
+      setPosting(false)
+    }
+  }
+
+  // Skip writes nothing per spec. Route home rather than to submitted, so
+  // submitted only ever shows when a row was actually written.
+  function handleSkip() {
+    router.push('/(tabs)/' as never)
+  }
 
   return (
     <KeyboardAvoidingView
@@ -176,19 +294,19 @@ export default function WriteReview() {
         ]}
       >
         <TouchableOpacity
-          style={[styles.postBtn, !canPost && styles.postBtnInactive]}
-          activeOpacity={canPost ? 0.85 : 1}
-          disabled={!canPost}
-          onPress={() => router.push('/post-booking/submitted')}
+          style={[styles.postBtn, (!canPost || posting) && styles.postBtnInactive]}
+          activeOpacity={canPost && !posting ? 0.85 : 1}
+          disabled={!canPost || posting}
+          onPress={handlePost}
         >
-          <Text style={[styles.postBtnText, !canPost && styles.postBtnTextInactive]}>
+          <Text style={[styles.postBtnText, (!canPost || posting) && styles.postBtnTextInactive]}>
             Post Review
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.skipBtn}
           activeOpacity={0.7}
-          onPress={() => router.push('/post-booking/submitted')}
+          onPress={handleSkip}
         >
           <Text style={styles.skipText}>Skip, post without a written review</Text>
         </TouchableOpacity>

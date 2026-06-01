@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -8,10 +8,13 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
 
 const RATING_RESPONSE: Record<number, string> = {
   5: 'Great client!',
@@ -38,11 +41,83 @@ const MIXED_TAGS = [
   'Would not rebook',
 ]
 
+interface BookingForReview {
+  clientUserId: string
+  clientFirstName: string
+  serviceLabel: string
+}
+
+function formatShortDate(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso + 'T00:00:00')
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 export default function ProviderReview() {
   const insets = useSafeAreaInsets()
+  const { user } = useAuth()
+  const { id } = useLocalSearchParams<{ id?: string }>()
+
   const [rating, setRating] = useState(0)
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [note, setNote] = useState('')
+  const [booking, setBooking] = useState<BookingForReview | null>(null)
+  const [providerDbId, setProviderDbId] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+
+  // Load the real booking + client + service. Per spec: data only, no restyle.
+  const load = useCallback(async () => {
+    if (!id || !user) return
+    try {
+      const { data: bookingRow } = await supabase
+        .from('bookings')
+        .select('id, user_id, service_name, requested_date, provider_id')
+        .eq('id', id)
+        .maybeSingle<{
+          id: string
+          user_id: string
+          service_name: string | null
+          requested_date: string | null
+          provider_id: string
+        }>()
+      if (!bookingRow) return
+
+      const { data: providerRow } = await supabase
+        .from('providers')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle<{ id: string }>()
+      setProviderDbId(providerRow?.id ?? null)
+
+      const { data: clientRow } = await supabase
+        .from('clients')
+        .select('name')
+        .eq('id', bookingRow.user_id)
+        .maybeSingle<{ name: string | null }>()
+
+      const clientName = clientRow?.name ?? 'Client'
+      const dateLabel = formatShortDate(bookingRow.requested_date)
+      const serviceLabel = [
+        bookingRow.service_name ?? 'Service',
+        dateLabel,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+
+      setBooking({
+        clientUserId: bookingRow.user_id,
+        clientFirstName: clientName.split(' ')[0] || clientName,
+        serviceLabel,
+      })
+    } catch (err) {
+      console.log('Provider review load error:', err)
+    }
+  }, [id, user])
+
+  useEffect(() => {
+    load()
+  }, [load])
 
   function handleRate(value: number) {
     setRating(value)
@@ -58,7 +133,71 @@ export default function ProviderReview() {
   }
 
   const tags = rating >= 4 ? POSITIVE_TAGS : MIXED_TAGS
-  const canSubmit = rating > 0
+  const canSubmit = rating > 0 && !submitting
+
+  async function handleSubmit() {
+    if (!canSubmit) return
+    if (!id) {
+      Alert.alert(
+        'Missing booking',
+        'Open this from a completed booking to submit a rating.',
+        [{ text: 'OK' }],
+      )
+      return
+    }
+    if (!booking) {
+      Alert.alert('Booking not found', 'We could not load this booking.', [
+        { text: 'OK' },
+      ])
+      return
+    }
+    if (!providerDbId) {
+      Alert.alert(
+        'Provider profile missing',
+        'We could not find your provider profile.',
+        [{ text: 'OK' }],
+      )
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const { error } = await supabase.from('client_reviews').insert({
+        booking_id: id,
+        client_user_id: booking.clientUserId,
+        reviewer_provider_id: providerDbId,
+        rating,
+        review_text: note.trim() || null,
+        tags: selectedTags.length > 0 ? selectedTags : null,
+      })
+
+      if (error) {
+        console.log('Client review insert error:', error)
+        Alert.alert(
+          'Could not submit rating',
+          'Something went wrong. Please try again.',
+          [{ text: 'OK' }],
+        )
+        setSubmitting(false)
+        return
+      }
+
+      setSubmitting(false)
+      router.push('/dashboard/provider' as never)
+    } catch (err) {
+      console.log('Client review exception:', err)
+      Alert.alert(
+        'Something went wrong',
+        'Please check your connection and try again.',
+        [{ text: 'OK' }],
+      )
+      setSubmitting(false)
+    }
+  }
+
+  function handleSkip() {
+    router.push('/dashboard/provider' as never)
+  }
 
   return (
     <KeyboardAvoidingView
@@ -82,8 +221,12 @@ export default function ProviderReview() {
         <View style={styles.avatar}>
           <Feather name="user" size={26} color="rgba(240,232,213,0.4)" />
         </View>
-        <Text style={styles.title}>How was Jasmine as a client?</Text>
-        <Text style={styles.serviceDate}>Classic Full Set · May 28</Text>
+        <Text style={styles.title}>
+          How was {booking?.clientFirstName ?? 'your client'} as a client?
+        </Text>
+        <Text style={styles.serviceDate}>
+          {booking?.serviceLabel ?? ' '}
+        </Text>
 
         {/* Star rating */}
         <View style={styles.ratingSection}>
@@ -157,7 +300,7 @@ export default function ProviderReview() {
           style={[styles.submitBtn, !canSubmit && styles.submitBtnInactive]}
           activeOpacity={canSubmit ? 0.85 : 1}
           disabled={!canSubmit}
-          onPress={() => router.push('/dashboard/provider')}
+          onPress={handleSubmit}
         >
           <Text style={[styles.submitBtnText, !canSubmit && styles.submitBtnTextInactive]}>
             Submit Rating
@@ -166,7 +309,7 @@ export default function ProviderReview() {
         <TouchableOpacity
           style={styles.skipLink}
           activeOpacity={0.7}
-          onPress={() => router.push('/dashboard/provider')}
+          onPress={handleSkip}
         >
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
