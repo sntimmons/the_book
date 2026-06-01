@@ -25,6 +25,33 @@ function toIsoDate(displayDate: string): string {
   return `${yyyy}-${mm}-${dd}`
 }
 
+// Assemble an ISO timestamp from a YYYY-MM-DD date and a "H:MM AM/PM" time
+// using numeric parts. Hermes (React Native's engine) cannot parse locale
+// strings like "June 21, 2026 11:00 AM" via new Date(), so we never rely on
+// string parsing. Returns null if inputs are missing or malformed, so a bad
+// value can never throw "Date value out of bounds" (appointment_time is
+// nullable).
+function buildAppointmentTime(
+  isoDate: string | null | undefined,
+  displayTime: string | null | undefined,
+): string | null {
+  if (!isoDate || !displayTime) return null
+  const dateMatch = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const timeMatch = displayTime.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
+  if (!dateMatch || !timeMatch) return null
+  let hour = parseInt(timeMatch[1], 10) % 12
+  if (/PM/i.test(timeMatch[3])) hour += 12
+  const d = new Date(
+    parseInt(dateMatch[1], 10),
+    parseInt(dateMatch[2], 10) - 1,
+    parseInt(dateMatch[3], 10),
+    hour,
+    parseInt(timeMatch[2], 10),
+  )
+  if (Number.isNaN(d.getTime())) return null
+  return d.toISOString()
+}
+
 function money(n: number): string {
   return '$' + Number(n).toFixed(2)
 }
@@ -69,14 +96,11 @@ export default function BookPayment() {
     setProcessError('')
 
     try {
-      // rawDate is YYYY-MM-DD (set in book/datetime.tsx). selectedDate is
-      // the display string ("May 28, 2026") and selectedTime is "1:00 PM".
-      // Build appointment_time from the display strings since the Date
-      // constructor parses them reliably on iOS.
+      // rawDate is YYYY-MM-DD (set in book/datetime.tsx) and selectedTime is
+      // "H:MM AM/PM". Build appointment_time from numeric parts; if it cannot
+      // be assembled it stays null rather than crashing the save.
       const dateForRow = rawDate || toIsoDate(selectedDate)
-      const appointmentTime = new Date(
-        `${selectedDate} ${selectedTime}`,
-      ).toISOString()
+      const appointmentTime = buildAppointmentTime(rawDate, selectedTime)
 
       const { data: booking, error } = await supabase
         .from('bookings')
