@@ -18,6 +18,8 @@ import { StatusBar } from 'expo-status-bar'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { router } from 'expo-router'
 import { Feather } from '@expo/vector-icons'
+import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
 const SLIDES = [
   {
@@ -63,6 +65,29 @@ const STATUS_COLOR: Record<RouteStatus, string> = {
   Stub: '#C8922A',
   Planned: 'rgba(240,232,213,0.3)',
 }
+
+// ─── DEV-ONLY impersonation accounts ────────────────────────────────────────
+// DEV-ONLY IMPERSONATION. This works because RLS is currently disabled.
+// DO NOT SHIP. Removing this MUST happen together with enabling RLS (Phase 4 hardening).
+// Providers list a providers.id; we resolve it to providers.user_id (the auth id)
+// because screens impersonate by auth id, not providers.id. Test Client is already
+// an auth id.
+type ImpersonationAccount =
+  | { kind: 'provider'; label: string; providerId: string }
+  | { kind: 'client'; label: string; authId: string }
+
+const IMPERSONATION_ACCOUNTS: ImpersonationAccount[] = [
+  { kind: 'provider', label: 'Nia Laurent (lash tech)', providerId: '05df1125-9149-4f52-8f06-cc580e5665b4' },
+  { kind: 'provider', label: 'Kendra Simmons', providerId: '4024fde8-6b72-4e1b-9bd2-84351e56e6bd' },
+  { kind: 'provider', label: 'Marcus Delray', providerId: '6c20dce6-9063-4587-8b3c-1dc5a2323f6d' },
+  { kind: 'provider', label: 'Zara Baptise', providerId: '2e8f4bf1-73f1-4084-9e1b-68b46f149d43' },
+  { kind: 'provider', label: 'Stephen', providerId: '117dabc3-527d-46b7-84ae-1ab2222264e9' },
+  { kind: 'client', label: 'Test Client', authId: '4afcb22e-502e-4f56-980a-38c260871c76' },
+]
+
+const IMPERSONATION_PROVIDER_IDS = IMPERSONATION_ACCOUNTS.filter(
+  (a): a is Extract<ImpersonationAccount, { kind: 'provider' }> => a.kind === 'provider',
+).map((a) => a.providerId)
 
 const DEV_NAV: NavSection[] = [
   {
@@ -231,6 +256,72 @@ export default function WelcomeScreen() {
   const lastTap = useRef(0)
   const [showDevMenu, setShowDevMenu] = useState(false)
   const [showSiteMap, setShowSiteMap] = useState(false)
+
+  // DEV-ONLY impersonation. providerUserIds maps providers.id -> providers.user_id.
+  const { impersonatedUserId, setImpersonatedUserId } = useAuth()
+  const [providerUserIds, setProviderUserIds] = useState<Record<string, string>>({})
+
+  // DEV-ONLY: load each staged provider's auth user_id once the dev menu opens.
+  useEffect(() => {
+    if (!__DEV__ || !showDevMenu) return
+    supabase
+      .from('providers')
+      .select('id, user_id')
+      .in('id', IMPERSONATION_PROVIDER_IDS)
+      .then(({ data }) => {
+        if (!data) return
+        const map: Record<string, string> = {}
+        for (const row of data as { id: string; user_id: string | null }[]) {
+          if (row.user_id) map[row.id] = row.user_id
+        }
+        setProviderUserIds(map)
+      })
+  }, [showDevMenu])
+
+  // DEV-ONLY: resolve a staged account to its auth id and set the override.
+  async function impersonate(account: ImpersonationAccount) {
+    if (!__DEV__) return
+    let authId: string | null = null
+    if (account.kind === 'client') {
+      authId = account.authId
+    } else {
+      authId = providerUserIds[account.providerId] ?? null
+      if (!authId) {
+        // Not loaded yet (menu just opened); fetch this one on demand.
+        const { data } = await supabase
+          .from('providers')
+          .select('user_id')
+          .eq('id', account.providerId)
+          .maybeSingle()
+        authId = (data as { user_id: string | null } | null)?.user_id ?? null
+      }
+    }
+    if (!authId) {
+      Alert.alert('Could not impersonate', `No auth user_id found for ${account.label}.`)
+      return
+    }
+    setImpersonatedUserId(authId)
+    setShowDevMenu(false)
+    Alert.alert('Now acting as', `${account.label}\n\nauth id: ${authId}`)
+  }
+
+  // DEV-ONLY: label of the account currently being impersonated, if any.
+  function activeImpersonationLabel(): string | null {
+    if (!impersonatedUserId) return null
+    for (const account of IMPERSONATION_ACCOUNTS) {
+      if (account.kind === 'client' && account.authId === impersonatedUserId) {
+        return account.label
+      }
+      if (
+        account.kind === 'provider' &&
+        providerUserIds[account.providerId] === impersonatedUserId
+      ) {
+        return account.label
+      }
+    }
+    // Impersonating an id we cannot name yet (provider ids not loaded).
+    return impersonatedUserId
+  }
 
   // Load video via Asset system (works in Expo Go)
   useEffect(() => {
@@ -416,6 +507,59 @@ export default function WelcomeScreen() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={{ paddingBottom: 8 }}
             >
+              {/* DEV-ONLY: Act as account impersonation picker */}
+              <Text style={styles.devSectionLabel}>ACT AS ACCOUNT (DEV)</Text>
+              <View style={styles.impersonateActiveRow}>
+                <Feather
+                  name={activeImpersonationLabel() ? 'user-check' : 'user'}
+                  size={13}
+                  color={activeImpersonationLabel() ? '#4CAF50' : 'rgba(240,232,213,0.3)'}
+                />
+                <Text style={styles.devNavLabel}>
+                  {activeImpersonationLabel()
+                    ? `Active: ${activeImpersonationLabel()}`
+                    : 'Not impersonating (real session)'}
+                </Text>
+              </View>
+              {IMPERSONATION_ACCOUNTS.map((account) => {
+                const id =
+                  account.kind === 'client'
+                    ? account.authId
+                    : providerUserIds[account.providerId]
+                const isActive = !!id && id === impersonatedUserId
+                return (
+                  <TouchableOpacity
+                    key={account.label}
+                    style={styles.devNavItem}
+                    activeOpacity={0.7}
+                    onPress={() => impersonate(account)}
+                  >
+                    <Feather
+                      name={isActive ? 'check' : account.kind === 'client' ? 'user' : 'briefcase'}
+                      size={13}
+                      color={isActive ? '#4CAF50' : 'rgba(240,232,213,0.3)'}
+                    />
+                    <Text style={styles.devNavLabel}>
+                      {account.label}
+                      {account.kind === 'client' ? '  (client)' : '  (provider)'}
+                    </Text>
+                  </TouchableOpacity>
+                )
+              })}
+              <TouchableOpacity
+                style={styles.devNavItem}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setImpersonatedUserId(null)
+                  Alert.alert('Stopped impersonating', 'Back to the real session.')
+                }}
+              >
+                <Feather name="x-circle" size={13} color="#C8922A" />
+                <Text style={[styles.devNavLabel, { color: '#C8922A' }]}>
+                  Stop impersonating / clear
+                </Text>
+              </TouchableOpacity>
+
               {DEV_NAV.map((section) => (
                 <View key={section.label}>
                   <Text style={styles.devSectionLabel}>{section.label}</Text>
@@ -671,6 +815,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(240,232,213,0.75)',
     fontFamily: 'Manrope_400Regular',
+  },
+  impersonateActiveRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
   },
 
   // ── Site Map ──────────────────────────────────────────────────────
