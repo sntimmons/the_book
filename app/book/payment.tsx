@@ -114,7 +114,7 @@ export default function BookPayment() {
           appointment_time: appointmentTime,
           message: bookingMessage || null,
           status: 'pending',
-          payment_status: 'not_charged',
+          payment_status: 'unpaid',
           payment_amount: servicePrice,
           created_at: new Date().toISOString(),
         })

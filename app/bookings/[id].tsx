@@ -464,7 +464,7 @@ export default function BookingDetailScreen() {
 
 function PaymentBadge({ status }: { status: string | null }) {
   if (!status) return null
-  if (status === 'not_charged') {
+  if (status === 'unpaid') {
     return (
       <View style={[styles.payBadge, styles.payBadgeNeutral]}>
         <Text style={styles.payBadgeTextNeutral}>Not charged yet</Text>
