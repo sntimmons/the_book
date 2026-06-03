@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
 import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { supabase } from '../../lib/supabase'
 
 const RATING_RESPONSE: Record<number, string> = {
   5: 'Amazing!',
@@ -21,6 +22,38 @@ export default function SatisfactionCheck() {
   const { id } = useLocalSearchParams<{ id?: string }>()
   const [rating, setRating] = useState(0)
   const [hoveredRating, setHoveredRating] = useState(0)
+  const [providerName, setProviderName] = useState<string | null>(null)
+
+  // Resolve the real provider name from the booking (bookings -> provider_id ->
+  // providers.display_name). Mirrors the submitted.tsx pattern. Data only.
+  const loadProvider = useCallback(async () => {
+    if (!id) return
+    try {
+      const { data: booking } = await supabase
+        .from('bookings')
+        .select('provider_id')
+        .eq('id', id)
+        .maybeSingle<{ provider_id: string }>()
+      if (!booking?.provider_id) return
+
+      const { data: prov } = await supabase
+        .from('providers')
+        .select('display_name')
+        .eq('id', booking.provider_id)
+        .maybeSingle<{ display_name: string | null }>()
+      if (prov?.display_name) setProviderName(prov.display_name)
+    } catch (err) {
+      console.log('Satisfaction load provider error:', err)
+    }
+  }, [id])
+
+  useEffect(() => {
+    loadProvider()
+  }, [loadProvider])
+
+  const providerFirstName = providerName
+    ? providerName.split(' ')[0]
+    : 'your provider'
 
   const canContinue = rating > 0
 
@@ -45,7 +78,7 @@ export default function SatisfactionCheck() {
           <View style={styles.avatar}>
             <Feather name="user" size={26} color="rgba(240,232,213,0.4)" />
           </View>
-          <Text style={styles.title}>How was your appointment with Nia?</Text>
+          <Text style={styles.title}>How was your appointment with {providerFirstName}?</Text>
           <Text style={styles.serviceDate}>Classic Full Set · May 28</Text>
 
           {/* Star rating */}

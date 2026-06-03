@@ -39,6 +39,7 @@ export default function WriteReview() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [focused, setFocused] = useState(false)
   const [bookingProviderId, setBookingProviderId] = useState<string | null>(null)
+  const [providerName, setProviderName] = useState<string | null>(null)
   const [posting, setPosting] = useState(false)
 
   // Parsed star rating carried from satisfaction. Clamp to 1-5; default to
@@ -49,8 +50,8 @@ export default function WriteReview() {
     return null
   })()
 
-  // Silently fetch the booking's provider_id so we can INSERT with the
-  // correct FK. No UI change.
+  // Fetch the booking's provider_id (for the INSERT FK) and the provider's
+  // display_name (to show the real name instead of a hardcoded one).
   const loadBooking = useCallback(async () => {
     if (!id) return
     try {
@@ -59,11 +60,24 @@ export default function WriteReview() {
         .select('provider_id')
         .eq('id', id)
         .maybeSingle<{ provider_id: string }>()
-      if (data?.provider_id) setBookingProviderId(data.provider_id)
+      if (data?.provider_id) {
+        setBookingProviderId(data.provider_id)
+        const { data: prov } = await supabase
+          .from('providers')
+          .select('display_name')
+          .eq('id', data.provider_id)
+          .maybeSingle<{ display_name: string | null }>()
+        if (prov?.display_name) setProviderName(prov.display_name)
+      }
     } catch (err) {
       console.log('Review load booking error:', err)
     }
   }, [id])
+
+  const providerFullName = providerName ?? 'your provider'
+  const providerFirstName = providerName
+    ? providerName.split(' ')[0]
+    : 'your provider'
 
   useEffect(() => {
     loadBooking()
@@ -192,7 +206,7 @@ export default function WriteReview() {
           <View style={styles.avatar}>
             <Feather name="user" size={22} color="rgba(240,232,213,0.4)" />
           </View>
-          <Text style={styles.providerName}>Nia Laurent</Text>
+          <Text style={styles.providerName}>{providerFullName}</Text>
           <Text style={styles.serviceDate}>Classic Full Set · May 28</Text>
 
           <View style={styles.starDisplay}>
@@ -235,7 +249,7 @@ export default function WriteReview() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>YOUR REVIEW</Text>
           <Text style={styles.helperBlock}>
-            Tell others what made this appointment great. Your review helps Nia grow her business.
+            Tell others what made this appointment great. Your review helps {providerFirstName} grow her business.
           </Text>
 
           <View style={[styles.inputContainer, focused && styles.inputContainerFocused]}>
@@ -259,7 +273,7 @@ export default function WriteReview() {
         <View style={styles.rebookSection}>
           <View style={styles.rebookRow}>
             <View style={styles.rebookLeft}>
-              <Text style={styles.rebookTitle}>Book Nia again</Text>
+              <Text style={styles.rebookTitle}>Book {providerFirstName} again</Text>
               <Text style={styles.rebookSub}>She has availability next week</Text>
             </View>
             <TouchableOpacity
