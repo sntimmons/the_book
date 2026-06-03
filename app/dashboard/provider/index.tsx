@@ -58,6 +58,12 @@ function todayIsoDate(): string {
   return new Date().toISOString().split('T')[0]
 }
 
+// Monotonic counter so each mounted dashboard gets a unique realtime
+// channel name. Two concurrent mounts (e.g. completing a booking and
+// navigating back) would otherwise share the fixed 'provider-bookings'
+// channel and throw "cannot add postgres_changes after subscribe".
+let channelInstanceSeq = 0
+
 const QUICK_ACTIONS = [
   { icon: 'plus-circle', label: 'Add Service', route: '/dashboard/provider/services' },
   { icon: 'clock', label: 'Set Hours', route: '/dashboard/provider/availability' },
@@ -114,6 +120,9 @@ export default function ProviderDashboard() {
   const [todayBookings, setTodayBookings] = useState<TodayBooking[]>([])
   const [earnings, setEarnings] = useState<Earnings>(ZERO_EARNINGS)
   const [requestsLoading, setRequestsLoading] = useState(true)
+
+  const channelIdRef = useRef<number | null>(null)
+  if (channelIdRef.current === null) channelIdRef.current = ++channelInstanceSeq
 
   const fetchAllDashboardData = useCallback(async () => {
     if (!user) {
@@ -223,7 +232,7 @@ export default function ProviderDashboard() {
     // cheap. Realtime must be enabled for the bookings table in Supabase
     // for this to fire.
     const channel = supabase
-      .channel('provider-bookings')
+      .channel('provider-bookings-' + channelIdRef.current)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'bookings' },

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '../lib/supabase'
 
 export interface Provider {
@@ -179,15 +179,14 @@ export function useProviderSearch(
   const [results, setResults] = useState<Provider[]>([])
   const [loading, setLoading] = useState(false)
 
-  useEffect(() => {
-    if (query.length < 2 && !categoryId) {
-      setResults([])
-      return
-    }
-    searchProviders()
-  }, [query, categoryId, filters])
+  // `filters` is passed as an inline object literal from the caller, so its
+  // reference changes on every render. Depending on the object directly made
+  // this effect re-run each render (-> setState -> render -> repeat), which is
+  // the "Maximum update depth exceeded" loop. Key the work off the primitive
+  // values the search actually uses instead, via a stable useCallback.
+  const minRating = filters?.minRating
 
-  const searchProviders = async () => {
+  const searchProviders = useCallback(async () => {
     try {
       setLoading(true)
 
@@ -209,8 +208,8 @@ export function useProviderSearch(
         dbQuery = dbQuery.eq('category_id', categoryId)
       }
 
-      if (filters?.minRating) {
-        dbQuery = dbQuery.gte('rating', filters.minRating)
+      if (minRating) {
+        dbQuery = dbQuery.gte('rating', minRating)
       }
 
       dbQuery = dbQuery.order('rating', { ascending: false }).limit(20)
@@ -223,7 +222,15 @@ export function useProviderSearch(
     } finally {
       setLoading(false)
     }
-  }
+  }, [query, categoryId, minRating])
+
+  useEffect(() => {
+    if (query.length < 2 && !categoryId) {
+      setResults([])
+      return
+    }
+    searchProviders()
+  }, [query, categoryId, searchProviders])
 
   return { results, loading }
 }
