@@ -27,6 +27,14 @@ const CATEGORIES = [
   'Exceeded expectations',
 ]
 
+// Short date label ("May 28"), matching the post-booking sibling screens.
+function formatShortDate(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso + 'T00:00:00')
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 export default function WriteReview() {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
@@ -40,6 +48,8 @@ export default function WriteReview() {
   const [focused, setFocused] = useState(false)
   const [bookingProviderId, setBookingProviderId] = useState<string | null>(null)
   const [providerName, setProviderName] = useState<string | null>(null)
+  const [serviceName, setServiceName] = useState<string | null>(null)
+  const [requestedDate, setRequestedDate] = useState<string | null>(null)
   const [posting, setPosting] = useState(false)
 
   // Parsed star rating carried from satisfaction. Clamp to 1-5; default to
@@ -57,9 +67,15 @@ export default function WriteReview() {
     try {
       const { data } = await supabase
         .from('bookings')
-        .select('provider_id')
+        .select('provider_id, service_name, requested_date')
         .eq('id', id)
-        .maybeSingle<{ provider_id: string }>()
+        .maybeSingle<{
+          provider_id: string
+          service_name: string | null
+          requested_date: string | null
+        }>()
+      if (data?.service_name) setServiceName(data.service_name)
+      if (data?.requested_date) setRequestedDate(data.requested_date)
       if (data?.provider_id) {
         setBookingProviderId(data.provider_id)
         const { data: prov } = await supabase
@@ -78,6 +94,12 @@ export default function WriteReview() {
   const providerFirstName = providerName
     ? providerName.split(' ')[0]
     : 'your provider'
+
+  // Real service + date from the booking, e.g. "Classic Full Set · May 28".
+  // Falls back to whatever is available rather than a hardcoded value.
+  const serviceLine = [serviceName, formatShortDate(requestedDate)]
+    .filter(Boolean)
+    .join(' · ')
 
   useEffect(() => {
     loadBooking()
@@ -207,7 +229,7 @@ export default function WriteReview() {
             <Feather name="user" size={22} color="rgba(240,232,213,0.4)" />
           </View>
           <Text style={styles.providerName}>{providerFullName}</Text>
-          <Text style={styles.serviceDate}>Classic Full Set · May 28</Text>
+          <Text style={styles.serviceDate}>{serviceLine}</Text>
 
           <View style={styles.starDisplay}>
             {[0, 1, 2, 3, 4].map((i) => (

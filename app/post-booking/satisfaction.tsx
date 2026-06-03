@@ -18,23 +18,41 @@ const RATING_RESPONSE: Record<number, string> = {
   1: 'Not good',
 }
 
+// Short date label ("May 28"), matching the post-booking sibling screens.
+function formatShortDate(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso + 'T00:00:00')
+  if (isNaN(d.getTime())) return iso
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
+
 export default function SatisfactionCheck() {
   const { id } = useLocalSearchParams<{ id?: string }>()
   const [rating, setRating] = useState(0)
   const [hoveredRating, setHoveredRating] = useState(0)
   const [providerName, setProviderName] = useState<string | null>(null)
+  const [serviceName, setServiceName] = useState<string | null>(null)
+  const [requestedDate, setRequestedDate] = useState<string | null>(null)
 
-  // Resolve the real provider name from the booking (bookings -> provider_id ->
-  // providers.display_name). Mirrors the submitted.tsx pattern. Data only.
+  // Resolve the real provider name + service/date from the booking
+  // (bookings -> provider_id -> providers.display_name). Mirrors the
+  // submitted.tsx pattern. Data only.
   const loadProvider = useCallback(async () => {
     if (!id) return
     try {
       const { data: booking } = await supabase
         .from('bookings')
-        .select('provider_id')
+        .select('provider_id, service_name, requested_date')
         .eq('id', id)
-        .maybeSingle<{ provider_id: string }>()
-      if (!booking?.provider_id) return
+        .maybeSingle<{
+          provider_id: string
+          service_name: string | null
+          requested_date: string | null
+        }>()
+      if (!booking) return
+      if (booking.service_name) setServiceName(booking.service_name)
+      if (booking.requested_date) setRequestedDate(booking.requested_date)
+      if (!booking.provider_id) return
 
       const { data: prov } = await supabase
         .from('providers')
@@ -54,6 +72,11 @@ export default function SatisfactionCheck() {
   const providerFirstName = providerName
     ? providerName.split(' ')[0]
     : 'your provider'
+
+  // Real service + date from the booking, e.g. "Classic Full Set · May 28".
+  const serviceLine = [serviceName, formatShortDate(requestedDate)]
+    .filter(Boolean)
+    .join(' · ')
 
   const canContinue = rating > 0
 
@@ -79,7 +102,7 @@ export default function SatisfactionCheck() {
             <Feather name="user" size={26} color="rgba(240,232,213,0.4)" />
           </View>
           <Text style={styles.title}>How was your appointment with {providerFirstName}?</Text>
-          <Text style={styles.serviceDate}>Classic Full Set · May 28</Text>
+          <Text style={styles.serviceDate}>{serviceLine}</Text>
 
           {/* Star rating */}
           <View style={styles.ratingSection}>
