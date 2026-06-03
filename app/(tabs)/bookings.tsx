@@ -381,7 +381,7 @@ function CardActions({
     return (
       <>
         <ActionButton label="Book Again" onPress={() => router.push(`/providers/${providerId}` as never)} />
-        <ActionButton label="Leave Review" onPress={() => router.push('/post-booking/satisfaction' as never)} />
+        <ActionButton label="Leave Review" onPress={() => router.push(`/post-booking/satisfaction?id=${bookingId}` as never)} />
       </>
     )
   }

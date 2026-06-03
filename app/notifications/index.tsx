@@ -107,6 +107,12 @@ export default function NotificationsScreen() {
       router.push(`/post-booking/declined?id=${notif.bookingId}` as never)
       return
     }
+    // A completed booking should lead into the review flow, not the read-only
+    // booking detail. satisfaction -> review -> submitted carries the id through.
+    if (notif.type === 'booking_completed') {
+      router.push(`/post-booking/satisfaction?id=${notif.bookingId}` as never)
+      return
+    }
     router.push(`/bookings/${notif.bookingId}` as never)
   }
 
