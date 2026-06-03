@@ -168,6 +168,27 @@ export default function WriteReview() {
       })
 
       if (error) {
+        // One review per booking (unique on booking_id). A duplicate is an
+        // expected case, not a failure: say so plainly and move the user
+        // forward, since the review already exists.
+        const isDuplicate =
+          error.code === '23505' ||
+          (error.message?.includes('provider_reviews_booking_id_key') ?? false)
+        if (isDuplicate) {
+          setPosting(false)
+          Alert.alert(
+            'Already reviewed',
+            'You have already reviewed this booking.',
+            [
+              {
+                text: 'OK',
+                onPress: () =>
+                  router.push(('/post-booking/submitted?id=' + id) as never),
+              },
+            ],
+          )
+          return
+        }
         console.log('Post review error:', error)
         Alert.alert(
           'Could not post review',
