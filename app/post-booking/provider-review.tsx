@@ -183,7 +183,7 @@ export default function ProviderReview() {
       }
 
       setSubmitting(false)
-      router.push('/dashboard/provider' as never)
+      router.replace('/dashboard/provider' as never)
     } catch (err) {
       console.log('Client review exception:', err)
       Alert.alert(
@@ -196,7 +196,7 @@ export default function ProviderReview() {
   }
 
   function handleSkip() {
-    router.push('/dashboard/provider' as never)
+    router.replace('/dashboard/provider' as never)
   }
 
   return (

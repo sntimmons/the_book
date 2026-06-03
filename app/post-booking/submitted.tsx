@@ -111,7 +111,7 @@ export default function ReviewSubmitted() {
         <TouchableOpacity
           style={styles.homeBtn}
           activeOpacity={0.85}
-          onPress={() => router.push('/(tabs)/')}
+          onPress={() => router.replace('/(tabs)/')}
         >
           <Text style={styles.homeBtnText}>Back to Home</Text>
         </TouchableOpacity>

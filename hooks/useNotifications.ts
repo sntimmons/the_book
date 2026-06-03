@@ -1,6 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+
+// Monotonic counter so each hook instance gets a unique realtime channel name.
+// Two concurrent mounts (e.g. router.push stacking a duplicate screen) must not
+// share a channel topic, or the second subscribe throws
+// "cannot add postgres_changes after subscribe" and blanks the screen.
+let channelInstanceSeq = 0
 
 // In-app notifications are derived from the bookings table for now since
 // there is no notifications table in Supabase. A notification is just an
@@ -53,6 +59,10 @@ export function useNotifications() {
   const [unreadCount, setUnreadCount] = useState(0)
   const [readIds, setReadIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
+
+  // Stable unique suffix for this hook instance's realtime channel.
+  const channelIdRef = useRef<number | null>(null)
+  if (channelIdRef.current === null) channelIdRef.current = ++channelInstanceSeq
 
   const fetchNotifications = useCallback(async () => {
     if (!user) {
@@ -259,7 +269,7 @@ export function useNotifications() {
     // Requires the bookings table to have Realtime enabled in the
     // Supabase dashboard (Database -> Replication).
     const channel = supabase
-      .channel('notifications-' + user.id)
+      .channel('notifications-' + user.id + '-' + channelIdRef.current)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'bookings' },

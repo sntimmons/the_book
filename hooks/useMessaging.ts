@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+
+// Monotonic counter so each hook instance gets a unique realtime channel name.
+// Two concurrent mounts must not share a channel topic, or the second subscribe
+// throws "cannot add postgres_changes after subscribe" and blanks the screen.
+let channelInstanceSeq = 0
 
 // IMPORTANT: live Supabase has a SINGULAR `conversation` table, not the
 // plural `conversations` the spec assumed. Confirmed via REST probe:
@@ -60,6 +65,10 @@ export function useConversations() {
   const { user } = useAuth()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(true)
+
+  // Stable unique suffix for this hook instance's realtime channel.
+  const channelIdRef = useRef<number | null>(null)
+  if (channelIdRef.current === null) channelIdRef.current = ++channelInstanceSeq
 
   const fetchConversations = useCallback(async () => {
     if (!user) {
@@ -160,7 +169,7 @@ export function useConversations() {
     // Realtime: refetch the whole inbox on any conversation change or new
     // message. Cheap enough for an inbox of <100 rows.
     const channel = supabase
-      .channel('conversations-' + user.id)
+      .channel('conversations-' + user.id + '-' + channelIdRef.current)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'conversation' },
@@ -186,6 +195,10 @@ export function useMessages(conversationId: string) {
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+
+  // Stable unique suffix for this hook instance's realtime channel.
+  const channelIdRef = useRef<number | null>(null)
+  if (channelIdRef.current === null) channelIdRef.current = ++channelInstanceSeq
 
   const fetchMessages = useCallback(async () => {
     if (!conversationId || !user) {
@@ -238,7 +251,7 @@ export function useMessages(conversationId: string) {
     markMessagesRead()
 
     const channel = supabase
-      .channel('messages-' + conversationId)
+      .channel('messages-' + conversationId + '-' + channelIdRef.current)
       .on(
         'postgres_changes',
         {
