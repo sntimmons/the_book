@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   View,
   Text,
   ActivityIndicator,
   TouchableOpacity,
   StyleSheet,
+  Alert,
 } from 'react-native'
 import { useLocalSearchParams, router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -12,6 +13,7 @@ import ProviderProfile, { ProviderData, ProviderService } from '@/components/Pro
 import { useBookingStore } from '@/store/bookingStore'
 import { useProvider, useCategories } from '../../hooks/useProviders'
 import { useAuth } from '@/context/AuthContext'
+import { supabase } from '@/lib/supabase'
 import { getOrCreateConversation } from '../../hooks/useMessaging'
 
 export default function ProviderProfilePage() {
@@ -22,6 +24,79 @@ export default function ProviderProfilePage() {
   const { setProvider } = useBookingStore()
   const { user } = useAuth()
   const [isFollowing, setIsFollowing] = useState(false)
+  const [followerCount, setFollowerCount] = useState(0)
+  const [followBusy, setFollowBusy] = useState(false)
+
+  // Load real follow state + a live follower count once the provider (and, for
+  // the per-user state, the auth user) resolve. Without this the button always
+  // reset to "Follow" on reload regardless of the persisted row.
+  useEffect(() => {
+    let cancelled = false
+    const providerId = provider?.id
+    if (!providerId) return
+    ;(async () => {
+      // Live follower count — count rows rather than trusting the stale
+      // providers.follower_count column (no trigger maintains it).
+      const { count } = await supabase
+        .from('provider_follows')
+        .select('*', { count: 'exact', head: true })
+        .eq('provider_id', providerId)
+      if (!cancelled && count != null) setFollowerCount(count)
+
+      // Does THIS user already follow?
+      if (user?.id) {
+        const { data: mine } = await supabase
+          .from('provider_follows')
+          .select('id')
+          .eq('provider_id', providerId)
+          .eq('follower_user_id', user.id)
+          .maybeSingle()
+        if (!cancelled) setIsFollowing(!!mine)
+      } else if (!cancelled) {
+        setIsFollowing(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [provider?.id, user?.id])
+
+  // Follow / unfollow with optimistic UI and revert-on-failure (no silent fail).
+  async function handleToggleFollow() {
+    if (!user || !provider || followBusy) return
+    const providerId = provider.id
+    const wasFollowing = isFollowing
+
+    setFollowBusy(true)
+    setIsFollowing(!wasFollowing)
+    setFollowerCount((c) => Math.max(0, c + (wasFollowing ? -1 : 1)))
+
+    try {
+      const { error } = wasFollowing
+        ? await supabase
+            .from('provider_follows')
+            .delete()
+            .eq('provider_id', providerId)
+            .eq('follower_user_id', user.id)
+        : await supabase
+            .from('provider_follows')
+            .insert({ provider_id: providerId, follower_user_id: user.id })
+      if (error) throw error
+    } catch (err: any) {
+      // Revert the optimistic change so the UI never shows a state that did
+      // not persist.
+      setIsFollowing(wasFollowing)
+      setFollowerCount((c) => Math.max(0, c + (wasFollowing ? 1 : -1)))
+      if (err?.code === '42501') {
+        console.log('FOLLOW RLS gap (42501) — INSERT/DELETE policy not live:', err?.message)
+      } else {
+        console.log('Follow write error:', err)
+      }
+      Alert.alert('Could not update', 'Please try again.')
+    } finally {
+      setFollowBusy(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -82,7 +157,7 @@ export default function ProviderProfilePage() {
     services: profileServices,
     rating: ratingValue,
     bookingCount: provider.total_bookings ?? 0,
-    followerCount: (provider.follower_count ?? 0) + (isFollowing ? 1 : 0),
+    followerCount: followerCount,
     followingCount: 0,
     isVerified: provider.identity_verified,
     isLive: false,
@@ -100,7 +175,7 @@ export default function ProviderProfilePage() {
       provider={providerData}
       isFollowing={isFollowing}
       onBookNow={handleBookNow}
-      onFollow={() => setIsFollowing((prev) => !prev)}
+      onFollow={handleToggleFollow}
       onMessage={async () => {
         if (!user) return
         const convoId = await getOrCreateConversation(user.id, provider.id)

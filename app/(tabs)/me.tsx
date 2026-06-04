@@ -144,7 +144,7 @@ export default function MeScreen() {
       const { count } = await supabase
         .from('provider_follows')
         .select('*', { count: 'exact', head: true })
-        .eq('client_id', user.id)
+        .eq('follower_user_id', user.id)
       if (count != null) followingCount = count
 
       setStats({
