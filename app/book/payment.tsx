@@ -72,16 +72,10 @@ export default function BookPayment() {
   } = useBookingStore()
   const [isProcessing, setIsProcessing] = useState(false)
   const [processError, setProcessError] = useState('')
-  const [useApplePay, setUseApplePay] = useState(false)
 
-  // Calculated price breakdown
+  // Service price — shown for information only. At request time nothing is
+  // charged or held; payment happens later, after the provider accepts.
   const servicePrice = parseFloat(selectedService?.price ?? '0') || 0
-  const protectionFeeAmount = servicePrice * 0.05
-  const depositAmount = selectedService?.depositRequired
-    ? parseFloat(selectedService.depositAmount ?? '0') || 0
-    : 0
-  const dueAtAppointment = servicePrice - depositAmount
-  const ctaAmount = depositAmount > 0 ? depositAmount : servicePrice
 
   async function handleConfirm() {
     if (!user || !selectedService || !selectedDate || !selectedTime) {
@@ -152,7 +146,7 @@ export default function BookPayment() {
         >
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Add Payment Method</Text>
+        <Text style={styles.topBarTitle}>Confirm Request</Text>
         <View style={styles.topBarSpacer} />
       </View>
 
@@ -165,7 +159,7 @@ export default function BookPayment() {
         scrollEventThrottle={16}
       >
         <Text style={styles.headerSubtext}>
-          Your card is saved. Nothing is charged until your provider confirms your booking.
+          No payment now. You'll be asked to pay after the provider accepts your request.
         </Text>
 
         {/* Order summary */}
@@ -216,90 +210,32 @@ export default function BookPayment() {
 
           <View style={styles.separator} />
 
-          {/* Price breakdown */}
+          {/* Service price — information only; nothing is charged at request time. */}
           <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>{selectedService?.name ?? 'Service'}</Text>
+            <Text style={styles.priceLabel}>Service price</Text>
             <Text style={styles.priceValue}>{money(servicePrice)}</Text>
           </View>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Booking protection (5%)</Text>
-            <Text style={styles.priceSub}>+{money(protectionFeeAmount)}</Text>
-          </View>
-
-          <View style={styles.priceSeparator} />
-
-          <View style={styles.priceRow}>
-            <Text style={styles.depositLabel}>
-              {depositAmount > 0 ? 'Deposit (saved, not charged yet)' : 'Total (saved, not charged yet)'}
-            </Text>
-            <Text style={styles.depositValue}>{money(ctaAmount)}</Text>
-          </View>
           <Text style={styles.holdHelperText}>
-            Only charged when provider confirms.
+            Shown so you know the cost. You won't be charged now.
           </Text>
-          {depositAmount > 0 && (
-            <View style={[styles.priceRow, { marginTop: 6 }]}>
-              <Text style={styles.remainingLabel}>Balance due at appointment</Text>
-              <Text style={styles.remainingValue}>{money(dueAtAppointment)}</Text>
-            </View>
-          )}
         </View>
 
-        {/* Payment method */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>PAYMENT METHOD</Text>
-
-          <TouchableOpacity
-            style={[styles.paymentCard, !useApplePay && styles.paymentCardSelected]}
-            activeOpacity={0.8}
-            onPress={() => setUseApplePay(false)}
-          >
-            <View style={styles.paymentCardLeft}>
-              <Feather name="credit-card" size={20} color="rgba(240,232,213,0.5)" />
-              <View>
-                <Text style={styles.cardName}>Visa ending in 4242</Text>
-                <Text style={styles.cardExpiry}>Expires 12/27</Text>
-              </View>
-            </View>
-            <Text style={styles.changeText}>Change</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.paymentCard, styles.applePayCard, useApplePay && styles.paymentCardSelected]}
-            activeOpacity={0.8}
-            onPress={() => setUseApplePay(true)}
-          >
-            <View style={styles.paymentCardLeft}>
-              <Feather name="smartphone" size={20} color="rgba(240,232,213,0.5)" />
-              <Text style={styles.cardName}>Pay with Apple Pay</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
+        {/* What happens next */}
         <View style={styles.authInfoBox}>
-          <Feather name="shield" size={13} color="#4CAF50" style={{ marginTop: 1 }} />
+          <Feather name="send" size={13} color="#4CAF50" style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.authInfoTitle}>Zero charge until confirmed</Text>
+            <Text style={styles.authInfoTitle}>This is a request, not a confirmed booking</Text>
             <Text style={styles.authInfoSub}>
-              Your card is saved but never charged until your provider says yes. If they decline nothing happens to your account. Ever.
+              The provider reviews your request and accepts or declines. No card, no payment, and no hold are taken now — you'll be asked to pay only after they accept.
             </Text>
           </View>
-        </View>
-
-        <View style={styles.securityNote}>
-          <Feather name="lock" size={13} color="rgba(240,232,213,0.3)" />
-          <Text style={styles.securityText}>
-            Your card details are encrypted and stored securely. Nothing is charged until your provider confirms your booking request.
-          </Text>
         </View>
       </ScrollView>
 
       {/* Fixed bottom CTA */}
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
-        <Text style={styles.ctaLabel}>
-          {depositAmount > 0 ? 'Deposit saved, not charged:' : 'Total saved, not charged:'}
-        </Text>
-        <Text style={styles.ctaAmount}>{money(ctaAmount)}</Text>
+        <Text style={styles.ctaLabel}>Service price</Text>
+        <Text style={styles.ctaAmount}>{money(servicePrice)}</Text>
 
         <Pressable
           style={[styles.confirmBtn, isProcessing && styles.confirmBtnProcessing]}
@@ -312,7 +248,7 @@ export default function BookPayment() {
               <Text style={styles.confirmBtnText}>Sending your request...</Text>
             </View>
           ) : (
-            <Text style={styles.confirmBtnText}>Save Card & Send Request</Text>
+            <Text style={styles.confirmBtnText}>Send Booking Request</Text>
           )}
         </Pressable>
 
