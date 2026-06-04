@@ -226,6 +226,14 @@ export default function BookingDetailScreen() {
     }
     setBooking((prev) => (prev ? { ...prev, status: newStatus, ...extraFields } : null))
     setActionLoading(false)
+
+    // After a provider marks a booking complete, route them to rate the
+    // client. Only on success (the error path above already returned), and
+    // only for the provider — the rate-the-client screen is provider-only.
+    // replace (not push) avoids the duplicate-mount issue fixed elsewhere.
+    if (newStatus === 'completed' && isProvider) {
+      router.replace(`/post-booking/provider-review?id=${booking.id}` as never)
+    }
   }
 
   function handleCancel() {
