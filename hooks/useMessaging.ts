@@ -77,10 +77,22 @@ export function useConversations() {
     }
     try {
       setLoading(true)
+      // conversation.provider_id holds a providers.id (provider row id), not an
+      // auth id, so a provider must match on their providers.id — not user.id.
+      // Resolve it first; null for non-providers (client-only filter then).
+      const { data: providerRow } = await supabase
+        .from('providers')
+        .select('id')
+        .eq('user_id', user.id)
+        .maybeSingle()
+      const providerDbId = providerRow?.id
+      const orFilter = providerDbId
+        ? `client_id.eq.${user.id},provider_id.eq.${providerDbId}`
+        : `client_id.eq.${user.id}`
       const { data: convos, error } = await supabase
         .from('conversation')
         .select('*')
-        .or(`client_id.eq.${user.id},provider_id.eq.${user.id}`)
+        .or(orFilter)
         .order('last_message_at', { ascending: false, nullsFirst: false })
 
       if (error) {

@@ -174,10 +174,18 @@ export function useNotifications() {
       // MESSAGE NOTIFICATIONS: one per conversation with unread messages
       // the current user did not send. Uses the singular `conversation`
       // table (the live DB name; the plural form does not exist).
+      // conversation.provider_id holds a providers.id (provider row id), not an
+      // auth id, so a provider must match on their providers.id — not user.id.
+      // Reuse providerRow resolved above; null for non-providers (then the
+      // filter is client-only).
+      const providerDbId = providerRow?.id
+      const convoOrFilter = providerDbId
+        ? `client_id.eq.${user.id},provider_id.eq.${providerDbId}`
+        : `client_id.eq.${user.id}`
       const { data: userConvos } = await supabase
         .from('conversation')
         .select('id, client_id, provider_id')
-        .or(`client_id.eq.${user.id},provider_id.eq.${user.id}`)
+        .or(convoOrFilter)
 
       if (userConvos && userConvos.length > 0) {
         const convoIds = userConvos.map((c) => c.id)
