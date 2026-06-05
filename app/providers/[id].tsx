@@ -26,6 +26,8 @@ export default function ProviderProfilePage() {
   const [isFollowing, setIsFollowing] = useState(false)
   const [followerCount, setFollowerCount] = useState(0)
   const [followBusy, setFollowBusy] = useState(false)
+  const [isSaved, setIsSaved] = useState(false)
+  const [saveBusy, setSaveBusy] = useState(false)
 
   // Load real follow state + a live follower count once the provider (and, for
   // the per-user state, the auth user) resolve. Without this the button always
@@ -95,6 +97,63 @@ export default function ProviderProfilePage() {
       Alert.alert('Could not update', 'Please try again.')
     } finally {
       setFollowBusy(false)
+    }
+  }
+
+  // Load real saved state once the provider + auth user resolve, so the
+  // bookmark reflects the persisted row after reload.
+  useEffect(() => {
+    let cancelled = false
+    const providerId = provider?.id
+    if (!providerId || !user?.id) {
+      setIsSaved(false)
+      return
+    }
+    ;(async () => {
+      const { data: mine } = await supabase
+        .from('saved_providers')
+        .select('id')
+        .eq('provider_id', providerId)
+        .eq('user_id', user.id)
+        .maybeSingle()
+      if (!cancelled) setIsSaved(!!mine)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [provider?.id, user?.id])
+
+  // Save / unsave with optimistic UI and revert-on-failure (no silent fail).
+  async function handleToggleSave() {
+    if (!user || !provider || saveBusy) return
+    const providerId = provider.id
+    const wasSaved = isSaved
+
+    setSaveBusy(true)
+    setIsSaved(!wasSaved)
+
+    try {
+      const { error } = wasSaved
+        ? await supabase
+            .from('saved_providers')
+            .delete()
+            .eq('provider_id', providerId)
+            .eq('user_id', user.id)
+        : await supabase
+            .from('saved_providers')
+            .insert({ user_id: user.id, provider_id: providerId })
+      if (error) throw error
+    } catch (err: any) {
+      // Revert so the bookmark never shows a state that did not persist.
+      setIsSaved(wasSaved)
+      if (err?.code === '42501') {
+        console.log('SAVE RLS gap (42501) — INSERT/DELETE policy not live:', err?.message)
+      } else {
+        console.log('Save write error:', err)
+      }
+      Alert.alert('Could not update', 'Please try again.')
+    } finally {
+      setSaveBusy(false)
     }
   }
 
@@ -174,8 +233,10 @@ export default function ProviderProfilePage() {
       previewMode={false}
       provider={providerData}
       isFollowing={isFollowing}
+      isSaved={isSaved}
       onBookNow={handleBookNow}
       onFollow={handleToggleFollow}
+      onSave={handleToggleSave}
       onMessage={async () => {
         if (!user) return
         const convoId = await getOrCreateConversation(user.id, provider.id)

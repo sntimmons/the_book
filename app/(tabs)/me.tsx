@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
+  ActivityIndicator,
   Animated,
+  Image,
   ScrollView,
   Share,
   StyleSheet,
@@ -513,17 +515,106 @@ function BookingsTab({
   )
 }
 
+interface SavedRow {
+  id: string
+  name: string
+  category: string
+  photo: string | null
+  rating: number
+}
+
 function SavedTab() {
+  const { user } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [saved, setSaved] = useState<SavedRow[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!user) {
+      setSaved([])
+      setLoading(false)
+      return
+    }
+    ;(async () => {
+      setLoading(true)
+      // Own saved rows joined to providers (+ category name) for display.
+      const { data, error } = await supabase
+        .from('saved_providers')
+        .select(
+          'provider_id, created_at, providers(id, display_name, profile_photo_url, average_rating, rating, categories(name))',
+        )
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+      if (cancelled) return
+      if (error) {
+        console.log('Saved list error:', error)
+        setSaved([])
+        setLoading(false)
+        return
+      }
+      const rows: SavedRow[] = (data ?? [])
+        .map((r: any) => r.providers)
+        .filter(Boolean)
+        .map((p: any) => ({
+          id: p.id,
+          name: p.display_name ?? 'Provider',
+          category: p.categories?.name ?? 'Provider',
+          photo: p.profile_photo_url ?? null,
+          rating: p.average_rating ?? p.rating ?? 0,
+        }))
+      setSaved(rows)
+      setLoading(false)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
   return (
     <View style={styles.tabContent}>
       <Text style={styles.sectionLabel}>SAVED PROVIDERS</Text>
-      <View style={styles.tabEmpty}>
-        <Feather name="bookmark" size={28} color="rgba(240,232,213,0.1)" />
-        <Text style={styles.tabEmptyText}>No saved providers yet</Text>
-        <Text style={styles.tabEmptySub}>
-          Tap the bookmark on a provider's profile to save them here.
-        </Text>
-      </View>
+      {loading ? (
+        <View style={styles.tabEmpty}>
+          <ActivityIndicator color="rgba(240,232,213,0.4)" />
+        </View>
+      ) : saved.length === 0 ? (
+        <View style={styles.tabEmpty}>
+          <Feather name="bookmark" size={28} color="rgba(240,232,213,0.1)" />
+          <Text style={styles.tabEmptyText}>No saved providers yet</Text>
+          <Text style={styles.tabEmptySub}>
+            Tap the bookmark on a provider's profile to save them here.
+          </Text>
+        </View>
+      ) : (
+        saved.map((p) => (
+          <TouchableOpacity
+            key={p.id}
+            style={styles.apptRow}
+            activeOpacity={0.7}
+            onPress={() => router.push(`/providers/${p.id}` as never)}
+          >
+            {p.photo ? (
+              <Image source={{ uri: p.photo }} style={styles.avatar40} />
+            ) : (
+              <View style={styles.avatar40}>
+                <Text style={styles.avatarText}>
+                  {p.name.charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={styles.flex1}>
+              <Text style={styles.apptWho}>{p.name}</Text>
+              <Text style={styles.apptWhen}>{p.category}</Text>
+            </View>
+            {p.rating > 0 && (
+              <View style={styles.savedRatingRow}>
+                <Feather name="star" size={12} color="#C8922A" />
+                <Text style={styles.savedRatingText}>{p.rating.toFixed(1)}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        ))
+      )}
     </View>
   )
 }
@@ -951,6 +1042,16 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
   },
   apptPrice: {
+    fontSize: 13,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  savedRatingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  savedRatingText: {
     fontSize: 13,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',

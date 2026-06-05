@@ -49,8 +49,10 @@ export interface ProviderProfileProps {
   previewMode?: boolean
   provider: ProviderData
   isFollowing?: boolean
+  isSaved?: boolean
   onBookNow?: () => void
   onFollow?: () => void
+  onSave?: () => void
   onMessage?: () => void
 }
 
@@ -91,8 +93,10 @@ export default function ProviderProfile({
   previewMode = false,
   provider: providerProp,
   isFollowing = false,
+  isSaved = false,
   onBookNow,
   onFollow,
+  onSave,
   onMessage,
 }: ProviderProfileProps) {
   const insets = useSafeAreaInsets()
@@ -218,6 +222,17 @@ export default function ProviderProfile({
                 >
                   {isFollowing ? 'Following' : 'Follow'}
                 </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.messageBtn, isSaved && styles.saveBtnActive]}
+                onPress={onSave}
+                activeOpacity={0.8}
+              >
+                <Feather
+                  name="bookmark"
+                  size={16}
+                  color={isSaved ? '#C8922A' : '#F0E8D5'}
+                />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.messageBtn}
@@ -684,6 +699,10 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(240,232,213,0.15)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  saveBtnActive: {
+    backgroundColor: 'rgba(200,146,42,0.12)',
+    borderColor: 'rgba(200,146,42,0.5)',
   },
 
   // Identity
