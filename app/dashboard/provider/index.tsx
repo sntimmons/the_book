@@ -68,7 +68,8 @@ const QUICK_ACTIONS = [
   { icon: 'plus-circle', label: 'Add Service', route: '/dashboard/provider/services' },
   { icon: 'clock', label: 'Set Hours', route: '/dashboard/provider/availability' },
   { icon: 'image', label: 'Add Photos', route: '/dashboard/provider/portfolio' },
-  { icon: 'share-2', label: 'Share Profile', route: null as string | null },
+  // 'Share Profile' removed: it routed nowhere (route: null). Restore with a
+  // real share/deep-link target when that exists.
 ]
 
 function timeRemaining(createdAt: string): string {

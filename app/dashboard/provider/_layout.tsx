@@ -58,7 +58,8 @@ const NAV_SECTIONS = [
     items: [
       { icon: 'user',        label: 'Edit Profile', route: '/dashboard/provider/edit-profile', badge: null },
       { icon: 'settings',    label: 'Settings',     route: '/dashboard/provider/settings',     badge: null },
-      { icon: 'help-circle', label: 'Help',         route: null,                               badge: null },
+      // 'Help' removed: it routed nowhere (route: null). Restore when a real
+      // help destination exists.
     ],
   },
 ]

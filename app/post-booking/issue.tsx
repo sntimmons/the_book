@@ -8,10 +8,13 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
-import { router } from 'expo-router'
+import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
 
 const ISSUES = [
   'Provider was late',
@@ -24,12 +27,28 @@ const ISSUES = [
   'Other',
 ]
 
+// Compact slug per category (reports.report_reason is capped at 80 chars).
+// The full selected list + free text goes into reports.notes instead.
+const REASON_SLUG: Record<string, string> = {
+  'Provider was late': 'provider_late',
+  'Provider cancelled last minute': 'provider_cancelled',
+  'Results were not as expected': 'results_unsatisfactory',
+  'Provider was unprofessional': 'unprofessional_conduct',
+  'Location issues': 'location_issue',
+  'Safety concern': 'safety_concern',
+  'Billing issue': 'billing_dispute',
+  Other: 'other',
+}
+
 export default function IssueReport() {
   const insets = useSafeAreaInsets()
+  const { id } = useLocalSearchParams<{ id?: string }>()
+  const { user } = useAuth()
   const [selectedIssues, setSelectedIssues] = useState<string[]>([])
   const [description, setDescription] = useState('')
   const [focused, setFocused] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -44,14 +63,65 @@ export default function IssueReport() {
     )
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
+    if (!canSubmit || submitting) return
+    // Guard: the reports target constraint needs a booking_id (or another
+    // target). Without it (e.g. reached from the dev launcher) we never attempt
+    // an insert that would fail.
+    if (!user) {
+      Alert.alert('Sign in required', 'Please sign in to submit a report.')
+      return
+    }
+    if (!id) {
+      Alert.alert(
+        'Missing booking',
+        'Open this from a booking to submit a report.',
+      )
+      return
+    }
+
+    setSubmitting(true)
+    const primary = selectedIssues[0]
+    const reason = REASON_SLUG[primary] ?? 'other'
+    const notes =
+      [selectedIssues.join(', '), description.trim()]
+        .filter(Boolean)
+        .join(' — ')
+        .slice(0, 2000) || null
+
+    const { error } = await supabase.from('reports').insert({
+      report_type: 'booking',
+      report_reason: reason,
+      notes,
+      reporter_user_id: user.id,
+      booking_id: id,
+    })
+
+    if (error) {
+      // Do NOT show success on failure — surface an error, keep the user here.
+      setSubmitting(false)
+      if (error.code === '42501') {
+        console.log(
+          'REPORT RLS gap (42501) — reports INSERT policy not live:',
+          error.message,
+        )
+      } else {
+        console.log('Report insert error:', error)
+      }
+      Alert.alert('Could not submit', 'Something went wrong. Please try again.')
+      return
+    }
+
+    // Success state only after the insert actually persisted.
+    setSubmitting(false)
     setSubmitted(true)
     timer.current = setTimeout(() => {
       router.push('/(tabs)/')
     }, 2000)
   }
 
-  const canSubmit = selectedIssues.length > 0
+  // Require a real booking context + auth so we never fake a submit.
+  const canSubmit = selectedIssues.length > 0 && !!id && !!user && !submitting
 
   return (
     <KeyboardAvoidingView
@@ -160,6 +230,11 @@ export default function IssueReport() {
           </View>
         ) : (
           <>
+            {!id && (
+              <Text style={styles.noBookingNote}>
+                Open this from a booking to submit a report.
+              </Text>
+            )}
             <TouchableOpacity
               style={[styles.submitBtn, !canSubmit && styles.submitBtnInactive]}
               activeOpacity={canSubmit ? 0.85 : 1}
@@ -167,7 +242,7 @@ export default function IssueReport() {
               onPress={handleSubmit}
             >
               <Text style={[styles.submitBtnText, !canSubmit && styles.submitBtnTextInactive]}>
-                Submit Report
+                {submitting ? 'Submitting…' : 'Submit Report'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -349,6 +424,13 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(240,232,213,0.06)',
     paddingHorizontal: 24,
     paddingTop: 16,
+  },
+  noBookingNote: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'center',
+    marginBottom: 10,
   },
   submitBtn: {
     backgroundColor: '#F0E8D5',

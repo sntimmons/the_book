@@ -76,9 +76,8 @@ export default function MessagesInboxScreen() {
 
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Text style={styles.headerTitle}>Messages</Text>
-        <TouchableOpacity activeOpacity={0.7} onPress={() => { /* future */ }}>
-          <Ionicons name="create-outline" size={22} color="rgba(240,232,213,0.5)" />
-        </TouchableOpacity>
+        {/* Compose entry hidden: it was a no-op. Restore when new-message
+            conversation creation is wired. */}
       </View>
 
       <View style={styles.tabs}>

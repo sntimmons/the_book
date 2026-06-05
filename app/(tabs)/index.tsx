@@ -483,7 +483,7 @@ export default function DiscoveryFeed() {
 
             {/* ── For You ────────────────────────────────────────────────── */}
             <View style={s.section}>
-              <SectionHeader title="For you" onSeeAll={() => {}} />
+              <SectionHeader title="For you" />
               {loading ? (
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.hRow}>
                   {[0, 1, 2].map((i) => (
@@ -592,7 +592,7 @@ export default function DiscoveryFeed() {
 
             {/* ── Trending in Houston ─────────────────────────────────────── */}
             <View style={[s.section, s.padded]}>
-              <SectionHeader title="Trending Now" onSeeAll={() => {}} />
+              <SectionHeader title="Trending Now" />
               {loading ? (
                 <View style={s.grid}>
                   {[0, 1, 2].map((i) => (
