@@ -31,10 +31,7 @@ type Slot = IconTab | CenterTab | PushTab
 const SLOTS: Slot[] = [
   { kind: 'icon', routeName: 'index', iconName: 'home' },
   { kind: 'icon', routeName: 'bookings', iconName: 'bookings' },
-  // TEMP: reels feed is mock-only and its provider links route to broken
-  // profiles. Hidden from the tab bar until it's backed by real data. The
-  // /reels route and its code are left intact, just unreachable from here.
-  // { kind: 'push', key: 'reels', iconName: 'reels', href: '/reels' },
+  { kind: 'push', key: 'reels', iconName: 'reels', href: '/reels' },
   { kind: 'center', routeName: 'new' },
   { kind: 'icon', routeName: 'messages', iconName: 'messages' },
   { kind: 'icon', routeName: 'me', iconName: 'me' },
