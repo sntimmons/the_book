@@ -57,13 +57,7 @@ export default function SigninScreen() {
 
         <Pressable
           style={({ pressed }) => [styles.btnSecondary, { marginBottom: 10, opacity: pressed ? 0.78 : 1 }]}
-          onPress={() =>
-            Alert.alert(
-              'Email Sign In',
-              'Email sign in is coming soon. Please use your phone number to sign in.',
-              [{ text: 'OK' }],
-            )
-          }
+          onPress={() => router.push('/auth/email')}
         >
           <Text style={styles.btnSecondaryText}>Continue with Email</Text>
         </Pressable>

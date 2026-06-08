@@ -23,7 +23,16 @@ function formatPhoneDisplay(phone: string | undefined): string {
 }
 
 export default function VerifyScreen() {
-  const { phone } = useLocalSearchParams<{ phone: string }>()
+  const { phone, email, method } = useLocalSearchParams<{
+    phone?: string
+    email?: string
+    method?: string
+  }>()
+  // Email when explicitly flagged, or inferred when only an email was passed.
+  // Falls back to phone so the existing phone flow keeps working untouched
+  // (phone.tsx routes here with just `phone` and no `method`).
+  const isEmail = method === 'email' || (!!email && !phone)
+  const contact = isEmail ? (email ?? '') : (phone ?? '')
   const [code, setCode] = useState('')
   const [seconds, setSeconds] = useState(COUNTDOWN_START)
   const [isLoading, setIsLoading] = useState(false)
@@ -52,14 +61,29 @@ export default function VerifyScreen() {
     setIsLoading(true)
     setError('')
 
-    const { data, error: verifyError } = await supabase.auth.verifyOtp({
-      phone: phone as string,
-      token: code,
-      type: 'sms',
-    })
+    const { data, error: verifyError } = isEmail
+      ? await supabase.auth.verifyOtp({
+          email: contact,
+          token: code,
+          type: 'email',
+        })
+      : await supabase.auth.verifyOtp({
+          phone: contact,
+          token: code,
+          type: 'sms',
+        })
 
     if (verifyError || !data.user) {
-      setError('Invalid code. Please try again.')
+      // Surface the real reason (expired vs invalid) instead of a blanket
+      // message, while keeping a friendly fallback.
+      const raw = verifyError?.message?.toLowerCase() ?? ''
+      if (raw.includes('expired')) {
+        setError('That code has expired. Tap resend to get a new one.')
+      } else if (verifyError?.message) {
+        setError('Invalid code. Please try again.')
+      } else {
+        setError('Something went wrong. Please try again.')
+      }
       setIsLoading(false)
       setCode('')
       inputRef.current?.focus()
@@ -90,10 +114,10 @@ export default function VerifyScreen() {
   }
 
   async function handleResend() {
-    if (!phone || seconds > 0) return
-    const { error: resendError } = await supabase.auth.signInWithOtp({
-      phone: phone as string,
-    })
+    if (!contact || seconds > 0) return
+    const { error: resendError } = isEmail
+      ? await supabase.auth.signInWithOtp({ email: contact })
+      : await supabase.auth.signInWithOtp({ phone: contact })
     if (!resendError) {
       setSeconds(COUNTDOWN_START)
       setError('')
@@ -119,15 +143,19 @@ export default function VerifyScreen() {
 
       {/* Content */}
       <View style={[styles.content, { paddingTop: insets.top + 80 }]}>
-        <Text style={styles.headline}>Check your messages.</Text>
+        <Text style={styles.headline}>
+          {isEmail ? 'Check your email.' : 'Check your messages.'}
+        </Text>
 
         <Text style={styles.subtext}>We sent a 6-digit code to</Text>
         <Text style={styles.phoneDisplay}>
-          {formatPhoneDisplay(phone as string | undefined)}
+          {isEmail ? contact : formatPhoneDisplay(contact)}
         </Text>
 
         <Pressable onPress={() => router.back()}>
-          <Text style={styles.wrongNumber}>Wrong number?</Text>
+          <Text style={styles.wrongNumber}>
+            {isEmail ? 'Wrong email?' : 'Wrong number?'}
+          </Text>
         </Pressable>
 
         {/* OTP boxes */}
