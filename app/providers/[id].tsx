@@ -232,6 +232,7 @@ export default function ProviderProfilePage() {
     <ProviderProfile
       previewMode={false}
       provider={providerData}
+      providerId={provider.id}
       isFollowing={isFollowing}
       isSaved={isSaved}
       onBookNow={handleBookNow}

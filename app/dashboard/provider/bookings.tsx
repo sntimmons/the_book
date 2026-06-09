@@ -319,7 +319,13 @@ export default function ProviderBookings() {
                 key={b.id}
                 style={styles.card}
                 activeOpacity={0.7}
-                onPress={() => router.push(('/bookings/' + b.id) as never)}
+                onPress={() =>
+                  router.push(
+                    (b.status === 'pending'
+                      ? '/bookings/request/' + b.id
+                      : '/bookings/' + b.id) as never,
+                  )
+                }
               >
                 <View style={styles.cardTopRow}>
                   <Text style={styles.clientName} numberOfLines={1}>

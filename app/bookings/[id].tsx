@@ -456,6 +456,7 @@ export default function BookingDetailScreen() {
         <ActionButtons
           bucket={bucket}
           isProvider={isProvider}
+          bookingId={booking.id}
           actionLoading={actionLoading}
           onCancel={handleCancel}
           onMarkArriving={handleMarkArriving}
@@ -499,6 +500,7 @@ function PaymentBadge({ status }: { status: string | null }) {
 interface ActionButtonsProps {
   bucket: StatusBucket
   isProvider: boolean
+  bookingId: string
   actionLoading: boolean
   onCancel: () => void
   onMarkArriving: () => void
@@ -510,7 +512,7 @@ interface ActionButtonsProps {
 }
 
 function ActionButtons(props: ActionButtonsProps) {
-  const { bucket, isProvider, actionLoading, onCancel, onMarkArriving, onMarkCheckedIn, onMarkCompleted, onMarkNoShow, onMessage, onBack } = props
+  const { bucket, isProvider, bookingId, actionLoading, onCancel, onMarkArriving, onMarkCheckedIn, onMarkCompleted, onMarkNoShow, onMessage, onBack } = props
 
   // Terminal states for both sides.
   if (bucket === 'cancelled' || bucket === 'completed' || bucket === 'no_show') {
@@ -526,9 +528,9 @@ function ActionButtons(props: ActionButtonsProps) {
       return (
         <Pressable
           style={styles.primaryBtnFull}
-          onPress={() => router.replace('/dashboard/provider' as never)}
+          onPress={() => router.replace(`/bookings/request/${bookingId}` as never)}
         >
-          <Text style={styles.primaryBtnText}>View in Dashboard</Text>
+          <Text style={styles.primaryBtnText}>Review Request</Text>
         </Pressable>
       )
     }

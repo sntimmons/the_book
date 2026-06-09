@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import ProviderReviewsSection from './ProviderReviewsSection'
 
 export interface ProviderService {
   id?: string
@@ -48,6 +49,9 @@ export interface ProviderData {
 export interface ProviderProfileProps {
   previewMode?: boolean
   provider: ProviderData
+  // Real provider db id. When present (and not preview), the live Client
+  // Reviews section is rendered below the tabs.
+  providerId?: string
   isFollowing?: boolean
   isSaved?: boolean
   onBookNow?: () => void
@@ -92,6 +96,7 @@ const MOCK_POSTS = [
 export default function ProviderProfile({
   previewMode = false,
   provider: providerProp,
+  providerId,
   isFollowing = false,
   isSaved = false,
   onBookNow,
@@ -489,6 +494,11 @@ export default function ProviderProfile({
             )}
           </View>
         )}
+
+        {/* ── CLIENT REVIEWS (live, revealed only) ── */}
+        {!previewMode && providerId ? (
+          <ProviderReviewsSection providerId={providerId} />
+        ) : null}
       </ScrollView>
 
       {/* ── STICKY BOOK NOW ── */}
