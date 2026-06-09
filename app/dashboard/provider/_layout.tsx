@@ -164,6 +164,8 @@ export default function ProviderDashboardLayout() {
             headerShown: false,
             contentStyle: { backgroundColor: '#080808' },
             animation: 'none',
+            gestureEnabled: true,
+            fullScreenGestureEnabled: true,
           }}
         />
 

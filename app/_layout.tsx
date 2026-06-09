@@ -78,6 +78,8 @@ function RootNavigator() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: '#080808' },
+          gestureEnabled: true,
+          fullScreenGestureEnabled: true,
         }}
       />
       {__DEV__ && DEV_MODE && <DevBadge />}

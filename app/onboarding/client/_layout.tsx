@@ -7,6 +7,8 @@ export default function Layout() {
         headerShown: false,
         presentation: 'card',
         animation: 'slide_from_right',
+        gestureEnabled: true,
+        fullScreenGestureEnabled: true,
         contentStyle: { backgroundColor: '#080808' },
       }}
     />

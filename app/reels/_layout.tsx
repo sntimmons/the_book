@@ -6,6 +6,8 @@ export default function ReelsLayout() {
       screenOptions={{
         headerShown: false,
         contentStyle: { backgroundColor: '#000000' },
+        gestureEnabled: true,
+        fullScreenGestureEnabled: true,
       }}
     />
   )
