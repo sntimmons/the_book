@@ -332,7 +332,20 @@ export default function BookingDetailScreen() {
         <Ionicons name="chevron-back" size={24} color="#F0E8D5" />
       </TouchableOpacity>
       <Text style={styles.topBarTitle}>Booking Details</Text>
-      <View style={{ width: 24 }} />
+      {/* Providers can jump straight to their dashboard (and its drawer) from
+          here, since this screen lives outside the provider drawer. Clients
+          see only the back button. */}
+      {isProvider ? (
+        <TouchableOpacity
+          onPress={() => router.replace('/dashboard/provider' as never)}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="home-outline" size={22} color="#F0E8D5" />
+        </TouchableOpacity>
+      ) : (
+        <View style={{ width: 24 }} />
+      )}
     </View>
   )
 
