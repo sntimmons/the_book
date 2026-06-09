@@ -5,6 +5,7 @@ import {
   Pressable,
   TextInput,
   TouchableOpacity,
+  KeyboardAvoidingView,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native'
@@ -55,8 +56,11 @@ export default function VerifyScreen() {
     return `${m}:${sec.toString().padStart(2, '0')}`
   }
 
-  async function handleVerify() {
-    if (code.length !== 6 || isLoading) return
+  // Accepts an explicit code so auto-submit can pass the freshly-typed value
+  // (setCode is async, so `code` state lags by one render). The Verify button
+  // calls it with no arg and falls back to state.
+  async function handleVerify(submittedCode: string = code) {
+    if (submittedCode.length !== 6 || isLoading) return
 
     setIsLoading(true)
     setError('')
@@ -64,12 +68,12 @@ export default function VerifyScreen() {
     const { data, error: verifyError } = isEmail
       ? await supabase.auth.verifyOtp({
           email: contact,
-          token: code,
+          token: submittedCode,
           type: 'email',
         })
       : await supabase.auth.verifyOtp({
           phone: contact,
-          token: code,
+          token: submittedCode,
           type: 'sms',
         })
 
@@ -141,93 +145,104 @@ export default function VerifyScreen() {
         <Feather name="chevron-left" size={18} color="#F0E8D5" />
       </TouchableOpacity>
 
-      {/* Content */}
-      <View style={[styles.content, { paddingTop: insets.top + 80 }]}>
-        <Text style={styles.headline}>
-          {isEmail ? 'Check your email.' : 'Check your messages.'}
-        </Text>
-
-        <Text style={styles.subtext}>We sent a 6-digit code to</Text>
-        <Text style={styles.phoneDisplay}>
-          {isEmail ? contact : formatPhoneDisplay(contact)}
-        </Text>
-
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.wrongNumber}>
-            {isEmail ? 'Wrong email?' : 'Wrong number?'}
+      <KeyboardAvoidingView
+        behavior={process.env.EXPO_OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        {/* Content */}
+        <View style={[styles.content, { paddingTop: insets.top + 80 }]}>
+          <Text style={styles.headline}>
+            {isEmail ? 'Check your email.' : 'Check your messages.'}
           </Text>
-        </Pressable>
 
-        {/* OTP boxes */}
-        <Pressable style={styles.boxesRow} onPress={() => inputRef.current?.focus()}>
-          {Array.from({ length: 6 }).map((_, i) => {
-            const isFilled = i < code.length
-            const isActive = i === code.length
-            return (
-              <View
-                key={i}
-                style={[
-                  styles.box,
-                  isActive && styles.boxActive,
-                  isFilled && styles.boxFilled,
-                ]}
-              >
-                <Text style={styles.boxText}>{code[i] ?? ''}</Text>
-              </View>
-            )
-          })}
-        </Pressable>
-
-        {/* Hidden real input */}
-        <TextInput
-          ref={inputRef}
-          value={code}
-          onChangeText={(t) => {
-            setCode(t.replace(/\D/g, '').slice(0, 6))
-            if (error) setError('')
-          }}
-          keyboardType="number-pad"
-          maxLength={6}
-          style={styles.hiddenInput}
-          caretHidden
-          autoFocus
-          textContentType="oneTimeCode"
-          autoComplete="sms-otp"
-        />
-
-        {error.length > 0 && (
-          <Text style={styles.errorText}>{error}</Text>
-        )}
-
-        {/* Countdown / resend */}
-        <Pressable onPress={handleResend} disabled={seconds > 0}>
-          <Text style={styles.resendText}>
-            {seconds > 0
-              ? `Resend code in ${formatCountdown(seconds)}`
-              : 'Resend code'}
+          <Text style={styles.subtext}>We sent a 6-digit code to</Text>
+          <Text style={styles.phoneDisplay}>
+            {isEmail ? contact : formatPhoneDisplay(contact)}
           </Text>
-        </Pressable>
-      </View>
 
-      {/* Verify button */}
-      <View style={[styles.ctaBar, { paddingBottom: insets.bottom + 32 }]}>
-        <Pressable
-          style={[
-            styles.verifyBtn,
-            isValid && !isLoading ? styles.verifyBtnActive : styles.verifyBtnInactive,
-          ]}
-          disabled={!isValid || isLoading}
-          onPress={handleVerify}
-        >
-          {isLoading ? (
-            <ActivityIndicator color="#080808" />
-          ) : (
-            <Text style={[styles.verifyText, isValid ? styles.verifyTextActive : styles.verifyTextInactive]}>
-              Verify
+          <Pressable onPress={() => router.back()}>
+            <Text style={styles.wrongNumber}>
+              {isEmail ? 'Wrong email?' : 'Wrong number?'}
             </Text>
+          </Pressable>
+
+          {/* OTP boxes */}
+          <Pressable style={styles.boxesRow} onPress={() => inputRef.current?.focus()}>
+            {Array.from({ length: 6 }).map((_, i) => {
+              const isFilled = i < code.length
+              const isActive = i === code.length
+              return (
+                <View
+                  key={i}
+                  style={[
+                    styles.box,
+                    isActive && styles.boxActive,
+                    isFilled && styles.boxFilled,
+                  ]}
+                >
+                  <Text style={styles.boxText}>{code[i] ?? ''}</Text>
+                </View>
+              )
+            })}
+          </Pressable>
+
+          {/* Hidden real input */}
+          <TextInput
+            ref={inputRef}
+            value={code}
+            onChangeText={(t) => {
+              const next = t.replace(/\D/g, '').slice(0, 6)
+              setCode(next)
+              if (error) setError('')
+              // Auto-submit the moment all 6 digits are present (typed or
+              // autofilled), so no extra tap is needed.
+              if (next.length === 6) handleVerify(next)
+            }}
+            keyboardType="number-pad"
+            maxLength={6}
+            style={styles.hiddenInput}
+            caretHidden
+            autoFocus
+            textContentType="oneTimeCode"
+            autoComplete="sms-otp"
+          />
+
+          {error.length > 0 && (
+            <Text style={styles.errorText}>{error}</Text>
           )}
-        </Pressable>
-      </View>
+
+          {/* Countdown / resend */}
+          <Pressable onPress={handleResend} disabled={seconds > 0}>
+            <Text style={styles.resendText}>
+              {seconds > 0
+                ? `Resend code in ${formatCountdown(seconds)}`
+                : 'Resend code'}
+            </Text>
+          </Pressable>
+        </View>
+
+        <View style={{ flex: 1 }} />
+
+        {/* Verify button — also a fallback if auto-submit doesn't fire */}
+        <View style={[styles.ctaBar, { paddingBottom: insets.bottom + 32 }]}>
+          <Pressable
+            style={[
+              styles.verifyBtn,
+              isValid && !isLoading ? styles.verifyBtnActive : styles.verifyBtnInactive,
+            ]}
+            disabled={!isValid || isLoading}
+            onPress={() => handleVerify()}
+          >
+            {isLoading ? (
+              <ActivityIndicator color="#080808" />
+            ) : (
+              <Text style={[styles.verifyText, isValid ? styles.verifyTextActive : styles.verifyTextInactive]}>
+                Verify
+              </Text>
+            )}
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
     </View>
   )
 }
@@ -341,10 +356,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   ctaBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 24,
-    right: 24,
+    paddingHorizontal: 24,
   },
   verifyBtn: {
     height: 52,
@@ -354,7 +366,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   verifyBtnActive: {
-    backgroundColor: '#F0E8D5',
+    backgroundColor: '#C8922A',
   },
   verifyBtnInactive: {
     backgroundColor: 'rgba(240,232,213,0.15)',
