@@ -81,7 +81,26 @@ function RootNavigator() {
           gestureEnabled: true,
           fullScreenGestureEnabled: true,
         }}
-      />
+      >
+        {/* Root-stack swipe-back is on so pushed detail screens (providers,
+            reviews, settings, etc.) can be dragged back. But after login the
+            welcome/auth screens still sit BELOW these containers in the root
+            stack, so the gesture is disabled on them — a signed-in user must
+            not be able to swipe back across the auth boundary to welcome /
+            sign-up. Logging out (router.replace('/')) is the only way back. */}
+        <Stack.Screen
+          name="(tabs)"
+          options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
+        />
+        <Stack.Screen
+          name="dashboard/provider"
+          options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
+        />
+        <Stack.Screen
+          name="path-selection"
+          options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
+        />
+      </Stack>
       {__DEV__ && DEV_MODE && <DevBadge />}
     </View>
   )
