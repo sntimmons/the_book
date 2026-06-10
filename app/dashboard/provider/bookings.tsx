@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePanelContext } from '@/context/PanelContext'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
+import { bookingTab, bookingStatusLabel } from '@/lib/bookingStatus'
 
 interface BookingRow {
   id: string
@@ -35,72 +36,35 @@ const TABS: Array<{ key: BucketKey; label: string }> = [
   { key: 'cancelled', label: 'Cancelled' },
 ]
 
-const UPCOMING_STATUSES = new Set(['accepted', 'arriving', 'checked_in'])
-const PAST_STATUSES = new Set(['completed', 'no_show'])
-const CANCELLED_STATUSES = new Set([
-  'cancelled',
-  'cancelled_by_client',
-  'cancelled_by_provider',
-  'late_cancelled',
-])
-
-// Mirror app/bookings/[id].tsx exactly. Do not invent new labels.
-function getStatusLabel(status: string): string {
-  switch (status) {
-    case 'pending':
-      return 'Pending'
-    case 'accepted':
-      return 'Confirmed'
-    case 'arriving':
-      return 'Arriving'
-    case 'checked_in':
-      return 'Checked In'
-    case 'completed':
-      return 'Completed'
-    case 'cancelled':
-      return 'Cancelled'
-    case 'cancelled_by_client':
-      return 'Cancelled by Client'
-    case 'cancelled_by_provider':
-      return 'Cancelled by Provider'
-    case 'late_cancelled':
-      return 'Late Cancellation'
-    case 'no_show':
-      return 'No Show'
-    default:
-      return status
-  }
-}
-
 interface StatusStyle {
   fg: string
   bg: string
   border: string
 }
 
+// Labels come from the shared helper (lib/bookingStatus). Colors stay local;
+// the dropped beta states (arriving/checked_in/rescheduled) reuse the accepted
+// "Confirmed" green so any legacy rows look consistent.
 function getStatusStyle(status: string): StatusStyle {
-  if (status === 'pending') {
-    return { fg: '#C8922A', bg: 'rgba(200,146,42,0.12)', border: 'rgba(200,146,42,0.4)' }
-  }
-  if (status === 'accepted') {
-    return { fg: '#4CAF50', bg: 'rgba(76,175,80,0.12)', border: 'rgba(76,175,80,0.4)' }
-  }
-  if (status === 'arriving') {
-    return { fg: '#7AB3F2', bg: 'rgba(73,143,225,0.12)', border: 'rgba(73,143,225,0.4)' }
-  }
-  if (status === 'checked_in') {
-    return { fg: '#B789D1', bg: 'rgba(156,39,176,0.14)', border: 'rgba(156,39,176,0.4)' }
-  }
-  if (status === 'completed') {
-    return { fg: '#7CCB80', bg: 'rgba(76,175,80,0.1)', border: 'rgba(76,175,80,0.3)' }
-  }
-  if (status === 'no_show') {
-    return { fg: '#E05C5C', bg: 'rgba(224,92,92,0.12)', border: 'rgba(224,92,92,0.4)' }
-  }
-  return {
-    fg: 'rgba(240,232,213,0.55)',
-    bg: 'rgba(240,232,213,0.05)',
-    border: 'rgba(240,232,213,0.15)',
+  switch (status) {
+    case 'pending':
+      return { fg: '#C8922A', bg: 'rgba(200,146,42,0.12)', border: 'rgba(200,146,42,0.4)' }
+    case 'accepted':
+    case 'arriving':
+    case 'checked_in':
+    case 'rescheduled':
+      return { fg: '#4CAF50', bg: 'rgba(76,175,80,0.12)', border: 'rgba(76,175,80,0.4)' }
+    case 'completed':
+      return { fg: '#7CCB80', bg: 'rgba(76,175,80,0.1)', border: 'rgba(76,175,80,0.3)' }
+    case 'no_show':
+      return { fg: '#E05C5C', bg: 'rgba(224,92,92,0.12)', border: 'rgba(224,92,92,0.4)' }
+    default:
+      // declined + all cancel variants
+      return {
+        fg: 'rgba(240,232,213,0.55)',
+        bg: 'rgba(240,232,213,0.05)',
+        border: 'rgba(240,232,213,0.15)',
+      }
   }
 }
 
@@ -218,10 +182,10 @@ export default function ProviderBookings() {
     setRefreshing(false)
   }
 
-  const pendingRows = bookings.filter((b) => b.status === 'pending')
-  const upcomingRows = bookings.filter((b) => UPCOMING_STATUSES.has(b.status))
-  const pastRows = bookings.filter((b) => PAST_STATUSES.has(b.status))
-  const cancelledRows = bookings.filter((b) => CANCELLED_STATUSES.has(b.status))
+  const pendingRows = bookings.filter((b) => bookingTab(b.status) === 'pending')
+  const upcomingRows = bookings.filter((b) => bookingTab(b.status) === 'upcoming')
+  const pastRows = bookings.filter((b) => bookingTab(b.status) === 'past')
+  const cancelledRows = bookings.filter((b) => bookingTab(b.status) === 'cancelled')
 
   const visibleRows =
     activeStatus === 'pending'
@@ -338,7 +302,7 @@ export default function ProviderBookings() {
                     ]}
                   >
                     <Text style={[styles.pillText, { color: sty.fg }]}>
-                      {getStatusLabel(b.status)}
+                      {bookingStatusLabel(b.status)}
                     </Text>
                   </View>
                 </View>

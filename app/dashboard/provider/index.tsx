@@ -17,6 +17,7 @@ import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useNotifications } from '@/hooks/useNotifications'
 import { getOrCreateConversation } from '@/hooks/useMessaging'
+import { bookingStatusLabel } from '@/lib/bookingStatus'
 
 interface BookingRequest {
   id: string
@@ -512,18 +513,11 @@ export default function ProviderDashboard() {
             </View>
           ) : (
             todayBookings.map((b, i) => {
-              const pill =
-                b.status === 'checked_in'
-                  ? styles.statusPillGreen
-                  : b.status === 'arriving'
-                    ? styles.statusPillBlue
-                    : styles.statusPillAmber
-              const pillText =
-                b.status === 'checked_in'
-                  ? styles.statusPillTextGreen
-                  : b.status === 'arriving'
-                    ? styles.statusPillTextBlue
-                    : styles.statusPillTextAmber
+              // Today's schedule only holds confirmed-family bookings, so show a
+              // single "Confirmed" pill (green) via the shared label — no more
+              // raw "accepted" / per-substate colors.
+              const pill = styles.statusPillGreen
+              const pillText = styles.statusPillTextGreen
               return (
                 <View
                   key={b.id}
@@ -539,7 +533,7 @@ export default function ProviderDashboard() {
                     </Text>
                     <View style={[styles.statusPill, pill]}>
                       <Text style={[styles.statusPillText, pillText]}>
-                        {b.status === 'checked_in' ? 'Checked in' : b.status}
+                        {bookingStatusLabel(b.status)}
                       </Text>
                     </View>
                   </View>

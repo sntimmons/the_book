@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { getOrCreateConversation } from '@/hooks/useMessaging'
+import { bookingTab, bookingStatusLabel, bookingStatusTone } from '@/lib/bookingStatus'
 
 type Status = 'upcoming' | 'pending' | 'past' | 'cancelled'
 
@@ -43,15 +44,6 @@ const EMPTY_CONFIG: Record<Status, { icon: keyof typeof Feather.glyphMap; sub: s
   past: { icon: 'check-circle', sub: 'Your completed appointments and reviews.' },
   cancelled: { icon: 'x-circle', sub: 'Cancelled bookings.' },
 }
-
-const CANCELLED_STATUSES = new Set([
-  'cancelled',
-  'cancelled_by_client',
-  'cancelled_by_provider',
-  'late_cancelled',
-  'no_show',
-])
-const PAST_STATUSES = new Set(['completed', 'checked_in'])
 
 function money(n: number | null): string {
   if (n == null) return '$0'
@@ -132,10 +124,10 @@ export default function BookingsScreen() {
     fetchBookings()
   }, [fetchBookings])
 
-  const upcomingBookings = bookings.filter((b) => b.status === 'accepted' || b.status === 'arriving')
-  const pendingBookings = bookings.filter((b) => b.status === 'pending')
-  const pastBookings = bookings.filter((b) => PAST_STATUSES.has(b.status))
-  const cancelledBookings = bookings.filter((b) => CANCELLED_STATUSES.has(b.status))
+  const upcomingBookings = bookings.filter((b) => bookingTab(b.status) === 'upcoming')
+  const pendingBookings = bookings.filter((b) => bookingTab(b.status) === 'pending')
+  const pastBookings = bookings.filter((b) => bookingTab(b.status) === 'past')
+  const cancelledBookings = bookings.filter((b) => bookingTab(b.status) === 'cancelled')
 
   const data =
     activeStatus === 'upcoming'
@@ -256,7 +248,7 @@ function BookingCard({
           </View>
           <View style={styles.cardRight}>
             <Text style={styles.cardPrice}>{money(booking.payment_amount)}</Text>
-            <StatusPill status={status} />
+            <StatusPill status={booking.status} />
           </View>
         </View>
       </TouchableOpacity>
@@ -275,31 +267,30 @@ function BookingCard({
   )
 }
 
-function StatusPill({ status }: { status: Status }) {
-  if (status === 'upcoming') {
-    return (
-      <View style={[styles.pill, styles.pillGreen]}>
-        <Text style={styles.pillTextGreen}>Confirmed</Text>
-      </View>
-    )
-  }
-  if (status === 'pending') {
-    return (
-      <View style={[styles.pill, styles.pillAmber]}>
-        <Text style={styles.pillTextAmber}>Pending</Text>
-      </View>
-    )
-  }
-  if (status === 'past') {
-    return (
-      <View style={[styles.pill, styles.pillNeutral]}>
-        <Text style={styles.pillTextNeutral}>Completed</Text>
-      </View>
-    )
-  }
+// Pill reflects the booking's REAL status (via the shared label + tone), not
+// the active tab — so e.g. a "No show" in the Past tab reads correctly instead
+// of showing "Completed".
+function StatusPill({ status }: { status: string }) {
+  const tone = bookingStatusTone(status)
+  const pillStyle =
+    tone === 'confirmed'
+      ? styles.pillGreen
+      : tone === 'pending'
+        ? styles.pillAmber
+        : tone === 'completed'
+          ? styles.pillNeutral
+          : styles.pillRed
+  const textStyle =
+    tone === 'confirmed'
+      ? styles.pillTextGreen
+      : tone === 'pending'
+        ? styles.pillTextAmber
+        : tone === 'completed'
+          ? styles.pillTextNeutral
+          : styles.pillTextRed
   return (
-    <View style={[styles.pill, styles.pillRed]}>
-      <Text style={styles.pillTextRed}>Cancelled</Text>
+    <View style={[styles.pill, pillStyle]}>
+      <Text style={textStyle}>{bookingStatusLabel(status)}</Text>
     </View>
   )
 }

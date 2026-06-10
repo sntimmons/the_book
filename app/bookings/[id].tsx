@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { getOrCreateConversation } from '../../hooks/useMessaging'
+import { bookingStatusLabel } from '../../lib/bookingStatus'
 
 interface BookingDetail {
   id: string
@@ -67,33 +68,6 @@ function statusBucket(status: string): StatusBucket {
   }
 }
 
-function getStatusLabel(status: string): string {
-  switch (status) {
-    case 'pending':
-      return 'Pending'
-    case 'accepted':
-      return 'Confirmed'
-    case 'arriving':
-      return 'Arriving'
-    case 'checked_in':
-      return 'Checked In'
-    case 'completed':
-      return 'Completed'
-    case 'cancelled':
-      return 'Cancelled'
-    case 'cancelled_by_client':
-      return 'Cancelled by Client'
-    case 'cancelled_by_provider':
-      return 'Cancelled by Provider'
-    case 'late_cancelled':
-      return 'Late Cancellation'
-    case 'no_show':
-      return 'No Show'
-    default:
-      return status
-  }
-}
-
 interface StatusStyle {
   fg: string
   bg: string
@@ -101,24 +75,23 @@ interface StatusStyle {
 }
 
 // Distinct fg/bg/border per status keeps the pill readable on the dark
-// background without relying on hex+alpha concatenation tricks that break
-// for rgba() values.
+// background. The dropped beta states (arriving/checked_in/rescheduled) reuse
+// the accepted "Confirmed" green so any legacy rows look consistent.
 function getStatusStyle(status: string): StatusStyle {
-  switch (statusBucket(status)) {
+  switch (status) {
     case 'pending':
       return { fg: '#C8922A', bg: 'rgba(200,146,42,0.12)', border: 'rgba(200,146,42,0.4)' }
     case 'accepted':
-      return { fg: '#4CAF50', bg: 'rgba(76,175,80,0.12)', border: 'rgba(76,175,80,0.4)' }
     case 'arriving':
-      return { fg: '#7AB3F2', bg: 'rgba(73,143,225,0.12)', border: 'rgba(73,143,225,0.4)' }
     case 'checked_in':
-      return { fg: '#B789D1', bg: 'rgba(156,39,176,0.14)', border: 'rgba(156,39,176,0.4)' }
+    case 'rescheduled':
+      return { fg: '#4CAF50', bg: 'rgba(76,175,80,0.12)', border: 'rgba(76,175,80,0.4)' }
     case 'completed':
       return { fg: '#7CCB80', bg: 'rgba(76,175,80,0.1)', border: 'rgba(76,175,80,0.3)' }
     case 'no_show':
       return { fg: '#E05C5C', bg: 'rgba(224,92,92,0.12)', border: 'rgba(224,92,92,0.4)' }
-    case 'cancelled':
     default:
+      // declined + all cancel variants
       return {
         fg: 'rgba(240,232,213,0.55)',
         bg: 'rgba(240,232,213,0.05)',
@@ -262,19 +235,6 @@ export default function BookingDetailScreen() {
     )
   }
 
-  function handleMarkArriving() {
-    updateStatus('arriving', {
-      provider_first_response_at:
-        booking?.provider_first_response_at ?? new Date().toISOString(),
-    })
-  }
-
-  function handleMarkCheckedIn() {
-    updateStatus('checked_in', {
-      client_checked_in_at: new Date().toISOString(),
-    })
-  }
-
   function handleMarkCompleted() {
     Alert.alert(
       'Mark as Completed',
@@ -383,7 +343,7 @@ export default function BookingDetailScreen() {
           ]}
         >
           <Text style={[styles.statusPillText, { color: statusStyle.fg }]}>
-            {getStatusLabel(booking.status)}
+            {bookingStatusLabel(booking.status)}
           </Text>
         </View>
 
@@ -459,8 +419,6 @@ export default function BookingDetailScreen() {
           bookingId={booking.id}
           actionLoading={actionLoading}
           onCancel={handleCancel}
-          onMarkArriving={handleMarkArriving}
-          onMarkCheckedIn={handleMarkCheckedIn}
           onMarkCompleted={handleMarkCompleted}
           onMarkNoShow={handleMarkNoShow}
           onMessage={messageOtherParty}
@@ -503,8 +461,6 @@ interface ActionButtonsProps {
   bookingId: string
   actionLoading: boolean
   onCancel: () => void
-  onMarkArriving: () => void
-  onMarkCheckedIn: () => void
   onMarkCompleted: () => void
   onMarkNoShow: () => void
   onMessage: () => void
@@ -512,7 +468,7 @@ interface ActionButtonsProps {
 }
 
 function ActionButtons(props: ActionButtonsProps) {
-  const { bucket, isProvider, bookingId, actionLoading, onCancel, onMarkArriving, onMarkCheckedIn, onMarkCompleted, onMarkNoShow, onMessage, onBack } = props
+  const { bucket, isProvider, bookingId, actionLoading, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onBack } = props
 
   // Terminal states for both sides.
   if (bucket === 'cancelled' || bucket === 'completed' || bucket === 'no_show') {
@@ -552,25 +508,11 @@ function ActionButtons(props: ActionButtonsProps) {
 
   if (bucket === 'accepted') {
     if (isProvider) {
+      // Beta flow: the only forward action is Mark Complete; No Show and Cancel
+      // are the off-ramps. (Arriving / Checked In were removed.)
       return (
         <View>
           <View style={styles.row}>
-            <Pressable
-              style={[styles.secondaryBtnHalf, actionLoading && styles.btnDisabled]}
-              onPress={onMarkArriving}
-              disabled={actionLoading}
-            >
-              <Text style={styles.secondaryBtnText}>Mark Arriving</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.primaryBtnHalf, actionLoading && styles.btnDisabled]}
-              onPress={onMarkCheckedIn}
-              disabled={actionLoading}
-            >
-              <Text style={styles.primaryBtnText}>Mark Checked In</Text>
-            </Pressable>
-          </View>
-          <View style={[styles.row, { marginTop: 10 }]}>
             <Pressable
               style={[styles.dangerBtnHalf, actionLoading && styles.btnDisabled]}
               onPress={onMarkNoShow}
@@ -584,6 +526,15 @@ function ActionButtons(props: ActionButtonsProps) {
               disabled={actionLoading}
             >
               <Text style={styles.amberBtnText}>Mark Complete</Text>
+            </Pressable>
+          </View>
+          <View style={[styles.row, { marginTop: 10 }]}>
+            <Pressable
+              style={[styles.secondaryBtnHalf, actionLoading && styles.btnDisabled]}
+              onPress={onCancel}
+              disabled={actionLoading}
+            >
+              <Text style={styles.secondaryBtnText}>Cancel Booking</Text>
             </Pressable>
           </View>
         </View>

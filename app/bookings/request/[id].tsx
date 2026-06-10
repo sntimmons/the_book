@@ -147,10 +147,22 @@ export default function BookingRequestScreen() {
   }
 
   function handleAccept() {
-    transition('accepted', {
-      provider_first_response_at:
-        new Date().toISOString(),
-    })
+    // Confirm so an accidental tap doesn't instantly accept (there's no
+    // un-accept; Cancel/Decline is the off-ramp). Mirrors the Decline confirm.
+    Alert.alert(
+      'Accept Booking',
+      `Accept this booking for ${clientName}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Accept',
+          onPress: () =>
+            transition('accepted', {
+              provider_first_response_at: new Date().toISOString(),
+            }),
+        },
+      ],
+    )
   }
 
   function handleDecline() {
