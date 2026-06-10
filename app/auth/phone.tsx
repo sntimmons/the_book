@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
+import { resolveUserRole } from '@/lib/resolveUserRole'
 
 function formatPhone(digits: string): string {
   const d = digits.slice(0, 10)
@@ -71,21 +72,12 @@ export default function PhoneScreen() {
     } = await supabase.auth.getSession()
 
     if (session?.user) {
-      const userId = session.user.id
-      const [clientResult, providerResult] = await Promise.all([
-        supabase.from('clients').select('id').eq('id', userId).maybeSingle(),
-        supabase
-          .from('providers')
-          .select('id')
-          .eq('user_id', userId)
-          .maybeSingle(),
-      ])
-
-      if (providerResult.data) {
+      const { role } = await resolveUserRole(session.user.id)
+      if (role === 'provider') {
         router.replace('/dashboard/provider')
         return
       }
-      if (clientResult.data) {
+      if (role === 'client') {
         router.replace('/(tabs)/')
         return
       }

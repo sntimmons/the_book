@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
+import { resolveUserRole } from '@/lib/resolveUserRole'
 
 const COUNTDOWN_START = 45
 
@@ -94,23 +95,15 @@ export default function VerifyScreen() {
       return
     }
 
-    // Look up existing profile rows to decide where to route
-    const userId = data.user.id
-
-    const [clientResult, providerResult] = await Promise.all([
-      supabase.from('clients').select('id').eq('id', userId).maybeSingle(),
-      supabase
-        .from('providers')
-        .select('id')
-        .eq('user_id', userId)
-        .maybeSingle(),
-    ])
+    // Resolve role to decide where to route (same precedence/destinations as
+    // before — provider > client > new user).
+    const { role } = await resolveUserRole(data.user.id)
 
     setIsLoading(false)
 
-    if (providerResult.data) {
+    if (role === 'provider') {
       router.replace('/dashboard/provider')
-    } else if (clientResult.data) {
+    } else if (role === 'client') {
       router.replace('/(tabs)/')
     } else {
       router.replace('/path-selection')
