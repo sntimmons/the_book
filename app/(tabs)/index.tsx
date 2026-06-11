@@ -225,6 +225,13 @@ export default function DiscoveryFeed() {
             <TouchableOpacity
               activeOpacity={0.7}
               style={s.searchBtn}
+              onPress={() => router.push('/notifications' as any)}
+            >
+              <Ionicons name="notifications-outline" size={17} color="rgba(240,232,213,0.8)" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={s.searchBtn}
               onPress={() => router.push('/(tabs)/search' as any)}
             >
               <Ionicons name="search" size={16} color="rgba(240,232,213,0.8)" />
