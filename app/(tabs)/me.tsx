@@ -350,6 +350,9 @@ function ClientMe() {
           </ScrollView>
         )}
 
+        {/* Posts preview entry (universal) */}
+        <PostsPreviewEntry style={styles.postsEntryClient} />
+
         <View style={styles.separator} />
 
         {/* Content tabs */}
@@ -647,6 +650,61 @@ function FollowingTab({ followingCount }: { followingCount: number }) {
   )
 }
 
+// ── Preview entries (coming-soon screens) ───────────────────────────────────
+// Featured provider-only card for the provider community Hub. Deliberately
+// distinct from the solid-cream My Studio card: a dark, cream-bordered card so
+// it reads as its own thing while still carrying real weight beside My Studio.
+function CommunityHubCard() {
+  return (
+    <TouchableOpacity
+      style={styles.hubCard}
+      activeOpacity={0.85}
+      onPress={() => router.push('/preview/community' as never)}
+    >
+      <View style={styles.hubIcon}>
+        <Feather name="users" size={20} color="#F0E8D5" />
+      </View>
+      <View style={styles.flex1}>
+        <View style={styles.hubTitleRow}>
+          <Text style={styles.hubTitle}>Community</Text>
+          <View style={styles.comingSoonTag}>
+            <Text style={styles.comingSoonTagText}>Coming soon</Text>
+          </View>
+        </View>
+        <Text style={styles.hubSub}>
+          Connect with other providers. Trade services, swap advice, and share
+          what works.
+        </Text>
+      </View>
+      <Feather name="chevron-right" size={20} color="rgba(240,232,213,0.3)" />
+    </TouchableOpacity>
+  )
+}
+
+// Modest, lower-weight entry for the universal Posts preview. Used on both the
+// client and provider Me tabs; the hub card above is the featured one.
+function PostsPreviewEntry({ style }: { style?: any }) {
+  return (
+    <TouchableOpacity
+      style={[styles.postsEntry, style]}
+      activeOpacity={0.8}
+      onPress={() => router.push('/preview/posts' as never)}
+    >
+      <View style={styles.postsEntryIcon}>
+        <Feather name="image" size={17} color="rgba(240,232,213,0.7)" />
+      </View>
+      <View style={styles.flex1}>
+        <Text style={styles.postsEntryTitle}>Posts</Text>
+        <Text style={styles.postsEntrySub}>Share your work and results</Text>
+      </View>
+      <View style={styles.comingSoonTag}>
+        <Text style={styles.comingSoonTagText}>Coming soon</Text>
+      </View>
+      <Feather name="chevron-right" size={18} color="rgba(240,232,213,0.25)" />
+    </TouchableOpacity>
+  )
+}
+
 // ── Role-aware entry ────────────────────────────────────────────────────────
 // Clients get the existing ClientMe (unchanged). Providers get ProviderMe with
 // the My Studio entrance. A provider can preview the client profile via the
@@ -849,6 +907,9 @@ function ProviderMe({ onSwitchToClient }: { onSwitchToClient: () => void }) {
           <Feather name="chevron-right" size={20} color="rgba(8,8,8,0.5)" />
         </TouchableOpacity>
 
+        {/* Community Hub — featured provider-only preview, sits beside My Studio */}
+        <CommunityHubCard />
+
         {/* Rows */}
         <View style={styles.rowsGroup}>
           {rows.map((row, idx) => (
@@ -864,6 +925,9 @@ function ProviderMe({ onSwitchToClient }: { onSwitchToClient: () => void }) {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Posts preview entry (universal) */}
+        <PostsPreviewEntry style={styles.postsEntryProvider} />
 
         {/* Quiet escape hatch */}
         <TouchableOpacity
@@ -1356,6 +1420,102 @@ const styles = StyleSheet.create({
     color: 'rgba(8,8,8,0.6)',
     fontFamily: 'Manrope_400Regular',
   },
+  // Community Hub featured card (provider)
+  hubCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.16)',
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    marginHorizontal: 20,
+    marginBottom: 20,
+  },
+  hubIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: 'rgba(240,232,213,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hubTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hubTitle: {
+    fontSize: 16,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  hubSub: {
+    marginTop: 3,
+    fontSize: 12,
+    lineHeight: 17,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_400Regular',
+  },
+
+  // Shared "Coming soon" tag
+  comingSoonTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.15)',
+    backgroundColor: 'rgba(240,232,213,0.04)',
+  },
+  comingSoonTagText: {
+    fontSize: 9.5,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 0.4,
+  },
+
+  // Posts preview entry (universal, modest)
+  postsEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginHorizontal: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.07)',
+    backgroundColor: 'rgba(240,232,213,0.03)',
+  },
+  postsEntryClient: {
+    marginTop: 20,
+    marginBottom: 4,
+  },
+  postsEntryProvider: {
+    marginTop: 12,
+  },
+  postsEntryIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: 'rgba(240,232,213,0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  postsEntryTitle: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  postsEntrySub: {
+    marginTop: 2,
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+  },
+
   rowsGroup: {
     marginHorizontal: 20,
     borderWidth: 1,
