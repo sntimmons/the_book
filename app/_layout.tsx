@@ -11,6 +11,7 @@ import {
 } from '@expo-google-fonts/manrope'
 import * as SplashScreen from 'expo-splash-screen'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import { PROVIDER_LANDS_IN_TABS } from '@/lib/featureFlags'
 
 SplashScreen.preventAutoHideAsync()
 
@@ -92,9 +93,18 @@ function RootNavigator() {
           name="(tabs)"
           options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
         />
+        {/* In Mode 3 the dashboard is reached ONLY by pushing from the Me tab,
+            so swiping back returns to the shared app (never to welcome) — the
+            clean studio exit. Full-screen gesture (swipe from anywhere) since no
+            dashboard screen has horizontal-scrolling content to conflict with.
+            When the flag is off, providers land here via replace, so the gesture
+            stays disabled to preserve the auth-boundary fix. */}
         <Stack.Screen
           name="dashboard/provider"
-          options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
+          options={{
+            gestureEnabled: PROVIDER_LANDS_IN_TABS,
+            fullScreenGestureEnabled: PROVIDER_LANDS_IN_TABS,
+          }}
         />
         <Stack.Screen
           name="path-selection"

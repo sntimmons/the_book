@@ -274,11 +274,20 @@ export default function ProviderDashboardLayout() {
               activeOpacity={0.7}
               onPress={() => {
                 closePanel()
-                setTimeout(() => router.replace('/(tabs)/'), 50)
+                // Clean exit: when the studio was pushed from the Me tab (Mode 3),
+                // go back to where they came from; otherwise (landed here) fall
+                // back to the shared tabs.
+                setTimeout(() => {
+                  if (router.canGoBack()) {
+                    router.back()
+                  } else {
+                    router.replace('/(tabs)/')
+                  }
+                }, 50)
               }}
             >
-              <Feather name="repeat" size={16} color="rgba(240,232,213,0.4)" />
-              <Text style={styles.switchModeText}>Switch to client mode</Text>
+              <Feather name="arrow-left" size={16} color="rgba(240,232,213,0.4)" />
+              <Text style={styles.switchModeText}>Back to The Book</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

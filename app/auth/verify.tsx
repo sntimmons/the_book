@@ -14,6 +14,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { resolveUserRole } from '@/lib/resolveUserRole'
+import { PROVIDER_LANDS_IN_TABS } from '@/lib/featureFlags'
 
 const COUNTDOWN_START = 45
 
@@ -102,7 +103,9 @@ export default function VerifyScreen() {
     setIsLoading(false)
 
     if (role === 'provider') {
-      router.replace('/dashboard/provider')
+      // Mode 3: providers land in the shared tabs and reach the dashboard via
+      // the Me tab's My Studio entrance. Flag-gated for instant rollback.
+      router.replace(PROVIDER_LANDS_IN_TABS ? '/(tabs)/' : '/dashboard/provider')
     } else if (role === 'client') {
       router.replace('/(tabs)/')
     } else {
