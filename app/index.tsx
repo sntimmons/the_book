@@ -101,7 +101,7 @@ const DEV_NAV: NavSection[] = [
     label: 'CLIENT',
     items: [
       { label: 'Discovery Feed', route: '/(tabs)/' },
-      { label: 'Reels Feed', route: '/reels' },
+      { label: 'Reels Feed', route: '/(tabs)/reels' },
       { label: 'Nearby', route: '/nearby' },
       { label: 'Top Rated', route: '/top-rated' },
       { label: 'New Posts', route: '/(tabs)/new' },
@@ -238,7 +238,7 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/reviews/[id]', route: '/reviews/1', status: 'Stub' },
   { label: '/notifications', route: '/notifications', status: 'Stub' },
   { label: '/(tabs)/search', route: '/(tabs)/search', status: 'Built' },
-  { label: '/reels', route: '/reels', status: 'Built' },
+  { label: '/(tabs)/reels', route: '/(tabs)/reels', status: 'Built' },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────

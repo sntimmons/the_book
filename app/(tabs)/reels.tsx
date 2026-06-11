@@ -541,22 +541,10 @@ function ReelItem({
         pointerEvents="none"
       />
 
-      {/* Top header: back chevron + Reels wordmark, For You tab, camera */}
+      {/* Top header: Reels wordmark, For You tab, camera. (No back chevron —
+          Reels is now a root tab; switch away via the bottom bar.) */}
       <View style={[styles.header, { top: insets.top + 8 }]}>
         <View style={styles.headerLeft}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back()
-              } else {
-                router.replace('/(tabs)/' as any)
-              }
-            }}
-          >
-            <Ionicons name="chevron-back" size={22} color="#F0E8D5" />
-          </TouchableOpacity>
           <Text style={styles.wordmark}>Reels</Text>
         </View>
 
@@ -648,8 +636,9 @@ function ReelItem({
         </TouchableOpacity>
       </View>
 
-      {/* Bottom-left content */}
-      <View style={[styles.leftContent, { bottom: insets.bottom + 24 }]}>
+      {/* Bottom-left content. +64 clears the bottom tab bar now that Reels is a
+          tab (keeps the original 24 gap above it). */}
+      <View style={[styles.leftContent, { bottom: insets.bottom + 88 }]}>
         {/* Provider row + availability inline */}
         {/* TODO: design Houston-native trust signal to replace the verification check */}
         <TouchableOpacity
@@ -702,8 +691,8 @@ function ReelItem({
         </Text>
       </View>
 
-      {/* Bottom horizontal scrubber */}
-      <View style={styles.scrubberTrack}>
+      {/* Bottom horizontal scrubber — sits just above the tab bar. */}
+      <View style={[styles.scrubberTrack, { bottom: insets.bottom + 64 }]}>
         <View style={[styles.scrubberFill, { width: `${progressPct}%` }]} />
       </View>
     </View>

@@ -1,40 +1,24 @@
-import { Tabs, router } from 'expo-router'
+import { Tabs } from 'expo-router'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Ionicons } from '@expo/vector-icons'
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
 import TabIcon from '@/components/TabIcon'
 import { useAuth } from '@/context/AuthContext'
 
-type IconTabName = 'index' | 'bookings' | 'messages' | 'me'
+type IconTabName = 'index' | 'reels' | 'bookings' | 'messages' | 'me'
 
-type IconTab = {
-  kind: 'icon'
+type Slot = {
   routeName: IconTabName
-  iconName: 'home' | 'bookings' | 'messages' | 'me'
+  iconName: 'home' | 'reels' | 'bookings' | 'messages' | 'me'
 }
 
-type CenterTab = {
-  kind: 'center'
-  routeName: 'new'
-}
-
-type PushTab = {
-  kind: 'push'
-  key: 'reels'
-  iconName: 'reels'
-  href: string
-}
-
-type Slot = IconTab | CenterTab | PushTab
-
+// Mode 3 shared bottom nav: Discover, Reels, Bookings, Messages, Me.
 const SLOTS: Slot[] = [
-  { kind: 'icon', routeName: 'index', iconName: 'home' },
-  { kind: 'icon', routeName: 'bookings', iconName: 'bookings' },
-  { kind: 'push', key: 'reels', iconName: 'reels', href: '/reels' },
-  { kind: 'center', routeName: 'new' },
-  { kind: 'icon', routeName: 'messages', iconName: 'messages' },
-  { kind: 'icon', routeName: 'me', iconName: 'me' },
+  { routeName: 'index', iconName: 'home' },
+  { routeName: 'reels', iconName: 'reels' },
+  { routeName: 'bookings', iconName: 'bookings' },
+  { routeName: 'messages', iconName: 'messages' },
+  { routeName: 'me', iconName: 'me' },
 ]
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
@@ -44,10 +28,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   // TODO: pull display name/avatar from a profile store once it exists
   const avatarUrl = (user?.user_metadata?.avatar_url as string | undefined) ?? undefined
   const email = user?.email ?? ''
-  const derivedInitials = email
-    ? email.charAt(0).toUpperCase()
-    : 'ST'
-  const initials = derivedInitials
+  const initials = email ? email.charAt(0).toUpperCase() : 'ST'
 
   return (
     <View
@@ -57,51 +38,6 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
       ]}
     >
       {SLOTS.map((slot) => {
-        if (slot.kind === 'push') {
-          return (
-            <Pressable
-              key={slot.key}
-              onPress={() => router.push(slot.href as never)}
-              style={bar.slot}
-              android_ripple={null}
-            >
-              <TabIcon name={slot.iconName} focused={false} />
-            </Pressable>
-          )
-        }
-
-        if (slot.kind === 'center') {
-          const routeName = slot.routeName
-          const route = state.routes.find((r) => r.name === routeName)
-          const isFocused = route ? state.index === state.routes.indexOf(route) : false
-
-          function pressCenter() {
-            if (!route) return
-            const event = navigation.emit({
-              type: 'tabPress',
-              target: route.key,
-              canPreventDefault: true,
-            })
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(routeName as never)
-            }
-          }
-
-          return (
-            <View key="center" style={bar.slot}>
-              <Pressable
-                onPress={pressCenter}
-                style={({ pressed }) => [
-                  bar.centerBtn,
-                  pressed && { transform: [{ scale: 0.96 }], opacity: 0.95 },
-                ]}
-              >
-                <Ionicons name="add" size={26} color="#080808" />
-              </Pressable>
-            </View>
-          )
-        }
-
         const routeName = slot.routeName
         const route = state.routes.find((r) => r.name === routeName)
         const isFocused = route ? state.index === state.routes.indexOf(route) : false
@@ -148,10 +84,14 @@ export default function TabLayout() {
       screenOptions={{ headerShown: false, tabBarShowLabel: false }}
     >
       <Tabs.Screen name="index" />
+      <Tabs.Screen name="reels" />
       <Tabs.Screen name="bookings" />
-      <Tabs.Screen name="new" />
       <Tabs.Screen name="messages" />
       <Tabs.Screen name="me" />
+      {/* Registered but not in the bar: the old "+" quick-action sheet (kept
+          reachable via direct route for now) and the search screen (reached
+          from Discover). */}
+      <Tabs.Screen name="new" options={{ href: null }} />
       <Tabs.Screen name="search" options={{ href: null }} />
     </Tabs>
   )
@@ -178,19 +118,5 @@ const bar = StyleSheet.create({
     height: 2,
     borderRadius: 1,
     backgroundColor: '#C8922A',
-  },
-  centerBtn: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#C8922A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: -8,
-    shadowColor: '#C8922A',
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
   },
 })
