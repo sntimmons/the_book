@@ -350,8 +350,21 @@ function ClientMe() {
           </ScrollView>
         )}
 
-        {/* Posts preview entry (universal) */}
-        <PostsPreviewEntry style={styles.postsEntryClient} />
+        {/* Preview entries (universal + client-facing) */}
+        <PreviewEntryRow
+          icon="image"
+          title="Posts"
+          sub="Share your work and results"
+          href="/preview/posts"
+          style={styles.postsEntryClient}
+        />
+        <PreviewEntryRow
+          icon="clock"
+          title="Available Today"
+          sub="Find providers open right now"
+          href="/preview/available-today"
+          style={styles.postsEntryStacked}
+        />
 
         <View style={styles.separator} />
 
@@ -681,27 +694,77 @@ function CommunityHubCard() {
   )
 }
 
-// Modest, lower-weight entry for the universal Posts preview. Used on both the
-// client and provider Me tabs; the hub card above is the featured one.
-function PostsPreviewEntry({ style }: { style?: any }) {
+// Modest, lower-weight entry that opens a single preview screen. Used for the
+// universal Posts preview (both Me tabs) and the client Available Today preview;
+// the featured Community hub card above carries the real visual weight.
+function PreviewEntryRow({
+  icon,
+  title,
+  sub,
+  href,
+  style,
+}: {
+  icon: any
+  title: string
+  sub: string
+  href: string
+  style?: any
+}) {
   return (
     <TouchableOpacity
       style={[styles.postsEntry, style]}
       activeOpacity={0.8}
-      onPress={() => router.push('/preview/posts' as never)}
+      onPress={() => router.push(href as never)}
     >
       <View style={styles.postsEntryIcon}>
-        <Feather name="image" size={17} color="rgba(240,232,213,0.7)" />
+        <Feather name={icon} size={17} color="rgba(240,232,213,0.7)" />
       </View>
       <View style={styles.flex1}>
-        <Text style={styles.postsEntryTitle}>Posts</Text>
-        <Text style={styles.postsEntrySub}>Share your work and results</Text>
+        <Text style={styles.postsEntryTitle}>{title}</Text>
+        <Text style={styles.postsEntrySub}>{sub}</Text>
       </View>
       <View style={styles.comingSoonTag}>
         <Text style={styles.comingSoonTagText}>Coming soon</Text>
       </View>
       <Feather name="chevron-right" size={18} color="rgba(240,232,213,0.25)" />
     </TouchableOpacity>
+  )
+}
+
+// The provider-side "maybe" previews, grouped into one tidy Coming Soon cluster
+// low on the Me tab. Deliberately less prominent than the Community hub card.
+const PROVIDER_PREVIEWS: { key: string; icon: any; title: string; sub: string; href: string }[] = [
+  { key: 'analytics', icon: 'bar-chart-2', title: 'Money & Analytics', sub: 'Earnings and business health', href: '/preview/analytics' },
+  { key: 'learning', icon: 'book-open', title: 'Learn the Business', sub: 'Taxes, pricing, and growth', href: '/preview/learning' },
+  { key: 'contracts', icon: 'file-text', title: 'Contracts', sub: 'Simple service agreements', href: '/preview/contracts' },
+  { key: 'safety', icon: 'shield', title: 'Safety & Verification', sub: 'Know who you are booking', href: '/preview/safety' },
+]
+
+// Grouped Coming Soon cluster for the provider Me tab.
+function ComingSoonCluster() {
+  return (
+    <>
+      <Text style={styles.clusterLabel}>Coming soon</Text>
+      <View style={styles.rowsGroup}>
+        {PROVIDER_PREVIEWS.map((p, idx) => (
+          <TouchableOpacity
+            key={p.key}
+            style={[styles.clusterRow, idx < PROVIDER_PREVIEWS.length - 1 && styles.studioRowBorder]}
+            activeOpacity={0.7}
+            onPress={() => router.push(p.href as never)}
+          >
+            <View style={styles.clusterIcon}>
+              <Feather name={p.icon} size={16} color="rgba(240,232,213,0.6)" />
+            </View>
+            <View style={styles.flex1}>
+              <Text style={styles.clusterTitle}>{p.title}</Text>
+              <Text style={styles.clusterSub}>{p.sub}</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color="rgba(240,232,213,0.2)" />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </>
   )
 }
 
@@ -927,7 +990,16 @@ function ProviderMe({ onSwitchToClient }: { onSwitchToClient: () => void }) {
         </View>
 
         {/* Posts preview entry (universal) */}
-        <PostsPreviewEntry style={styles.postsEntryProvider} />
+        <PreviewEntryRow
+          icon="image"
+          title="Posts"
+          sub="Share your work and results"
+          href="/preview/posts"
+          style={styles.postsEntryProvider}
+        />
+
+        {/* Grouped Coming Soon cluster — modest, less prominent than the hub card */}
+        <ComingSoonCluster />
 
         {/* Quiet escape hatch */}
         <TouchableOpacity
@@ -1493,6 +1565,10 @@ const styles = StyleSheet.create({
     marginTop: 20,
     marginBottom: 4,
   },
+  postsEntryStacked: {
+    marginTop: 10,
+    marginBottom: 4,
+  },
   postsEntryProvider: {
     marginTop: 12,
   },
@@ -1513,6 +1589,44 @@ const styles = StyleSheet.create({
     marginTop: 2,
     fontSize: 12,
     color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+  },
+
+  // Provider Coming Soon cluster (grouped, low-prominence)
+  clusterLabel: {
+    marginTop: 24,
+    marginBottom: 10,
+    marginHorizontal: 20,
+    fontSize: 10,
+    color: 'rgba(240,232,213,0.35)',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  clusterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 13,
+  },
+  clusterIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clusterTitle: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.92)',
+    fontFamily: 'Manrope_500Medium',
+  },
+  clusterSub: {
+    marginTop: 1,
+    fontSize: 11.5,
+    color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_400Regular',
   },
 
