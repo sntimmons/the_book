@@ -350,22 +350,6 @@ function ClientMe() {
           </ScrollView>
         )}
 
-        {/* Preview entries (universal + client-facing) */}
-        <PreviewEntryRow
-          icon="image"
-          title="Posts"
-          sub="Share your work and results"
-          href="/preview/posts"
-          style={styles.postsEntryClient}
-        />
-        <PreviewEntryRow
-          icon="clock"
-          title="Available Today"
-          sub="Find providers open right now"
-          href="/preview/available-today"
-          style={styles.postsEntryStacked}
-        />
-
         <View style={styles.separator} />
 
         {/* Content tabs */}
@@ -398,6 +382,12 @@ function ClientMe() {
         )}
         {activeTab === 'saved' && <SavedTab />}
         {activeTab === 'following' && <FollowingTab followingCount={stats.following} />}
+
+        {/* Grouped Coming Soon cluster — all client previews in one tidy list,
+            kept low on the page so the working core stays the star. */}
+        <View style={styles.clientClusterWrap}>
+          <ComingSoonCluster groups={CLIENT_GROUPS} />
+        </View>
       </ScrollView>
     </View>
   )
@@ -731,39 +721,82 @@ function PreviewEntryRow({
   )
 }
 
-// The provider-side "maybe" previews, grouped into one tidy Coming Soon cluster
-// low on the Me tab. Deliberately less prominent than the Community hub card.
-const PROVIDER_PREVIEWS: { key: string; icon: any; title: string; sub: string; href: string }[] = [
-  { key: 'analytics', icon: 'bar-chart-2', title: 'Money & Analytics', sub: 'Earnings and business health', href: '/preview/analytics' },
-  { key: 'learning', icon: 'book-open', title: 'Learn the Business', sub: 'Taxes, pricing, and growth', href: '/preview/learning' },
-  { key: 'contracts', icon: 'file-text', title: 'Contracts', sub: 'Simple service agreements', href: '/preview/contracts' },
-  { key: 'safety', icon: 'shield', title: 'Safety & Verification', sub: 'Know who you are booking', href: '/preview/safety' },
+type PreviewItem = { key: string; icon: any; title: string; sub: string; href: string }
+// A cluster is one or more groups. An unlabeled group renders as a plain list
+// (provider side, unchanged); labeled groups get a small sub-header so a longer
+// list scans easily instead of being one undifferentiated block (client side).
+type PreviewGroup = { label?: string; items: PreviewItem[] }
+
+// The provider-side "maybe" previews — one unlabeled group, low on the Me tab
+// and deliberately less prominent than the Community hub card.
+const PROVIDER_GROUPS: PreviewGroup[] = [
+  {
+    items: [
+      { key: 'analytics', icon: 'bar-chart-2', title: 'Money & Analytics', sub: 'Earnings and business health', href: '/preview/analytics' },
+      { key: 'learning', icon: 'book-open', title: 'Learn the Business', sub: 'Taxes, pricing, and growth', href: '/preview/learning' },
+      { key: 'contracts', icon: 'file-text', title: 'Contracts', sub: 'Simple service agreements', href: '/preview/contracts' },
+      { key: 'safety', icon: 'shield', title: 'Safety & Verification', sub: 'Know who you are booking', href: '/preview/safety' },
+    ],
+  },
 ]
 
-// Grouped Coming Soon cluster for the provider Me tab.
-function ComingSoonCluster() {
+// The client-side previews, folded into one tidy Coming Soon cluster low on the
+// client Me tab and broken into small sub-groups so the list scans easily. The
+// urgent-booking concept is a single entry (Find Me Someone Today) that covers
+// both request-based and browse-based framing on its preview screen.
+const CLIENT_GROUPS: PreviewGroup[] = [
+  {
+    label: 'Safety & Trust',
+    items: [
+      { key: 'safety_client', icon: 'shield', title: 'Safety', sub: 'Share your appointment and check in', href: '/preview/safety-client' },
+      { key: 'provider_verification', icon: 'user-check', title: 'Verified Providers', sub: 'IDs, real reviews, and booking counts', href: '/preview/provider-verification' },
+      { key: 'protection_center', icon: 'umbrella', title: 'Protection Center', sub: 'Coverage, claims, and real support', href: '/preview/protection-center' },
+    ],
+  },
+  {
+    label: 'Booking',
+    items: [
+      { key: 'find_today', icon: 'search', title: 'Find Me Someone Today', sub: 'Get matched or browse who is open now', href: '/preview/find-today' },
+    ],
+  },
+  {
+    label: 'Inspiration & Sharing',
+    items: [
+      { key: 'lookbook', icon: 'bookmark', title: 'Lookbook', sub: 'Save looks and build boards', href: '/preview/lookbook' },
+      { key: 'posts', icon: 'image', title: 'Posts', sub: 'Share your results and shoutouts', href: '/preview/posts' },
+    ],
+  },
+]
+
+// Grouped Coming Soon cluster, shared by both Me tabs.
+function ComingSoonCluster({ groups }: { groups: PreviewGroup[] }) {
   return (
     <>
       <Text style={styles.clusterLabel}>Coming soon</Text>
-      <View style={styles.rowsGroup}>
-        {PROVIDER_PREVIEWS.map((p, idx) => (
-          <TouchableOpacity
-            key={p.key}
-            style={[styles.clusterRow, idx < PROVIDER_PREVIEWS.length - 1 && styles.studioRowBorder]}
-            activeOpacity={0.7}
-            onPress={() => router.push(p.href as never)}
-          >
-            <View style={styles.clusterIcon}>
-              <Feather name={p.icon} size={16} color="rgba(240,232,213,0.6)" />
-            </View>
-            <View style={styles.flex1}>
-              <Text style={styles.clusterTitle}>{p.title}</Text>
-              <Text style={styles.clusterSub}>{p.sub}</Text>
-            </View>
-            <Feather name="chevron-right" size={16} color="rgba(240,232,213,0.2)" />
-          </TouchableOpacity>
-        ))}
-      </View>
+      {groups.map((group, gi) => (
+        <View key={group.label ?? `group-${gi}`}>
+          {group.label ? <Text style={styles.clusterSubLabel}>{group.label}</Text> : null}
+          <View style={styles.rowsGroup}>
+            {group.items.map((p, idx) => (
+              <TouchableOpacity
+                key={p.key}
+                style={[styles.clusterRow, idx < group.items.length - 1 && styles.studioRowBorder]}
+                activeOpacity={0.7}
+                onPress={() => router.push(p.href as never)}
+              >
+                <View style={styles.clusterIcon}>
+                  <Feather name={p.icon} size={16} color="rgba(240,232,213,0.6)" />
+                </View>
+                <View style={styles.flex1}>
+                  <Text style={styles.clusterTitle}>{p.title}</Text>
+                  <Text style={styles.clusterSub}>{p.sub}</Text>
+                </View>
+                <Feather name="chevron-right" size={16} color="rgba(240,232,213,0.2)" />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ))}
     </>
   )
 }
@@ -999,7 +1032,7 @@ function ProviderMe({ onSwitchToClient }: { onSwitchToClient: () => void }) {
         />
 
         {/* Grouped Coming Soon cluster — modest, less prominent than the hub card */}
-        <ComingSoonCluster />
+        <ComingSoonCluster groups={PROVIDER_GROUPS} />
 
         {/* Quiet escape hatch */}
         <TouchableOpacity
@@ -1561,14 +1594,6 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(240,232,213,0.07)',
     backgroundColor: 'rgba(240,232,213,0.03)',
   },
-  postsEntryClient: {
-    marginTop: 20,
-    marginBottom: 4,
-  },
-  postsEntryStacked: {
-    marginTop: 10,
-    marginBottom: 4,
-  },
   postsEntryProvider: {
     marginTop: 12,
   },
@@ -1592,7 +1617,10 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
   },
 
-  // Provider Coming Soon cluster (grouped, low-prominence)
+  // Coming Soon cluster (grouped, low-prominence) — shared by both Me tabs
+  clientClusterWrap: {
+    marginTop: 8,
+  },
   clusterLabel: {
     marginTop: 24,
     marginBottom: 10,
@@ -1602,6 +1630,16 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
+  },
+  // Small sub-group header inside the cluster (one level below clusterLabel).
+  clusterSubLabel: {
+    marginTop: 14,
+    marginBottom: 8,
+    marginHorizontal: 20,
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 0.2,
   },
   clusterRow: {
     flexDirection: 'row',
