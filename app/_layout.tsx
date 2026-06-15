@@ -75,12 +75,16 @@ function RootNavigator() {
 
   return (
     <View style={{ flex: 1 }}>
+      {/* Back-swipe is EDGE-only (fullScreenGestureEnabled: false) app-wide.
+          The full-screen variant let a swipe start anywhere, and testers were
+          triggering accidental back navigations mid-screen. Edge-swipe keeps the
+          intentional left-edge gesture while ignoring mid-screen drags. */}
       <Stack
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: '#080808' },
           gestureEnabled: true,
-          fullScreenGestureEnabled: true,
+          fullScreenGestureEnabled: false,
         }}
       >
         {/* Root-stack swipe-back is on so pushed detail screens (providers,
@@ -93,12 +97,14 @@ function RootNavigator() {
           name="(tabs)"
           options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
         />
-        {/* In Mode 3 the dashboard is reached ONLY by pushing from the Me tab,
-            so swiping back returns to the shared app (never to welcome) — the
-            clean studio exit. Full-screen gesture (swipe from anywhere) since no
-            dashboard screen has horizontal-scrolling content to conflict with.
-            When the flag is off, providers land here via replace, so the gesture
-            stays disabled to preserve the auth-boundary fix. */}
+        {/* Dashboard swipe-back is gated on PROVIDER_LANDS_IN_TABS, which is now
+            false (Option B): providers LAND in the dashboard via router.replace,
+            so it is the root of their stack. The gesture stays DISABLED here so a
+            landed provider cannot swipe back across the auth boundary to welcome /
+            sign-up. They reach the shared app via the header "Explore" button and
+            the drawer's "Back to The Book"; both go to /(tabs)/. (If the flag were
+            flipped back to true, the dashboard becomes a pushed section and the
+            gesture re-enables to swipe back to the Me tab.) */}
         <Stack.Screen
           name="dashboard/provider"
           options={{

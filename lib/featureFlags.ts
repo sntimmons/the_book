@@ -11,4 +11,4 @@
 // This gates: app/auth/verify.tsx, app/auth/phone.tsx,
 // app/onboarding/provider/golive.tsx (landing), and the dashboard swipe-back
 // in app/_layout.tsx. Flip to false to instantly roll back.
-export const PROVIDER_LANDS_IN_TABS = true
+export const PROVIDER_LANDS_IN_TABS = false // Option B: providers land in their dashboard

@@ -23,6 +23,7 @@ import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../context/AuthContext'
 import { uploadMedia } from '../../../lib/storage'
 import { useCategories } from '../../../hooks/useProviders'
+import { DoneAccessory, DONE_ACCESSORY_ID } from '../../../components/DoneAccessory'
 
 interface ProviderForm {
   displayName: string
@@ -514,6 +515,7 @@ export default function ProviderEditProfileScreen() {
                 placeholderTextColor="rgba(240,232,213,0.25)"
                 keyboardType="numeric"
                 maxLength={2}
+                inputAccessoryViewID={DONE_ACCESSORY_ID}
                 onFocus={() => setFocused('yearsExperience')}
                 onBlur={() => setFocused(null)}
               />
@@ -521,6 +523,8 @@ export default function ProviderEditProfileScreen() {
           </>
         )}
       </ScrollView>
+
+      <DoneAccessory />
 
       {/* Category bottom sheet */}
       <Modal

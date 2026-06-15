@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../context/AuthContext'
+import { DoneAccessory, DONE_ACCESSORY_ID } from '../../../components/DoneAccessory'
 
 interface Service {
   id: string
@@ -419,6 +420,7 @@ export default function ProviderServicesScreen() {
                         placeholder="85"
                         placeholderTextColor="rgba(240,232,213,0.25)"
                         keyboardType="decimal-pad"
+                        inputAccessoryViewID={DONE_ACCESSORY_ID}
                       />
                     </View>
                   </View>
@@ -561,6 +563,7 @@ export default function ProviderServicesScreen() {
           </View>
         </>
       )}
+      <DoneAccessory />
     </View>
   )
 }

@@ -7,7 +7,7 @@ export default function BookingsLayout() {
         headerShown: false,
         animation: 'slide_from_right',
         gestureEnabled: true,
-        fullScreenGestureEnabled: true,
+        fullScreenGestureEnabled: false,
         contentStyle: { backgroundColor: '#080808' },
       }}
     />

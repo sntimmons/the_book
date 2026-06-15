@@ -7,7 +7,7 @@ export default function MeLayout() {
         headerShown: false,
         animation: 'slide_from_right',
         gestureEnabled: true,
-        fullScreenGestureEnabled: true,
+        fullScreenGestureEnabled: false,
         contentStyle: { backgroundColor: '#080808' },
       }}
     />

@@ -165,7 +165,7 @@ export default function ProviderDashboardLayout() {
             contentStyle: { backgroundColor: '#080808' },
             animation: 'none',
             gestureEnabled: true,
-            fullScreenGestureEnabled: true,
+            fullScreenGestureEnabled: false,
           }}
         />
 
@@ -274,15 +274,13 @@ export default function ProviderDashboardLayout() {
               activeOpacity={0.7}
               onPress={() => {
                 closePanel()
-                // Clean exit: when the studio was pushed from the Me tab (Mode 3),
-                // go back to where they came from; otherwise (landed here) fall
-                // back to the shared tabs.
+                // Always REPLACE into the shared tabs. Providers now land in the
+                // dashboard via replace (Option B), so the auth/welcome screens
+                // sit below it in the stack and router.back() would cross the auth
+                // boundary to the OTP screen. Replacing lands cleanly on Discover;
+                // the (tabs) screen keeps its own gesture disabled for safety.
                 setTimeout(() => {
-                  if (router.canGoBack()) {
-                    router.back()
-                  } else {
-                    router.replace('/(tabs)/')
-                  }
+                  router.replace('/(tabs)/')
                 }, 50)
               }}
             >

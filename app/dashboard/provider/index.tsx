@@ -318,6 +318,16 @@ export default function ProviderDashboard() {
   const greetingName = providerName || 'there'
   const pendingCount = pendingRequests.length
 
+  // Jump from the dashboard (business) into the shared app (Discover/Reels/etc).
+  // Always REPLACE into the tabs rather than router.back(): providers now land
+  // in the dashboard via replace, so the auth/welcome screens still sit below it
+  // in the stack (canGoBack() is true) and a back() would cross the auth boundary
+  // to the OTP screen. Replacing lands cleanly on Discover, and the (tabs) screen
+  // has its own gesture disabled so the boundary stays safe.
+  function goToSharedApp() {
+    router.replace('/(tabs)/')
+  }
+
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
@@ -325,14 +335,26 @@ export default function ProviderDashboard() {
           <Feather name="menu" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Dashboard</Text>
-        <TouchableOpacity
-          style={styles.menuBtn}
-          activeOpacity={0.8}
-          onPress={() => router.push('/notifications' as never)}
-        >
-          <Feather name="bell" size={18} color="#F0E8D5" />
-          {notifUnreadCount > 0 && <View style={styles.notifDot} />}
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          {/* Obvious, always-visible door into the shared app so providers are
+              never stuck in the business-only view. Neutral pill, not amber. */}
+          <TouchableOpacity
+            style={styles.exploreBtn}
+            activeOpacity={0.85}
+            onPress={goToSharedApp}
+          >
+            <Feather name="compass" size={15} color="#F0E8D5" />
+            <Text style={styles.exploreBtnText}>Explore</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.menuBtn}
+            activeOpacity={0.8}
+            onPress={() => router.push('/notifications' as never)}
+          >
+            <Feather name="bell" size={18} color="#F0E8D5" />
+            {notifUnreadCount > 0 && <View style={styles.notifDot} />}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -584,6 +606,27 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(240,232,213,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  exploreBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: 18,
+    backgroundColor: 'rgba(240,232,213,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.12)',
+  },
+  exploreBtnText: {
+    fontSize: 13,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
   },
   notifDot: {
     position: 'absolute',

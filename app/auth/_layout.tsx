@@ -7,7 +7,7 @@ export default function AuthLayout() {
         headerShown: false,
         animation: 'slide_from_right',
         gestureEnabled: true,
-        fullScreenGestureEnabled: true,
+        fullScreenGestureEnabled: false,
       }}
     >
       {/* Block swipe-back mid-verification so a half-entered OTP isn't lost to

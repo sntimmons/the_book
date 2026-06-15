@@ -26,6 +26,7 @@ import {
   isEarning,
   getProviderDbId,
 } from './analytics-utils'
+import { DoneAccessory, DONE_ACCESSORY_ID } from '../../../components/DoneAccessory'
 
 function Shimmer({ style }: { style: any }) {
   const opacity = useRef(new Animated.Value(0.4)).current
@@ -334,6 +335,7 @@ export default function GoalDetail() {
               placeholder="2000"
               placeholderTextColor="rgba(240,232,213,0.25)"
               style={s.input}
+              inputAccessoryViewID={DONE_ACCESSORY_ID}
               autoFocus
             />
           </View>
@@ -341,6 +343,7 @@ export default function GoalDetail() {
             <Text style={s.saveBtnText}>Save Goal</Text>
           </TouchableOpacity>
         </View>
+        <DoneAccessory />
       </Modal>
     </View>
   )
