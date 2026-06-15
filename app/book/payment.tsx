@@ -78,13 +78,26 @@ export default function BookPayment() {
   const servicePrice = parseFloat(selectedService?.price ?? '0') || 0
 
   async function handleConfirm() {
-    if (!user || !selectedService || !selectedDate || !selectedTime) {
-      setProcessError(
-        'Missing booking details. Please go back and try again.',
-      )
+    if (isProcessing) return
+
+    // Specific, actionable validation instead of one generic "something is
+    // missing". The service / date / time are required to advance through the
+    // earlier steps, so the piece that actually trips this guard in practice is
+    // `user`: nothing before this screen checks auth, so a client whose session
+    // is not established reaches the final step and must be told to sign in,
+    // not shown a vague "missing booking details".
+    if (!user) {
+      setProcessError('Please sign in to send a booking request.')
       return
     }
-    if (isProcessing) return
+    if (!selectedService) {
+      setProcessError('Please choose a service before sending your request.')
+      return
+    }
+    if (!selectedDate || !selectedTime) {
+      setProcessError('Please pick a date and time before sending your request.')
+      return
+    }
 
     setIsProcessing(true)
     setProcessError('')
@@ -117,7 +130,15 @@ export default function BookPayment() {
 
       if (error) {
         console.log('Booking insert error:', error)
-        setProcessError('Something went wrong. Please try again.')
+        // Surface the real reason rather than hiding every failure behind a
+        // single generic line. If the request fails because of a schema or
+        // permission problem (e.g. a missing column or an RLS rule), the tester
+        // now sees exactly what went wrong so it can be reported and fixed.
+        setProcessError(
+          error.message
+            ? `We could not send your request: ${error.message}`
+            : 'We could not send your request. Please try again.',
+        )
         setIsProcessing(false)
         return
       }
