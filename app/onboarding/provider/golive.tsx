@@ -163,20 +163,37 @@ export default function ProviderGoLive() {
       setUploadStage('Saving your profile...')
 
       const locationValue = location || null
+      const displayNameValue = name || 'Provider'
 
+      // `username` is NOT NULL in the providers table with no default, so a
+      // first-time insert must supply one. Generate a handle from the display
+      // name (lowercase, spaces to underscores, strip anything else) with a
+      // short numeric suffix to reduce collisions. This is a generated handle
+      // for now; providers can change it once username editing exists.
+      const generatedUsername =
+        displayNameValue
+          .toLowerCase()
+          .replace(/\s+/g, '_')
+          .replace(/[^a-z0-9_]/g, '') +
+        '_' +
+        Date.now().toString().slice(-4)
+
+      // `is_approved` is intentionally omitted: the DB default is true, and the
+      // Discover feed filters on is_approved = true. Sending false here would
+      // hide every newly live provider, so we let the default make them visible.
       const { data: providerData, error: providerError } = await supabase
         .from('providers')
         .upsert(
           {
             user_id: user.id,
-            display_name: name || 'Provider',
+            display_name: displayNameValue,
+            username: generatedUsername,
             category_id: categoryId,
             bio: bio || null,
             location: locationValue,
             neighborhood: locationValue,
             profile_photo_url: profilePhotoUrl,
             cover_image_url: bannerUrl,
-            is_approved: false,
             verification_status: 'pending',
             identity_verified: false,
             updated_at: new Date().toISOString(),
@@ -190,9 +207,15 @@ export default function ProviderGoLive() {
         console.log('Provider save error:', providerError)
         setIsGoingLive(false)
         setUploadStage('')
+        // Surface the real reason rather than hiding every failure behind a
+        // single generic line. If the save fails because of a schema or
+        // permission problem (e.g. a missing column or an RLS rule), the tester
+        // now sees exactly what went wrong so it can be reported and fixed.
         Alert.alert(
           'Something went wrong',
-          'We could not save your profile. Please try again.',
+          providerError.message
+            ? `We could not save your profile: ${providerError.message}`
+            : 'We could not save your profile. Please try again.',
           [{ text: 'OK' }],
         )
         return
