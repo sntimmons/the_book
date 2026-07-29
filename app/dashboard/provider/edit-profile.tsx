@@ -233,7 +233,10 @@ export default function ProviderEditProfileScreen() {
         category_id: selectedCategoryId,
         profile_photo_url: profilePhotoUrl,
         cover_image_url: coverImageUrl,
-        specialties: specialtiesArray.length > 0 ? specialtiesArray : null,
+        // specialties is NOT NULL (default '{}') in the DB, so an empty list
+        // must be sent as an empty array — never null — to avoid a constraint
+        // violation when a provider clears all their specialties.
+        specialties: specialtiesArray,
         years_experience: yearsValue,
         updated_at: new Date().toISOString(),
       }
@@ -245,12 +248,18 @@ export default function ProviderEditProfileScreen() {
 
       if (error) {
         console.log('Save error:', error)
+        setSaving(false)
+        // Surface the real reason rather than hiding every failure behind a
+        // single generic line. If the save fails because of a schema or
+        // permission problem (e.g. a missing column or an RLS rule), the tester
+        // now sees exactly what went wrong so it can be reported and fixed.
         Alert.alert(
           'Could not save',
-          'Something went wrong. Please try again.',
+          error.message
+            ? `We could not save your changes: ${error.message}`
+            : 'Something went wrong. Please try again.',
           [{ text: 'OK' }],
         )
-        setSaving(false)
         return
       }
 
