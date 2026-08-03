@@ -88,6 +88,7 @@ export default function ProviderEditProfileScreen() {
   const [form, setForm] = useState<ProviderForm>(EMPTY_FORM)
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null)
   const [photo, setPhoto] = useState<string | null>(null)
+  const [photoError, setPhotoError] = useState(false)
   const [banner, setBanner] = useState<string | null>(null)
   const [photoChanged, setPhotoChanged] = useState(false)
   const [bannerChanged, setBannerChanged] = useState(false)
@@ -121,6 +122,7 @@ export default function ProviderEditProfileScreen() {
       setProviderData(row)
       setSelectedCategoryId(row.category_id)
       setPhoto(row.profile_photo_url)
+      setPhotoError(false)
       setBanner(row.cover_image_url)
       setForm({
         displayName: row.display_name ?? '',
@@ -164,6 +166,7 @@ export default function ProviderEditProfileScreen() {
     })
     if (!result.canceled && result.assets[0]) {
       setPhoto(result.assets[0].uri)
+      setPhotoError(false)
       setPhotoChanged(true)
       setHasChanges(true)
     }
@@ -270,7 +273,11 @@ export default function ProviderEditProfileScreen() {
       Alert.alert(
         'Profile updated',
         'Your changes have been saved and are live on your profile.',
-        [{ text: 'Done', onPress: () => router.back() }],
+        // Land explicitly on the dashboard via replace rather than router.back().
+        // The provider stack is built with router.replace (see the dashboard
+        // _layout note), so back() here can cross the auth boundary to a
+        // detached screen and leave the app frozen/untappable.
+        [{ text: 'Done', onPress: () => router.replace('/dashboard/provider') }],
       )
     } catch (err: any) {
       console.log('Save exception:', err)
@@ -384,8 +391,15 @@ export default function ProviderEditProfileScreen() {
             {/* Photo + identity */}
             <View style={styles.identityRow}>
               <View style={styles.photoWrap}>
-                {photo ? (
-                  <Image source={{ uri: photo }} style={styles.photoImg} />
+                {photo && !photoError ? (
+                  <Image
+                    source={{ uri: photo }}
+                    style={styles.photoImg}
+                    // If the stored photo URL is broken/missing, fall back to
+                    // initials so it reads as "empty, needs updating" rather
+                    // than a blank square.
+                    onError={() => setPhotoError(true)}
+                  />
                 ) : (
                   <View style={styles.photoFallback}>
                     <Text style={styles.photoInitial}>{avatarInitial}</Text>
