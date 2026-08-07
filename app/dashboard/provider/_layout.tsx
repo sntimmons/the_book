@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useCallback } from 'react'
 import {
   View,
   Text,
@@ -11,12 +11,13 @@ import {
   Image,
   useWindowDimensions,
 } from 'react-native'
-import { Stack, router } from 'expo-router'
+import { Stack, router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Feather } from '@expo/vector-icons'
 import { PanelContext } from '@/context/PanelContext'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
+import { cacheBustedPhoto } from '@/lib/image'
 
 interface ProviderProfileLite {
   id: string
@@ -77,7 +78,7 @@ export default function ProviderDashboardLayout() {
   const [providerProfile, setProviderProfile] = useState<ProviderProfileLite | null>(null)
   const [categoryName, setCategoryName] = useState('')
 
-  useEffect(() => {
+  const loadProviderProfile = useCallback(() => {
     if (!user) return
     supabase
       .from('providers')
@@ -88,6 +89,13 @@ export default function ProviderDashboardLayout() {
         if (data) setProviderProfile(data as ProviderProfileLite)
       })
   }, [user])
+
+  // Refresh when the dashboard group regains focus. Note: this group layout
+  // stays mounted across in-group navigation (e.g. opening edit-profile and
+  // returning via replace), so the focus effect may not re-run on that path —
+  // openPanel() also reloads below, which is what guarantees the drawer avatar
+  // reflects a just-saved edit at the moment it becomes visible.
+  useFocusEffect(loadProviderProfile)
 
   useEffect(() => {
     const categoryId = providerProfile?.category_id
@@ -116,6 +124,9 @@ export default function ProviderDashboardLayout() {
   const avatarInitial = displayName.charAt(0).toUpperCase()
 
   function openPanel() {
+    // Pull the latest profile each time the drawer opens so the avatar/name
+    // reflect any just-saved edits, regardless of navigation focus timing.
+    loadProviderProfile()
     setPanelOpen(true)
     Animated.parallel([
       Animated.spring(slideAnim, {
@@ -190,7 +201,7 @@ export default function ProviderDashboardLayout() {
           <View style={[styles.panelProfile, { paddingTop: insets.top + 16 }]}>
             {providerProfile?.profile_photo_url ? (
               <Image
-                source={{ uri: providerProfile.profile_photo_url }}
+                source={{ uri: cacheBustedPhoto(providerProfile.profile_photo_url) }}
                 style={styles.panelAvatarImg}
               />
             ) : (

@@ -14,6 +14,7 @@ import { useBookingStore } from '@/store/bookingStore'
 import { useProvider, useCategories } from '../../hooks/useProviders'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { cacheBustedPhoto } from '@/lib/image'
 import { getOrCreateConversation } from '../../hooks/useMessaging'
 
 export default function ProviderProfilePage() {
@@ -211,7 +212,7 @@ export default function ProviderProfilePage() {
     category: categoryName,
     location,
     bio: provider.bio ?? undefined,
-    photo: provider.profile_photo_url ?? undefined,
+    photo: cacheBustedPhoto(provider.profile_photo_url),
     banner: provider.cover_image_url ?? undefined,
     services: profileServices,
     rating: ratingValue,

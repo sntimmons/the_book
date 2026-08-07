@@ -19,6 +19,7 @@ import {
   Provider,
   Category,
 } from '../../hooks/useProviders'
+import { cacheBustedPhoto } from '../../lib/image'
 
 // ── Shimmer skeleton ──────────────────────────────────────────────────────────
 
@@ -142,7 +143,7 @@ function ProviderTile({
     >
       {provider.profile_photo_url ? (
         <Image
-          source={{ uri: provider.profile_photo_url }}
+          source={{ uri: cacheBustedPhoto(provider.profile_photo_url) }}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
         />

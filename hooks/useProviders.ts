@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useFocusEffect } from 'expo-router'
 import { supabase } from '../lib/supabase'
 
 export interface Provider {
@@ -68,9 +69,15 @@ export function useProviders(categoryId?: number) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    fetchProviders()
-  }, [categoryId])
+  // Re-fetch on every focus (and on category change) so an edited provider's
+  // updated photo/details appear on their Discover card after returning to the
+  // feed. useFocusEffect covers the initial mount too, since the screen is
+  // focused when it first renders.
+  useFocusEffect(
+    useCallback(() => {
+      fetchProviders()
+    }, [categoryId]),
+  )
 
   const fetchProviders = async () => {
     try {
@@ -107,10 +114,14 @@ export function useProvider(providerId: string) {
   const [services, setServices] = useState<Service[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    if (!providerId) return
-    fetchProvider()
-  }, [providerId])
+  // Re-fetch on focus so edits show when returning to this profile (e.g. after
+  // popping an edit screen pushed on top), not just on the first mount.
+  useFocusEffect(
+    useCallback(() => {
+      if (!providerId) return
+      fetchProvider()
+    }, [providerId]),
+  )
 
   const fetchProvider = async () => {
     try {
