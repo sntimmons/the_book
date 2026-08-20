@@ -34,6 +34,25 @@ const AuthContext = createContext<AuthContextType>({
   roleLoading: true,
 })
 
+// Ensure a non-provider user has a clients row so their name resolves
+// everywhere (e.g. the messaging inbox) even if they never completed client
+// onboarding — the case that made orphaned users show up as "Client". The name
+// defaults to the email local-part; the user can change it later via Edit
+// Profile. ignoreDuplicates makes this a no-op when a row already exists, so it
+// never overwrites an existing name (or resets created_at, which the DB
+// defaults to now() on insert).
+async function ensureClientRow(userId: string, email: string | null) {
+  const derivedName =
+    email && email.includes('@') ? email.split('@')[0] : 'Member'
+  const { error } = await supabase
+    .from('clients')
+    .upsert(
+      { id: userId, name: derivedName },
+      { onConflict: 'id', ignoreDuplicates: true },
+    )
+  if (error) console.log('Ensure clients row error:', error)
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -75,6 +94,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRole(resolved.role)
         setProviderId(resolved.providerId)
         setRoleLoading(false)
+
+        // Backfill a clients row only for users who own NO row yet (role null:
+        // neither provider nor client) — the orphaned-user case behind the
+        // "Client" messaging bug. Deliberately NOT run for role === 'client'
+        // (row already exists) or 'provider'. Gating on null preserves the
+        // path-selection step for brand-new users and avoids silently turning
+        // an incomplete provider signup into a client on their next login.
+        // Fire-and-forget: it must never block role resolution.
+        if (resolved.role === null) {
+          void ensureClientRow(userId, session?.user?.email ?? null)
+        }
       })
       .catch(() => {
         if (cancelled) return
