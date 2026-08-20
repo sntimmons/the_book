@@ -678,7 +678,7 @@ function CommunityHubCard() {
     <TouchableOpacity
       style={styles.hubCard}
       activeOpacity={0.85}
-      onPress={() => router.push('/preview/community' as never)}
+      onPress={() => router.push('/community' as never)}
     >
       <View style={styles.hubIcon}>
         <Feather name="users" size={20} color="#F0E8D5" />
