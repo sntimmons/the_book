@@ -91,24 +91,29 @@ export default function ClientPreview() {
 
     setIsLoading(true)
 
-    // Upload client photo if selected. We reuse the provider-media bucket
-    // and put client photos under their own user_id/profile/ prefix.
-    // TODO: add avatar_url column to clients table so the uploaded URL is
-    // actually persisted. For now the upload succeeds and the URL is
-    // dropped on the floor.
+    // Upload client photo if selected. Profile photos live in the
+    // provider-media bucket under the user's own user_id/profile/ prefix.
     let avatarUrl: string | null = null
     if (photo) {
       const result = await uploadMedia(photo, user.id, 'profile', 'provider-media')
       avatarUrl = result.url
+      if (result.error) console.log('Client photo upload error:', result.error)
     }
-    void avatarUrl
 
-    const { error } = await supabase.from('clients').upsert({
-      id: user.id,
-      name,
-      notes,
-      created_at: new Date().toISOString(),
-    })
+    // created_at is omitted so a row created earlier (e.g. by AuthContext on
+    // login) keeps its original date; the column defaults to now() on insert.
+    // avatar_url is only set when a photo actually uploaded.
+    const updates: {
+      id: string
+      name: string
+      notes: string
+      avatar_url?: string
+    } = { id: user.id, name, notes }
+    if (avatarUrl) updates.avatar_url = avatarUrl
+
+    const { error } = await supabase
+      .from('clients')
+      .upsert(updates, { onConflict: 'id' })
 
     if (error) {
       console.log('Client save error:', error)

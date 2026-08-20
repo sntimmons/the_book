@@ -122,6 +122,8 @@ export default function ProviderDashboard() {
   const [todayBookings, setTodayBookings] = useState<TodayBooking[]>([])
   const [earnings, setEarnings] = useState<Earnings>(ZERO_EARNINGS)
   const [requestsLoading, setRequestsLoading] = useState(true)
+  const [hasAvailability, setHasAvailability] = useState<boolean | null>(null)
+  const [availNudgeDismissed, setAvailNudgeDismissed] = useState(false)
 
   const channelIdRef = useRef<number | null>(null)
   if (channelIdRef.current === null) channelIdRef.current = ++channelInstanceSeq
@@ -144,6 +146,14 @@ export default function ProviderDashboard() {
       }
       setProviderDbId(provider.id)
       if (provider.display_name) setProviderName(provider.display_name)
+
+      // Whether the provider has set any availability — drives the dashboard
+      // nudge below. A provider with no hours can't be booked.
+      const { count: availCount } = await supabase
+        .from('provider_availability')
+        .select('id', { count: 'exact', head: true })
+        .eq('provider_id', provider.id)
+      setHasAvailability((availCount ?? 0) > 0)
 
       // All bookings for this provider, used to derive pending list,
       // earnings totals, and today's schedule from a single query.
@@ -373,6 +383,28 @@ export default function ProviderDashboard() {
                 : `You have ${pendingCount} pending request${pendingCount === 1 ? '' : 's'}.`}
           </Text>
         </View>
+
+        {hasAvailability === false && !availNudgeDismissed && (
+          <TouchableOpacity
+            style={styles.availNudge}
+            activeOpacity={0.85}
+            onPress={() => router.push('/dashboard/provider/availability' as any)}
+          >
+            <Feather name="clock" size={18} color="#C8922A" />
+            <View style={styles.availNudgeText}>
+              <Text style={styles.availNudgeTitle}>Set your availability</Text>
+              <Text style={styles.availNudgeSub}>
+                Clients can&apos;t book you until you add hours.
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setAvailNudgeDismissed(true)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Feather name="x" size={16} color="rgba(240,232,213,0.4)" />
+            </TouchableOpacity>
+          </TouchableOpacity>
+        )}
 
         <View style={styles.earningsCard}>
           <Text style={styles.earningsLabel}>LIFETIME EARNINGS</Text>
@@ -661,6 +693,32 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     marginTop: 4,
     minHeight: 18,
+  },
+  availNudge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: 'rgba(200,146,42,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.3)',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    marginBottom: 20,
+  },
+  availNudgeText: {
+    flex: 1,
+  },
+  availNudgeTitle: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  availNudgeSub: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 2,
   },
   earningsCard: {
     backgroundColor: 'rgba(240,232,213,0.04)',
