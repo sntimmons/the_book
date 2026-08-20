@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -12,17 +12,20 @@ import {
   Keyboard,
   ActivityIndicator,
   Image,
+  useWindowDimensions,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import {
   useProviderSearch,
+  useContentSearch,
   useProviders,
   useCategories,
   Provider,
   Category,
+  ContentSearchPost,
 } from '../../hooks/useProviders'
 
 const RECENT = ['Lash extensions', 'Barber fade', 'Knotless braids']
@@ -48,6 +51,9 @@ export default function SearchScreen() {
   const inputRef = useRef<TextInput>(null)
 
   const [query, setQuery] = useState('')
+  // Debounced copy of the query so the two searches fire 300ms after the user
+  // stops typing, not on every keystroke. The input still shows `query` live.
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
   const [activeFilters, setActiveFilters] = useState<string[]>([])
   const [showFilters, setShowFilters] = useState(false)
@@ -70,8 +76,22 @@ export default function SearchScreen() {
       : minRating === '4.5+' ? 4.5
       : undefined
 
+  // 300ms debounce on the raw query.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  // Auto-focus the search field whenever the screen comes into focus.
+  useFocusEffect(
+    useCallback(() => {
+      const t = setTimeout(() => inputRef.current?.focus(), 350)
+      return () => clearTimeout(t)
+    }, []),
+  )
+
   const { results, loading: searching } = useProviderSearch(
-    query,
+    debouncedQuery,
     activeCategoryId ?? undefined,
     {
       availableToday: activeFilters.includes('Available today'),
@@ -79,6 +99,9 @@ export default function SearchScreen() {
       mobileOnly,
     },
   )
+
+  const { posts: contentPosts, loading: contentLoading } =
+    useContentSearch(debouncedQuery)
 
   const activeCategoryName = categories.find((c) => c.id === activeCategoryId)?.name
 
@@ -206,6 +229,8 @@ export default function SearchScreen() {
           activeFilters={activeFilters}
           results={results}
           loading={searching}
+          posts={contentPosts}
+          contentLoading={contentLoading}
           onRemoveFilter={toggleFilter}
           onBrowse={() => {
             setQuery('')
@@ -461,6 +486,8 @@ function ResultsState({
   activeFilters,
   results,
   loading,
+  posts,
+  contentLoading,
   onRemoveFilter,
   onBrowse,
 }: {
@@ -469,10 +496,20 @@ function ResultsState({
   activeFilters: string[]
   results: Provider[]
   loading: boolean
+  posts: ContentSearchPost[]
+  contentLoading: boolean
   onRemoveFilter: (filter: string) => void
   onBrowse: () => void
 }) {
-  const showNoResults = !loading && results.length === 0 && query.length >= 2
+  const { width } = useWindowDimensions()
+  const [tab, setTab] = useState<'providers' | 'content'>('providers')
+
+  // 3-column grid within the 20px page padding and two 8px gaps.
+  const cellSize = (width - 40 - 16) / 3
+
+  const activeLoading = tab === 'providers' ? loading : contentLoading
+  const activeCount = tab === 'providers' ? results.length : posts.length
+  const showNoResults = !activeLoading && activeCount === 0 && query.length >= 2
 
   return (
     <ScrollView
@@ -488,7 +525,6 @@ function ResultsState({
         ) : (
           <Text style={styles.resultsTitle}>All providers</Text>
         )}
-        <Text style={styles.resultsCount}>{results.length} found</Text>
       </View>
 
       {activeFilters.length > 0 && (
@@ -507,7 +543,23 @@ function ResultsState({
         </View>
       )}
 
-      {loading ? (
+      {/* Providers / Content tabs */}
+      <View style={styles.resultTabs}>
+        <ResultTab
+          label="Providers"
+          count={results.length}
+          active={tab === 'providers'}
+          onPress={() => setTab('providers')}
+        />
+        <ResultTab
+          label="Content"
+          count={posts.length}
+          active={tab === 'content'}
+          onPress={() => setTab('content')}
+        />
+      </View>
+
+      {activeLoading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator color="rgba(240,232,213,0.4)" />
         </View>
@@ -522,10 +574,67 @@ function ResultsState({
             <Text style={styles.browseBtnText}>Browse Categories</Text>
           </TouchableOpacity>
         </View>
-      ) : (
+      ) : tab === 'providers' ? (
         results.map((p) => <ProviderCard key={p.id} provider={p} />)
+      ) : (
+        <View style={styles.contentGrid}>
+          {posts.map((post) => (
+            <ContentCell key={post.id} post={post} size={cellSize} />
+          ))}
+        </View>
       )}
     </ScrollView>
+  )
+}
+
+function ResultTab({
+  label,
+  count,
+  active,
+  onPress,
+}: {
+  label: string
+  count: number
+  active: boolean
+  onPress: () => void
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.resultTab, active && styles.resultTabActive]}
+      activeOpacity={0.7}
+      onPress={onPress}
+    >
+      <Text style={active ? styles.resultTabTextActive : styles.resultTabText}>
+        {label} {count}
+      </Text>
+    </TouchableOpacity>
+  )
+}
+
+function ContentCell({ post, size }: { post: ContentSearchPost; size: number }) {
+  const isVideo = post.media_type === 'video'
+  const thumbUri = isVideo ? post.thumbnail_url : post.media_url
+  return (
+    <TouchableOpacity
+      activeOpacity={0.85}
+      style={[styles.contentCell, { width: size, height: size }]}
+      onPress={() => router.push(`/providers/${post.provider_id}` as any)}
+    >
+      {thumbUri ? (
+        <Image
+          source={{ uri: thumbUri }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.contentCellDark} />
+      )}
+      {isVideo ? (
+        <View style={styles.contentPlay}>
+          <Feather name="play" size={18} color="#F0E8D5" />
+        </View>
+      ) : null}
+    </TouchableOpacity>
   )
 }
 
@@ -868,6 +977,54 @@ const styles = StyleSheet.create({
   resultsContent: {
     paddingHorizontal: 20,
     paddingBottom: 100,
+  },
+  resultTabs: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  resultTab: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.08)',
+  },
+  resultTabActive: {
+    backgroundColor: '#F0E8D5',
+    borderColor: '#F0E8D5',
+  },
+  resultTabText: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_500Medium',
+  },
+  resultTabTextActive: {
+    fontSize: 13,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
+  },
+  contentGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  contentCell: {
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(240,232,213,0.05)',
+  },
+  contentCellDark: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(240,232,213,0.06)',
+  },
+  contentPlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(8,8,8,0.2)',
   },
   resultsHeader: {
     flexDirection: 'row',

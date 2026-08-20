@@ -247,12 +247,27 @@ export function useProviderSearch(
         .eq('is_approved', true)
 
       if (query.length >= 2) {
-        dbQuery = dbQuery.or(
-          `display_name.ilike.%${query}%,` +
-            `bio.ilike.%${query}%,` +
-            `location.ilike.%${query}%,` +
-            `neighborhood.ilike.%${query}%`,
-        )
+        // Sanitize for the PostgREST .or() filter grammar (commas/parens/%/*).
+        const term = query.replace(/[(),%*]/g, ' ').trim()
+
+        // Also match providers by category name, so "lash" surfaces Lashes
+        // providers even when the word isn't in their name/bio/neighborhood.
+        const { data: cats } = await supabase
+          .from('categories')
+          .select('id')
+          .ilike('name', `%${term}%`)
+        const catIds = ((cats as { id: number }[] | null) ?? []).map((c) => c.id)
+
+        const orParts = [
+          `display_name.ilike.%${term}%`,
+          `bio.ilike.%${term}%`,
+          `location.ilike.%${term}%`,
+          `neighborhood.ilike.%${term}%`,
+        ]
+        if (catIds.length > 0) {
+          orParts.push(`category_id.in.(${catIds.join(',')})`)
+        }
+        dbQuery = dbQuery.or(orParts.join(','))
       }
 
       if (categoryId) {
@@ -284,4 +299,122 @@ export function useProviderSearch(
   }, [query, categoryId, searchProviders])
 
   return { results, loading }
+}
+
+// A post surfaced by content search, flattened with the provider info needed
+// to display it and navigate to their profile.
+export interface ContentSearchPost {
+  id: string
+  media_url: string
+  media_type: string
+  thumbnail_url: string | null
+  provider_id: string
+  provider_name: string
+}
+
+interface RawContentRow {
+  id: string
+  media_url: string
+  media_type: string
+  thumbnail_url: string | null
+  provider_id: string | null
+  provider: { id: string; display_name: string } | null
+}
+
+// Content (posts) search. Matches on the post's own caption/service_type via
+// ilike AND on the provider's category (so "lash" surfaces Lashes providers'
+// work). The category path is currently the primary signal because seeded
+// posts have no captions/tags yet. Caller passes an already-debounced query.
+export function useContentSearch(query: string) {
+  const [posts, setPosts] = useState<ContentSearchPost[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const run = useCallback(async () => {
+    try {
+      setLoading(true)
+      // Sanitize for the PostgREST .or() filter grammar (commas/parens/%/*).
+      const term = query.replace(/[(),%*]/g, ' ').trim()
+      if (term.length < 2) {
+        setPosts([])
+        return
+      }
+
+      // Categories whose name matches, so content also surfaces by the
+      // provider's category (e.g. "lash" -> the Lashes category -> its posts).
+      const { data: cats } = await supabase
+        .from('categories')
+        .select('id')
+        .ilike('name', `%${term}%`)
+      const catIds = ((cats as { id: number }[] | null) ?? []).map((c) => c.id)
+
+      const textSelect =
+        'id, media_url, media_type, thumbnail_url, provider_id, provider:providers(id, display_name)'
+      const catSelect =
+        'id, media_url, media_type, thumbnail_url, provider_id, provider:providers!inner(id, display_name)'
+
+      // Two queries merged: base-column text match, and (when the query names a
+      // category) posts whose provider is in that category. Kept separate
+      // because PostgREST can't OR a base column against an embedded one.
+      const queries: any[] = [
+        supabase
+          .from('posts')
+          .select(textSelect)
+          .eq('is_active', true)
+          .eq('is_demo', false)
+          .or(`caption.ilike.%${term}%,service_type.ilike.%${term}%`)
+          .order('created_at', { ascending: false })
+          .limit(30),
+      ]
+      if (catIds.length > 0) {
+        queries.push(
+          supabase
+            .from('posts')
+            .select(catSelect)
+            .eq('is_active', true)
+            .eq('is_demo', false)
+            .in('provider.category_id', catIds)
+            .order('created_at', { ascending: false })
+            .limit(30),
+        )
+      }
+
+      const settled = await Promise.all(queries)
+
+      const seen = new Set<string>()
+      const merged: ContentSearchPost[] = []
+      for (const res of settled) {
+        if (res.error) {
+          console.log('Content search query error:', res.error)
+          continue
+        }
+        for (const r of (res.data as unknown as RawContentRow[]) ?? []) {
+          if (!r.provider || !r.media_url || seen.has(r.id)) continue
+          seen.add(r.id)
+          merged.push({
+            id: r.id,
+            media_url: r.media_url,
+            media_type: r.media_type,
+            thumbnail_url: r.thumbnail_url,
+            provider_id: r.provider_id ?? r.provider.id,
+            provider_name: r.provider.display_name,
+          })
+        }
+      }
+      setPosts(merged.slice(0, 30))
+    } catch (err) {
+      console.log('Content search error:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [query])
+
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      setPosts([])
+      return
+    }
+    run()
+  }, [query, run])
+
+  return { posts, loading }
 }
