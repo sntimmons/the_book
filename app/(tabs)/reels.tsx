@@ -12,6 +12,11 @@ import {
   StatusBar,
   Share,
   Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
+  ActivityIndicator,
 } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -19,6 +24,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { Audio, Video, ResizeMode } from 'expo-av'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/context/AuthContext'
 
 const LIKE_RED = '#FF2D55'
 const DOUBLE_TAP_MS = 280
@@ -336,9 +342,70 @@ function getInitials(name: string): string {
     .join('')
 }
 
+interface CommentRow {
+  id: string
+  user_id: string
+  comment_text: string
+  created_at: string
+  authorName: string
+}
+
+// Short relative timestamp for comments (now / 5m / 3h / 2d / 1w).
+function timeAgo(iso: string): string {
+  const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (secs < 60) return 'now'
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins}m`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h`
+  const days = Math.floor(hrs / 24)
+  if (days < 7) return `${days}d`
+  return `${Math.floor(days / 7)}w`
+}
+
+// post_comments has no author-name column, so resolve names from clients (by
+// id) and providers (by user_id) in two batch queries. Provider display name
+// wins when a user owns both rows.
+async function resolveCommenterNames(userIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>()
+  if (userIds.length === 0) return map
+  const [clientsRes, providersRes] = await Promise.all([
+    supabase.from('clients').select('id, name').in('id', userIds),
+    supabase.from('providers').select('user_id, display_name').in('user_id', userIds),
+  ])
+  for (const c of (clientsRes.data as { id: string; name: string | null }[] | null) ?? []) {
+    if (c.name) map.set(c.id, c.name)
+  }
+  for (const p of (providersRes.data as { user_id: string; display_name: string | null }[] | null) ?? []) {
+    if (p.display_name) map.set(p.user_id, p.display_name)
+  }
+  return map
+}
+
+async function loadComments(postId: string): Promise<CommentRow[]> {
+  const { data, error } = await supabase
+    .from('post_comments')
+    .select('id, user_id, comment_text, created_at')
+    .eq('post_id', postId)
+    .order('created_at', { ascending: true })
+  if (error) {
+    console.log('Load comments error:', error)
+    return []
+  }
+  const rows =
+    (data as { id: string; user_id: string; comment_text: string; created_at: string }[] | null) ?? []
+  const names = await resolveCommenterNames([...new Set(rows.map((r) => r.user_id))])
+  return rows.map((r) => ({ ...r, authorName: names.get(r.user_id) ?? 'Member' }))
+}
+
 export default function ReelsScreen() {
   const insets = useSafeAreaInsets()
+  const { user } = useAuth()
   const [reels, setReels] = useState<Reel[]>(MOCK_REELS)
+  // True once real reels (backed by real post rows) have loaded — only then do
+  // like/save/comment interactions persist. Mock reels stay local-only.
+  const [isRealData, setIsRealData] = useState(false)
+  const [commentPostId, setCommentPostId] = useState<string | null>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [screenFocused, setScreenFocused] = useState(true)
 
@@ -357,12 +424,37 @@ export default function ReelsScreen() {
     let cancelled = false
     ;(async () => {
       const real = await fetchReels()
-      if (!cancelled && real.length > 0) setReels(real)
+      if (cancelled || real.length === 0) return
+
+      // Resolve which of these posts the current user has already liked/saved
+      // so the heart/bookmark render filled on load.
+      if (user) {
+        const ids = real.map((r) => r.id)
+        const [likesRes, savesRes] = await Promise.all([
+          supabase.from('post_likes').select('post_id').eq('user_id', user.id).in('post_id', ids),
+          supabase.from('post_saves').select('post_id').eq('user_id', user.id).in('post_id', ids),
+        ])
+        const liked = new Set(
+          ((likesRes.data as { post_id: string }[] | null) ?? []).map((r) => r.post_id),
+        )
+        const saved = new Set(
+          ((savesRes.data as { post_id: string }[] | null) ?? []).map((r) => r.post_id),
+        )
+        real.forEach((r) => {
+          r.isLiked = liked.has(r.id)
+          r.isSaved = saved.has(r.id)
+        })
+      }
+
+      if (!cancelled) {
+        setReels(real)
+        setIsRealData(true)
+      }
     })()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [user])
 
   // Pause every video the moment the user navigates away (e.g. taps Book
   // and lands on a provider profile). expo-router keeps this screen
@@ -375,16 +467,6 @@ export default function ReelsScreen() {
     }, []),
   )
 
-  function likeReel(id: string) {
-    setReels((prev) =>
-      prev.map((r) =>
-        r.id === id && !r.isLiked
-          ? { ...r, isLiked: true, likes: r.likes + 1 }
-          : r,
-      ),
-    )
-  }
-
   const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current
   const onViewableItemsChanged = useRef(
     ({ viewableItems }: { viewableItems: Array<{ index: number | null }> }) => {
@@ -394,24 +476,78 @@ export default function ReelsScreen() {
     },
   ).current
 
-  function toggleLike(id: string) {
+  // Like / unlike with optimistic UI + revert-on-failure. Persists to
+  // post_likes only for real posts; mock reels stay local-only.
+  async function toggleLike(id: string) {
+    const reel = reels.find((r) => r.id === id)
+    if (!reel) return
+    const wasLiked = reel.isLiked
+
     setReels((prev) =>
       prev.map((r) =>
         r.id === id
-          ? {
-              ...r,
-              isLiked: !r.isLiked,
-              likes: r.isLiked ? r.likes - 1 : r.likes + 1,
-            }
+          ? { ...r, isLiked: !wasLiked, likes: Math.max(0, r.likes + (wasLiked ? -1 : 1)) }
           : r,
       ),
     )
+
+    if (!isRealData || !user) return
+    try {
+      const { error } = wasLiked
+        ? await supabase.from('post_likes').delete().eq('user_id', user.id).eq('post_id', id)
+        : await supabase.from('post_likes').insert({ user_id: user.id, post_id: id })
+      if (error) throw error
+    } catch (err) {
+      console.log('Like persist error:', err)
+      setReels((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? { ...r, isLiked: wasLiked, likes: Math.max(0, r.likes + (wasLiked ? 1 : -1)) }
+            : r,
+        ),
+      )
+    }
   }
 
-  function toggleSave(id: string) {
+  // Double-tap only ever likes (never unlikes), matching TikTok/Instagram.
+  function likeReel(id: string) {
+    const reel = reels.find((r) => r.id === id)
+    if (reel && !reel.isLiked) toggleLike(id)
+  }
+
+  // Save / unsave with optimistic UI + revert-on-failure.
+  async function toggleSave(id: string) {
+    const reel = reels.find((r) => r.id === id)
+    if (!reel) return
+    const wasSaved = reel.isSaved
+
+    setReels((prev) => prev.map((r) => (r.id === id ? { ...r, isSaved: !wasSaved } : r)))
+
+    if (!isRealData || !user) return
+    try {
+      const { error } = wasSaved
+        ? await supabase.from('post_saves').delete().eq('user_id', user.id).eq('post_id', id)
+        : await supabase.from('post_saves').insert({ user_id: user.id, post_id: id })
+      if (error) throw error
+    } catch (err) {
+      console.log('Save persist error:', err)
+      setReels((prev) => prev.map((r) => (r.id === id ? { ...r, isSaved: wasSaved } : r)))
+    }
+  }
+
+  // Adjust a reel's comment count (used by the comment sheet on add/revert).
+  function bumpCommentCount(id: string, delta: number) {
     setReels((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, isSaved: !r.isSaved } : r)),
+      prev.map((r) => (r.id === id ? { ...r, comments: Math.max(0, r.comments + delta) } : r)),
     )
+  }
+
+  function handleComment(id: string) {
+    if (isRealData) {
+      setCommentPostId(id)
+    } else {
+      Alert.alert('Coming soon', 'This feature is coming in the next update.', [{ text: 'OK' }])
+    }
   }
 
   async function handleShare(reel: Reel) {
@@ -449,10 +585,21 @@ export default function ReelsScreen() {
             onLike={() => toggleLike(item.id)}
             onDoubleTapLike={() => likeReel(item.id)}
             onSave={() => toggleSave(item.id)}
+            onComment={() => handleComment(item.id)}
             onShare={() => handleShare(item)}
             insets={insets}
           />
         )}
+      />
+
+      <CommentSheet
+        postId={commentPostId}
+        userId={user?.id ?? null}
+        insets={insets}
+        onClose={() => setCommentPostId(null)}
+        onCountDelta={(delta) => {
+          if (commentPostId) bumpCommentCount(commentPostId, delta)
+        }}
       />
     </View>
   )
@@ -466,6 +613,7 @@ interface ReelItemProps {
   onLike: () => void
   onDoubleTapLike: () => void
   onSave: () => void
+  onComment: () => void
   onShare: () => void
   insets: { top: number; bottom: number; left: number; right: number }
 }
@@ -477,6 +625,8 @@ function ReelItem({
   total,
   onLike,
   onDoubleTapLike,
+  onSave,
+  onComment,
   onShare,
   insets,
 }: ReelItemProps) {
@@ -692,19 +842,23 @@ function ReelItem({
           onPress={onLike}
         />
 
+        {/* Save */}
+        <ActionButton
+          ionicon={reel.isSaved ? 'bookmark' : 'bookmark-outline'}
+          size={26}
+          color={reel.isSaved ? '#C8922A' : '#F0E8D5'}
+          labelColor={reel.isSaved ? '#C8922A' : undefined}
+          label="Save"
+          onPress={onSave}
+        />
+
         {/* Comment */}
         <ActionButton
           ionicon="chatbubble"
           size={28}
           color="#F0E8D5"
           label={formatCount(reel.comments)}
-          onPress={() =>
-            Alert.alert(
-              'Coming soon',
-              'This feature is coming in the next update.',
-              [{ text: 'OK' }],
-            )
-          }
+          onPress={onComment}
         />
 
         {/* Share */}
@@ -789,6 +943,175 @@ function ReelItem({
         <View style={[styles.scrubberFill, { width: `${progressPct}%` }]} />
       </View>
     </View>
+  )
+}
+
+function CommentSheet({
+  postId,
+  userId,
+  insets,
+  onClose,
+  onCountDelta,
+}: {
+  postId: string | null
+  userId: string | null
+  insets: { top: number; bottom: number; left: number; right: number }
+  onClose: () => void
+  onCountDelta: (delta: number) => void
+}) {
+  const [comments, setComments] = useState<CommentRow[]>([])
+  const [loading, setLoading] = useState(false)
+  const [input, setInput] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [myName, setMyName] = useState('You')
+
+  useEffect(() => {
+    if (!postId) return
+    let cancelled = false
+    setLoading(true)
+    setComments([])
+    setInput('')
+    ;(async () => {
+      const list = await loadComments(postId)
+      if (cancelled) return
+      setComments(list)
+      setLoading(false)
+      if (userId) {
+        const names = await resolveCommenterNames([userId])
+        if (!cancelled) setMyName(names.get(userId) ?? 'You')
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [postId, userId])
+
+  async function submit() {
+    const text = input.trim()
+    if (!text || !userId || !postId || submitting) return
+    setSubmitting(true)
+
+    // Optimistic: show the comment and bump the count immediately.
+    const tempId = `temp-${Date.now()}`
+    const optimistic: CommentRow = {
+      id: tempId,
+      user_id: userId,
+      comment_text: text,
+      created_at: new Date().toISOString(),
+      authorName: myName,
+    }
+    setComments((prev) => [...prev, optimistic])
+    setInput('')
+    onCountDelta(1)
+
+    try {
+      const { data, error } = await supabase
+        .from('post_comments')
+        .insert({ user_id: userId, post_id: postId, comment_text: text })
+        .select('id, created_at')
+        .single()
+      if (error) throw error
+      const row = data as { id: string; created_at: string }
+      setComments((prev) =>
+        prev.map((c) => (c.id === tempId ? { ...c, id: row.id, created_at: row.created_at } : c)),
+      )
+    } catch (err) {
+      console.log('Comment submit error:', err)
+      setComments((prev) => prev.filter((c) => c.id !== tempId))
+      onCountDelta(-1)
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const canSend = input.trim().length > 0 && !submitting
+
+  return (
+    <Modal
+      visible={postId != null}
+      transparent
+      animationType="slide"
+      onRequestClose={onClose}
+    >
+      <View style={styles.commentRoot}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={[styles.commentSheet, { paddingBottom: insets.bottom + 8 }]}
+        >
+          <View style={styles.commentHandle} />
+          <View style={styles.commentHeader}>
+            <Text style={styles.commentTitle}>Comments</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={22} color="#F0E8D5" />
+            </TouchableOpacity>
+          </View>
+
+          {loading ? (
+            <View style={styles.commentLoading}>
+              <ActivityIndicator color="rgba(240,232,213,0.4)" />
+            </View>
+          ) : comments.length === 0 ? (
+            <View style={styles.commentEmpty}>
+              <Text style={styles.commentEmptyText}>No comments yet. Be the first.</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={comments}
+              keyExtractor={(c) => c.id}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.commentList}
+              renderItem={({ item }) => (
+                <View style={styles.commentItem}>
+                  <View style={styles.commentAvatar}>
+                    <Text style={styles.commentAvatarText}>{getInitials(item.authorName)}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.commentAuthor}>
+                      {item.authorName}
+                      <Text style={styles.commentTime}>{'  '}{timeAgo(item.created_at)}</Text>
+                    </Text>
+                    <Text style={styles.commentBody}>{item.comment_text}</Text>
+                  </View>
+                </View>
+              )}
+            />
+          )}
+
+          <View style={styles.commentInputRow}>
+            <TextInput
+              style={styles.commentInput}
+              placeholder="Add a comment..."
+              placeholderTextColor="rgba(240,232,213,0.3)"
+              value={input}
+              onChangeText={setInput}
+              multiline
+            />
+            <TouchableOpacity
+              style={[styles.commentSend, !canSend && styles.commentSendDisabled]}
+              onPress={submit}
+              disabled={!canSend}
+              activeOpacity={0.8}
+            >
+              {submitting ? (
+                <ActivityIndicator color="#080808" size="small" />
+              ) : (
+                <Ionicons
+                  name="arrow-up"
+                  size={18}
+                  color={canSend ? '#080808' : 'rgba(8,8,8,0.4)'}
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
   )
 }
 
@@ -1061,5 +1384,134 @@ const styles = StyleSheet.create({
   scrubberFill: {
     height: 2,
     backgroundColor: '#F0E8D5',
+  },
+
+  // Comment sheet
+  commentRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  commentSheet: {
+    backgroundColor: '#121212',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderTopWidth: 1,
+    borderColor: 'rgba(240,232,213,0.08)',
+    maxHeight: '75%',
+    minHeight: '45%',
+  },
+  commentHandle: {
+    alignSelf: 'center',
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(240,232,213,0.2)',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  commentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(240,232,213,0.06)',
+  },
+  commentTitle: {
+    fontSize: 16,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  commentLoading: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  commentEmpty: {
+    paddingVertical: 48,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  commentEmptyText: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.35)',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'center',
+  },
+  commentList: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+  },
+  commentItem: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 18,
+  },
+  commentAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(240,232,213,0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentAvatarText: {
+    fontSize: 13,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_700Bold',
+  },
+  commentAuthor: {
+    fontSize: 13,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    marginBottom: 3,
+  },
+  commentTime: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.4)',
+    fontFamily: 'Manrope_400Regular',
+  },
+  commentBody: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.85)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 20,
+  },
+  commentInputRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(240,232,213,0.06)',
+  },
+  commentInput: {
+    flex: 1,
+    minHeight: 44,
+    maxHeight: 120,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+    borderRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_400Regular',
+  },
+  commentSend: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F0E8D5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  commentSendDisabled: {
+    backgroundColor: 'rgba(240,232,213,0.2)',
   },
 })
