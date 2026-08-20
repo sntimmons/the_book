@@ -9,9 +9,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Alert,
   StyleSheet,
 } from 'react-native'
-import { Feather } from '@expo/vector-icons'
+import { Feather, Ionicons } from '@expo/vector-icons'
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
@@ -21,6 +22,7 @@ import {
   fetchCommunityPost,
   fetchCommunityReplies,
   fetchLikedPostIds,
+  fetchBookmarkedPostIds,
   fetchProviderInfoMap,
   categoryLabel,
   timeAgo,
@@ -32,12 +34,13 @@ import {
 
 const MAX_REPLY = 500
 
-type ThreadPost = CommunityPostView & { isLiked: boolean }
+type ThreadPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
 
 export default function CommunityThread() {
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
   const { user, providerId, isProvider, roleLoading } = useAuth()
+  const currentUserId = user?.id ?? null
 
   const [post, setPost] = useState<ThreadPost | null>(null)
   const [replies, setReplies] = useState<CommunityReplyView[]>([])
@@ -53,15 +56,20 @@ export default function CommunityThread() {
     }
     const [p, r] = await Promise.all([fetchCommunityPost(id), fetchCommunityReplies(id)])
     let liked = false
+    let bookmarked = false
     if (p && user) {
-      const likedSet = await fetchLikedPostIds(user.id, [p.id])
+      const [likedSet, bookmarkedSet] = await Promise.all([
+        fetchLikedPostIds(user.id, [p.id]),
+        fetchBookmarkedPostIds(user.id, [p.id]),
+      ])
       liked = likedSet.has(p.id)
+      bookmarked = bookmarkedSet.has(p.id)
     }
     if (providerId) {
       const infoMap = await fetchProviderInfoMap([providerId])
       setMyInfo(infoMap.get(providerId) ?? null)
     }
-    setPost(p ? { ...p, isLiked: liked } : null)
+    setPost(p ? { ...p, isLiked: liked, isBookmarked: bookmarked } : null)
     setReplies(r)
     setLoading(false)
   }, [id, isProvider, user, providerId])
@@ -102,6 +110,53 @@ export default function CommunityThread() {
     }
   }
 
+  async function toggleBookmark() {
+    if (!post || !user) return
+    const was = post.isBookmarked
+    setPost((prev) => (prev ? { ...prev, isBookmarked: !was } : prev))
+    try {
+      const { error } = was
+        ? await supabase
+            .from('community_bookmarks')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('post_id', post.id)
+        : await supabase
+            .from('community_bookmarks')
+            .insert({ user_id: user.id, post_id: post.id })
+      if (error) throw error
+    } catch (err) {
+      console.log('Community bookmark error:', err)
+      setPost((prev) => (prev ? { ...prev, isBookmarked: was } : prev))
+    }
+  }
+
+  async function deleteReply(replyId: string) {
+    const idx = replies.findIndex((r) => r.id === replyId)
+    if (idx < 0) return
+    const removed = replies[idx]
+    setReplies((prev) => prev.filter((r) => r.id !== replyId))
+    setPost((prev) => (prev ? { ...prev, replyCount: Math.max(0, prev.replyCount - 1) } : prev))
+    const { error } = await supabase.from('community_replies').delete().eq('id', replyId)
+    if (error) {
+      console.log('Delete reply error:', error)
+      setReplies((prev) => {
+        const next = [...prev]
+        next.splice(Math.min(idx, next.length), 0, removed)
+        return next
+      })
+      setPost((prev) => (prev ? { ...prev, replyCount: prev.replyCount + 1 } : prev))
+      Alert.alert('Could not delete', 'Please try again.', [{ text: 'OK' }])
+    }
+  }
+
+  function confirmDeleteReply(replyId: string) {
+    Alert.alert('Delete reply', 'This cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => deleteReply(replyId) },
+    ])
+  }
+
   async function submitReply() {
     const text = replyInput.trim()
     if (!text || !user || !providerId || !post || submitting) return
@@ -111,6 +166,7 @@ export default function CommunityThread() {
     const optimistic: CommunityReplyView = {
       id: tempId,
       providerId,
+      userId: user.id,
       content: text,
       createdAt: new Date().toISOString(),
       provider: myInfo ?? { name: 'You', photo: null, category: '' },
@@ -234,6 +290,18 @@ export default function CommunityThread() {
                     <Feather name="message-circle" size={17} color="rgba(240,232,213,0.5)" />
                     <Text style={styles.actionText}>{post.replyCount}</Text>
                   </View>
+                  <View style={{ flex: 1 }} />
+                  <TouchableOpacity
+                    onPress={toggleBookmark}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons
+                      name={post.isBookmarked ? 'bookmark' : 'bookmark-outline'}
+                      size={18}
+                      color={post.isBookmarked ? '#C8922A' : 'rgba(240,232,213,0.5)'}
+                    />
+                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -266,6 +334,15 @@ export default function CommunityThread() {
                 </Text>
                 <Text style={styles.replyContent}>{item.content}</Text>
               </View>
+              {item.userId === currentUserId ? (
+                <TouchableOpacity
+                  onPress={() => confirmDeleteReply(item.id)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.7}
+                >
+                  <Feather name="more-vertical" size={16} color="rgba(240,232,213,0.35)" />
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
         />

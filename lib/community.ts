@@ -26,6 +26,7 @@ export interface CommunityProviderInfo {
 export interface CommunityPostView {
   id: string
   providerId: string
+  userId: string
   content: string
   category: string
   likeCount: number
@@ -37,10 +38,41 @@ export interface CommunityPostView {
 export interface CommunityReplyView {
   id: string
   providerId: string
+  userId: string
   content: string
   createdAt: string
   provider: CommunityProviderInfo
 }
+
+interface RawPostRow {
+  id: string
+  provider_id: string
+  user_id: string
+  content: string
+  category: string
+  like_count: number | null
+  reply_count: number | null
+  created_at: string
+}
+
+// Attach provider display info to raw post rows.
+async function assemblePosts(rows: RawPostRow[]): Promise<CommunityPostView[]> {
+  const infoMap = await fetchProviderInfoMap(rows.map((r) => r.provider_id))
+  return rows.map((r) => ({
+    id: r.id,
+    providerId: r.provider_id,
+    userId: r.user_id,
+    content: r.content,
+    category: r.category,
+    likeCount: r.like_count ?? 0,
+    replyCount: r.reply_count ?? 0,
+    createdAt: r.created_at,
+    provider: infoMap.get(r.provider_id) ?? UNKNOWN_PROVIDER,
+  }))
+}
+
+const POST_COLUMNS =
+  'id, provider_id, user_id, content, category, like_count, reply_count, created_at'
 
 const UNKNOWN_PROVIDER: CommunityProviderInfo = {
   name: 'Provider',
@@ -115,7 +147,7 @@ export async function fetchCommunityFeed(
 ): Promise<CommunityPostView[]> {
   let query = supabase
     .from('community_posts')
-    .select('id, provider_id, content, category, like_count, reply_count, created_at')
+    .select(POST_COLUMNS)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
     .limit(50)
@@ -126,30 +158,46 @@ export async function fetchCommunityFeed(
     console.log('Community feed error:', error)
     return []
   }
-  const rows =
-    (data as
-      | {
-          id: string
-          provider_id: string
-          content: string
-          category: string
-          like_count: number | null
-          reply_count: number | null
-          created_at: string
-        }[]
-      | null) ?? []
+  return assemblePosts((data as RawPostRow[] | null) ?? [])
+}
 
-  const infoMap = await fetchProviderInfoMap(rows.map((r) => r.provider_id))
-  return rows.map((r) => ({
-    id: r.id,
-    providerId: r.provider_id,
-    content: r.content,
-    category: r.category,
-    likeCount: r.like_count ?? 0,
-    replyCount: r.reply_count ?? 0,
-    createdAt: r.created_at,
-    provider: infoMap.get(r.provider_id) ?? UNKNOWN_PROVIDER,
-  }))
+// Bookmarked posts for the "Saved" filter: the user's bookmarks joined to the
+// active posts, newest-first.
+export async function fetchBookmarkedFeed(
+  userId: string,
+): Promise<CommunityPostView[]> {
+  const { data: bm } = await supabase
+    .from('community_bookmarks')
+    .select('post_id')
+    .eq('user_id', userId)
+  const postIds = ((bm as { post_id: string }[] | null) ?? []).map((b) => b.post_id)
+  if (postIds.length === 0) return []
+
+  const { data, error } = await supabase
+    .from('community_posts')
+    .select(POST_COLUMNS)
+    .in('id', postIds)
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+  if (error) {
+    console.log('Bookmarked feed error:', error)
+    return []
+  }
+  return assemblePosts((data as RawPostRow[] | null) ?? [])
+}
+
+// Which of the given post ids the current user has bookmarked.
+export async function fetchBookmarkedPostIds(
+  userId: string,
+  postIds: string[],
+): Promise<Set<string>> {
+  if (postIds.length === 0) return new Set()
+  const { data } = await supabase
+    .from('community_bookmarks')
+    .select('post_id')
+    .eq('user_id', userId)
+    .in('post_id', postIds)
+  return new Set(((data as { post_id: string }[] | null) ?? []).map((r) => r.post_id))
 }
 
 // Which of the given post ids the current user has liked.
@@ -173,33 +221,15 @@ export async function fetchCommunityPost(
 ): Promise<CommunityPostView | null> {
   const { data, error } = await supabase
     .from('community_posts')
-    .select('id, provider_id, content, category, like_count, reply_count, created_at')
+    .select(POST_COLUMNS)
     .eq('id', id)
     .maybeSingle()
   if (error || !data) {
     if (error) console.log('Community post error:', error)
     return null
   }
-  const r = data as {
-    id: string
-    provider_id: string
-    content: string
-    category: string
-    like_count: number | null
-    reply_count: number | null
-    created_at: string
-  }
-  const infoMap = await fetchProviderInfoMap([r.provider_id])
-  return {
-    id: r.id,
-    providerId: r.provider_id,
-    content: r.content,
-    category: r.category,
-    likeCount: r.like_count ?? 0,
-    replyCount: r.reply_count ?? 0,
-    createdAt: r.created_at,
-    provider: infoMap.get(r.provider_id) ?? UNKNOWN_PROVIDER,
-  }
+  const [post] = await assemblePosts([data as RawPostRow])
+  return post ?? null
 }
 
 export async function fetchCommunityReplies(
@@ -207,7 +237,7 @@ export async function fetchCommunityReplies(
 ): Promise<CommunityReplyView[]> {
   const { data, error } = await supabase
     .from('community_replies')
-    .select('id, provider_id, content, created_at')
+    .select('id, provider_id, user_id, content, created_at')
     .eq('post_id', postId)
     .order('created_at', { ascending: true })
   if (error) {
@@ -216,12 +246,19 @@ export async function fetchCommunityReplies(
   }
   const rows =
     (data as
-      | { id: string; provider_id: string; content: string; created_at: string }[]
+      | {
+          id: string
+          provider_id: string
+          user_id: string
+          content: string
+          created_at: string
+        }[]
       | null) ?? []
   const infoMap = await fetchProviderInfoMap(rows.map((r) => r.provider_id))
   return rows.map((r) => ({
     id: r.id,
     providerId: r.provider_id,
+    userId: r.user_id,
     content: r.content,
     createdAt: r.created_at,
     provider: infoMap.get(r.provider_id) ?? UNKNOWN_PROVIDER,
