@@ -12,7 +12,7 @@ import {
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
-import { router } from 'expo-router'
+import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
 import { cacheBustedPhoto } from '../../lib/image'
@@ -206,9 +206,13 @@ function ClientMe() {
     }
   }, [user])
 
-  useEffect(() => {
-    fetchProfileData()
-  }, [fetchProfileData])
+  // Re-fetch on focus so an edited name/photo/neighborhood shows immediately
+  // when returning from the edit screen, not just on first mount.
+  useFocusEffect(
+    useCallback(() => {
+      fetchProfileData()
+    }, [fetchProfileData]),
+  )
 
   const displayName =
     profile?.name?.trim() || user?.email?.split('@')[0] || 'Member'

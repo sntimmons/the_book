@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   FlatList,
   Pressable,
   TouchableOpacity,
+  TextInput,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
@@ -31,6 +32,13 @@ export const HOUSTON_NEIGHBORHOODS = [
   'Other',
 ]
 
+// "Other" is pinned to the bottom of the list; everything else is shown
+// alphabetically and is what the search box filters over.
+const OTHER_OPTION = 'Other'
+const SORTED_NEIGHBORHOODS = HOUSTON_NEIGHBORHOODS.filter(
+  (n) => n !== OTHER_OPTION,
+).sort((a, b) => a.localeCompare(b))
+
 interface NeighborhoodPickerProps {
   value: string
   onChange: (value: string) => void
@@ -43,7 +51,26 @@ export default function NeighborhoodPicker({
   placeholder = 'Select your neighborhood',
 }: NeighborhoodPickerProps) {
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const searchRef = useRef<TextInput>(null)
   const insets = useSafeAreaInsets()
+
+  // Auto-focus the search field when the sheet opens; clear it when it closes.
+  useEffect(() => {
+    if (open) {
+      const t = setTimeout(() => searchRef.current?.focus(), 250)
+      return () => clearTimeout(t)
+    }
+    setSearch('')
+  }, [open])
+
+  const q = search.trim().toLowerCase()
+  const filtered = q
+    ? SORTED_NEIGHBORHOODS.filter((n) => n.toLowerCase().includes(q))
+    : SORTED_NEIGHBORHOODS
+  // "Other" always stays available at the bottom, even when the filter hides
+  // every other option.
+  const listData = [...filtered, OTHER_OPTION]
 
   function select(item: string) {
     onChange(item)
@@ -91,10 +118,35 @@ export default function NeighborhoodPicker({
                 <Feather name="x" size={22} color="#F0E8D5" />
               </TouchableOpacity>
             </View>
+
+            <View style={styles.searchRow}>
+              <Feather name="search" size={16} color="rgba(240,232,213,0.35)" />
+              <TextInput
+                ref={searchRef}
+                style={styles.searchInput}
+                placeholder="Search neighborhoods"
+                placeholderTextColor="rgba(240,232,213,0.3)"
+                value={search}
+                onChangeText={setSearch}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+              />
+              {search.length > 0 ? (
+                <TouchableOpacity
+                  onPress={() => setSearch('')}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="x" size={16} color="rgba(240,232,213,0.35)" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
             <FlatList
-              data={HOUSTON_NEIGHBORHOODS}
+              data={listData}
               keyExtractor={(item) => item}
               showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
               renderItem={({ item }) => {
                 const selected = item === value
                 return (
@@ -166,6 +218,26 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
+  },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.08)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_400Regular',
+    padding: 0,
   },
   row: {
     flexDirection: 'row',
