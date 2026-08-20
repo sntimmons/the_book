@@ -11,6 +11,9 @@ import {
   ActivityIndicator,
   ScrollView,
   Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
   StyleSheet,
 } from 'react-native'
 import { Feather, Ionicons } from '@expo/vector-icons'
@@ -30,8 +33,17 @@ import {
   initials,
   CommunityPostView,
 } from '@/lib/community'
+import {
+  fetchBarterFeed,
+  fetchMyInterests,
+  BarterOfferWithProvider,
+} from '@/lib/barter'
 
 type FeedPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
+
+type HubTab = 'posts' | 'barter'
+
+const INTEREST_MAX = 300
 
 const SAVED_KEY = 'saved'
 
@@ -44,8 +56,10 @@ const REPORT_REASONS: { label: string; value: string }[] = [
 
 export default function CommunityFeed() {
   const insets = useSafeAreaInsets()
-  const { user, isProvider, roleLoading } = useAuth()
+  const { user, providerId, isProvider, roleLoading } = useAuth()
   const currentUserId = user?.id ?? null
+
+  const [tab, setTab] = useState<HubTab>('posts')
 
   const [allPosts, setAllPosts] = useState<FeedPost[]>([])
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
@@ -53,6 +67,16 @@ export default function CommunityFeed() {
   const [refreshing, setRefreshing] = useState(false)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  // Barter tab state.
+  const [offers, setOffers] = useState<BarterOfferWithProvider[]>([])
+  const [myInterests, setMyInterests] = useState<Set<string>>(new Set())
+  const [barterLoading, setBarterLoading] = useState(true)
+  const [barterRefreshing, setBarterRefreshing] = useState(false)
+  // The offer the interest modal is open for (null = closed) and its draft note.
+  const [interestOffer, setInterestOffer] = useState<BarterOfferWithProvider | null>(null)
+  const [interestNote, setInterestNote] = useState('')
+  const [sendingInterest, setSendingInterest] = useState(false)
 
   const isSavedTab = activeCategory === SAVED_KEY
 
@@ -94,11 +118,37 @@ export default function CommunityFeed() {
     [isProvider, user, isSavedTab],
   )
 
+  const loadBarter = useCallback(
+    async (refresh = false) => {
+      if (!isProvider || !user) {
+        setBarterLoading(false)
+        return
+      }
+      if (refresh) setBarterRefreshing(true)
+      const [feed, mine] = await Promise.all([
+        fetchBarterFeed(),
+        fetchMyInterests(user.id),
+      ])
+      setOffers(feed)
+      setMyInterests(mine)
+      setBarterLoading(false)
+      setBarterRefreshing(false)
+    },
+    [isProvider, user],
+  )
+
+  // Load whichever tab is active on focus; re-runs when the tab or the active
+  // loader changes (e.g. switching category rebuilds `load`).
   useFocusEffect(
     useCallback(() => {
-      setLoading(true)
-      load()
-    }, [load]),
+      if (tab === 'barter') {
+        setBarterLoading(true)
+        loadBarter()
+      } else {
+        setLoading(true)
+        load()
+      }
+    }, [tab, load, loadBarter]),
   )
 
   // Client-side filtering: Saved shows only still-bookmarked; search spans all
@@ -214,6 +264,92 @@ export default function CommunityFeed() {
     }
   }
 
+  function openInterest(offer: BarterOfferWithProvider) {
+    setInterestNote('')
+    setInterestOffer(offer)
+  }
+
+  async function submitInterest() {
+    const offer = interestOffer
+    if (!offer || !user || !providerId || sendingInterest) return
+    setSendingInterest(true)
+    const { error } = await supabase.from('barter_interests').insert({
+      offer_id: offer.id,
+      interested_provider_id: providerId,
+      interested_user_id: user.id,
+      message: interestNote.trim() || null,
+      status: 'pending',
+    })
+    setSendingInterest(false)
+    if (error) {
+      console.log('Express interest error:', error)
+      Alert.alert('Could not send', 'Please try again.', [{ text: 'OK' }])
+      return
+    }
+    // Mark this offer as interested and bump its local count.
+    setMyInterests((prev) => new Set(prev).add(offer.id))
+    setOffers((prev) =>
+      prev.map((o) => (o.id === offer.id ? { ...o, interestCount: o.interestCount + 1 } : o)),
+    )
+    setInterestOffer(null)
+    setInterestNote('')
+  }
+
+  async function markFilled(offerId: string) {
+    const prev = offers
+    setOffers((list) => list.filter((o) => o.id !== offerId))
+    const { error } = await supabase
+      .from('barter_offers')
+      .update({ is_active: false })
+      .eq('id', offerId)
+    if (error) {
+      console.log('Mark filled error:', error)
+      setOffers(prev)
+      Alert.alert('Could not update', 'Please try again.', [{ text: 'OK' }])
+    }
+  }
+
+  async function deleteOffer(offerId: string) {
+    const prev = offers
+    setOffers((list) => list.filter((o) => o.id !== offerId))
+    const { error } = await supabase.from('barter_offers').delete().eq('id', offerId)
+    if (error) {
+      console.log('Delete offer error:', error)
+      setOffers(prev)
+      Alert.alert('Could not delete', 'Please try again.', [{ text: 'OK' }])
+    }
+  }
+
+  function openOfferMenu(offer: BarterOfferWithProvider) {
+    Alert.alert('Manage offer', undefined, [
+      {
+        text: 'Mark as filled',
+        onPress: () => markFilled(offer.id),
+      },
+      {
+        text: 'Delete offer',
+        style: 'destructive',
+        onPress: () =>
+          Alert.alert('Delete offer', 'This cannot be undone.', [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Delete', style: 'destructive', onPress: () => deleteOffer(offer.id) },
+          ]),
+      },
+      { text: 'Cancel', style: 'cancel' },
+    ])
+  }
+
+  function viewInterests(offer: BarterOfferWithProvider) {
+    router.push({
+      pathname: '/community/barter-interests',
+      params: {
+        offerId: offer.id,
+        offeringService: offer.offeringService,
+        ownerName: offer.provider.name,
+      },
+    } as never)
+  }
+
   const header = (
     <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
       <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()} activeOpacity={0.8}>
@@ -245,6 +381,14 @@ export default function CommunityFeed() {
     <View style={styles.root}>
       {header}
 
+      {/* Posts | Barter tab switcher */}
+      <View style={styles.tabBar}>
+        <TabButton label="Posts" active={tab === 'posts'} onPress={() => setTab('posts')} />
+        <TabButton label="Barter" active={tab === 'barter'} onPress={() => setTab('barter')} />
+      </View>
+
+      {tab === 'posts' ? (
+      <>
       {/* Category filter pills */}
       <ScrollView
         horizontal
@@ -326,15 +470,235 @@ export default function CommunityFeed() {
           )}
         />
       )}
+      </>
+      ) : barterLoading ? (
+        <View style={styles.centerBody}>
+          <ActivityIndicator color="rgba(240,232,213,0.4)" />
+        </View>
+      ) : (
+        <FlatList
+          data={offers}
+          keyExtractor={(o) => o.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 100, paddingTop: 4 }}
+          refreshControl={
+            <RefreshControl
+              refreshing={barterRefreshing}
+              onRefresh={() => loadBarter(true)}
+              tintColor="rgba(240,232,213,0.4)"
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.centerBody}>
+              <Feather name="repeat" size={36} color="rgba(240,232,213,0.12)" />
+              <Text style={styles.gateTitle}>No barter offers yet</Text>
+              <Text style={styles.gateSub}>Post one to start trading.</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <BarterCard
+              offer={item}
+              isOwner={item.userId === currentUserId}
+              hasInterest={myInterests.has(item.id)}
+              onInterest={() => openInterest(item)}
+              onMenu={() => openOfferMenu(item)}
+              onViewInterests={() => viewInterests(item)}
+            />
+          )}
+        />
+      )}
 
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 24 }]}
-        activeOpacity={0.85}
-        onPress={() => router.push('/community/compose' as never)}
+      {tab === 'posts' ? (
+        <TouchableOpacity
+          style={[styles.fab, { bottom: insets.bottom + 24 }]}
+          activeOpacity={0.85}
+          onPress={() => router.push('/community/compose' as never)}
+        >
+          <Feather name="edit-2" size={18} color="#080808" />
+          <Text style={styles.fabText}>New Post</Text>
+        </TouchableOpacity>
+      ) : (
+        <TouchableOpacity
+          style={[styles.fab, { bottom: insets.bottom + 24 }]}
+          activeOpacity={0.85}
+          onPress={() => router.push('/community/barter-compose' as never)}
+        >
+          <Feather name="repeat" size={18} color="#080808" />
+          <Text style={styles.fabText}>Post Offer</Text>
+        </TouchableOpacity>
+      )}
+
+      {/* Express-interest modal */}
+      <Modal
+        visible={interestOffer !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setInterestOffer(null)}
       >
-        <Feather name="edit-2" size={18} color="#080808" />
-        <Text style={styles.fabText}>New Post</Text>
-      </TouchableOpacity>
+        <KeyboardAvoidingView
+          style={styles.modalRoot}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <Pressable style={styles.modalBackdrop} onPress={() => setInterestOffer(null)} />
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            <Text style={styles.modalTitle}>Express interest</Text>
+            {interestOffer ? (
+              <Text style={styles.modalSub} numberOfLines={2}>
+                {interestOffer.provider.name} is offering {interestOffer.offeringService}
+              </Text>
+            ) : null}
+            <TextInput
+              style={styles.modalInput}
+              placeholder="Add a note about what you can offer…"
+              placeholderTextColor="rgba(240,232,213,0.25)"
+              multiline
+              maxLength={INTEREST_MAX}
+              value={interestNote}
+              onChangeText={setInterestNote}
+              textAlignVertical="top"
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancel}
+                activeOpacity={0.8}
+                onPress={() => setInterestOffer(null)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSend, sendingInterest && styles.modalSendDisabled]}
+                activeOpacity={0.85}
+                disabled={sendingInterest}
+                onPress={submitInterest}
+              >
+                {sendingInterest ? (
+                  <ActivityIndicator color="#080808" size="small" />
+                ) : (
+                  <Text style={styles.modalSendText}>Send interest</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+    </View>
+  )
+}
+
+function TabButton({
+  label,
+  active,
+  onPress,
+}: {
+  label: string
+  active: boolean
+  onPress: () => void
+}) {
+  return (
+    <TouchableOpacity style={styles.tabBtn} activeOpacity={0.8} onPress={onPress}>
+      <Text style={active ? styles.tabTextActive : styles.tabTextInactive}>{label}</Text>
+      <View style={[styles.tabUnderline, active && styles.tabUnderlineActive]} />
+    </TouchableOpacity>
+  )
+}
+
+function BarterCard({
+  offer,
+  isOwner,
+  hasInterest,
+  onInterest,
+  onMenu,
+  onViewInterests,
+}: {
+  offer: BarterOfferWithProvider
+  isOwner: boolean
+  hasInterest: boolean
+  onInterest: () => void
+  onMenu: () => void
+  onViewInterests: () => void
+}) {
+  return (
+    <View style={styles.card}>
+      <View style={styles.cardTop}>
+        {offer.provider.photo ? (
+          <Image source={{ uri: cacheBustedPhoto(offer.provider.photo) }} style={styles.avatar} />
+        ) : (
+          <View style={[styles.avatar, styles.avatarFallback]}>
+            <Text style={styles.avatarText}>{initials(offer.provider.name)}</Text>
+          </View>
+        )}
+        <View style={{ flex: 1 }}>
+          <Text style={styles.authorName} numberOfLines={1}>
+            {offer.provider.name}
+          </Text>
+          <Text style={styles.authorMeta} numberOfLines={1}>
+            {offer.provider.category ? `${offer.provider.category} · ` : ''}
+            {timeAgo(offer.createdAt)}
+          </Text>
+        </View>
+        {isOwner ? (
+          <TouchableOpacity
+            style={styles.menuBtn}
+            onPress={onMenu}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Feather name="more-horizontal" size={18} color="rgba(240,232,213,0.4)" />
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
+      <View style={styles.tradeRow}>
+        <View style={styles.tradeCol}>
+          <Text style={styles.tradeLabel}>OFFERING</Text>
+          <Text style={styles.tradeValue}>{offer.offeringService}</Text>
+        </View>
+        <Feather name="repeat" size={16} color="rgba(240,232,213,0.3)" style={styles.tradeIcon} />
+        <View style={styles.tradeCol}>
+          <Text style={styles.tradeLabel}>SEEKING</Text>
+          <Text style={styles.tradeValue}>{offer.seekingService}</Text>
+        </View>
+      </View>
+
+      {offer.offeringValue != null ? (
+        <View style={styles.valueBadge}>
+          <Text style={styles.valueBadgeText}>~${offer.offeringValue} value</Text>
+        </View>
+      ) : null}
+
+      {offer.notes ? <Text style={styles.notes}>{offer.notes}</Text> : null}
+
+      <View style={styles.cardActions}>
+        {isOwner ? (
+          <TouchableOpacity
+            style={styles.interestCountBtn}
+            activeOpacity={0.7}
+            onPress={onViewInterests}
+          >
+            <Feather name="users" size={15} color="rgba(240,232,213,0.6)" />
+            <Text style={styles.interestCountText}>
+              {offer.interestCount} interested
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <>
+            <View style={styles.interestCountBtn}>
+              <Feather name="users" size={15} color="rgba(240,232,213,0.5)" />
+              <Text style={styles.interestCountTextMuted}>{offer.interestCount}</Text>
+            </View>
+            <View style={{ flex: 1 }} />
+            {hasInterest ? (
+              <View style={styles.interestSentBtn}>
+                <Feather name="check" size={15} color="rgba(240,232,213,0.6)" />
+                <Text style={styles.interestSentText}>Interest sent</Text>
+              </View>
+            ) : (
+              <TouchableOpacity style={styles.interestBtn} activeOpacity={0.85} onPress={onInterest}>
+                <Text style={styles.interestBtnText}>I'm Interested</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+      </View>
     </View>
   )
 }
@@ -557,4 +921,135 @@ const styles = StyleSheet.create({
     height: 52,
   },
   fabText: { fontSize: 15, color: '#080808', fontFamily: 'Manrope_700Bold' },
+  tabBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(240,232,213,0.06)',
+  },
+  tabBtn: { flex: 1, alignItems: 'center', paddingTop: 12 },
+  tabTextActive: { fontSize: 15, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
+  tabTextInactive: { fontSize: 15, color: 'rgba(240,232,213,0.4)', fontFamily: 'Manrope_600SemiBold' },
+  tabUnderline: {
+    height: 2,
+    width: 40,
+    borderRadius: 1,
+    marginTop: 10,
+    backgroundColor: 'transparent',
+  },
+  tabUnderlineActive: { backgroundColor: '#C8922A' },
+  tradeRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
+  tradeCol: { flex: 1 },
+  tradeIcon: { marginTop: 12 },
+  tradeLabel: {
+    fontSize: 10,
+    color: 'rgba(240,232,213,0.4)',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  tradeValue: {
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    lineHeight: 21,
+  },
+  valueBadge: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(200,146,42,0.12)',
+  },
+  valueBadgeText: {
+    fontSize: 11,
+    color: '#C8922A',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  notes: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.8)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 21,
+    marginTop: 12,
+  },
+  interestCountBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  interestCountText: { fontSize: 13, color: 'rgba(240,232,213,0.6)', fontFamily: 'Manrope_500Medium' },
+  interestCountTextMuted: { fontSize: 13, color: 'rgba(240,232,213,0.5)', fontFamily: 'Manrope_500Medium' },
+  interestBtn: {
+    paddingHorizontal: 18,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0E8D5',
+  },
+  interestBtnText: { fontSize: 13, color: '#080808', fontFamily: 'Manrope_700Bold' },
+  interestSentBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+  },
+  interestSentText: { fontSize: 13, color: 'rgba(240,232,213,0.6)', fontFamily: 'Manrope_600SemiBold' },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.6)' },
+  modalSheet: {
+    backgroundColor: '#141210',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderColor: 'rgba(240,232,213,0.08)',
+  },
+  modalTitle: { fontSize: 17, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
+  modalSub: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 6,
+    lineHeight: 19,
+  },
+  modalInput: {
+    minHeight: 90,
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 22,
+    padding: 14,
+    marginTop: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.08)',
+  },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 16 },
+  modalCancel: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.12)',
+  },
+  modalCancelText: { fontSize: 14, color: 'rgba(240,232,213,0.7)', fontFamily: 'Manrope_600SemiBold' },
+  modalSend: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0E8D5',
+  },
+  modalSendDisabled: { opacity: 0.5 },
+  modalSendText: { fontSize: 14, color: '#080808', fontFamily: 'Manrope_700Bold' },
 })
