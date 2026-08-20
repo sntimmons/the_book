@@ -28,6 +28,9 @@ export interface Provider {
   years_experience: number | null
   specialties: string[] | null
   created_at: string | null
+  // Best portfolio photo, resolved from the posts table after the provider
+  // fetch. Used as the Discover card image in preference to profile_photo_url.
+  heroImage?: string
 }
 
 export interface Service {
@@ -64,6 +67,42 @@ export async function getTodayBookingCount(): Promise<number> {
   return count || 0
 }
 
+// Attach each provider's hero portfolio photo (lowest sort_order image) in a
+// single batch query, avoiding an N+1 per-card lookup. Providers without a
+// portfolio photo are left with heroImage undefined so the card falls back to
+// profile_photo_url, then the silhouette placeholder.
+async function attachHeroImages(list: Provider[]): Promise<Provider[]> {
+  if (list.length === 0) return list
+
+  const providerIds = list.map((p) => p.id)
+  const { data, error } = await supabase
+    .from('posts')
+    .select('provider_id, media_url')
+    .eq('media_type', 'image')
+    .eq('content_type', 'portfolio')
+    .eq('is_active', true)
+    .eq('is_demo', false)
+    .in('provider_id', providerIds)
+    .order('sort_order', { ascending: true })
+
+  if (error) {
+    // Non-fatal: fall back to profile photos rather than failing the feed.
+    console.log('Fetch hero images error:', error)
+    return list
+  }
+
+  // First row seen per provider wins. Rows arrive ordered by sort_order asc, so
+  // the first occurrence for a provider is its lowest-sort_order photo.
+  const heroByProvider = new Map<string, string>()
+  for (const row of (data as { provider_id: string; media_url: string }[]) ?? []) {
+    if (!heroByProvider.has(row.provider_id)) {
+      heroByProvider.set(row.provider_id, row.media_url)
+    }
+  }
+
+  return list.map((p) => ({ ...p, heroImage: heroByProvider.get(p.id) }))
+}
+
 export function useProviders(categoryId?: number) {
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
@@ -97,7 +136,8 @@ export function useProviders(categoryId?: number) {
       const { data, error } = await query
 
       if (error) throw error
-      setProviders((data as Provider[]) || [])
+      const list = await attachHeroImages((data as Provider[]) || [])
+      setProviders(list)
     } catch (err: any) {
       setError(err.message)
       console.log('Fetch providers error:', err)

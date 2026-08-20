@@ -141,17 +141,22 @@ function ProviderTile({
         { height, borderRadius: big ? 32 : 16 },
       ]}
     >
-      {provider.profile_photo_url ? (
-        <Image
-          source={{ uri: cacheBustedPhoto(provider.profile_photo_url) }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
-      ) : (
-        <View style={s.tileCenter}>
-          <Silhouette size={big ? 56 : 44} />
-        </View>
-      )}
+      {(() => {
+        // Prefer the provider's best portfolio photo; fall back to their
+        // profile photo, then the silhouette placeholder.
+        const cardImage = provider.heroImage ?? provider.profile_photo_url
+        return cardImage ? (
+          <Image
+            source={{ uri: cacheBustedPhoto(cardImage) }}
+            style={StyleSheet.absoluteFill}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={s.tileCenter}>
+            <Silhouette size={big ? 56 : 44} />
+          </View>
+        )
+      })()}
 
       <LinearGradient
         colors={['transparent', 'rgba(8,8,8,0.9)']}
