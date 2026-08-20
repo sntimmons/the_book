@@ -19,6 +19,7 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useProviderStore } from '@/store/providerStore'
 import { useCategories } from '../../../hooks/useProviders'
+import NeighborhoodPicker from '@/components/NeighborhoodPicker'
 
 type FocusedField = 'name' | 'businessName' | 'location' | 'bio' | 'customCategory' | null
 type Errors = { name?: string; category?: string; photo?: string }
@@ -269,21 +270,10 @@ export default function ProviderOnboardingStep1() {
         {/* ── LOCATION ───────────────────────────── */}
         <View style={styles.fieldWrap}>
           <View style={styles.labelRow}>
-            <Text style={styles.fieldLabel}>YOUR LOCATION</Text>
+            <Text style={styles.fieldLabel}>NEIGHBORHOOD</Text>
             <View style={styles.requiredDot} />
           </View>
-          <View style={[styles.inputContainer, styles.selectorRow, { borderColor: fieldBorder('location') }]}>
-            <Feather name="map-pin" size={16} color="rgba(240,232,213,0.3)" style={{ marginRight: 10 }} />
-            <TextInput
-              value={location}
-              onChangeText={setLocation}
-              placeholder="Midtown, Houston TX"
-              placeholderTextColor="rgba(240,232,213,0.25)"
-              onFocus={() => setFocusedField('location')}
-              onBlur={() => setFocusedField(null)}
-              style={[styles.inputText, { flex: 1 }]}
-            />
-          </View>
+          <NeighborhoodPicker value={location} onChange={setLocation} />
           <Text style={styles.helperText}>Where you are based or primarily work.</Text>
         </View>
 

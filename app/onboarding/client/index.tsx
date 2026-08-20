@@ -16,6 +16,7 @@ import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useClientStore } from '@/store/clientStore'
+import NeighborhoodPicker from '@/components/NeighborhoodPicker'
 
 type FocusedField = 'firstName' | 'lastName' | 'neighborhood' | 'bio' | null
 
@@ -138,18 +139,7 @@ export default function ClientProfileSetup() {
         {/* Neighborhood */}
         <View style={styles.fieldWrap}>
           <Text style={styles.fieldLabel}>YOUR NEIGHBORHOOD</Text>
-          <View style={[styles.inputContainer, styles.inputRow, { borderColor: borderColor('neighborhood') }]}>
-            <Text style={styles.pinIcon}>⊙</Text>
-            <TextInput
-              value={neighborhood}
-              onChangeText={setNeighborhood}
-              placeholder="Midtown, Houston"
-              placeholderTextColor="rgba(240,232,213,0.25)"
-              onFocus={() => setFocused('neighborhood')}
-              onBlur={() => setFocused(null)}
-              style={[styles.inputText, { flex: 1 }]}
-            />
-          </View>
+          <NeighborhoodPicker value={neighborhood} onChange={setNeighborhood} />
         </View>
 
         {/* Bio */}
@@ -352,20 +342,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     justifyContent: 'center',
   },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   inputText: {
     fontSize: 15,
     color: '#F0E8D5',
     fontFamily: 'Manrope_400Regular',
     padding: 0,
-  },
-  pinIcon: {
-    fontSize: 16,
-    color: 'rgba(240,232,213,0.4)',
-    marginRight: 10,
   },
   bioLabelRow: {
     flexDirection: 'row',

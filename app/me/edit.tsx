@@ -21,6 +21,7 @@ import * as ImagePicker from 'expo-image-picker'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { uploadMedia } from '../../lib/storage'
+import NeighborhoodPicker from '../../components/NeighborhoodPicker'
 
 interface ProfileForm {
   name: string
@@ -358,29 +359,10 @@ export default function EditProfileScreen() {
             <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
               YOUR NEIGHBORHOOD
             </Text>
-            <View style={styles.iconInputWrap}>
-              <View style={styles.iconLeft}>
-                <Ionicons
-                  name="location-outline"
-                  size={16}
-                  color="rgba(240,232,213,0.3)"
-                />
-              </View>
-              <TextInput
-                style={[
-                  styles.input,
-                  styles.inputWithIcon,
-                  focusedField === 'neighborhood' && styles.inputFocused,
-                ]}
-                value={form.neighborhood}
-                onChangeText={(v) => updateField('neighborhood', v)}
-                placeholder="Midtown, Houston"
-                placeholderTextColor="rgba(240,232,213,0.25)"
-                returnKeyType="next"
-                onFocus={() => setFocusedField('neighborhood')}
-                onBlur={() => setFocusedField(null)}
-              />
-            </View>
+            <NeighborhoodPicker
+              value={form.neighborhood}
+              onChange={(v) => updateField('neighborhood', v)}
+            />
             <Text style={styles.helperText}>
               Helps providers know where you are.
             </Text>
@@ -577,20 +559,6 @@ const styles = StyleSheet.create({
   },
   inputFocused: {
     borderColor: 'rgba(200,146,42,0.4)',
-  },
-  inputWithIcon: {
-    paddingLeft: 40,
-  },
-  iconInputWrap: {
-    position: 'relative',
-  },
-  iconLeft: {
-    position: 'absolute',
-    left: 14,
-    top: 0,
-    bottom: 0,
-    justifyContent: 'center',
-    zIndex: 1,
   },
   helperText: {
     marginTop: 6,

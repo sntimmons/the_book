@@ -6,12 +6,12 @@ import {
   Pressable,
   TouchableOpacity,
   Switch,
-  Alert,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import NeighborhoodPicker from '@/components/NeighborhoodPicker'
 
 const INTERESTS = [
   { id: 'lashes', icon: '✦', title: 'Lashes', subtitle: 'Extensions & lifts' },
@@ -79,18 +79,6 @@ export default function ClientPreferences() {
     })
   }
 
-  function handleChangeLocation() {
-    Alert.prompt(
-      'Change Location',
-      'Enter your neighborhood',
-      (value: string) => {
-        if (value && value.trim()) setLocation(value.trim())
-      },
-      'plain-text',
-      location,
-    )
-  }
-
   const rows: Array<typeof INTERESTS[number][]> = []
   for (let i = 0; i < INTERESTS.length; i += 2) {
     rows.push(INTERESTS.slice(i, i + 2) as typeof INTERESTS[number][])
@@ -154,18 +142,11 @@ export default function ClientPreferences() {
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionLabel}>LOCATION</Text>
         </View>
-        <View style={styles.sectionCard}>
-          <View style={styles.locationRow}>
-            <Text style={styles.pinIcon}>⊙</Text>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.locationTitle}>{location}</Text>
-              <Text style={styles.locationSubtext}>Providers within 15 miles</Text>
-            </View>
-            <TouchableOpacity activeOpacity={0.7} onPress={handleChangeLocation}>
-              <Text style={styles.changeLink}>Change</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.divider} />
+        <NeighborhoodPicker value={location} onChange={setLocation} />
+        <Text style={[styles.locationSubtext, { marginTop: 8, marginLeft: 4 }]}>
+          Providers within 15 miles
+        </Text>
+        <View style={[styles.sectionCard, { marginTop: 16 }]}>
           <View style={styles.notifRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.locationTitle}>Show mobile providers</Text>
@@ -397,19 +378,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(240,232,213,0.06)',
     marginHorizontal: 16,
   },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-  },
-  pinIcon: {
-    fontSize: 16,
-    color: 'rgba(240,232,213,0.5)',
-    width: 20,
-    textAlign: 'center',
-  },
   locationTitle: {
     fontSize: 14,
     fontWeight: '500',
@@ -421,12 +389,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_400Regular',
-  },
-  changeLink: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: 'rgba(240,232,213,0.6)',
-    fontFamily: 'Manrope_600SemiBold',
   },
   notifRow: {
     flexDirection: 'row',

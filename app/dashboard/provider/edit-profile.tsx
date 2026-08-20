@@ -24,6 +24,7 @@ import { useAuth } from '../../../context/AuthContext'
 import { uploadMedia } from '../../../lib/storage'
 import { useCategories } from '../../../hooks/useProviders'
 import { DoneAccessory, DONE_ACCESSORY_ID } from '../../../components/DoneAccessory'
+import NeighborhoodPicker from '../../../components/NeighborhoodPicker'
 
 interface ProviderForm {
   displayName: string
@@ -496,17 +497,9 @@ export default function ProviderEditProfileScreen() {
 
               {/* Neighborhood */}
               <Text style={styles.fieldLabel}>NEIGHBORHOOD</Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  focused === 'neighborhood' && styles.inputFocused,
-                ]}
+              <NeighborhoodPicker
                 value={form.neighborhood}
-                onChangeText={(v) => updateField('neighborhood', v)}
-                placeholder="Midtown, River Oaks..."
-                placeholderTextColor="rgba(240,232,213,0.25)"
-                onFocus={() => setFocused('neighborhood')}
-                onBlur={() => setFocused(null)}
+                onChange={(v) => updateField('neighborhood', v)}
               />
 
               {/* Specialties */}
