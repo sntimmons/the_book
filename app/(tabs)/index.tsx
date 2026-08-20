@@ -13,6 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import {
   useProviders,
   useCategories,
@@ -20,6 +21,8 @@ import {
   Category,
 } from '../../hooks/useProviders'
 import { cacheBustedPhoto } from '../../lib/image'
+import { useAuth } from '../../context/AuthContext'
+import { fetchDueReminder, CareReminder } from '../../lib/care'
 
 // ── Shimmer skeleton ──────────────────────────────────────────────────────────
 
@@ -201,6 +204,70 @@ function ProviderTile({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+// Subtle, dismissable nudge shown at the top of Discover when the client has a
+// rebook reminder due (within 3 days). One banner max; dismissing stores a
+// timestamp in AsyncStorage so the same reminder stays hidden for 24 hours.
+function RebookBanner() {
+  const { user } = useAuth()
+  const [reminder, setReminder] = useState<CareReminder | null>(null)
+
+  useEffect(() => {
+    if (!user) {
+      setReminder(null)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const due = await fetchDueReminder(user.id)
+      if (cancelled || !due) {
+        if (!cancelled) setReminder(null)
+        return
+      }
+      const raw = await AsyncStorage.getItem(`care_banner_dismissed_${due.id}`)
+      if (raw) {
+        const ts = Number(raw)
+        if (Number.isFinite(ts) && Date.now() - ts < 24 * 3600 * 1000) {
+          if (!cancelled) setReminder(null)
+          return
+        }
+      }
+      if (!cancelled) setReminder(due)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
+
+  if (!reminder) return null
+  const active = reminder
+
+  async function dismiss() {
+    await AsyncStorage.setItem(`care_banner_dismissed_${active.id}`, String(Date.now()))
+    setReminder(null)
+  }
+
+  return (
+    <TouchableOpacity
+      style={s.rebookBanner}
+      activeOpacity={0.9}
+      onPress={() => router.push('/care' as never)}
+    >
+      <View style={s.rebookIcon}>
+        <Ionicons name="time-outline" size={16} color="#C8922A" />
+      </View>
+      <Text style={s.rebookText} numberOfLines={1}>
+        Time to rebook {active.serviceName}
+      </Text>
+      <TouchableOpacity
+        onPress={dismiss}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      >
+        <Ionicons name="close" size={16} color="rgba(240,232,213,0.4)" />
+      </TouchableOpacity>
+    </TouchableOpacity>
+  )
+}
+
 export default function DiscoveryFeed() {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
@@ -251,6 +318,9 @@ export default function DiscoveryFeed() {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* ── Rebook nudge (client, dismissable) ──────────────────────────── */}
+        <RebookBanner />
 
         {/* ── Category pills ──────────────────────────────────────────────── */}
         <ScrollView
@@ -435,6 +505,35 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+
+  // Rebook nudge banner
+  rebookBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 24,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(200,146,42,0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.25)',
+  },
+  rebookIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(200,146,42,0.16)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  rebookText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
   },
 
   // Category pills

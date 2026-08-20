@@ -366,6 +366,9 @@ function ClientMe() {
           </ScrollView>
         )}
 
+        {/* Care Hub — client home base for appointments, saved pros, rebooking */}
+        <CareHubCard />
+
         <View style={styles.separator} />
 
         {/* Content tabs */}
@@ -670,6 +673,30 @@ function FollowingTab({ followingCount }: { followingCount: number }) {
 }
 
 // ── Preview entries (coming-soon screens) ───────────────────────────────────
+// Featured client card that opens the Care Hub — the client's home base for
+// appointments, saved providers, spending, and rebook reminders. Amber-accented
+// so it reads as the live, high-value entry it is.
+function CareHubCard() {
+  return (
+    <TouchableOpacity
+      style={[styles.hubCard, { marginTop: 8 }]}
+      activeOpacity={0.85}
+      onPress={() => router.push('/care' as never)}
+    >
+      <View style={[styles.hubIcon, { backgroundColor: 'rgba(200,146,42,0.14)' }]}>
+        <Feather name="heart" size={20} color="#C8922A" />
+      </View>
+      <View style={styles.flex1}>
+        <Text style={styles.hubTitle}>Care Hub</Text>
+        <Text style={styles.hubSub}>
+          Your appointments, saved providers, spending, and rebook reminders.
+        </Text>
+      </View>
+      <Feather name="chevron-right" size={20} color="rgba(240,232,213,0.3)" />
+    </TouchableOpacity>
+  )
+}
+
 // Featured provider-only card for the provider community Hub. Deliberately
 // distinct from the solid-cream My Studio card: a dark, cream-bordered card so
 // it reads as its own thing while still carrying real weight beside My Studio.
