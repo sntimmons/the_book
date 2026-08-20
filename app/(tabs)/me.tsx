@@ -15,6 +15,7 @@ import { StatusBar } from 'expo-status-bar'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
+import { cacheBustedPhoto } from '../../lib/image'
 import { useAuth } from '../../context/AuthContext'
 import { getOrCreateConversation } from '../../hooks/useMessaging'
 
@@ -24,6 +25,8 @@ interface ClientProfile {
   id: string
   name: string | null
   notes: string | null
+  avatar_url: string | null
+  neighborhood: string | null
   created_at: string
 }
 
@@ -112,11 +115,10 @@ function ClientMe() {
     }
     setLoading(true)
     try {
-      // Client profile. Note: clients.avatar_url column does not exist yet,
-      // so we only select what we know is there. Always render initials.
+      // Client profile.
       const { data: clientData } = await supabase
         .from('clients')
-        .select('id, name, notes, created_at')
+        .select('id, name, notes, avatar_url, neighborhood, created_at')
         .eq('id', user.id)
         .maybeSingle()
 
@@ -129,6 +131,8 @@ function ClientMe() {
           id: user.id,
           name: user.email?.split('@')[0] ?? 'New Member',
           notes: null,
+          avatar_url: null,
+          neighborhood: null,
           created_at: user.created_at ?? new Date().toISOString(),
         })
       }
@@ -264,9 +268,16 @@ function ClientMe() {
           ) : (
             <>
               <View style={styles.photoWrap}>
-                <View style={[styles.photo, styles.photoFallback]}>
-                  <Text style={styles.photoInitial}>{avatarInitial}</Text>
-                </View>
+                {profile?.avatar_url ? (
+                  <Image
+                    source={{ uri: cacheBustedPhoto(profile.avatar_url) }}
+                    style={styles.photo}
+                  />
+                ) : (
+                  <View style={[styles.photo, styles.photoFallback]}>
+                    <Text style={styles.photoInitial}>{avatarInitial}</Text>
+                  </View>
+                )}
                 {phoneVerified && (
                   <View style={styles.verifiedBadge}>
                     <Feather name="check" size={10} color="#080808" />
@@ -275,8 +286,9 @@ function ClientMe() {
               </View>
 
               <Text style={styles.name}>{displayName}</Text>
-              {/* TODO: store neighborhood on clients; for now default to Houston. */}
-              <Text style={styles.location}>Houston</Text>
+              <Text style={styles.location}>
+                {profile?.neighborhood?.trim() || 'Houston'}
+              </Text>
               {memberSince.length > 0 && (
                 <View style={styles.memberRow}>
                   <Feather name="calendar" size={11} color="rgba(240,232,213,0.45)" />

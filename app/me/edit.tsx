@@ -79,12 +79,11 @@ export default function EditProfileScreen() {
     }
     setLoading(true)
     try {
-      // clients schema today: id, name, notes, created_at.
-      // No avatar_url, no neighborhood, no bio column - we surface those
-      // fields in the UI for now and persist what we can.
+      // clients schema: id, name, notes, avatar_url, neighborhood, created_at.
+      // Bio is stored in the notes column until the schema splits them.
       const { data } = await supabase
         .from('clients')
-        .select('id, name, notes, created_at')
+        .select('id, name, notes, avatar_url, neighborhood, created_at')
         .eq('id', user.id)
         .maybeSingle()
 
@@ -93,10 +92,12 @@ export default function EditProfileScreen() {
           name: data.name ?? '',
           // Bio shares the notes column until the schema splits them.
           bio: data.notes ?? '',
-          // TODO: add neighborhood column to clients.
-          neighborhood: '',
+          neighborhood: data.neighborhood ?? '',
           phone: user.phone ?? '',
         })
+        // Show the saved avatar. Picking a new one sets photoChanged so we
+        // only re-upload on an actual change.
+        if (data.avatar_url) setPhoto(data.avatar_url)
       } else {
         setForm({
           name: user.email?.split('@')[0] ?? '',
@@ -152,9 +153,9 @@ export default function EditProfileScreen() {
     }
     setSaving(true)
     try {
-      // Upload new photo if changed. Drop the URL on the floor for now -
-      // the clients table has no avatar_url column yet, so we just upload
-      // the bytes and surface the URL in console for the next schema step.
+      // Upload the new photo if the user picked one. A failed upload leaves
+      // avatarUrl null so we keep the previously saved avatar rather than
+      // wiping it.
       let avatarUrl: string | null = null
       if (photoChanged && photo) {
         const result = await uploadMedia(photo, user.id, 'profile', 'provider-media')
@@ -163,16 +164,25 @@ export default function EditProfileScreen() {
           console.log('Photo upload error:', result.error)
         }
       }
-      void avatarUrl
 
-      const updates = {
+      // created_at is intentionally omitted: the clients.created_at column
+      // defaults to now(), so a brand-new row still gets a timestamp while an
+      // existing row keeps its original date (fixes "Member since" resetting
+      // on every save).
+      const updates: {
+        id: string
+        name: string
+        notes: string | null
+        neighborhood: string | null
+        avatar_url?: string
+      } = {
         id: user.id,
         name: form.name.trim(),
         notes: form.bio.trim() || null,
-        // TODO: when clients.avatar_url and clients.neighborhood columns
-        // land, persist avatarUrl and form.neighborhood here.
-        created_at: new Date().toISOString(),
+        neighborhood: form.neighborhood.trim() || null,
       }
+      // Only overwrite the stored avatar when a new photo uploaded successfully.
+      if (avatarUrl) updates.avatar_url = avatarUrl
 
       const { error } = await supabase
         .from('clients')

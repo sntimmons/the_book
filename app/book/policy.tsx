@@ -193,7 +193,7 @@ export default function BookPolicy() {
           onPress={() => agreedToPolicy && router.push('/book/payment')}
         >
           <Text style={[styles.continueBtnText, !agreedToPolicy && styles.continueBtnTextInactive]}>
-            Continue to Pay
+            Send Request
           </Text>
         </Pressable>
       </View>
