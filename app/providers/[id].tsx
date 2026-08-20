@@ -29,6 +29,8 @@ export default function ProviderProfilePage() {
   const [followBusy, setFollowBusy] = useState(false)
   const [isSaved, setIsSaved] = useState(false)
   const [saveBusy, setSaveBusy] = useState(false)
+  const [portfolioImages, setPortfolioImages] = useState<string[]>([])
+  const [reelVideos, setReelVideos] = useState<string[]>([])
 
   // Load real follow state + a live follower count once the provider (and, for
   // the per-user state, the auth user) resolve. Without this the button always
@@ -158,6 +160,43 @@ export default function ProviderProfilePage() {
     }
   }
 
+  // Load this provider's real content from the posts table. Images populate the
+  // Portfolio tab; videos populate the profile's Reels sub-section. Both are
+  // mapped to plain URL arrays, the shape ProviderProfile already renders.
+  useEffect(() => {
+    let cancelled = false
+    const providerId = provider?.id
+    if (!providerId) {
+      setPortfolioImages([])
+      setReelVideos([])
+      return
+    }
+    ;(async () => {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('id, media_url, media_type, content_type, caption, sort_order')
+        .eq('provider_id', providerId)
+        .eq('is_active', true)
+        .eq('is_demo', false)
+        .order('sort_order', { ascending: true })
+      if (cancelled) return
+      if (error) {
+        console.log('Fetch provider posts error:', error)
+        return
+      }
+      const rows = (data as { media_url: string; media_type: string }[]) ?? []
+      setPortfolioImages(
+        rows.filter((r) => r.media_type === 'image').map((r) => r.media_url),
+      )
+      setReelVideos(
+        rows.filter((r) => r.media_type === 'video').map((r) => r.media_url),
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [provider?.id])
+
   if (loading) {
     return (
       <View style={[s.loadingRoot, { paddingTop: insets.top }]}>
@@ -215,6 +254,8 @@ export default function ProviderProfilePage() {
     photo: cacheBustedPhoto(provider.profile_photo_url),
     banner: provider.cover_image_url ?? undefined,
     services: profileServices,
+    portfolio: portfolioImages,
+    reels: reelVideos,
     rating: ratingValue,
     bookingCount: provider.total_bookings ?? 0,
     followerCount: followerCount,
