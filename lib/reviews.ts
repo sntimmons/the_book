@@ -24,6 +24,14 @@ export interface RevealedReview {
   tags: string[] | null
   createdAt: string
   reviewerName: string
+  // Structured client-reputation dimensions. Present only for client reviews
+  // (undefined for provider reviews); null means the reviewer left the
+  // dimension unanswered. private_note is deliberately NOT part of this type —
+  // it is never fetched into any display path.
+  showedUp?: boolean | null
+  onTime?: boolean | null
+  followedPolicy?: boolean | null
+  paymentCompleted?: boolean | null
 }
 
 export interface ReviewAggregate {
@@ -125,7 +133,7 @@ export async function fetchRevealedClientReviews(
   const { data: rows, error } = await supabase
     .from('client_reviews')
     .select(
-      'id, booking_id, reviewer_provider_id, rating, review_text, tags, created_at',
+      'id, booking_id, reviewer_provider_id, rating, review_text, tags, created_at, showed_up, on_time, followed_policy, payment_completed',
     )
     .eq('client_user_id', clientUserId)
 
@@ -147,6 +155,10 @@ export async function fetchRevealedClientReviews(
     review_text: string | null
     tags: string[] | null
     created_at: string
+    showed_up: boolean | null
+    on_time: boolean | null
+    followed_policy: boolean | null
+    payment_completed: boolean | null
   }>
   if (reviews.length === 0) return { reviews: [], rlsBlocked: false }
 
@@ -194,9 +206,61 @@ export async function fetchRevealedClientReviews(
       createdAt: r.created_at,
       reviewerName:
         (r.reviewer_provider_id && nameById.get(r.reviewer_provider_id)) || 'Provider',
+      showedUp: r.showed_up,
+      onTime: r.on_time,
+      followedPolicy: r.followed_policy,
+      paymentCompleted: r.payment_completed,
     })),
     rlsBlocked: false,
   }
+}
+
+// ── Structured client-reputation dimensions ───────────────────────────────────
+
+export interface ClientDimensionStat {
+  yes: number
+  total: number
+}
+
+export interface ClientDimensionStats {
+  showedUp: ClientDimensionStat
+  onTime: ClientDimensionStat
+  followedPolicy: ClientDimensionStat
+  paymentCompleted: ClientDimensionStat
+  hasAny: boolean
+}
+
+// Aggregate the four boolean dimensions across a client's revealed reviews.
+// `total` counts only answered (true/false) entries, so a client with no
+// structured data yet yields hasAny=false rather than fake zeros.
+export function aggregateClientDimensions(
+  reviews: Array<
+    Pick<RevealedReview, 'showedUp' | 'onTime' | 'followedPolicy' | 'paymentCompleted'>
+  >,
+): ClientDimensionStats {
+  const tally = (
+    pick: (r: (typeof reviews)[number]) => boolean | null | undefined,
+  ): ClientDimensionStat => {
+    let yes = 0
+    let total = 0
+    for (const r of reviews) {
+      const v = pick(r)
+      if (v === true || v === false) {
+        total += 1
+        if (v) yes += 1
+      }
+    }
+    return { yes, total }
+  }
+
+  const showedUp = tally((r) => r.showedUp)
+  const onTime = tally((r) => r.onTime)
+  const followedPolicy = tally((r) => r.followedPolicy)
+  const paymentCompleted = tally((r) => r.paymentCompleted)
+  const hasAny =
+    showedUp.total + onTime.total + followedPolicy.total + paymentCompleted.total > 0
+
+  return { showedUp, onTime, followedPolicy, paymentCompleted, hasAny }
 }
 
 export function aggregateFromRevealed(reviews: { rating: number }[]): ReviewAggregate {

@@ -24,23 +24,6 @@ const RATING_RESPONSE: Record<number, string> = {
   1: 'Would not rebook',
 }
 
-const POSITIVE_TAGS = [
-  'On time',
-  'Great communication',
-  'Easy to work with',
-  'Respectful of space',
-  'Will rebook',
-  'Tipped well',
-]
-
-const MIXED_TAGS = [
-  'Late arrival',
-  'Hard to communicate with',
-  'Last minute changes',
-  'No show risk',
-  'Would not rebook',
-]
-
 interface BookingForReview {
   clientUserId: string
   clientFirstName: string
@@ -60,8 +43,13 @@ export default function ProviderReview() {
   const { id } = useLocalSearchParams<{ id?: string }>()
 
   const [rating, setRating] = useState(0)
-  const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [note, setNote] = useState('')
+  // Structured accountability dimensions. Default null so the provider
+  // actively chooses yes/no rather than a pre-selected value.
+  const [showedUp, setShowedUp] = useState<boolean | null>(null)
+  const [onTime, setOnTime] = useState<boolean | null>(null)
+  const [followedPolicy, setFollowedPolicy] = useState<boolean | null>(null)
+  const [paymentCompleted, setPaymentCompleted] = useState<boolean | null>(null)
   const [booking, setBooking] = useState<BookingForReview | null>(null)
   const [providerDbId, setProviderDbId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -121,18 +109,8 @@ export default function ProviderReview() {
 
   function handleRate(value: number) {
     setRating(value)
-    setSelectedTags([])
   }
 
-  function toggleTag(tag: string) {
-    setSelectedTags((prev) => {
-      if (prev.includes(tag)) return prev.filter((t) => t !== tag)
-      if (prev.length >= 3) return prev
-      return [...prev, tag]
-    })
-  }
-
-  const tags = rating >= 4 ? POSITIVE_TAGS : MIXED_TAGS
   const canSubmit = rating > 0 && !submitting
 
   async function handleSubmit() {
@@ -167,8 +145,14 @@ export default function ProviderReview() {
         client_user_id: booking.clientUserId,
         reviewer_provider_id: providerDbId,
         rating,
-        review_text: note.trim() || null,
-        tags: selectedTags.length > 0 ? selectedTags : null,
+        // Structured dimensions (the accountability signal shown to providers).
+        showed_up: showedUp,
+        on_time: onTime,
+        followed_policy: followedPolicy,
+        payment_completed: paymentCompleted,
+        // Private, provider-only context. Never written to review_text (which
+        // was displayed publicly) and never surfaced to clients/other providers.
+        private_note: note.trim() || null,
       })
 
       if (error) {
@@ -247,39 +231,35 @@ export default function ProviderReview() {
           )}
         </View>
 
-        {/* Client tags */}
+        {/* Structured dimensions */}
         {rating > 0 && (
-          <View style={styles.tagsSection}>
-            <Text style={styles.tagsLabel}>WHAT STOOD OUT?</Text>
-            <View style={styles.chipWrap}>
-              {tags.map((tag) => {
-                const selected = selectedTags.includes(tag)
-                return (
-                  <TouchableOpacity
-                    key={tag}
-                    style={[styles.chip, selected ? styles.chipSelected : styles.chipUnselected]}
-                    activeOpacity={0.7}
-                    onPress={() => toggleTag(tag)}
-                  >
-                    <Text style={selected ? styles.chipTextSelected : styles.chipTextUnselected}>
-                      {tag}
-                    </Text>
-                  </TouchableOpacity>
-                )
-              })}
-            </View>
+          <View style={styles.dimSection}>
+            <Text style={styles.tagsLabel}>ACCOUNTABILITY</Text>
+            <DimensionRow label="Did they show up?" value={showedUp} onChange={setShowedUp} />
+            <DimensionRow label="Were they on time?" value={onTime} onChange={setOnTime} />
+            <DimensionRow
+              label="Did they follow your policy?"
+              value={followedPolicy}
+              onChange={setFollowedPolicy}
+            />
+            <DimensionRow
+              label="Was payment completed?"
+              value={paymentCompleted}
+              onChange={setPaymentCompleted}
+            />
           </View>
         )}
 
         {/* Optional note */}
         {rating > 0 && (
           <View style={styles.noteSection}>
+            <Text style={styles.tagsLabel}>PRIVATE NOTE — ONLY YOU CAN SEE THIS</Text>
             <View style={styles.inputContainer}>
               <TextInput
                 style={styles.input}
                 multiline
-                maxLength={200}
-                placeholder="Any notes about this client? Only visible to you and our team."
+                maxLength={150}
+                placeholder="Optional context for yourself. Never shown to the client or other providers."
                 placeholderTextColor="rgba(240,232,213,0.25)"
                 textAlignVertical="top"
                 value={note}
@@ -287,7 +267,8 @@ export default function ProviderReview() {
               />
             </View>
             <Text style={styles.privacyNote}>
-              Client ratings are private. Providers see their score as a range not the exact number or comments.
+              {note.length}/150 · Private to you. Clients and other providers only
+              ever see the structured checks above, never this note.
             </Text>
           </View>
         )}
@@ -321,10 +302,87 @@ export default function ProviderReview() {
   )
 }
 
+function DimensionRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: boolean | null
+  onChange: (v: boolean) => void
+}) {
+  return (
+    <View style={styles.dimRow}>
+      <Text style={styles.dimLabel}>{label}</Text>
+      <View style={styles.dimToggle}>
+        <TouchableOpacity
+          style={[styles.dimBtn, value === true && styles.dimBtnActive]}
+          activeOpacity={0.8}
+          onPress={() => onChange(true)}
+        >
+          <Feather
+            name="thumbs-up"
+            size={15}
+            color={value === true ? '#080808' : 'rgba(240,232,213,0.5)'}
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.dimBtn, value === false && styles.dimBtnActive]}
+          activeOpacity={0.8}
+          onPress={() => onChange(false)}
+        >
+          <Feather
+            name="thumbs-down"
+            size={15}
+            color={value === false ? '#080808' : 'rgba(240,232,213,0.5)'}
+          />
+        </TouchableOpacity>
+      </View>
+    </View>
+  )
+}
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#080808',
+  },
+  dimSection: {
+    marginTop: 28,
+    paddingHorizontal: 24,
+    alignSelf: 'stretch',
+  },
+  dimRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(240,232,213,0.05)',
+  },
+  dimLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+  },
+  dimToggle: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  dimBtn: {
+    width: 46,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(240,232,213,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dimBtnActive: {
+    backgroundColor: '#F0E8D5',
+    borderColor: '#F0E8D5',
   },
   topBar: {
     paddingHorizontal: 24,
@@ -387,11 +445,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
-  tagsSection: {
-    marginTop: 28,
-    paddingHorizontal: 24,
-    alignSelf: 'stretch',
-  },
   tagsLabel: {
     fontSize: 10,
     color: 'rgba(240,232,213,0.35)',
@@ -400,36 +453,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 10,
     textAlign: 'center',
-  },
-  chipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    justifyContent: 'center',
-  },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  chipSelected: {
-    backgroundColor: 'rgba(240,232,213,0.1)',
-    borderColor: 'rgba(240,232,213,0.3)',
-  },
-  chipUnselected: {
-    backgroundColor: 'transparent',
-    borderColor: 'rgba(240,232,213,0.08)',
-  },
-  chipTextSelected: {
-    fontSize: 12,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
-  chipTextUnselected: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
   },
   noteSection: {
     marginTop: 20,

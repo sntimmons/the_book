@@ -18,8 +18,9 @@ import {
   fetchRevealedClientReviews,
   fetchClientCompletionRate,
   RevealedReview,
-  formatReviewDate,
   initialsOf,
+  aggregateClientDimensions,
+  ClientDimensionStat,
 } from '../../../lib/reviews'
 
 // Screen 2: Booking Request (PROVIDER-ONLY). Surfaces the client's reputation
@@ -230,6 +231,7 @@ export default function BookingRequestScreen() {
   }
 
   const isPending = booking.status === 'pending'
+  const dimStats = aggregateClientDimensions(reviews)
 
   return (
     <View style={s.root}>
@@ -287,31 +289,17 @@ export default function BookingRequestScreen() {
               Client feedback is unavailable right now.
             </Text>
           </View>
-        ) : reviews.length === 0 ? (
+        ) : !dimStats.hasAny ? (
           <View style={s.card}>
-            <Text style={s.blockedText}>
-              No feedback from other providers yet.
-            </Text>
+            <Text style={s.blockedText}>No history yet.</Text>
           </View>
         ) : (
-          reviews.slice(0, 3).map((r) => (
-            <View key={r.id} style={s.feedbackCard}>
-              <Ionicons
-                name="chatbubble"
-                size={12}
-                color="rgba(240,232,213,0.3)"
-                style={{ marginTop: 4 }}
-              />
-              <View style={s.feedbackBody}>
-                {r.reviewText ? (
-                  <Text style={s.feedbackText}>&quot;{r.reviewText}&quot;</Text>
-                ) : null}
-                <Text style={s.feedbackAuthor}>
-                  {r.reviewerName} · {formatReviewDate(r.createdAt)}
-                </Text>
-              </View>
-            </View>
-          ))
+          <View style={s.card}>
+            <DimStatRow label="Showed up" stat={dimStats.showedUp} />
+            <DimStatRow label="On time" stat={dimStats.onTime} />
+            <DimStatRow label="Followed policy" stat={dimStats.followedPolicy} />
+            <DimStatRow label="Payment" stat={dimStats.paymentCompleted} />
+          </View>
         )}
 
         {/* Stats: Completion Rate is real. Late Arrivals is hidden (not tracked). */}
@@ -357,8 +345,61 @@ export default function BookingRequestScreen() {
   )
 }
 
+function DimStatRow({ label, stat }: { label: string; stat: ClientDimensionStat }) {
+  if (stat.total === 0) {
+    return (
+      <View style={s.dimStatRow}>
+        <Text style={s.dimStatLabel}>{label}</Text>
+        <Text style={s.dimStatEmpty}>—</Text>
+      </View>
+    )
+  }
+  const allGood = stat.yes === stat.total
+  return (
+    <View style={s.dimStatRow}>
+      <Text style={s.dimStatLabel}>{label}</Text>
+      <View style={s.dimStatRight}>
+        <Ionicons
+          name={allGood ? 'checkmark-circle' : 'alert-circle'}
+          size={16}
+          color={allGood ? '#4CAF50' : '#C8922A'}
+        />
+        <Text style={s.dimStatCount}>
+          {stat.yes}/{stat.total}
+        </Text>
+      </View>
+    </View>
+  )
+}
+
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#080808' },
+  dimStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+  },
+  dimStatLabel: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+  },
+  dimStatRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dimStatCount: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  dimStatEmpty: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.3)',
+    fontFamily: 'Manrope_400Regular',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -434,29 +475,6 @@ const s = StyleSheet.create({
 
   feedbackHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
   feedbackTitle: { fontSize: 18, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
-  feedbackCard: {
-    flexDirection: 'row',
-    gap: 16,
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.07)',
-    borderRadius: 14,
-    padding: 20,
-    marginBottom: 16,
-  },
-  feedbackBody: { flex: 1 },
-  feedbackText: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.9)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 22,
-  },
-  feedbackAuthor: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-    marginTop: 12,
-  },
   blockedText: {
     fontSize: 14,
     color: 'rgba(240,232,213,0.45)',
