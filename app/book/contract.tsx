@@ -80,7 +80,29 @@ export default function BookContract() {
         contentContainerStyle={{ padding: 20, paddingBottom: 24 }}
       >
         <Text style={styles.title}>{contract?.title}</Text>
-        <Text style={styles.bodyText}>{contract?.body}</Text>
+
+        {contract?.contractType === 'pdf' ? (
+          <View style={styles.pdfBlock}>
+            <Text style={styles.pdfHint}>You must read the full contract before signing.</Text>
+            <TouchableOpacity
+              style={styles.readBtn}
+              activeOpacity={0.85}
+              onPress={() => {
+                if (contract?.pdfUrl) {
+                  router.push({
+                    pathname: '/contracts/pdf-viewer',
+                    params: { url: contract.pdfUrl },
+                  } as never)
+                }
+              }}
+            >
+              <Feather name="file-text" size={16} color="#080808" />
+              <Text style={styles.readBtnText}>Read Contract</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <Text style={styles.bodyText}>{contract?.body}</Text>
+        )}
 
         {/* Signature placeholder — the real finger-drawn canvas (react-native-skia)
             requires an EAS development build and is swapped in later. */}
@@ -109,7 +131,9 @@ export default function BookContract() {
             {agreed ? <Feather name="check" size={13} color="#080808" /> : null}
           </View>
           <Text style={styles.checkboxText}>
-            I have read and agree to this service agreement.
+            {contract?.contractType === 'pdf'
+              ? 'I have read and agree to the terms in this PDF contract.'
+              : 'I have read and agree to this service agreement.'}
           </Text>
         </Pressable>
       </ScrollView>
@@ -159,6 +183,24 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     lineHeight: 23,
   },
+  pdfBlock: { marginTop: 4 },
+  pdfHint: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  readBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: '#F0E8D5',
+  },
+  readBtnText: { fontSize: 15, color: '#080808', fontFamily: 'Manrope_700Bold' },
   sigLabel: {
     fontSize: 10,
     color: 'rgba(240,232,213,0.4)',

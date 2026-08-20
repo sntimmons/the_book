@@ -15,6 +15,7 @@ import { useAuth } from '@/context/AuthContext'
 import {
   fetchProviderContract,
   fetchProviderSignatures,
+  ContractType,
   SignedContractRow,
 } from '@/lib/contracts'
 
@@ -35,6 +36,7 @@ export default function ContractsList() {
   const [refreshing, setRefreshing] = useState(false)
   const [hasContract, setHasContract] = useState(false)
   const [contractTitle, setContractTitle] = useState('')
+  const [contractType, setContractType] = useState<ContractType>('text')
   const [signatures, setSignatures] = useState<SignedContractRow[]>([])
 
   const load = useCallback(
@@ -50,6 +52,7 @@ export default function ContractsList() {
       ])
       setHasContract(!!contract)
       setContractTitle(contract?.title ?? '')
+      setContractType(contract?.contractType ?? 'text')
       setSignatures(sigs)
       setLoading(false)
       setRefreshing(false)
@@ -104,9 +107,18 @@ export default function ContractsList() {
               />
             </View>
             <View style={styles.flex1}>
-              <Text style={styles.templateTitle}>
-                {hasContract ? contractTitle || 'Service Agreement' : 'No contract yet'}
-              </Text>
+              <View style={styles.templateTitleRow}>
+                <Text style={styles.templateTitle} numberOfLines={1}>
+                  {hasContract ? contractTitle || 'Service Agreement' : 'No contract yet'}
+                </Text>
+                {hasContract ? (
+                  <View style={styles.typeBadge}>
+                    <Text style={styles.typeBadgeText}>
+                      {contractType === 'pdf' ? 'PDF contract' : 'Text contract'}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
               <Text style={styles.templateSub}>
                 {hasContract
                   ? 'Your default agreement. Tap to edit.'
@@ -188,7 +200,20 @@ const styles = StyleSheet.create({
   templateIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   iconGreen: { backgroundColor: 'rgba(76,175,80,0.12)' },
   iconAmber: { backgroundColor: 'rgba(200,146,42,0.12)' },
-  templateTitle: { fontSize: 15, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
+  templateTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  templateTitle: { flexShrink: 1, fontSize: 15, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
+  typeBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    backgroundColor: 'rgba(200,146,42,0.12)',
+  },
+  typeBadgeText: {
+    fontSize: 10,
+    color: '#C8922A',
+    fontFamily: 'Manrope_600SemiBold',
+    letterSpacing: 0.3,
+  },
   templateSub: {
     fontSize: 12,
     color: 'rgba(240,232,213,0.5)',

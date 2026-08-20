@@ -1,9 +1,18 @@
+import { File } from 'expo-file-system'
 import { supabase } from './supabase'
 
 // Contracts data layer. A provider has at most one active contract (unique on
 // provider_id); clients sign it per booking (one contract_signatures row per
 // booking). Signature images live in the private contract-signatures bucket —
 // for now signatures are placeholders with a null signature_url.
+//
+// A contract is either typed terms (contract_type 'text', body filled) or an
+// uploaded PDF (contract_type 'pdf', pdf_url set, body empty). PDFs live in the
+// private contract-pdfs bucket and are viewed through short-lived signed URLs.
+
+export const CONTRACT_PDF_BUCKET = 'contract-pdfs'
+
+export type ContractType = 'text' | 'pdf'
 
 export interface Contract {
   id: string
@@ -11,6 +20,9 @@ export interface Contract {
   userId: string
   title: string
   body: string
+  contractType: ContractType
+  pdfUrl: string | null
+  pdfFilename: string | null
   isActive: boolean
   createdAt: string
   updatedAt: string | null
@@ -48,6 +60,9 @@ interface RawContractRow {
   user_id: string
   title: string
   body: string
+  contract_type: ContractType | null
+  pdf_url: string | null
+  pdf_filename: string | null
   is_active: boolean
   created_at: string
   updated_at: string | null
@@ -64,7 +79,7 @@ interface RawSignatureRow {
 }
 
 const CONTRACT_COLUMNS =
-  'id, provider_id, user_id, title, body, is_active, created_at, updated_at'
+  'id, provider_id, user_id, title, body, contract_type, pdf_url, pdf_filename, is_active, created_at, updated_at'
 const SIGNATURE_COLUMNS =
   'id, contract_id, booking_id, client_user_id, signature_url, signed_at, status'
 
@@ -75,6 +90,9 @@ function mapContract(r: RawContractRow): Contract {
     userId: r.user_id,
     title: r.title,
     body: r.body,
+    contractType: r.contract_type === 'pdf' ? 'pdf' : 'text',
+    pdfUrl: r.pdf_url,
+    pdfFilename: r.pdf_filename,
     isActive: r.is_active,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -228,4 +246,96 @@ export async function fetchSignedContract(
   }
 
   return { signature, contract, clientName, providerName }
+}
+
+// ── PDF upload + viewing ────────────────────────────────────────────────────
+
+const B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+// Decode a base64 string to an ArrayBuffer (no external dependency). Supabase
+// storage uploads an ArrayBuffer reliably in React Native, whereas a base64
+// string or a fetch() blob of a file:// URI are not dependable across SDKs.
+function base64ToArrayBuffer(base64: string): ArrayBuffer {
+  const lookup = new Uint8Array(256)
+  for (let i = 0; i < B64_ALPHABET.length; i++) lookup[B64_ALPHABET.charCodeAt(i)] = i
+
+  const clean = base64.replace(/[^A-Za-z0-9+/=]/g, '')
+  let len = clean.length
+  let bufferLength = Math.floor(len * 0.75)
+  if (clean[len - 1] === '=') {
+    bufferLength--
+    if (clean[len - 2] === '=') bufferLength--
+  }
+  const bytes = new Uint8Array(bufferLength)
+  let p = 0
+  for (let i = 0; i < len; i += 4) {
+    const e1 = lookup[clean.charCodeAt(i)]
+    const e2 = lookup[clean.charCodeAt(i + 1)]
+    const e3 = lookup[clean.charCodeAt(i + 2)]
+    const e4 = lookup[clean.charCodeAt(i + 3)]
+    if (p < bufferLength) bytes[p++] = (e1 << 2) | (e2 >> 4)
+    if (p < bufferLength) bytes[p++] = ((e2 & 15) << 4) | (e3 >> 2)
+    if (p < bufferLength) bytes[p++] = ((e3 & 3) << 6) | (e4 & 63)
+  }
+  return bytes.buffer
+}
+
+export interface PdfUploadResult {
+  url: string | null
+  error: string | null
+}
+
+// Read a picked PDF (file:// URI) and upload it to the private contract-pdfs
+// bucket at `userId/contract_<timestamp>.pdf`. Returns the stored (non-public)
+// URL, which encodes the storage path for later signing. Never throws.
+export async function uploadContractPdf(
+  userId: string,
+  fileUri: string,
+): Promise<PdfUploadResult> {
+  try {
+    if (!userId || !fileUri) return { url: null, error: 'Missing file' }
+    const base64 = await new File(fileUri).base64()
+    const buffer = base64ToArrayBuffer(base64)
+    const path = `${userId}/contract_${Date.now()}.pdf`
+
+    const { error } = await supabase.storage
+      .from(CONTRACT_PDF_BUCKET)
+      .upload(path, buffer, { contentType: 'application/pdf', upsert: true })
+    if (error) {
+      console.log('Contract PDF upload error:', error)
+      return { url: null, error: error.message }
+    }
+
+    // Stored URL encodes the path (…/contract-pdfs/<path>); the bucket is
+    // private, so this URL is signed on demand for viewing.
+    const { data } = supabase.storage.from(CONTRACT_PDF_BUCKET).getPublicUrl(path)
+    return { url: data.publicUrl, error: null }
+  } catch (err: any) {
+    console.log('Contract PDF upload exception:', err)
+    return { url: null, error: err?.message ?? 'Upload failed' }
+  }
+}
+
+// Extract the storage path (everything after the bucket segment) from a stored
+// contract-pdfs URL.
+export function storagePathFromUrl(pdfUrl: string): string | null {
+  const marker = `/${CONTRACT_PDF_BUCKET}/`
+  const idx = pdfUrl.indexOf(marker)
+  if (idx === -1) return null
+  return pdfUrl.slice(idx + marker.length).split('?')[0]
+}
+
+// Generate a signed URL (valid 1 hour) for a stored contract PDF so a WebView
+// can load it from the private bucket. Returns null if it cannot be signed.
+export async function getSignedPdfUrl(pdfUrl: string): Promise<string | null> {
+  const path = storagePathFromUrl(pdfUrl)
+  if (!path) return null
+  const { data, error } = await supabase.storage
+    .from(CONTRACT_PDF_BUCKET)
+    .createSignedUrl(path, 3600)
+  if (error || !data) {
+    if (error) console.log('Signed PDF URL error:', error)
+    return null
+  }
+  return data.signedUrl
 }
