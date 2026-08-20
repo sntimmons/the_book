@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { LinearGradient } from 'expo-linear-gradient'
 import { Ionicons } from '@expo/vector-icons'
 import { Audio, Video, ResizeMode } from 'expo-av'
+import { supabase } from '@/lib/supabase'
 
 const LIKE_RED = '#FF2D55'
 const DOUBLE_TAP_MS = 280
@@ -39,10 +40,10 @@ interface Reel {
   isLiked: boolean
   isSaved: boolean
   thumbnailColor: string
-  // Bundled video asset. `require()` returns a number that expo-av's Video
-  // accepts directly as source. Replace with { uri } once provider_reels
-  // lands and we read URLs from Supabase Storage.
-  video: number
+  // Video source for expo-av's Video. Bundled mock assets are a `require()`
+  // number; real reels from the posts table are a { uri } streaming URL from
+  // the posts-media bucket. Video's source prop accepts either form.
+  video: number | { uri: string }
 }
 
 // Bundled reel assets. 11 files in /assets/videos.
@@ -243,6 +244,84 @@ const MOCK_REELS: Reel[] = [
   },
 ]
 
+// Shape of a posts row joined to its provider. The provider embed is a
+// single object (posts.provider_id -> providers.id is many-to-one), though
+// supabase-js types it loosely, so we cast through this local type.
+interface RawReelRow {
+  id: string
+  media_url: string
+  caption: string | null
+  like_count: number | null
+  comment_count: number | null
+  provider: {
+    id: string
+    display_name: string
+    category_id: number | null
+    neighborhood: string | null
+    profile_photo_url: string | null
+    identity_verified: boolean | null
+  } | null
+}
+
+// Default background shown behind a video while it loads. Real reels have no
+// per-item accent color the way the mock set does; the video covers this.
+const REEL_FALLBACK_COLOR = '#0d0d0d'
+
+// Fetch real reels (posts with a video) joined to provider info, mapped to the
+// Reel shape the feed already renders. Returns [] on error or when there are
+// no real videos yet, so the caller can fall back to MOCK_REELS.
+async function fetchReels(): Promise<Reel[]> {
+  const { data, error } = await supabase
+    .from('posts')
+    .select(
+      'id, media_url, caption, like_count, comment_count, provider:providers(id, display_name, category_id, neighborhood, profile_photo_url, identity_verified)',
+    )
+    .eq('media_type', 'video')
+    .eq('is_active', true)
+    .eq('is_demo', false)
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.log('Fetch reels error:', error)
+    return []
+  }
+
+  const rows = (data as unknown as RawReelRow[]) ?? []
+
+  // Resolve category ids to names once for all rows.
+  const { data: cats } = await supabase.from('categories').select('id, name')
+  const categoryNames = new Map<number, string>(
+    ((cats as { id: number; name: string }[]) ?? []).map((c) => [c.id, c.name]),
+  )
+
+  return rows
+    .filter((row) => row.provider != null && !!row.media_url)
+    .map((row) => {
+      const p = row.provider!
+      return {
+        id: row.id,
+        providerId: p.id,
+        providerName: p.display_name,
+        providerCategory:
+          p.category_id != null ? categoryNames.get(p.category_id) ?? '' : '',
+        providerNeighborhood: p.neighborhood ?? '',
+        providerAvatarUrl: p.profile_photo_url ?? undefined,
+        providerVerified: !!p.identity_verified,
+        // No real-time availability signal on the posts feed yet; do not
+        // fabricate one.
+        providerAvailable: false,
+        caption: row.caption ?? '',
+        likes: row.like_count ?? 0,
+        comments: row.comment_count ?? 0,
+        // Per-user like/save state is not wired yet (future stage).
+        isLiked: false,
+        isSaved: false,
+        thumbnailColor: REEL_FALLBACK_COLOR,
+        video: { uri: row.media_url },
+      }
+    })
+}
+
 function formatCount(n: number): string {
   if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
   return n.toString()
@@ -269,6 +348,20 @@ export default function ReelsScreen() {
   // isMuted prop.
   useEffect(() => {
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {})
+  }, [])
+
+  // Load real reels from the posts table. Start on MOCK_REELS so the tab is
+  // never empty, and swap to real videos once they load. If there are no real
+  // videos yet (or the query fails), MOCK_REELS stays in place as the fallback.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const real = await fetchReels()
+      if (!cancelled && real.length > 0) setReels(real)
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Pause every video the moment the user navigates away (e.g. taps Book
