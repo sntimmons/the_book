@@ -190,7 +190,7 @@ export default function BookPolicy() {
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
         <Pressable
           style={[styles.continueBtn, !agreedToPolicy && styles.continueBtnInactive]}
-          onPress={() => agreedToPolicy && router.push('/book/payment')}
+          onPress={() => agreedToPolicy && router.push('/book/contract')}
         >
           <Text style={[styles.continueBtnText, !agreedToPolicy && styles.continueBtnTextInactive]}>
             Send Request

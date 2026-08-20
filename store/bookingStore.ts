@@ -28,6 +28,12 @@ interface BookingState {
   bookingMessage: string
   bookingPhotos: string[]
   agreedToPolicy: boolean
+  // Contract signing intent, captured on book/contract.tsx before the booking
+  // row exists. The contract_signatures row is written in book/payment.tsx once
+  // the booking is created (booking_id is the FK). Null contractId = provider
+  // has no contract, so no signature is written.
+  contractId: string | null
+  contractSigned: boolean
 
   setProvider: (id: string, name: string, category: string, location: string) => void
   setSelectedService: (service: BookingService) => void
@@ -37,6 +43,7 @@ interface BookingState {
   setBookingMessage: (msg: string) => void
   setBookingPhotos: (photos: string[]) => void
   setAgreedToPolicy: (agreed: boolean) => void
+  setContractSigned: (contractId: string) => void
   reset: () => void
 }
 
@@ -52,6 +59,8 @@ export const useBookingStore = create<BookingState>((set) => ({
   bookingMessage: '',
   bookingPhotos: [],
   agreedToPolicy: false,
+  contractId: null,
+  contractSigned: false,
 
   setProvider: (id, name, category, location) =>
     set({ providerId: id, providerName: name, providerCategory: category, providerLocation: location }),
@@ -62,6 +71,7 @@ export const useBookingStore = create<BookingState>((set) => ({
   setBookingMessage: (msg) => set({ bookingMessage: msg }),
   setBookingPhotos: (photos) => set({ bookingPhotos: photos }),
   setAgreedToPolicy: (agreed) => set({ agreedToPolicy: agreed }),
+  setContractSigned: (contractId) => set({ contractId, contractSigned: true }),
   reset: () => set({
     providerId: '',
     providerName: '',
@@ -74,5 +84,7 @@ export const useBookingStore = create<BookingState>((set) => ({
     bookingMessage: '',
     bookingPhotos: [],
     agreedToPolicy: false,
+    contractId: null,
+    contractSigned: false,
   }),
 }))

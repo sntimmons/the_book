@@ -69,6 +69,8 @@ export default function BookPayment() {
     rawDate,
     selectedTime,
     bookingMessage,
+    contractId,
+    contractSigned,
   } = useBookingStore()
   const [isProcessing, setIsProcessing] = useState(false)
   const [processError, setProcessError] = useState('')
@@ -141,6 +143,22 @@ export default function BookPayment() {
         )
         setIsProcessing(false)
         return
+      }
+
+      // If the client signed the provider's contract earlier in the flow, write
+      // the signature row now that the booking (and its id) exists. Best-effort:
+      // a failure here should not block the confirmed request. The signature is
+      // a placeholder (null url) until the real canvas ships in an EAS build.
+      if (contractSigned && contractId) {
+        const { error: sigError } = await supabase.from('contract_signatures').insert({
+          contract_id: contractId,
+          booking_id: booking.id,
+          client_user_id: user.id,
+          signature_url: null,
+          signed_at: new Date().toISOString(),
+          status: 'signed',
+        })
+        if (sigError) console.log('Contract signature insert error:', sigError)
       }
 
       setIsProcessing(false)
