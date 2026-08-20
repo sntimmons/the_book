@@ -132,7 +132,7 @@ export default function ProviderGoLive() {
           portfolioPhotos,
           user.id,
           'portfolio',
-          'provider-media',
+          'posts-media',
           (completed, total) => {
             setUploadProgress(completed)
             setUploadTotal(total)
@@ -151,7 +151,7 @@ export default function ProviderGoLive() {
           reelUris,
           user.id,
           'reels',
-          'provider-media',
+          'posts-media',
           (completed, total) => {
             setUploadProgress(completed)
             setUploadTotal(total)
@@ -245,13 +245,41 @@ export default function ProviderGoLive() {
         }
       }
 
-      // STAGE 7: portfolio + reels URL persistence.
-      // TODO: wire portfolioUrls + reelUrls to provider_portfolio /
-      // provider_reels tables when those schemas are confirmed. The
-      // uploads already succeeded so the URLs are not lost, they are
-      // just held in memory for this session.
-      void portfolioUrls
-      void reelUrls
+      // STAGE 7: portfolio + reels URL persistence into the `posts` table.
+      // Portfolio photos and reels both live in `posts`, differentiated by
+      // media_type ('image' vs 'video'); reels are simply posts rows with
+      // media_type='video'. A failure here must NOT block Go Live — the
+      // provider row already saved successfully above, so we log and move on
+      // rather than surfacing an error or returning early.
+      if (providerDbId && (portfolioUrls.length > 0 || reelUrls.length > 0)) {
+        const postRows = [
+          ...portfolioUrls.map((url, index) => ({
+            provider_id: providerDbId,
+            media_url: url,
+            media_type: 'image',
+            content_type: 'portfolio',
+            visibility: 'public',
+            is_active: true,
+            is_demo: false,
+            sort_order: index,
+          })),
+          ...reelUrls.map((url, index) => ({
+            provider_id: providerDbId,
+            media_url: url,
+            media_type: 'video',
+            content_type: 'portfolio',
+            visibility: 'public',
+            is_active: true,
+            is_demo: false,
+            sort_order: index,
+          })),
+        ]
+
+        const { error: postsError } = await supabase.from('posts').insert(postRows)
+        if (postsError) {
+          console.log('Posts insert error (non-blocking):', postsError)
+        }
+      }
 
       setUploadStage('')
       setIsGoingLive(false)
