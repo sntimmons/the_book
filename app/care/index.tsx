@@ -82,7 +82,8 @@ export default function CareHub() {
       setLoading(false)
       return
     }
-    const today = new Date().toISOString().slice(0, 10)
+    // Houston-local (Central) date, not UTC, for the upcoming-bookings cutoff.
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
 
     const [remRows, upRes, savedRes, compRes] = await Promise.all([
       fetchActiveReminders(user.id),

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
@@ -7,6 +8,12 @@ import { useAuth } from '../context/AuthContext'
 // share a channel topic, or the second subscribe throws
 // "cannot add postgres_changes after subscribe" and blanks the screen.
 let channelInstanceSeq = 0
+
+// Read-notification IDs persist across app restarts so cleared badges stay
+// cleared. Capped so the stored list can never grow unbounded; when over the
+// cap the oldest IDs (front of the array) are dropped.
+const READ_STORAGE_KEY = '@the_book/read_notifications'
+const READ_CAP = 500
 
 // In-app notifications are derived from the bookings table for now since
 // there is no notifications table in Supabase. A notification is just an
@@ -63,6 +70,29 @@ export function useNotifications() {
   // Stable unique suffix for this hook instance's realtime channel.
   const channelIdRef = useRef<number | null>(null)
   if (channelIdRef.current === null) channelIdRef.current = ++channelInstanceSeq
+
+  // Load persisted read IDs once on mount and re-stamp any notifications that
+  // have already loaded, so restored badges clear immediately.
+  useEffect(() => {
+    let active = true
+    AsyncStorage.getItem(READ_STORAGE_KEY)
+      .then((raw) => {
+        if (!active || !raw) return
+        const ids = JSON.parse(raw) as unknown
+        if (!Array.isArray(ids)) return
+        const loaded = new Set<string>(ids as string[])
+        setReadIds(loaded)
+        setNotifications((prev) => {
+          const stamped = prev.map((n) => ({ ...n, isRead: loaded.has(n.id) }))
+          setUnreadCount(stamped.filter((n) => !n.isRead).length)
+          return stamped
+        })
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
 
   const fetchNotifications = useCallback(async () => {
     if (!user) {
@@ -319,7 +349,12 @@ export function useNotifications() {
       for (const n of notifications) {
         next.add(n.id)
       }
-      return next
+      // Cap to the most recent READ_CAP ids (insertion order = age; drop oldest)
+      // and persist so cleared badges stay cleared across restarts.
+      let arr = [...next]
+      if (arr.length > READ_CAP) arr = arr.slice(arr.length - READ_CAP)
+      AsyncStorage.setItem(READ_STORAGE_KEY, JSON.stringify(arr)).catch(() => {})
+      return new Set(arr)
     })
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
     setUnreadCount(0)

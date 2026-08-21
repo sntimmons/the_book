@@ -56,7 +56,9 @@ const ZERO_EARNINGS: Earnings = {
 }
 
 function todayIsoDate(): string {
-  return new Date().toISOString().split('T')[0]
+  // Houston-local (Central) date, not UTC. UTC rolls over several hours early,
+  // so a UTC "today" would show the wrong day's schedule near midnight.
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
 }
 
 // Monotonic counter so each mounted dashboard gets a unique realtime

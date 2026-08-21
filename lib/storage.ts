@@ -14,7 +14,25 @@ export type UploadResult = {
   error: string | null
 }
 
-const ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'mp4', 'mov']
+const ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'webp', 'heic', 'mp4', 'mov', 'm4v']
+
+const IMAGE_EXT = ['jpg', 'jpeg', 'png', 'webp', 'heic']
+const VIDEO_EXT = ['mp4', 'mov', 'm4v']
+
+// Extension-based upload validation. True MIME validation would require reading
+// the file's magic bytes, which is expensive/awkward on mobile; extension
+// checking is the practical guard here. Remote (http) URIs are already uploaded
+// and skip this check in uploadMedia.
+export function validateUpload(uri: string): { valid: boolean; error?: string } {
+  const ext = uri.split('?')[0].split('.').pop()?.toLowerCase() ?? ''
+  if (IMAGE_EXT.includes(ext) || VIDEO_EXT.includes(ext)) {
+    return { valid: true }
+  }
+  return {
+    valid: false,
+    error: 'File type not supported. Please upload a JPG, PNG, or MP4 file.',
+  }
+}
 
 async function uriToBlob(uri: string): Promise<Blob> {
   // NOTE: React Native's fetch().blob() has historically returned 0-byte
@@ -59,6 +77,14 @@ export async function uploadMedia(
       return { url: null, error: 'Invalid URI' }
     }
 
+    // Reject unsupported file types up front. Returned (not thrown) so the
+    // caller gets a clean error and it is not captured to Sentry as an
+    // exception — a bad file type is expected user input, not a system fault.
+    const validation = validateUpload(uri)
+    if (!validation.valid) {
+      return { url: null, error: validation.error ?? 'File type not supported.' }
+    }
+
     const ext = getExtension(uri)
     const path = generatePath(userId, folder, ext)
     const blob = await uriToBlob(uri)
@@ -100,33 +126,41 @@ export async function uploadMedia(
   }
 }
 
+export interface UploadMultipleResult {
+  successful: string[]
+  failed: { uri: string; error: string }[]
+}
+
 export async function uploadMultiple(
   uris: string[],
   userId: string,
   folder: 'portfolio' | 'reels',
   bucketName: string = 'provider-media',
   onProgress?: (completed: number, total: number) => void,
-): Promise<string[]> {
-  const results: string[] = []
+): Promise<UploadMultipleResult> {
+  const successful: string[] = []
+  const failed: { uri: string; error: string }[] = []
 
   for (let i = 0; i < uris.length; i++) {
     const uri = uris[i]
 
     if (uri.startsWith('http')) {
-      results.push(uri)
+      successful.push(uri)
       onProgress?.(i + 1, uris.length)
       continue
     }
 
     const result = await uploadMedia(uri, userId, folder, bucketName)
     if (result.url) {
-      results.push(result.url)
+      successful.push(result.url)
+    } else {
+      // Surface the failure to the caller instead of silently dropping it, so
+      // the provider can be told which files did not upload.
+      failed.push({ uri, error: result.error ?? 'Upload failed' })
     }
-    // Failed uploads are dropped silently so the provider keeps whatever
-    // did upload successfully. The error is logged inside uploadMedia.
 
     onProgress?.(i + 1, uris.length)
   }
 
-  return results
+  return { successful, failed }
 }

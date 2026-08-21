@@ -127,11 +127,12 @@ export default function ProviderGoLive() {
 
       // STAGE 3: portfolio photos
       let portfolioUrls: string[] = []
+      const uploadFailures: { uri: string; error: string }[] = []
       if (portfolioPhotos.length > 0) {
         setUploadStage('Uploading portfolio...')
         setUploadTotal(portfolioPhotos.length)
         setUploadProgress(0)
-        portfolioUrls = await uploadMultiple(
+        const portfolioResult = await uploadMultiple(
           portfolioPhotos,
           user.id,
           'portfolio',
@@ -141,6 +142,8 @@ export default function ProviderGoLive() {
             setUploadTotal(total)
           },
         )
+        portfolioUrls = portfolioResult.successful
+        uploadFailures.push(...portfolioResult.failed)
       }
 
       // STAGE 4: reels
@@ -150,7 +153,7 @@ export default function ProviderGoLive() {
         setUploadTotal(reels.length)
         setUploadProgress(0)
         const reelUris = reels.map((r) => (typeof r === 'string' ? r : (r as { uri: string }).uri))
-        reelUrls = await uploadMultiple(
+        const reelResult = await uploadMultiple(
           reelUris,
           user.id,
           'reels',
@@ -159,6 +162,18 @@ export default function ProviderGoLive() {
             setUploadProgress(completed)
             setUploadTotal(total)
           },
+        )
+        reelUrls = reelResult.successful
+        uploadFailures.push(...reelResult.failed)
+      }
+
+      // Surface any upload failures. Continue the go-live with whatever files
+      // succeeded rather than aborting the whole flow.
+      if (uploadFailures.length > 0) {
+        const totalMedia = portfolioPhotos.length + reels.length
+        Alert.alert(
+          'Some files did not upload',
+          `${uploadFailures.length} of ${totalMedia} files failed to upload. Your profile will be saved with the files that succeeded — you can add the rest later from your dashboard.`,
         )
       }
 

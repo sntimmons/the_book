@@ -65,7 +65,9 @@ const ZERO_STATS: ClientStats = {
 }
 
 function todayIsoDate(): string {
-  return new Date().toISOString().split('T')[0]
+  // Houston-local (Central) date, not UTC. UTC rolls over several hours early,
+  // so a UTC "today" would drop/keep bookings on the wrong calendar day.
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
 }
 
 function memberSinceLabel(iso: string | null | undefined): string {

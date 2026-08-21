@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { Alert } from 'react-native'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { checkRateLimit, RATE_LIMITS } from '../lib/rateLimit'
 
 // Monotonic counter so each hook instance gets a unique realtime channel name.
 // Two concurrent mounts must not share a channel topic, or the second subscribe
@@ -299,6 +301,24 @@ export function useMessages(conversationId: string) {
     async (content: string): Promise<boolean> => {
       if (!user || !content.trim() || !conversationId) return false
       setSending(true)
+
+      // Server-side rate limit (max 30 messages/min/user). Expected behavior,
+      // not an error — no Sentry capture.
+      const rl = await checkRateLimit(
+        user.id,
+        'message_send',
+        RATE_LIMITS.message_send.maxRequests,
+        RATE_LIMITS.message_send.windowSeconds,
+      )
+      if (!rl.allowed) {
+        setSending(false)
+        Alert.alert(
+          'Slow down',
+          rl.message ?? 'You are sending messages too quickly. Please slow down.',
+        )
+        return false
+      }
+
       try {
         const { error } = await supabase.from('messages').insert({
           conversation_id: conversationId,
@@ -359,6 +379,19 @@ export async function getOrCreateConversation(
 
     if (error) {
       console.log('Create convo error:', error)
+      // A concurrent call (or double-tap) may have created the row between our
+      // SELECT and INSERT. With the conversation_unique_pair constraint in
+      // place this surfaces as a unique violation (23505) — recover by fetching
+      // the row that now exists instead of returning null.
+      if (error.code === '23505') {
+        const { data: existingAfter } = await supabase
+          .from('conversation')
+          .select('id')
+          .eq('client_id', clientId)
+          .eq('provider_id', providerId)
+          .maybeSingle()
+        if (existingAfter) return existingAfter.id
+      }
       return null
     }
     return created.id

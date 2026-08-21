@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { Stack, useRouter, useSegments } from 'expo-router'
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context'
-import { View, Text, ActivityIndicator } from 'react-native'
+import { View, Text, ActivityIndicator, TouchableOpacity } from 'react-native'
 import {
   useFonts,
   Manrope_400Regular,
@@ -52,8 +52,64 @@ function DevBadge() {
   )
 }
 
+// Shown when role resolution failed (network/RLS) instead of silently treating
+// the user as role-less and creating a phantom clients row.
+function RoleErrorScreen({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: '#080808',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 40,
+      }}
+    >
+      <Text
+        style={{
+          color: '#F0E8D5',
+          fontFamily: 'Manrope_700Bold',
+          fontSize: 17,
+          textAlign: 'center',
+        }}
+      >
+        Couldn&apos;t load your account
+      </Text>
+      <Text
+        style={{
+          color: 'rgba(240,232,213,0.5)',
+          fontFamily: 'Manrope_400Regular',
+          fontSize: 13,
+          textAlign: 'center',
+          marginTop: 8,
+          lineHeight: 19,
+        }}
+      >
+        {message}
+      </Text>
+      <TouchableOpacity
+        onPress={onRetry}
+        activeOpacity={0.85}
+        style={{
+          marginTop: 24,
+          backgroundColor: '#F0E8D5',
+          borderRadius: 14,
+          height: 48,
+          paddingHorizontal: 32,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Text style={{ color: '#080808', fontFamily: 'Manrope_700Bold', fontSize: 15 }}>
+          Retry
+        </Text>
+      </TouchableOpacity>
+    </View>
+  )
+}
+
 function RootNavigator() {
-  const { session, isLoading } = useAuth()
+  const { session, isLoading, roleError, retryRole } = useAuth()
   const segments = useSegments()
   const router = useRouter()
 
@@ -84,6 +140,12 @@ function RootNavigator() {
         <ActivityIndicator color="rgba(240,232,213,0.6)" size="large" />
       </View>
     )
+  }
+
+  // Role lookup failed for a signed-in user — offer a retry instead of
+  // proceeding (which would risk creating a phantom clients row).
+  if (session && roleError) {
+    return <RoleErrorScreen message={roleError} onRetry={retryRole} />
   }
 
   return (
