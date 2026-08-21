@@ -5,15 +5,17 @@
 // tsconfig. Deploy with the Supabase CLI (see supabase/functions/README.md).
 //
 // Contract:
-//   POST { userId, action, maxRequests, windowSeconds }
+//   POST { action }
 //   -> 200 { allowed: true,  remaining, resetAt }   (a slot was consumed)
 //   -> 429 { allowed: false, remaining: 0, resetAt } (limit reached)
-//   -> 401 if the caller has no valid auth
+//   -> 400 { error: 'Unknown action' } for an unrecognized action
+//   -> 401 if the caller has no valid JWT
 //
-// SECURITY: the authoritative user id comes from the caller's verified JWT, NOT
-// from body.userId. Trusting the body would let a client dodge its own limit by
-// rotating ids — which would defeat the whole point. body.userId is accepted for
-// the documented contract but only used as a fallback when no JWT is present.
+// SECURITY: both inputs that matter are server-controlled.
+//   * The LIMITS come from the RATE_LIMITS map below, never the request body —
+//     otherwise a client could send maxRequests=1e9 and bypass the limiter.
+//   * The USER ID comes only from the verified JWT, never the body — otherwise a
+//     client could dodge its own limit by rotating ids, or target another user.
 // -----------------------------------------------------------------------------
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
@@ -32,6 +34,16 @@ function json(body: unknown, status = 200) {
   })
 }
 
+// Server-defined limits. The caller only names an `action`; it CANNOT influence
+// the numbers. (Previously maxRequests/windowSeconds came from the request body,
+// so a client could send maxRequests=1e9 and bypass the limiter entirely.)
+const RATE_LIMITS: Record<string, { maxRequests: number; windowSeconds: number }> = {
+  booking_create: { maxRequests: 3, windowSeconds: 3600 },
+  community_post: { maxRequests: 10, windowSeconds: 3600 },
+  barter_offer: { maxRequests: 5, windowSeconds: 86400 },
+  message_send: { maxRequests: 30, windowSeconds: 60 },
+}
+
 serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -46,44 +58,36 @@ serve(async (req: Request) => {
     return json({ error: 'Server not configured' }, 500)
   }
 
-  let payload: {
-    userId?: string
-    action?: string
-    maxRequests?: number
-    windowSeconds?: number
-  }
+  let payload: { action?: string }
   try {
     payload = await req.json()
   } catch {
     return json({ error: 'Invalid JSON body' }, 400)
   }
 
-  const { action, maxRequests, windowSeconds } = payload
-  if (
-    !action ||
-    typeof maxRequests !== 'number' ||
-    typeof windowSeconds !== 'number' ||
-    maxRequests <= 0 ||
-    windowSeconds <= 0
-  ) {
-    return json({ error: 'Missing or invalid action/maxRequests/windowSeconds' }, 400)
+  const { action } = payload
+  if (!action || typeof action !== 'string') {
+    return json({ error: 'Missing action' }, 400)
   }
+
+  // Limits are looked up server-side only; the caller cannot supply them.
+  const limit = RATE_LIMITS[action]
+  if (!limit) {
+    return json({ error: 'Unknown action' }, 400)
+  }
+  const { maxRequests, windowSeconds } = limit
 
   // Service-role client: bypasses RLS to read/write the log for any user.
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY)
 
-  // Resolve the authoritative user id from the JWT.
-  let userId: string | null = null
+  // Resolve the authoritative user id from the JWT — never from the body, so a
+  // client cannot dodge its own limit (by rotating ids) or target another user.
   const authHeader = req.headers.get('Authorization')
-  if (authHeader?.startsWith('Bearer ')) {
-    const jwt = authHeader.slice('Bearer '.length)
-    const { data } = await admin.auth.getUser(jwt)
-    userId = data.user?.id ?? null
+  if (!authHeader?.startsWith('Bearer ')) {
+    return json({ error: 'Unauthorized' }, 401)
   }
-  // Fallback to the documented body field only if there is no JWT context.
-  if (!userId && typeof payload.userId === 'string') {
-    userId = payload.userId
-  }
+  const { data: userData } = await admin.auth.getUser(authHeader.slice('Bearer '.length))
+  const userId = userData.user?.id ?? null
   if (!userId) {
     return json({ error: 'Unauthorized' }, 401)
   }

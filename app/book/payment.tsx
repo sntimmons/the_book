@@ -16,7 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
-import { checkRateLimit, RATE_LIMITS } from '@/lib/rateLimit'
+import { checkRateLimit } from '@/lib/rateLimit'
 
 // Convert "May 28, 2026" to "2026-05-28" for the date column.
 function toIsoDate(displayDate: string): string {
@@ -109,12 +109,7 @@ export default function BookPayment() {
 
     // Server-side rate limit (max 3 booking requests/hour/client). Expected
     // behavior, not an error — no Sentry capture.
-    const rl = await checkRateLimit(
-      user.id,
-      'booking_create',
-      RATE_LIMITS.booking_create.maxRequests,
-      RATE_LIMITS.booking_create.windowSeconds,
-    )
+    const rl = await checkRateLimit(user.id, 'booking_create')
     if (!rl.allowed) {
       setIsProcessing(false)
       Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')

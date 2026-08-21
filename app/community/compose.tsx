@@ -17,7 +17,7 @@ import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { checkRateLimit, RATE_LIMITS } from '@/lib/rateLimit'
+import { checkRateLimit } from '@/lib/rateLimit'
 import { COMMUNITY_CATEGORIES, DEFAULT_CATEGORY } from '@/lib/community'
 
 const MAX_LEN = 1000
@@ -38,12 +38,7 @@ export default function CommunityCompose() {
     setSubmitting(true)
 
     // Server-side rate limit (max 10 posts/hour/provider). Not an error.
-    const rl = await checkRateLimit(
-      user.id,
-      'community_post',
-      RATE_LIMITS.community_post.maxRequests,
-      RATE_LIMITS.community_post.windowSeconds,
-    )
+    const rl = await checkRateLimit(user.id, 'community_post')
     if (!rl.allowed) {
       setSubmitting(false)
       Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')

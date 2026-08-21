@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert } from 'react-native'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { checkRateLimit, RATE_LIMITS } from '../lib/rateLimit'
+import { checkRateLimit } from '../lib/rateLimit'
 
 // Monotonic counter so each hook instance gets a unique realtime channel name.
 // Two concurrent mounts must not share a channel topic, or the second subscribe
@@ -304,12 +304,7 @@ export function useMessages(conversationId: string) {
 
       // Server-side rate limit (max 30 messages/min/user). Expected behavior,
       // not an error — no Sentry capture.
-      const rl = await checkRateLimit(
-        user.id,
-        'message_send',
-        RATE_LIMITS.message_send.maxRequests,
-        RATE_LIMITS.message_send.windowSeconds,
-      )
+      const rl = await checkRateLimit(user.id, 'message_send')
       if (!rl.allowed) {
         setSending(false)
         Alert.alert(
