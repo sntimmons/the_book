@@ -10,6 +10,7 @@
 // configured. Create the bucket above before any provider goes live, or
 // every upload here will fail with "Bucket not found" and uploadMedia
 // will return { url: null, error }.
+import * as Sentry from '@sentry/react-native'
 import { supabase } from './supabase'
 
 export type UploadResult = {
@@ -66,6 +67,14 @@ export async function uploadMedia(
     const path = generatePath(userId, folder, ext)
     const blob = await uriToBlob(uri)
 
+    // Diagnose the 0-byte-blob issue: fetch().blob() has returned empty blobs for
+    // file:// URIs on some Expo SDKs, producing "successful" but empty uploads.
+    if (blob.size === 0) {
+      Sentry.captureException(
+        new Error(`Upload produced a 0-byte blob (bucket=${bucketName}, path=${path})`),
+      )
+    }
+
     const contentType =
       blob.type ||
       (ext === 'mp4' || ext === 'mov' ? 'video/mp4' : 'image/jpeg')
@@ -79,6 +88,7 @@ export async function uploadMedia(
 
     if (error) {
       console.log('Storage upload error:', error)
+      Sentry.captureException(error, { extra: { bucketName, path, blobSize: blob.size } })
       return { url: null, error: error.message }
     }
 
@@ -89,6 +99,7 @@ export async function uploadMedia(
     return { url: urlData.publicUrl, error: null }
   } catch (err: any) {
     console.log('Upload exception:', err)
+    Sentry.captureException(err)
     return { url: null, error: err.message ?? 'Upload failed' }
   }
 }

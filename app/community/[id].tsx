@@ -14,6 +14,7 @@ import {
 } from 'react-native'
 import { Feather, Ionicons } from '@expo/vector-icons'
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router'
+import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -188,8 +189,10 @@ export default function CommunityThread() {
       )
     } catch (err) {
       console.log('Community reply error:', err)
+      Sentry.captureException(err)
       setReplies((prev) => prev.filter((r) => r.id !== tempId))
       setPost((prev) => (prev ? { ...prev, replyCount: Math.max(0, prev.replyCount - 1) } : prev))
+      Alert.alert('Could not send reply', 'Could not send reply. Please try again.', [{ text: 'OK' }])
     } finally {
       setSubmitting(false)
     }

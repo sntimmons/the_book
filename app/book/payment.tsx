@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   Pressable,
   ActivityIndicator,
+  Alert,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
 import { supabase } from '@/lib/supabase'
@@ -104,6 +106,12 @@ export default function BookPayment() {
     setIsProcessing(true)
     setProcessError('')
 
+    Sentry.addBreadcrumb({
+      message: 'Booking submit',
+      category: 'booking',
+      data: { providerId, serviceId: selectedService.id ?? null },
+    })
+
     try {
       // rawDate is YYYY-MM-DD (set in book/datetime.tsx) and selectedTime is
       // "H:MM AM/PM". Build appointment_time from numeric parts; if it cannot
@@ -132,6 +140,7 @@ export default function BookPayment() {
 
       if (error) {
         console.log('Booking insert error:', error)
+        Sentry.captureException(error)
         // Surface the real reason rather than hiding every failure behind a
         // single generic line. If the request fails because of a schema or
         // permission problem (e.g. a missing column or an RLS rule), the tester
@@ -158,7 +167,10 @@ export default function BookPayment() {
           signed_at: new Date().toISOString(),
           status: 'signed',
         })
-        if (sigError) console.log('Contract signature insert error:', sigError)
+        if (sigError) {
+          console.log('Contract signature insert error:', sigError)
+          Sentry.captureException(sigError)
+        }
       }
 
       setIsProcessing(false)
@@ -168,8 +180,9 @@ export default function BookPayment() {
       })
     } catch (err: any) {
       console.log('Booking error:', err)
-      setProcessError('Something went wrong. Please try again.')
+      Sentry.captureException(err)
       setIsProcessing(false)
+      Alert.alert('Booking failed', 'We could not submit your request. Please try again.')
     }
   }
 

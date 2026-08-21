@@ -13,6 +13,7 @@ import {
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -34,6 +35,7 @@ export default function CommunityCompose() {
     const text = content.trim()
     if (!text || !user || !providerId || submitting) return
     setSubmitting(true)
+    Sentry.addBreadcrumb({ message: 'Community post submit', category: 'community' })
     try {
       const { error } = await supabase.from('community_posts').insert({
         provider_id: providerId,
@@ -45,9 +47,8 @@ export default function CommunityCompose() {
       router.back()
     } catch (err) {
       console.log('Community post create error:', err)
-      Alert.alert('Could not post', 'Something went wrong. Please try again.', [
-        { text: 'OK' },
-      ])
+      Sentry.captureException(err)
+      Alert.alert('Could not post', 'Could not post. Please try again.', [{ text: 'OK' }])
       setSubmitting(false)
     }
   }

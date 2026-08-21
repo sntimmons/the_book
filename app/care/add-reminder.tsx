@@ -13,6 +13,7 @@ import {
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -79,7 +80,8 @@ export default function AddReminder() {
     })
     if (error) {
       console.log('Add reminder error:', error)
-      Alert.alert('Could not save', 'Something went wrong. Please try again.', [{ text: 'OK' }])
+      Sentry.captureException(error)
+      Alert.alert('Could not save', 'Could not save reminder. Please try again.', [{ text: 'OK' }])
       setSubmitting(false)
       return
     }

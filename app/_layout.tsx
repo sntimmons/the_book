@@ -10,8 +10,19 @@ import {
   Manrope_700Bold,
 } from '@expo-google-fonts/manrope'
 import * as SplashScreen from 'expo-splash-screen'
+import * as Sentry from '@sentry/react-native'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { PROVIDER_LANDS_IN_TABS } from '@/lib/featureFlags'
+
+// Crash + error reporting. Disabled in dev (errors still hit the console) so we
+// only ingest real production failures. Must run before the root renders.
+Sentry.init({
+  dsn: 'https://65ff1fe11f07d9b71b9e8531cdef8d7b@o4511946923048960.ingest.sentry.io/4511947027841024',
+  enabled: !__DEV__,
+  environment: __DEV__ ? 'development' : 'production',
+  tracesSampleRate: 0.2,
+  debug: false,
+})
 
 SplashScreen.preventAutoHideAsync()
 
@@ -124,7 +135,45 @@ function RootNavigator() {
   )
 }
 
-export default function RootLayout() {
+// Fallback shown if a render error escapes all the way to the root, instead of
+// a white screen. The error itself is captured by the Sentry ErrorBoundary.
+function CrashFallback() {
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: '#080808',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 40,
+      }}
+    >
+      <Text
+        style={{
+          color: '#F0E8D5',
+          fontFamily: 'Manrope_700Bold',
+          fontSize: 16,
+          textAlign: 'center',
+        }}
+      >
+        Something went wrong.
+      </Text>
+      <Text
+        style={{
+          color: 'rgba(240,232,213,0.5)',
+          fontFamily: 'Manrope_400Regular',
+          fontSize: 13,
+          textAlign: 'center',
+          marginTop: 8,
+        }}
+      >
+        Please close and reopen the app.
+      </Text>
+    </View>
+  )
+}
+
+function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     Manrope_400Regular,
     Manrope_500Medium,
@@ -142,9 +191,13 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <RootNavigator />
-      </AuthProvider>
+      <Sentry.ErrorBoundary fallback={<CrashFallback />}>
+        <AuthProvider>
+          <RootNavigator />
+        </AuthProvider>
+      </Sentry.ErrorBoundary>
     </SafeAreaProvider>
   )
 }
+
+export default Sentry.wrap(RootLayout)

@@ -14,6 +14,7 @@ import { Feather } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useFocusEffect } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
+import * as Sentry from '@sentry/react-native'
 import { usePanelContext } from '@/context/PanelContext'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -119,7 +120,8 @@ export default function ProviderPortfolio() {
         'posts-media',
       )
       if (uploadError || !url) {
-        setError('Upload failed. Please try again.')
+        Sentry.captureException(new Error(`Portfolio upload failed: ${uploadError ?? 'no url'}`))
+        setError('Upload failed. Please check your connection and try again.')
         return
       }
 
@@ -136,6 +138,7 @@ export default function ProviderPortfolio() {
       })
       if (insertError) {
         console.log('Portfolio insert error:', insertError)
+        Sentry.captureException(insertError)
         setError('Could not save your photo. Please try again.')
         return
       }
@@ -143,7 +146,8 @@ export default function ProviderPortfolio() {
       await loadPhotos(providerId)
     } catch (err) {
       console.log('Portfolio upload exception:', err)
-      setError('Something went wrong. Please try again.')
+      Sentry.captureException(err)
+      setError('Upload failed. Please check your connection and try again.')
     } finally {
       setUploading(false)
     }

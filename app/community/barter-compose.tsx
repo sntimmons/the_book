@@ -13,6 +13,7 @@ import {
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -61,9 +62,8 @@ export default function BarterCompose() {
       router.back()
     } catch (err) {
       console.log('Barter offer create error:', err)
-      Alert.alert('Could not post', 'Something went wrong. Please try again.', [
-        { text: 'OK' },
-      ])
+      Sentry.captureException(err)
+      Alert.alert('Could not post', 'Could not post offer. Please try again.', [{ text: 'OK' }])
       setSubmitting(false)
     }
   }

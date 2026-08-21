@@ -14,6 +14,7 @@ import {
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import * as DocumentPicker from 'expo-document-picker'
+import * as Sentry from '@sentry/react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
@@ -111,6 +112,7 @@ export default function ContractEditor() {
       )
       if (error) {
         console.log('Save contract error:', error)
+        Sentry.captureException(error)
         return false
       }
       return true
@@ -128,10 +130,15 @@ export default function ContractEditor() {
   async function save() {
     if (!canSave) return
     setSaving(true)
+    Sentry.addBreadcrumb({ message: 'Contract save', category: 'contracts' })
     const ok = await persist(mode, pdfUrl, pdfName)
     setSaving(false)
     if (!ok) {
-      Alert.alert('Could not save', 'Something went wrong. Please try again.', [{ text: 'OK' }])
+      Alert.alert(
+        'Could not save',
+        'Could not save contract. Please check your connection and try again.',
+        [{ text: 'OK' }],
+      )
       return
     }
     setHasContract(true)

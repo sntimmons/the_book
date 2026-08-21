@@ -10,6 +10,7 @@ import {
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile from '@/components/ProviderProfile'
 import { useProviderStore } from '@/store/providerStore'
@@ -98,6 +99,8 @@ export default function ProviderGoLive() {
     }
 
     setIsGoingLive(true)
+
+    Sentry.addBreadcrumb({ message: 'Provider go live', category: 'onboarding' })
 
     try {
       // STAGE 1: profile photo
