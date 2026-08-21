@@ -19,6 +19,7 @@
     "@react-native-community/datetimepicker": "^8.4.4",
     "@sentry/react-native": "~7.2.0",
     "@supabase/supabase-js": "^2.106.1",
+    "babel-preset-expo": "~54.0.10",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~10.0.0",
     "expo": "~54.0.33",
