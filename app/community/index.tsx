@@ -47,6 +47,9 @@ const INTEREST_MAX = 300
 
 const SAVED_KEY = 'saved'
 
+// Main community feed page size (Saved tab is not paginated).
+const POSTS_PAGE = 20
+
 const REPORT_REASONS: { label: string; value: string }[] = [
   { label: 'Inappropriate content', value: 'inappropriate' },
   { label: 'Spam', value: 'spam' },
@@ -65,6 +68,8 @@ export default function CommunityFeed() {
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [hasMorePosts, setHasMorePosts] = useState(false)
+  const [loadingMorePosts, setLoadingMorePosts] = useState(false)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
 
@@ -86,6 +91,24 @@ export default function CommunityFeed() {
     return () => clearTimeout(t)
   }, [search])
 
+  // Attach the current user's like/bookmark flags to a page of posts.
+  const stampFlags = useCallback(
+    async (posts: CommunityPostView[], savedTab: boolean): Promise<FeedPost[]> => {
+      if (!user) return []
+      const ids = posts.map((p) => p.id)
+      const [liked, bookmarked] = await Promise.all([
+        fetchLikedPostIds(user.id, ids),
+        savedTab ? Promise.resolve(new Set(ids)) : fetchBookmarkedPostIds(user.id, ids),
+      ])
+      return posts.map((p) => ({
+        ...p,
+        isLiked: liked.has(p.id),
+        isBookmarked: bookmarked.has(p.id),
+      }))
+    },
+    [user],
+  )
+
   const load = useCallback(
     async (refresh = false) => {
       if (!isProvider || !user) {
@@ -93,30 +116,34 @@ export default function CommunityFeed() {
         return
       }
       if (refresh) setRefreshing(true)
-      // Non-saved tabs load ALL active posts (category is filtered client-side
-      // so search can span every category); the Saved tab loads bookmarks.
-      const feed = isSavedTab
-        ? await fetchBookmarkedFeed(user.id)
-        : await fetchCommunityFeed(null)
-      const ids = feed.map((p) => p.id)
-      const [liked, bookmarked] = await Promise.all([
-        fetchLikedPostIds(user.id, ids),
-        isSavedTab
-          ? Promise.resolve(new Set(ids))
-          : fetchBookmarkedPostIds(user.id, ids),
-      ])
-      setAllPosts(
-        feed.map((p) => ({
-          ...p,
-          isLiked: liked.has(p.id),
-          isBookmarked: bookmarked.has(p.id),
-        })),
-      )
+      // Saved tab loads all bookmarks (not paginated). The main feed loads the
+      // first page; category/search filter client-side over the loaded posts,
+      // and more pages load on scroll (see fetchMorePosts).
+      if (isSavedTab) {
+        const feed = await fetchBookmarkedFeed(user.id)
+        setAllPosts(await stampFlags(feed, true))
+        setHasMorePosts(false)
+      } else {
+        const feed = await fetchCommunityFeed(null, 0, POSTS_PAGE)
+        setAllPosts(await stampFlags(feed, false))
+        setHasMorePosts(feed.length === POSTS_PAGE)
+      }
       setLoading(false)
       setRefreshing(false)
     },
-    [isProvider, user, isSavedTab],
+    [isProvider, user, isSavedTab, stampFlags],
   )
+
+  // Load the next page of the main feed (not used on the Saved tab).
+  const fetchMorePosts = useCallback(async () => {
+    if (isSavedTab || loading || loadingMorePosts || !hasMorePosts || !user) return
+    setLoadingMorePosts(true)
+    const feed = await fetchCommunityFeed(null, allPosts.length, POSTS_PAGE)
+    const stamped = await stampFlags(feed, false)
+    setAllPosts((prev) => [...prev, ...stamped])
+    setHasMorePosts(feed.length === POSTS_PAGE)
+    setLoadingMorePosts(false)
+  }, [isSavedTab, loading, loadingMorePosts, hasMorePosts, user, allPosts.length, stampFlags])
 
   const loadBarter = useCallback(
     async (refresh = false) => {
@@ -438,6 +465,15 @@ export default function CommunityFeed() {
           keyExtractor={(p) => p.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+          onEndReached={fetchMorePosts}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            loadingMorePosts ? (
+              <View style={{ paddingVertical: 20 }}>
+                <ActivityIndicator color="rgba(240,232,213,0.4)" />
+              </View>
+            ) : null
+          }
           refreshControl={
             <RefreshControl
               refreshing={refreshing}

@@ -134,52 +134,79 @@ async function attachHeroImages(list: Provider[]): Promise<Provider[]> {
   return list.map((p) => ({ ...p, heroImage: heroByProvider.get(p.id) }))
 }
 
-export function useProviders(categoryId?: number) {
+// Pagination is OPT-IN via `pageSize`: pass a page size (Discover passes 20) to
+// page through providers with fetchMore(); omit it (nearby / top-rated / the
+// search strip) to load the full list in one shot, exactly as before.
+export function useProviders(categoryId?: number, pageSize?: number) {
   const [providers, setProviders] = useState<Provider[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Re-fetch on every focus (and on category change) so an edited provider's
-  // updated photo/details appear on their Discover card after returning to the
-  // feed. useFocusEffect covers the initial mount too, since the screen is
-  // focused when it first renders.
-  useFocusEffect(
-    useCallback(() => {
-      fetchProviders()
-    }, [categoryId]),
+  const fetchPage = useCallback(
+    async (offset: number, replace: boolean) => {
+      try {
+        if (replace) setLoading(true)
+        else setLoadingMore(true)
+
+        let query = supabase
+          .from('providers')
+          .select(PUBLIC_PROVIDER_FIELDS)
+          .eq('is_approved', true)
+          .order('is_featured', { ascending: false })
+          .order('average_rating', { ascending: false, nullsFirst: false })
+          // Stable tiebreaker so offset pagination can't duplicate/skip rows
+          // when is_featured/average_rating tie.
+          .order('id', { ascending: true })
+
+        if (categoryId) {
+          query = query.eq('category_id', categoryId)
+        }
+        if (pageSize != null) {
+          query = query.range(offset, offset + pageSize - 1)
+        }
+
+        const { data, error } = await query
+        if (error) throw error
+        // Cast through unknown: a runtime-string select() makes supabase-js
+        // infer GenericStringError instead of our row shape.
+        const page = await attachHeroImages((data as unknown as Provider[]) || [])
+        setHasMore(pageSize != null && page.length === pageSize)
+        setProviders((prev) => (replace ? page : [...prev, ...page]))
+      } catch (err: any) {
+        setError(err.message)
+        console.log('Fetch providers error:', err)
+      } finally {
+        if (replace) setLoading(false)
+        else setLoadingMore(false)
+      }
+    },
+    [categoryId, pageSize],
   )
 
-  const fetchProviders = async () => {
-    try {
-      setLoading(true)
+  // Re-fetch (from page 0) on every focus and on category change so an edited
+  // provider's updated photo/details appear after returning to the feed.
+  useFocusEffect(
+    useCallback(() => {
+      fetchPage(0, true)
+    }, [fetchPage]),
+  )
 
-      let query = supabase
-        .from('providers')
-        .select(PUBLIC_PROVIDER_FIELDS)
-        .eq('is_approved', true)
-        .order('is_featured', { ascending: false })
-        .order('average_rating', { ascending: false, nullsFirst: false })
+  const fetchMore = useCallback(() => {
+    if (loading || loadingMore || !hasMore) return
+    fetchPage(providers.length, false)
+  }, [loading, loadingMore, hasMore, providers.length, fetchPage])
 
-      if (categoryId) {
-        query = query.eq('category_id', categoryId)
-      }
-
-      const { data, error } = await query
-
-      if (error) throw error
-      // Cast through unknown: a runtime-string select() makes supabase-js infer
-      // GenericStringError instead of our row shape.
-      const list = await attachHeroImages((data as unknown as Provider[]) || [])
-      setProviders(list)
-    } catch (err: any) {
-      setError(err.message)
-      console.log('Fetch providers error:', err)
-    } finally {
-      setLoading(false)
-    }
+  return {
+    providers,
+    loading,
+    loadingMore,
+    hasMore,
+    error,
+    fetchMore,
+    refetch: () => fetchPage(0, true),
   }
-
-  return { providers, loading, error, refetch: fetchProviders }
 }
 
 export function useProvider(providerId: string) {

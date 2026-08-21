@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   Animated,
+  ActivityIndicator,
   StyleSheet,
   useWindowDimensions,
 } from 'react-native'
@@ -273,7 +274,10 @@ export default function DiscoveryFeed() {
   const { width } = useWindowDimensions()
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
 
-  const { providers, loading } = useProviders(activeCategoryId ?? undefined)
+  const { providers, loading, loadingMore, hasMore, fetchMore } = useProviders(
+    activeCategoryId ?? undefined,
+    20,
+  )
   const { categories } = useCategories()
 
   const colW = (width - 48 - 16) / 2
@@ -414,6 +418,22 @@ export default function DiscoveryFeed() {
             </Text>
             <View style={s.philosophyDivider} />
           </View>
+        )}
+
+        {/* Load more — paginated discovery (20 per page) */}
+        {!loading && !showEmptyState && hasMore && (
+          <TouchableOpacity
+            style={s.loadMoreBtn}
+            activeOpacity={0.85}
+            onPress={fetchMore}
+            disabled={loadingMore}
+          >
+            {loadingMore ? (
+              <ActivityIndicator color="rgba(240,232,213,0.6)" />
+            ) : (
+              <Text style={s.loadMoreText}>Load more</Text>
+            )}
+          </TouchableOpacity>
         )}
 
         {/* Bottom spacer for the tab bar */}
@@ -672,6 +692,22 @@ const s = StyleSheet.create({
   },
 
   // Philosophy
+  loadMoreBtn: {
+    marginHorizontal: 24,
+    marginTop: 8,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.1)',
+  },
+  loadMoreText: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.7)',
+    fontFamily: 'Manrope_600SemiBold',
+  },
   philosophy: {
     alignItems: 'center',
     paddingTop: 48,

@@ -141,16 +141,19 @@ export async function fetchProviderInfoMap(
   return map
 }
 
-// Feed: active posts newest-first, optionally filtered by category.
+// Feed: active posts newest-first, optionally filtered by category. Paginated
+// via offset/limit (default 20 per page) — the caller pages with .range().
 export async function fetchCommunityFeed(
   category: string | null,
+  offset = 0,
+  limit = 20,
 ): Promise<CommunityPostView[]> {
   let query = supabase
     .from('community_posts')
     .select(POST_COLUMNS)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
-    .limit(50)
+    .range(offset, offset + limit - 1)
   if (category) query = query.eq('category', category)
 
   const { data, error } = await query

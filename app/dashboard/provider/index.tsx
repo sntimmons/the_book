@@ -158,26 +158,50 @@ export default function ProviderDashboard() {
         .eq('provider_id', provider.id)
       setHasAvailability((availCount ?? 0) > 0)
 
-      // All bookings for this provider, used to derive pending list,
-      // earnings totals, and today's schedule from a single query.
-      const { data: allBookings, error } = await supabase
-        .from('bookings')
-        .select(
-          'id, user_id, service_name, requested_date, requested_time, message, status, payment_amount, created_at',
-        )
-        .eq('provider_id', provider.id)
-        .order('created_at', { ascending: false })
+      // Three targeted queries instead of one unbounded "all bookings" fetch,
+      // so the display list is bounded while earnings + today stay correct.
+      const todayStr = todayIsoDate()
+      const [pendingRes, completedRes, todayRes] = await Promise.all([
+        // Pending requests: most recent 20 for the dashboard list, plus an
+        // exact count so the pending stat is accurate. Full list is behind
+        // "See all".
+        supabase
+          .from('bookings')
+          .select(
+            'id, user_id, service_name, requested_date, requested_time, message, status, payment_amount, created_at',
+            { count: 'exact' },
+          )
+          .eq('provider_id', provider.id)
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(20),
+        // Earnings: ALL completed bookings (small columns), fetched separately
+        // so lifetime/month totals are never truncated by a display limit.
+        supabase
+          .from('bookings')
+          .select('payment_amount, created_at')
+          .eq('provider_id', provider.id)
+          .eq('status', 'completed'),
+        // Today's schedule: only today's confirmed-family bookings.
+        supabase
+          .from('bookings')
+          .select('id, user_id, service_name, requested_time, payment_amount, status')
+          .eq('provider_id', provider.id)
+          .eq('requested_date', todayStr)
+          .in('status', ['accepted', 'arriving', 'checked_in']),
+      ])
 
-      if (error) {
-        console.log('Fetch bookings error:', error)
+      if (pendingRes.error || completedRes.error || todayRes.error) {
+        console.log(
+          'Fetch bookings error:',
+          pendingRes.error ?? completedRes.error ?? todayRes.error,
+        )
         setRequestsLoading(false)
         return
       }
 
-      const rows = (allBookings ?? []) as BookingRequest[]
-
-      // Pending list with looked-up client names.
-      const pendingRows = rows.filter((b) => b.status === 'pending')
+      // Pending list with looked-up client names (bounded to <= 20).
+      const pendingRows = (pendingRes.data ?? []) as BookingRequest[]
       const pendingWithNames = await Promise.all(
         pendingRows.map(async (b) => {
           const { data: client } = await supabase
@@ -190,13 +214,13 @@ export default function ProviderDashboard() {
       )
       setPendingRequests(pendingWithNames)
 
-      // Earnings: completed bookings only. payment_amount is dollars,
+      // Earnings from ALL completed bookings. payment_amount is dollars,
       // not cents (per schema confirmation in the audit).
-      const completed = rows.filter((b) => b.status === 'completed')
-      const totalEarnings = completed.reduce(
-        (sum, b) => sum + (b.payment_amount ?? 0),
-        0,
-      )
+      const completed = (completedRes.data ?? []) as {
+        payment_amount: number | null
+        created_at: string
+      }[]
+      const totalEarnings = completed.reduce((sum, b) => sum + (b.payment_amount ?? 0), 0)
       const now = new Date()
       const thisMonthEarnings = completed.reduce((sum, b) => {
         const d = new Date(b.created_at)
@@ -209,19 +233,20 @@ export default function ProviderDashboard() {
         total: totalEarnings,
         month: thisMonthEarnings,
         completedCount: completed.length,
-        pendingCount: pendingRows.length,
+        pendingCount: pendingRes.count ?? pendingRows.length,
       })
 
       // Today's schedule: accepted / arriving / checked_in for today.
-      const todayStr = todayIsoDate()
-      const todayRows = rows
-        .filter(
-          (b) =>
-            b.requested_date === todayStr &&
-            (b.status === 'accepted' ||
-              b.status === 'arriving' ||
-              b.status === 'checked_in'),
-        )
+      const todayRows = (
+        (todayRes.data ?? []) as {
+          id: string
+          user_id: string
+          service_name: string | null
+          requested_time: string | null
+          payment_amount: number | null
+          status: string
+        }[]
+      )
         .sort((a, b) => (a.requested_time ?? '').localeCompare(b.requested_time ?? ''))
         .map((b) => ({
           id: b.id,
@@ -329,7 +354,8 @@ export default function ProviderDashboard() {
   const greeting =
     hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   const greetingName = providerName || 'there'
-  const pendingCount = pendingRequests.length
+  // Accurate total (the displayed list is capped at 20; "See all" has the rest).
+  const pendingCount = earnings.pendingCount || pendingRequests.length
 
   // Jump from the dashboard (business) into the shared app (Discover/Reels/etc).
   // Always REPLACE into the tabs rather than router.back(): providers now land
