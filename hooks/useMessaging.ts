@@ -110,63 +110,93 @@ export function useConversations() {
         return
       }
 
-      const enriched = await Promise.all(
-        convos.map(async (convo) => {
-          const isClient = convo.client_id === user.id
-          const otherPartyId = isClient ? convo.provider_id : convo.client_id
+      // Was N+1 (3-4 queries per conversation). Now a constant number of batch
+      // queries regardless of conversation count: gather the ids we need, then
+      // fetch every dependency in one `.in(...)` round trip each and join in JS.
+      const convoIds = convos.map((c) => c.id)
+      const providerOtherIds: string[] = []
+      const clientOtherIds: string[] = []
+      const bookingIds: string[] = []
+      for (const c of convos) {
+        // The current user is the client on a conversation when client_id is
+        // their auth id; otherwise they are the provider viewing it.
+        if (c.client_id === user.id) providerOtherIds.push(c.provider_id)
+        else clientOtherIds.push(c.client_id)
+        if (c.booking_id) bookingIds.push(c.booking_id)
+      }
 
-          let otherPartyName = 'Unknown'
-          if (isClient) {
-            const { data: provider } = await supabase
-              .from('providers')
-              .select('display_name')
-              .eq('id', otherPartyId)
-              .maybeSingle()
-            otherPartyName = provider?.display_name || 'Provider'
-          } else {
-            const { data: client } = await supabase
-              .from('clients')
-              .select('name')
-              .eq('id', otherPartyId)
-              .maybeSingle()
-            otherPartyName = client?.name || 'Client'
-          }
+      // One query each — all in parallel. Empty `.in([])` lists are valid and
+      // simply return no rows, so these run unconditionally.
+      const [messagesRes, providersRes, clientsRes, bookingsRes] = await Promise.all([
+        supabase
+          .from('messages')
+          .select('conversation_id, content, created_at, sender_id, is_read')
+          .in('conversation_id', convoIds)
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('providers')
+          .select('id, display_name')
+          .in('id', Array.from(new Set(providerOtherIds))),
+        supabase
+          .from('clients')
+          .select('id, name')
+          .in('id', Array.from(new Set(clientOtherIds))),
+        supabase
+          .from('bookings')
+          .select('id, service_name')
+          .in('id', Array.from(new Set(bookingIds))),
+      ])
 
-          const { data: lastMsg } = await supabase
-            .from('messages')
-            .select('content, created_at, sender_id, is_read')
-            .eq('conversation_id', convo.id)
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
+      const providerName = new Map<string, string>()
+      for (const p of (providersRes.data as { id: string; display_name: string | null }[] | null) ?? []) {
+        providerName.set(p.id, p.display_name || 'Provider')
+      }
+      const clientName = new Map<string, string>()
+      for (const c of (clientsRes.data as { id: string; name: string | null }[] | null) ?? []) {
+        clientName.set(c.id, c.name || 'Client')
+      }
+      const bookingSvc = new Map<string, string>()
+      for (const b of (bookingsRes.data as { id: string; service_name: string | null }[] | null) ?? []) {
+        bookingSvc.set(b.id, b.service_name || '')
+      }
 
-          const { count: unreadCount } = await supabase
-            .from('messages')
-            .select('*', { count: 'exact', head: true })
-            .eq('conversation_id', convo.id)
-            .eq('is_read', false)
-            .neq('sender_id', user.id)
+      // Last message + unread count both derived from the single messages batch.
+      // Rows are ordered created_at desc, so the first row seen per conversation
+      // is its latest message.
+      const lastMessage = new Map<string, string>()
+      const unread = new Map<string, number>()
+      for (const m of (messagesRes.data as
+        | {
+            conversation_id: string
+            content: string
+            created_at: string
+            sender_id: string
+            is_read: boolean
+          }[]
+        | null) ?? []) {
+        if (!lastMessage.has(m.conversation_id)) {
+          lastMessage.set(m.conversation_id, m.content ?? '')
+        }
+        if (!m.is_read && m.sender_id !== user.id) {
+          unread.set(m.conversation_id, (unread.get(m.conversation_id) ?? 0) + 1)
+        }
+      }
 
-          let bookingService = ''
-          if (convo.booking_id) {
-            const { data: booking } = await supabase
-              .from('bookings')
-              .select('service_name')
-              .eq('id', convo.booking_id)
-              .maybeSingle()
-            bookingService = booking?.service_name || ''
-          }
-
-          return {
-            ...convo,
-            other_party_name: otherPartyName,
-            other_party_id: otherPartyId,
-            last_message_preview: lastMsg?.content ?? '',
-            unread_count: unreadCount ?? 0,
-            booking_service: bookingService,
-          } as Conversation
-        }),
-      )
+      const enriched: Conversation[] = convos.map((convo) => {
+        const isClient = convo.client_id === user.id
+        const otherPartyId = isClient ? convo.provider_id : convo.client_id
+        const otherPartyName = isClient
+          ? providerName.get(convo.provider_id) ?? 'Provider'
+          : clientName.get(convo.client_id) ?? 'Client'
+        return {
+          ...convo,
+          other_party_name: otherPartyName,
+          other_party_id: otherPartyId,
+          last_message_preview: lastMessage.get(convo.id) ?? '',
+          unread_count: unread.get(convo.id) ?? 0,
+          booking_service: convo.booking_id ? bookingSvc.get(convo.booking_id) ?? '' : '',
+        } as Conversation
+      })
 
       setConversations(enriched)
     } catch (err) {
