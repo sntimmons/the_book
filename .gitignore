@@ -47,3 +47,5 @@ sentry.properties.local
 # generated native folders
 /ios
 /android
+
+supabase/.temp/
