@@ -1,7 +1,11 @@
-const { getDefaultConfig } = require('expo/metro-config')
+// getSentryExpoConfig wraps Expo's getDefaultConfig with Sentry's Metro
+// serializer (needed for readable production stack traces / source maps). It
+// returns the same Expo config object, so all the custom resolver config below
+// is preserved unchanged.
+const { getSentryExpoConfig } = require('@sentry/react-native/metro')
 const path = require('path')
 
-const config = getDefaultConfig(__dirname)
+const config = getSentryExpoConfig(__dirname)
 
 // Exclude the src/ directory (Next.js files that don't belong in this Expo project)
 config.resolver.blockList = [
