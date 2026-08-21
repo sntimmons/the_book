@@ -193,7 +193,21 @@ export default function BookingRequestScreen() {
         <Ionicons name="chevron-back" size={22} color="#F0E8D5" />
       </TouchableOpacity>
       <Text style={s.headerTitle}>Booking Request</Text>
-      <View style={s.backBtn} />
+      {/* This screen is provider-only and lives outside the provider drawer, so
+          give a one-tap route back to the dashboard (and its drawer). Hidden in
+          the not-a-provider guard state. */}
+      {!notProvider ? (
+        <TouchableOpacity
+          style={s.backBtn}
+          activeOpacity={0.7}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          onPress={() => router.replace('/dashboard/provider' as never)}
+        >
+          <Ionicons name="home-outline" size={20} color="#F0E8D5" />
+        </TouchableOpacity>
+      ) : (
+        <View style={s.backBtn} />
+      )}
     </View>
   )
 
