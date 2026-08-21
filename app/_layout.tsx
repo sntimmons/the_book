@@ -15,8 +15,10 @@ import { PROVIDER_LANDS_IN_TABS } from '@/lib/featureFlags'
 
 SplashScreen.preventAutoHideAsync()
 
-const DEV_MODE = true
-// Set to false before TestFlight
+const DEV_MODE = __DEV__ && false
+// Prod-safe: __DEV__ is false in production builds, so DEV_MODE can never be
+// true there regardless of the second operand. Flip `false` to `true` to enable
+// the dev auth bypass locally (still can't leak to prod).
 
 function DevBadge() {
   const insets = useSafeAreaInsets()
