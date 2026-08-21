@@ -23,7 +23,6 @@ export interface Provider {
   is_trending: boolean
   is_featured: boolean
   is_demo: boolean
-  verification_status: string | null
   identity_verified: boolean
   years_experience: number | null
   specialties: string[] | null
@@ -49,10 +48,42 @@ export interface Category {
   slug: string
 }
 
+// Public-safe provider columns. Never select('*') on providers in public-facing
+// queries: the table also holds stripe_* payment fields, verification_notes /
+// verification_status, business_verified, no_show_count / late_count, and
+// payment/deposit config — none of which should reach another user's device.
+// (The provider's OWN dashboard queries its own row and can read more.)
+const PUBLIC_PROVIDER_FIELDS = [
+  'id',
+  'user_id',
+  'display_name',
+  'username',
+  'category_id',
+  'bio',
+  'location',
+  'neighborhood',
+  'profile_photo_url',
+  'cover_image_url',
+  'rating',
+  'average_rating',
+  'review_count',
+  'total_bookings',
+  'repeat_client_rate',
+  'follower_count',
+  'next_available',
+  'is_trending',
+  'is_featured',
+  'is_demo',
+  'identity_verified',
+  'years_experience',
+  'specialties',
+  'created_at',
+].join(', ')
+
 export async function getLiveCount(): Promise<number> {
   const { count } = await supabase
     .from('providers')
-    .select('*', { count: 'exact', head: true })
+    .select('id', { count: 'exact', head: true })
     .eq('is_approved', true)
   return count || 0
 }
@@ -124,7 +155,7 @@ export function useProviders(categoryId?: number) {
 
       let query = supabase
         .from('providers')
-        .select('*')
+        .select(PUBLIC_PROVIDER_FIELDS)
         .eq('is_approved', true)
         .order('is_featured', { ascending: false })
         .order('average_rating', { ascending: false, nullsFirst: false })
@@ -136,7 +167,9 @@ export function useProviders(categoryId?: number) {
       const { data, error } = await query
 
       if (error) throw error
-      const list = await attachHeroImages((data as Provider[]) || [])
+      // Cast through unknown: a runtime-string select() makes supabase-js infer
+      // GenericStringError instead of our row shape.
+      const list = await attachHeroImages((data as unknown as Provider[]) || [])
       setProviders(list)
     } catch (err: any) {
       setError(err.message)
@@ -168,7 +201,7 @@ export function useProvider(providerId: string) {
       setLoading(true)
 
       const [providerRes, servicesRes] = await Promise.all([
-        supabase.from('providers').select('*').eq('id', providerId).single(),
+        supabase.from('providers').select(PUBLIC_PROVIDER_FIELDS).eq('id', providerId).single(),
         supabase
           .from('provider_services')
           .select('*')
@@ -179,7 +212,7 @@ export function useProvider(providerId: string) {
 
       if (providerRes.error) throw providerRes.error
 
-      setProvider(providerRes.data as Provider)
+      setProvider(providerRes.data as unknown as Provider)
       setServices((servicesRes.data as Service[]) || [])
     } catch (err: any) {
       console.log('Fetch provider error:', err)
@@ -243,7 +276,7 @@ export function useProviderSearch(
 
       let dbQuery = supabase
         .from('providers')
-        .select('*')
+        .select(PUBLIC_PROVIDER_FIELDS)
         .eq('is_approved', true)
 
       if (query.length >= 2) {
@@ -282,7 +315,7 @@ export function useProviderSearch(
 
       const { data, error } = await dbQuery
       if (error) throw error
-      setResults((data as Provider[]) || [])
+      setResults((data as unknown as Provider[]) || [])
     } catch (err: any) {
       console.log('Search error:', err)
     } finally {
