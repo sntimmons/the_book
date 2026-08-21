@@ -12,12 +12,11 @@ import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePanelContext } from '@/context/PanelContext'
 import { useAuth } from '@/context/AuthContext'
-import {
-  fetchProviderAnalytics,
-  fetchRecentBookings,
-  ProviderAnalytics,
-  RecentBooking,
-} from '@/lib/analytics'
+import { fetchProviderAnalytics, fetchRecentBookings } from '@/lib/analytics'
+// Type-only import: `ProviderAnalytics` (the type) collides by name with the
+// `ProviderAnalytics` component below. `import type` makes Babel elide it, so
+// the two don't clash at transform time (tsc tolerates it, Babel does not).
+import type { ProviderAnalytics, RecentBooking } from '@/lib/analytics'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
