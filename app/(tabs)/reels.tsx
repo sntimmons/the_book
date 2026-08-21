@@ -52,204 +52,6 @@ interface Reel {
   video: number | { uri: string }
 }
 
-// Bundled reel assets. 11 files in /assets/videos.
-const REEL_ASSETS: Record<string, number> = {
-  reel1: require('../../assets/videos/reel1.mp4'),
-  reel2: require('../../assets/videos/reel2.mp4'),
-  reel3: require('../../assets/videos/reel3.mp4'),
-  reel4: require('../../assets/videos/reel4.mp4'),
-  reel5: require('../../assets/videos/reel5.mp4'),
-  reel6: require('../../assets/videos/reel6.mp4'),
-  reel7: require('../../assets/videos/reel7.mp4'),
-  reel8: require('../../assets/videos/reel8.mp4'),
-  reel9: require('../../assets/videos/reel9.mp4'),
-  reel10: require('../../assets/videos/reel10.mp4'),
-  reel11: require('../../assets/videos/reel11.mp4'),
-}
-
-const MOCK_REELS: Reel[] = [
-  {
-    id: '1',
-    providerId: '05df1125-9149-4f52-8f06-cc580e5665b4',
-    providerName: 'Nia Laurent',
-    providerCategory: 'Lashes',
-    providerNeighborhood: 'River Oaks',
-    providerVerified: true,
-    providerAvailable: true,
-    caption: 'Classic full set on my client today. 6 week retention guaranteed.',
-    likes: 847,
-    comments: 43,
-    isLiked: false,
-    isSaved: false,
-    thumbnailColor: '#1a0d0d',
-    video: REEL_ASSETS.reel1,
-  },
-  {
-    id: '2',
-    providerId: '4024fde8-6b72-4e1b-9bd2-84351e56e6bd',
-    providerName: 'Kendra Simmons',
-    providerCategory: 'Hair',
-    providerNeighborhood: 'Midtown',
-    providerVerified: true,
-    providerAvailable: false,
-    caption:
-      'Taper fade with a hard part. Clean lines every time. Walk-ins welcome Thursday.',
-    likes: 1203,
-    comments: 67,
-    isLiked: true,
-    isSaved: false,
-    thumbnailColor: '#0d0d1a',
-    video: REEL_ASSETS.reel2,
-  },
-  {
-    id: '3',
-    providerId: '2e8f4bf1-73f1-4084-9e1b-68b46f149d43',
-    providerName: 'Zara Baptise',
-    providerCategory: 'Braider',
-    providerNeighborhood: 'Midtown',
-    providerVerified: false,
-    providerAvailable: true,
-    caption:
-      'Knotless braids, tension-free. Your edges will thank you. Booking 3 weeks out.',
-    likes: 2341,
-    comments: 128,
-    isLiked: false,
-    isSaved: true,
-    thumbnailColor: '#0a1a0a',
-    video: REEL_ASSETS.reel3,
-  },
-  {
-    id: '4',
-    providerId: '4024fde8-6b72-4e1b-9bd2-84351e56e6bd',
-    providerName: 'Kendra Simmons',
-    providerCategory: 'Hair',
-    providerNeighborhood: 'Midtown',
-    providerVerified: true,
-    providerAvailable: true,
-    caption:
-      'Silk press season. Come through looking like silk. Open slots this week.',
-    likes: 934,
-    comments: 52,
-    isLiked: false,
-    isSaved: false,
-    thumbnailColor: '#1a0d1a',
-    video: REEL_ASSETS.reel4,
-  },
-  {
-    id: '5',
-    providerId: '6c20dce6-9063-4587-8b3c-1dc5a2323f6d',
-    providerName: 'Marcus Delray',
-    providerCategory: 'Fitness Trainer',
-    providerNeighborhood: 'Third Ward',
-    providerVerified: true,
-    providerAvailable: true,
-    caption:
-      '12-week body recomp. Results speak for themselves. DM for a consult.',
-    likes: 567,
-    comments: 31,
-    isLiked: false,
-    isSaved: false,
-    thumbnailColor: '#0d1a1a',
-    video: REEL_ASSETS.reel5,
-  },
-  {
-    id: '6',
-    providerId: '05df1125-9149-4f52-8f06-cc580e5665b4',
-    providerName: 'Nia Laurent',
-    providerCategory: 'Lashes',
-    providerNeighborhood: 'EaDo',
-    providerVerified: true,
-    providerAvailable: true,
-    caption: 'Chrome ombre with a chrome French. Two-hour set, walk out glowing.',
-    likes: 1102,
-    comments: 58,
-    isLiked: false,
-    isSaved: false,
-    thumbnailColor: '#1a0a0a',
-    video: REEL_ASSETS.reel6,
-  },
-  {
-    id: '7',
-    providerId: '05df1125-9149-4f52-8f06-cc580e5665b4',
-    providerName: 'Nia Laurent',
-    providerCategory: 'Lashes',
-    providerNeighborhood: 'Museum District',
-    providerVerified: true,
-    providerAvailable: false,
-    caption: 'Soft glam, full glam, bridal, whatever the moment calls for.',
-    likes: 1876,
-    comments: 94,
-    isLiked: false,
-    isSaved: false,
-    thumbnailColor: '#0d0d0d',
-    video: REEL_ASSETS.reel7,
-  },
-  {
-    id: '8',
-    providerId: '05df1125-9149-4f52-8f06-cc580e5665b4',
-    providerName: 'Nia Laurent',
-    providerCategory: 'Lashes',
-    providerNeighborhood: 'Heights',
-    providerVerified: true,
-    providerAvailable: true,
-    caption: 'Wispy hybrid set. Light, fluffy, and they last.',
-    likes: 643,
-    comments: 27,
-    isLiked: false,
-    isSaved: false,
-    thumbnailColor: '#0a0a1a',
-    video: REEL_ASSETS.reel8,
-  },
-  {
-    id: '9',
-    providerId: '4024fde8-6b72-4e1b-9bd2-84351e56e6bd',
-    providerName: 'Kendra Simmons',
-    providerCategory: 'Hair',
-    providerNeighborhood: 'Heights',
-    providerVerified: false,
-    providerAvailable: true,
-    caption: 'Skin fade with a beard line-up. Quick, sharp, on-time.',
-    likes: 521,
-    comments: 22,
-    isLiked: false,
-    isSaved: false,
-    thumbnailColor: '#101010',
-    video: REEL_ASSETS.reel9,
-  },
-  {
-    id: '10',
-    providerId: '2e8f4bf1-73f1-4084-9e1b-68b46f149d43',
-    providerName: 'Zara Baptise',
-    providerCategory: 'Braider',
-    providerNeighborhood: 'Third Ward',
-    providerVerified: true,
-    providerAvailable: true,
-    caption: 'Boho knotless with the human-hair curls. Took five hours, worth it.',
-    likes: 2098,
-    comments: 113,
-    isLiked: false,
-    isSaved: false,
-    thumbnailColor: '#0d1a14',
-    video: REEL_ASSETS.reel10,
-  },
-  {
-    id: '11',
-    providerId: '6c20dce6-9063-4587-8b3c-1dc5a2323f6d',
-    providerName: 'Marcus Delray',
-    providerCategory: 'Fitness Trainer',
-    providerNeighborhood: 'Montrose',
-    providerVerified: true,
-    providerAvailable: true,
-    caption: 'Behind the scenes from a portrait session last week.',
-    likes: 412,
-    comments: 19,
-    isLiked: false,
-    isSaved: false,
-    thumbnailColor: '#141414',
-    video: REEL_ASSETS.reel11,
-  },
-]
-
 // Shape of a posts row joined to its provider. The provider embed is a
 // single object (posts.provider_id -> providers.id is many-to-one), though
 // supabase-js types it loosely, so we cast through this local type.
@@ -275,7 +77,7 @@ const REEL_FALLBACK_COLOR = '#0d0d0d'
 
 // Fetch real reels (posts with a video) joined to provider info, mapped to the
 // Reel shape the feed already renders. Returns [] on error or when there are
-// no real videos yet, so the caller can fall back to MOCK_REELS.
+// no real videos yet, in which case the feed shows an empty state.
 async function fetchReels(): Promise<Reel[]> {
   const { data, error } = await supabase
     .from('posts')
@@ -401,9 +203,12 @@ async function loadComments(postId: string): Promise<CommentRow[]> {
 export default function ReelsScreen() {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
-  const [reels, setReels] = useState<Reel[]>(MOCK_REELS)
+  const [reels, setReels] = useState<Reel[]>([])
+  // True until the first reels fetch resolves, so we show a spinner instead of
+  // the empty state during the initial load.
+  const [loadingReels, setLoadingReels] = useState(true)
   // True once real reels (backed by real post rows) have loaded — only then do
-  // like/save/comment interactions persist. Mock reels stay local-only.
+  // like/save/comment interactions persist.
   const [isRealData, setIsRealData] = useState(false)
   const [commentPostId, setCommentPostId] = useState<string | null>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -417,14 +222,18 @@ export default function ReelsScreen() {
     Audio.setAudioModeAsync({ playsInSilentModeIOS: true }).catch(() => {})
   }, [])
 
-  // Load real reels from the posts table. Start on MOCK_REELS so the tab is
-  // never empty, and swap to real videos once they load. If there are no real
-  // videos yet (or the query fails), MOCK_REELS stays in place as the fallback.
+  // Load real reels from the posts table. The tab starts empty and shows a
+  // spinner until this resolves; if there are no real reels yet (or the query
+  // fails) it shows an honest empty state rather than fabricated mock content.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       const real = await fetchReels()
-      if (cancelled || real.length === 0) return
+      if (cancelled) return
+      if (real.length === 0) {
+        setLoadingReels(false)
+        return
+      }
 
       // Resolve which of these posts the current user has already liked/saved
       // so the heart/bookmark render filled on load.
@@ -449,6 +258,7 @@ export default function ReelsScreen() {
       if (!cancelled) {
         setReels(real)
         setIsRealData(true)
+        setLoadingReels(false)
       }
     })()
     return () => {
@@ -576,6 +386,21 @@ export default function ReelsScreen() {
           offset: SCREEN_HEIGHT * index,
           index,
         })}
+        ListEmptyComponent={
+          <View style={[styles.emptyReels, { height: SCREEN_HEIGHT }]}>
+            {loadingReels ? (
+              <ActivityIndicator color="rgba(240,232,213,0.4)" />
+            ) : (
+              <>
+                <Ionicons name="film-outline" size={40} color="rgba(240,232,213,0.15)" />
+                <Text style={styles.emptyReelsTitle}>No reels yet</Text>
+                <Text style={styles.emptyReelsSub}>
+                  Provider reels will show up here as they post them.
+                </Text>
+              </>
+            )}
+          </View>
+        }
         renderItem={({ item, index }) => (
           <ReelItem
             reel={item}
@@ -1142,6 +967,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#080808',
   },
+  emptyReels: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 48,
+    gap: 12,
+    backgroundColor: '#080808',
+  },
+  emptyReelsTitle: {
+    fontSize: 16,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  emptyReelsSub: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.3)',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+
   reelRoot: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,

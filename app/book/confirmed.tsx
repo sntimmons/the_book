@@ -23,9 +23,6 @@ export default function BookConfirmed() {
 
   const displayProviderName = providerName || 'Your provider'
   const firstName = displayProviderName.split(' ')[0]
-  const depositAmount = selectedService?.depositRequired
-    ? '$' + (parseFloat(selectedService.depositAmount || '0') || 0).toFixed(2)
-    : '$0.00'
 
   const responseWindow = '24 hours'
   const bookingSummary = [
@@ -59,7 +56,7 @@ export default function BookConfirmed() {
 
         {/* Status badge */}
         <View style={styles.statusBadge}>
-          <Text style={styles.statusBadgeText}>REQUEST SENT · NO CHARGE YET</Text>
+          <Text style={styles.statusBadgeText}>BOOKING REQUEST SENT</Text>
         </View>
 
         {/* Headline */}
@@ -67,10 +64,8 @@ export default function BookConfirmed() {
 
         {/* Subtext */}
         <Text style={styles.subtext}>
-          {firstName} typically responds within 2 hours.{'\n'}
-          Your card will not be charged until{'\n'}
-          they confirm. If they decline nothing{'\n'}
-          happens to your account.
+          Your booking request has been sent. {firstName} will review it and
+          accept or decline. You'll be notified as soon as they respond.
         </Text>
 
         {/* Response timer */}
@@ -89,13 +84,11 @@ export default function BookConfirmed() {
           </View>
         )}
 
-        {/* Deposit confirmation */}
-        {selectedService?.depositRequired && (
-          <View style={styles.depositConfirm}>
-            <Feather name="shield" size={13} color="#4CAF50" />
-            <Text style={styles.depositConfirmText}>{depositAmount} authorized, not charged yet</Text>
-          </View>
-        )}
+        {/* No-payment reassurance */}
+        <View style={styles.depositConfirm}>
+          <Feather name="shield" size={13} color="#4CAF50" />
+          <Text style={styles.depositConfirmText}>No payment taken until the provider accepts</Text>
+        </View>
 
         {/* What happens next */}
         <View style={styles.nextSteps}>
@@ -111,15 +104,13 @@ export default function BookConfirmed() {
             {
               n: '2',
               title: 'You get notified instantly',
-              desc: selectedService?.depositRequired
-                ? `The moment ${firstName} responds you get a notification. If they accept your ${depositAmount} deposit is charged automatically.`
-                : `The moment ${firstName} responds you get a notification. If they accept your card is charged automatically.`,
+              desc: `The moment ${firstName} responds you get a notification — whether they accept, decline, or suggest another time.`,
               green: false,
             },
             {
               n: '3',
-              title: 'If declined, zero charge',
-              desc: `If ${firstName} declines or does not respond in time your hold releases instantly. Nothing is charged. Ever.`,
+              title: 'No payment upfront',
+              desc: `No payment is taken until ${firstName} accepts and your service is completed.`,
               green: true,
             },
           ].map((step) => (

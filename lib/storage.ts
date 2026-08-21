@@ -1,15 +1,11 @@
 // Supabase Storage helpers for media uploads.
 //
-// REQUIRED BUCKET (must exist in Supabase Storage dashboard):
-//   Name: provider-media
-//   Public: true (so profile photos load in the feed and on profiles)
-//   File size limit: 50MB
-//   Allowed MIME types: image/*, video/*
-//
-// As of this commit the project at kxregomuawwcqvisuhtr has NO buckets
-// configured. Create the bucket above before any provider goes live, or
-// every upload here will fail with "Bucket not found" and uploadMedia
-// will return { url: null, error }.
+// Buckets in use (confirmed configured in Supabase):
+//   provider-media  — public  (profile + banner + client avatars)
+//   posts-media     — public  (portfolio, posts, reels)
+//   contract-pdfs   — private (uploaded contract PDFs; viewed via signed URLs)
+//   contract-signatures — private (signature images; not written yet)
+// Public buckets serve via getPublicUrl; private buckets via createSignedUrl.
 import * as Sentry from '@sentry/react-native'
 import { supabase } from './supabase'
 

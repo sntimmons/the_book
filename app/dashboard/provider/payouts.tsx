@@ -1,5 +1,5 @@
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
-import { Feather } from '@expo/vector-icons'
+import { Feather, Ionicons } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePanelContext } from '@/context/PanelContext'
 
@@ -18,13 +18,15 @@ export default function ProviderPayouts() {
       </View>
 
       <View style={styles.body}>
-        <Feather name="dollar-sign" size={36} color="rgba(240,232,213,0.1)" />
-        <Text style={styles.title}>Payouts</Text>
-        <Text style={styles.subtitle}>Coming in the next update.</Text>
+        <Ionicons name="wallet-outline" size={34} color="rgba(200,146,42,0.6)" />
+        <Text style={styles.title}>Payout setup coming soon</Text>
+        <Text style={styles.subtitle}>Secure payouts through Stripe Connect.</Text>
 
         <View style={styles.note}>
           <Text style={styles.noteText}>
-            Payouts will be processed manually during beta. Full Stripe Connect integration launches with v1.0.
+            You will be able to link your bank account and receive payouts directly
+            when this launches. Your earnings from completed bookings are tracked in
+            the meantime.
           </Text>
         </View>
       </View>

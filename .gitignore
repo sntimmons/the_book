@@ -30,8 +30,16 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# env files and secrets
 .env*.local
+.env
+.env.local
+.env.development
+.env.production
+.env.staging
+.secrets
+# sentry.properties is committed (placeholder token only); ignore local override
+sentry.properties.local
 
 # typescript
 *.tsbuildinfo

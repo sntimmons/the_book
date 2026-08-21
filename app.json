@@ -29,7 +29,7 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": ["assets/fonts/**", "assets/images/**"],
     "assets": ["assets/videos/welcome.mp4"],
     "plugins": [
       "expo-router",
