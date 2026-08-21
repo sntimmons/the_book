@@ -7,5 +7,5 @@
       "@/*": ["./*"]
     }
   },
-  "exclude": ["src", "next.config.ts"]
+  "exclude": ["src", "next.config.ts", "supabase/functions"]
 }

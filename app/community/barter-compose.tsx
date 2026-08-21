@@ -17,6 +17,7 @@ import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
+import { checkRateLimit, RATE_LIMITS } from '@/lib/rateLimit'
 
 const OFFER_MAX = 200
 const NOTES_MAX = 500
@@ -49,6 +50,20 @@ export default function BarterCompose() {
         ? parsedValue
         : null
     setSubmitting(true)
+
+    // Server-side rate limit (max 5 new offers/day/provider). Not an error.
+    const rl = await checkRateLimit(
+      user.id,
+      'barter_offer',
+      RATE_LIMITS.barter_offer.maxRequests,
+      RATE_LIMITS.barter_offer.windowSeconds,
+    )
+    if (!rl.allowed) {
+      setSubmitting(false)
+      Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')
+      return
+    }
+
     try {
       const { error } = await supabase.from('barter_offers').insert({
         provider_id: providerId,
