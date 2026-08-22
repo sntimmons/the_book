@@ -45,6 +45,7 @@ interface Reel {
   comments: number
   isLiked: boolean
   isSaved: boolean
+  isFollowing: boolean
   thumbnailColor: string
   // Video source for expo-av's Video. Bundled mock assets are a `require()`
   // number; real reels from the posts table are a { uri } streaming URL from
@@ -121,9 +122,10 @@ async function fetchReels(): Promise<Reel[]> {
         caption: row.caption ?? '',
         likes: row.like_count ?? 0,
         comments: row.comment_count ?? 0,
-        // Per-user like/save state is not wired yet (future stage).
+        // Per-user like/save/follow state resolved after the fetch.
         isLiked: false,
         isSaved: false,
+        isFollowing: false,
         thumbnailColor: REEL_FALLBACK_COLOR,
         video: { uri: row.media_url },
       }
@@ -235,13 +237,19 @@ export default function ReelsScreen() {
         return
       }
 
-      // Resolve which of these posts the current user has already liked/saved
-      // so the heart/bookmark render filled on load.
+      // Resolve which of these posts the current user has already liked/saved,
+      // and which providers they already follow, so the icons render filled.
       if (user) {
         const ids = real.map((r) => r.id)
-        const [likesRes, savesRes] = await Promise.all([
+        const providerIds = Array.from(new Set(real.map((r) => r.providerId).filter(Boolean)))
+        const [likesRes, savesRes, followsRes] = await Promise.all([
           supabase.from('post_likes').select('post_id').eq('user_id', user.id).in('post_id', ids),
           supabase.from('post_saves').select('post_id').eq('user_id', user.id).in('post_id', ids),
+          supabase
+            .from('provider_follows')
+            .select('provider_id')
+            .eq('follower_user_id', user.id)
+            .in('provider_id', providerIds),
         ])
         const liked = new Set(
           ((likesRes.data as { post_id: string }[] | null) ?? []).map((r) => r.post_id),
@@ -249,9 +257,13 @@ export default function ReelsScreen() {
         const saved = new Set(
           ((savesRes.data as { post_id: string }[] | null) ?? []).map((r) => r.post_id),
         )
+        const following = new Set(
+          ((followsRes.data as { provider_id: string }[] | null) ?? []).map((r) => r.provider_id),
+        )
         real.forEach((r) => {
           r.isLiked = liked.has(r.id)
           r.isSaved = saved.has(r.id)
+          r.isFollowing = following.has(r.providerId)
         })
       }
 
@@ -345,6 +357,38 @@ export default function ReelsScreen() {
     }
   }
 
+  // Follow / unfollow the reel's provider with optimistic UI + revert. Toggles
+  // every reel by the same provider so the state stays consistent in the feed.
+  async function toggleFollow(id: string) {
+    const reel = reels.find((r) => r.id === id)
+    if (!reel) return
+    const pid = reel.providerId
+    const wasFollowing = reel.isFollowing
+
+    setReels((prev) =>
+      prev.map((r) => (r.providerId === pid ? { ...r, isFollowing: !wasFollowing } : r)),
+    )
+
+    if (!isRealData || !user) return
+    try {
+      const { error } = wasFollowing
+        ? await supabase
+            .from('provider_follows')
+            .delete()
+            .eq('follower_user_id', user.id)
+            .eq('provider_id', pid)
+        : await supabase
+            .from('provider_follows')
+            .insert({ follower_user_id: user.id, provider_id: pid })
+      if (error) throw error
+    } catch (err) {
+      console.log('Follow persist error:', err)
+      setReels((prev) =>
+        prev.map((r) => (r.providerId === pid ? { ...r, isFollowing: wasFollowing } : r)),
+      )
+    }
+  }
+
   // Adjust a reel's comment count (used by the comment sheet on add/revert).
   function bumpCommentCount(id: string, delta: number) {
     setReels((prev) =>
@@ -410,6 +454,7 @@ export default function ReelsScreen() {
             onLike={() => toggleLike(item.id)}
             onDoubleTapLike={() => likeReel(item.id)}
             onSave={() => toggleSave(item.id)}
+            onFollow={() => toggleFollow(item.id)}
             onComment={() => handleComment(item.id)}
             onShare={() => handleShare(item)}
             insets={insets}
@@ -425,6 +470,14 @@ export default function ReelsScreen() {
         onCountDelta={(delta) => {
           if (commentPostId) bumpCommentCount(commentPostId, delta)
         }}
+        onCountLoaded={(count) => {
+          if (!commentPostId) return
+          setReels((prev) =>
+            prev.map((r) =>
+              r.id === commentPostId ? { ...r, comments: Math.max(r.comments, count) } : r,
+            ),
+          )
+        }}
       />
     </View>
   )
@@ -438,6 +491,7 @@ interface ReelItemProps {
   onLike: () => void
   onDoubleTapLike: () => void
   onSave: () => void
+  onFollow: () => void
   onComment: () => void
   onShare: () => void
   insets: { top: number; bottom: number; left: number; right: number }
@@ -451,6 +505,7 @@ function ReelItem({
   onLike,
   onDoubleTapLike,
   onSave,
+  onFollow,
   onComment,
   onShare,
   insets,
@@ -633,11 +688,12 @@ function ReelItem({
 
       {/* Right rail: avatar+Follow, heart, comment, share, Book */}
       <View style={[styles.rightActions, { bottom: insets.bottom + 128 }]}>
-        {/* Provider avatar + follow */}
+        {/* Provider avatar + follow. Tapping toggles follow (does NOT navigate);
+            the provider name in the caption is the link to their profile. */}
         <View style={styles.railAvatarGroup}>
           <TouchableOpacity
             activeOpacity={0.85}
-            onPress={goToProvider}
+            onPress={onFollow}
             style={styles.railAvatarWrap}
           >
             <View style={styles.railAvatar}>
@@ -650,11 +706,13 @@ function ReelItem({
                 <Text style={styles.railAvatarInitials}>{providerInitials}</Text>
               )}
             </View>
-            <View style={styles.followBadge}>
-              <Ionicons name="add" size={14} color="#080808" />
-            </View>
+            {!reel.isFollowing && (
+              <View style={styles.followBadge}>
+                <Ionicons name="add" size={14} color="#080808" />
+              </View>
+            )}
           </TouchableOpacity>
-          <Text style={styles.followLabel}>Follow</Text>
+          <Text style={styles.followLabel}>{reel.isFollowing ? 'Following' : 'Follow'}</Text>
         </View>
 
         {/* Like */}
@@ -777,12 +835,14 @@ function CommentSheet({
   insets,
   onClose,
   onCountDelta,
+  onCountLoaded,
 }: {
   postId: string | null
   userId: string | null
   insets: { top: number; bottom: number; left: number; right: number }
   onClose: () => void
   onCountDelta: (delta: number) => void
+  onCountLoaded: (count: number) => void
 }) {
   const [comments, setComments] = useState<CommentRow[]>([])
   const [loading, setLoading] = useState(false)
@@ -801,6 +861,9 @@ function CommentSheet({
       if (cancelled) return
       setComments(list)
       setLoading(false)
+      // Correct the overlay count from the real loaded comments — the DB
+      // comment_count trigger may be lagging (shows 0 with comments present).
+      onCountLoaded(list.length)
       if (userId) {
         const names = await resolveCommenterNames([userId])
         if (!cancelled) setMyName(names.get(userId) ?? 'You')

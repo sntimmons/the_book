@@ -276,14 +276,15 @@ export function ProviderMe({ onSwitchToClient }: { onSwitchToClient: () => void 
         {/* Grouped Coming Soon cluster — modest, less prominent than the hub card */}
         <ComingSoonCluster groups={PROVIDER_GROUPS} />
 
-        {/* Quiet escape hatch */}
+        {/* Switch to the client profile — a clear outlined button, mirroring the
+            "Switch to Provider Studio" button on the client side. */}
         <TouchableOpacity
-          style={styles.switchLink}
-          activeOpacity={0.7}
+          style={styles.switchStudioBtn}
+          activeOpacity={0.85}
           onPress={onSwitchToClient}
         >
-          <Feather name="repeat" size={13} color="rgba(240,232,213,0.4)" />
-          <Text style={styles.switchLinkText}>Switch to Client Profile</Text>
+          <Feather name="repeat" size={15} color="#F0E8D5" />
+          <Text style={styles.switchStudioText}>Switch to Client Profile</Text>
         </TouchableOpacity>
       </ScrollView>
     </View>

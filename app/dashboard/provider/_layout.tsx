@@ -32,7 +32,7 @@ const NAV_SECTIONS = [
     label: 'BUSINESS',
     items: [
       { icon: 'home',        label: 'Dashboard',   route: '/dashboard/provider',              badge: null },
-      { icon: 'calendar',    label: 'Bookings',     route: '/dashboard/provider/bookings',     badge: '3'  },
+      { icon: 'calendar',    label: 'Bookings',     route: '/dashboard/provider/bookings',     badge: null },
       { icon: 'clock',       label: 'Availability', route: '/dashboard/provider/availability', badge: null },
       { icon: 'users',       label: 'My Clients',   route: '/dashboard/provider/clients',      badge: null },
       // TEMP: routes into the client tab inbox. Replace when provider-scoped navigation is built (Bucket 4 design item).
@@ -77,6 +77,7 @@ export default function ProviderDashboardLayout() {
 
   const [providerProfile, setProviderProfile] = useState<ProviderProfileLite | null>(null)
   const [categoryName, setCategoryName] = useState('')
+  const [pendingCount, setPendingCount] = useState(0)
 
   const loadProviderProfile = useCallback(() => {
     if (!user) return
@@ -89,6 +90,22 @@ export default function ProviderDashboardLayout() {
         if (data) setProviderProfile(data as ProviderProfileLite)
       })
   }, [user])
+
+  // Live pending-bookings count for the Bookings nav badge (was hardcoded '3').
+  const loadPendingCount = useCallback(async () => {
+    const pid = providerProfile?.id
+    if (!pid) return
+    const { count } = await supabase
+      .from('bookings')
+      .select('*', { count: 'exact', head: true })
+      .eq('provider_id', pid)
+      .eq('status', 'pending')
+    setPendingCount(count ?? 0)
+  }, [providerProfile?.id])
+
+  useEffect(() => {
+    loadPendingCount()
+  }, [loadPendingCount])
 
   // Refresh when the dashboard group regains focus. Note: this group layout
   // stays mounted across in-group navigation (e.g. opening edit-profile and
@@ -127,6 +144,7 @@ export default function ProviderDashboardLayout() {
     // Pull the latest profile each time the drawer opens so the avatar/name
     // reflect any just-saved edits, regardless of navigation focus timing.
     loadProviderProfile()
+    loadPendingCount()
     setPanelOpen(true)
     Animated.parallel([
       Animated.spring(slideAnim, {
@@ -253,26 +271,35 @@ export default function ProviderDashboardLayout() {
             {NAV_SECTIONS.map((section) => (
               <View key={section.label}>
                 <Text style={styles.navSectionLabel}>{section.label}</Text>
-                {section.items.map((item) => (
-                  <TouchableOpacity
-                    key={item.label}
-                    style={styles.navItem}
-                    activeOpacity={0.7}
-                    onPress={() => handleNavItem(item.route)}
-                  >
-                    <Feather
-                      name={item.icon as any}
-                      size={20}
-                      color="rgba(240,232,213,0.35)"
-                    />
-                    <Text style={styles.navLabel}>{item.label}</Text>
-                    {item.badge && (
-                      <View style={styles.navBadge}>
-                        <Text style={styles.navBadgeText}>{item.badge}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                ))}
+                {section.items.map((item) => {
+                  // Bookings badge is the live pending count (hidden at 0).
+                  const badge =
+                    item.route === '/dashboard/provider/bookings'
+                      ? pendingCount > 0
+                        ? String(pendingCount)
+                        : null
+                      : item.badge
+                  return (
+                    <TouchableOpacity
+                      key={item.label}
+                      style={styles.navItem}
+                      activeOpacity={0.7}
+                      onPress={() => handleNavItem(item.route)}
+                    >
+                      <Feather
+                        name={item.icon as any}
+                        size={20}
+                        color="rgba(240,232,213,0.35)"
+                      />
+                      <Text style={styles.navLabel}>{item.label}</Text>
+                      {badge && (
+                        <View style={styles.navBadge}>
+                          <Text style={styles.navBadgeText}>{badge}</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  )
+                })}
               </View>
             ))}
             <View style={{ height: 20 }} />

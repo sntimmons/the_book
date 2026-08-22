@@ -6,7 +6,6 @@ import { supabase } from './supabase'
 export const COMMUNITY_CATEGORIES: { key: string; label: string }[] = [
   { key: 'advice', label: 'Advice' },
   { key: 'questions', label: 'Questions' },
-  { key: 'wins', label: 'Wins' },
   { key: 'general', label: 'Other' },
 ]
 
@@ -21,6 +20,7 @@ export interface CommunityProviderInfo {
   name: string
   photo: string | null
   category: string
+  neighborhood: string | null
 }
 
 export interface CommunityPostView {
@@ -78,6 +78,7 @@ const UNKNOWN_PROVIDER: CommunityProviderInfo = {
   name: 'Provider',
   photo: null,
   category: '',
+  neighborhood: null,
 }
 
 // Short relative timestamp (now / 5m / 3h / 2d / 1w).
@@ -104,7 +105,7 @@ export async function fetchProviderInfoMap(
 
   const { data: provs } = await supabase
     .from('providers')
-    .select('id, display_name, profile_photo_url, category_id')
+    .select('id, display_name, profile_photo_url, category_id, neighborhood')
     .in('id', ids)
 
   const rows =
@@ -114,6 +115,7 @@ export async function fetchProviderInfoMap(
           display_name: string | null
           profile_photo_url: string | null
           category_id: number | null
+          neighborhood: string | null
         }[]
       | null) ?? []
 
@@ -136,6 +138,7 @@ export async function fetchProviderInfoMap(
       name: r.display_name || 'Provider',
       photo: r.profile_photo_url ?? null,
       category: r.category_id != null ? catNames.get(r.category_id) ?? '' : '',
+      neighborhood: r.neighborhood ?? null,
     })
   }
   return map

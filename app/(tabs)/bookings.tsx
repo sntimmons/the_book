@@ -223,6 +223,10 @@ function BookingCard({
   userId: string
 }) {
   const dateLine = [booking.requested_date, booking.requested_time].filter(Boolean).join(' · ')
+  // Houston-local today; a booking dated before it is in the past and should
+  // not offer Reschedule/Cancel even if its status still reads "confirmed".
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
+  const isPast = !!booking.requested_date && booking.requested_date < todayIso
   return (
     <View style={styles.card}>
       <TouchableOpacity
@@ -258,6 +262,7 @@ function BookingCard({
       <View style={styles.actionRow}>
         <CardActions
           status={status}
+          isPast={isPast}
           bookingId={booking.id}
           providerId={booking.provider_id}
           userId={userId}
@@ -325,16 +330,33 @@ function handleReschedule(
 
 function CardActions({
   status,
+  isPast,
   providerId,
   bookingId,
   userId,
 }: {
   status: Status
+  isPast: boolean
   bookingId: string
   providerId: string
   userId: string
 }) {
   if (status === 'upcoming') {
+    // Past-dated but still confirmed: no Reschedule/Cancel — just Message and a
+    // quiet "Past" label so the card doesn't offer actions that no longer apply.
+    if (isPast) {
+      return (
+        <>
+          <ActionButton
+            label="Message"
+            onPress={() => openChat(userId, providerId, bookingId)}
+          />
+          <View style={styles.pastLabel}>
+            <Text style={styles.pastLabelText}>Past</Text>
+          </View>
+        </>
+      )
+    }
     return (
       <>
         <ActionButton
@@ -611,6 +633,17 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     flexDirection: 'row',
     gap: 8,
+  },
+  pastLabel: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+  },
+  pastLabelText: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.35)',
+    fontFamily: 'Manrope_500Medium',
   },
   actionBtn: {
     flex: 1,

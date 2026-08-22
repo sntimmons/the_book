@@ -7,6 +7,8 @@ import {
   TextInput,
   TouchableOpacity,
   KeyboardAvoidingView,
+  InputAccessoryView,
+  Keyboard,
   Platform,
   ActivityIndicator,
   Alert,
@@ -34,6 +36,7 @@ import {
 } from '@/lib/community'
 
 const MAX_REPLY = 500
+const REPLY_ACCESSORY_ID = 'communityReplyInput'
 
 type ThreadPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
 
@@ -170,7 +173,7 @@ export default function CommunityThread() {
       userId: user.id,
       content: text,
       createdAt: new Date().toISOString(),
-      provider: myInfo ?? { name: 'You', photo: null, category: '' },
+      provider: myInfo ?? { name: 'You', photo: null, category: '', neighborhood: null },
     }
     setReplies((prev) => [...prev, optimistic])
     setReplyInput('')
@@ -362,6 +365,7 @@ export default function CommunityThread() {
             onChangeText={setReplyInput}
             maxLength={MAX_REPLY}
             multiline
+            inputAccessoryViewID={Platform.OS === 'ios' ? REPLY_ACCESSORY_ID : undefined}
           />
           <TouchableOpacity
             style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
@@ -377,11 +381,40 @@ export default function CommunityThread() {
           </TouchableOpacity>
         </View>
       ) : null}
+
+      {/* iOS: a Done bar above the keyboard so a multiline reply can be
+          dismissed (mirrors the message composer's accessory bar). */}
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={REPLY_ACCESSORY_ID} backgroundColor="#111111">
+          <View style={styles.accessoryBar}>
+            <TouchableOpacity
+              onPress={Keyboard.dismiss}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.accessoryDone}>Done</Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
+      )}
     </KeyboardAvoidingView>
   )
 }
 
 const styles = StyleSheet.create({
+  accessoryBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(240,232,213,0.08)',
+  },
+  accessoryDone: {
+    fontSize: 15,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_600SemiBold',
+  },
   root: { flex: 1, backgroundColor: '#080808' },
   header: {
     flexDirection: 'row',

@@ -258,6 +258,12 @@ export default function ProviderGoLive() {
               price: parseFloat(s.price) || 0,
               duration_minutes: parseDurationMinutes(s.duration),
               is_active: true,
+              // Deposit captured in the wizard. The onboarding form only offers a
+              // fixed-amount deposit, so type is 'fixed'; providers can switch to
+              // percentage later in the services dashboard.
+              deposit_required: s.depositRequired,
+              deposit_type: 'fixed',
+              deposit_amount: s.depositRequired ? parseFloat(s.depositAmount) || 0 : 0,
             })),
           )
         }

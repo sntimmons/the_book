@@ -22,6 +22,9 @@ export function ComingSoonInterest({
 }) {
   const { user } = useAuth()
   const [interested, setInterested] = useState(false)
+  // Total people who have expressed interest (social proof). null = not loaded
+  // yet or the count RPC is unavailable, in which case no line is shown.
+  const [count, setCount] = useState<number | null>(null)
 
   // Reflect interest the user already recorded so the confirmed state survives
   // re-opening the screen. Any error (missing table, no auth) is swallowed.
@@ -42,7 +45,25 @@ export function ComingSoonInterest({
     }
   }, [user, featureName])
 
+  // Load the global interest count via the SECURITY DEFINER rpc (a plain select
+  // can't — RLS limits reads to the user's own row). Absent function/table just
+  // leaves count null, so the social-proof line stays hidden.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const { data, error } = await supabase.rpc('feature_interest_count', {
+        p_feature_name: featureName,
+      })
+      if (!cancelled && !error && typeof data === 'number') setCount(data)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [featureName])
+
   async function recordInterest() {
+    // Optimistically bump the visible count once (only if not already counted).
+    if (!interested) setCount((c) => (c == null ? c : c + 1))
     setInterested(true)
     if (!user) return
     try {
@@ -57,19 +78,32 @@ export function ComingSoonInterest({
     }
   }
 
+  const countLine =
+    count && count > 0 ? (
+      <Text style={styles.countText}>
+        {count === 1 ? '1 person interested' : `${count} people interested`}
+      </Text>
+    ) : null
+
   if (interested) {
     return (
-      <View style={styles.confirmed}>
-        <Ionicons name="checkmark-circle" size={20} color="#C8922A" />
-        <Text style={styles.confirmedText}>We'll let you know</Text>
+      <View>
+        <View style={styles.confirmed}>
+          <Ionicons name="checkmark-circle" size={20} color="#C8922A" />
+          <Text style={styles.confirmedText}>We'll let you know</Text>
+        </View>
+        {countLine}
       </View>
     )
   }
 
   return (
-    <TouchableOpacity style={styles.btn} activeOpacity={0.85} onPress={recordInterest}>
-      <Text style={styles.btnText}>{label}</Text>
-    </TouchableOpacity>
+    <View>
+      <TouchableOpacity style={styles.btn} activeOpacity={0.85} onPress={recordInterest}>
+        <Text style={styles.btnText}>{label}</Text>
+      </TouchableOpacity>
+      {countLine}
+    </View>
   )
 }
 
@@ -101,5 +135,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
+  },
+  countText: {
+    marginTop: 10,
+    textAlign: 'center',
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_500Medium',
   },
 })

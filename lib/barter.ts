@@ -81,7 +81,12 @@ export async function fetchBarterFeed(): Promise<BarterOfferWithProvider[]> {
     notes: r.notes,
     isActive: r.is_active,
     createdAt: r.created_at,
-    provider: infoMap.get(r.provider_id) ?? { name: 'Provider', photo: null, category: '' },
+    provider: infoMap.get(r.provider_id) ?? {
+      name: 'Provider',
+      photo: null,
+      category: '',
+      neighborhood: null,
+    },
     interestCount: countMap.get(r.id) ?? 0,
   }))
 }
@@ -148,6 +153,7 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
       name: 'Provider',
       photo: null,
       category: '',
+      neighborhood: null,
     },
   }))
 }

@@ -414,7 +414,7 @@ export default function DiscoveryFeed() {
           <View style={s.philosophy}>
             <Text style={s.philosophyEyebrow}>Our Philosophy</Text>
             <Text style={s.philosophyQuote}>
-              {'"Beauty is found in the architectural harmony of one\'s own natural features."'}
+              {'"Talent is everywhere. The right tools make it visible."'}
             </Text>
             <View style={s.philosophyDivider} />
           </View>

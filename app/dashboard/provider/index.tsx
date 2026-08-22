@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { Feather } from '@expo/vector-icons'
+import { Feather, Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePanelContext } from '@/context/PanelContext'
@@ -375,16 +375,8 @@ export default function ProviderDashboard() {
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Dashboard</Text>
         <View style={styles.headerRight}>
-          {/* Obvious, always-visible door into the shared app so providers are
-              never stuck in the business-only view. Neutral pill, not amber. */}
-          <TouchableOpacity
-            style={styles.exploreBtn}
-            activeOpacity={0.85}
-            onPress={goToSharedApp}
-          >
-            <Feather name="compass" size={15} color="#F0E8D5" />
-            <Text style={styles.exploreBtnText}>Explore</Text>
-          </TouchableOpacity>
+          {/* The door into the shared app now lives in a card below the earnings
+              summary (see "Browse as a Client"), not the header. */}
           <TouchableOpacity
             style={styles.menuBtn}
             activeOpacity={0.8}
@@ -463,6 +455,20 @@ export default function ProviderDashboard() {
             <Feather name="chevron-right" size={11} color="#C8922A" />
           </TouchableOpacity>
         </View>
+
+        {/* Door into the shared app — browse/book other providers as a client. */}
+        <TouchableOpacity
+          onPress={goToSharedApp}
+          style={styles.clientModeCard}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="compass-outline" size={22} color="#F0E8D5" />
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={styles.clientModeTitle}>Browse as a Client</Text>
+            <Text style={styles.clientModeSubtitle}>Discover and book other providers</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#C8922A" />
+        </TouchableOpacity>
 
         {/* Pending requests */}
         <View style={styles.section}>
@@ -673,21 +679,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  exploreBtn: {
+  clientModeCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    height: 36,
-    paddingHorizontal: 14,
-    borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
+    backgroundColor: '#1A1A1A',
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    borderLeftWidth: 3,
+    borderLeftColor: '#C8922A',
+    padding: 16,
+    marginBottom: 24,
   },
-  exploreBtnText: {
-    fontSize: 13,
+  clientModeTitle: {
+    fontSize: 15,
+    fontWeight: '600',
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
+  },
+  clientModeSubtitle: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 2,
   },
   notifDot: {
     position: 'absolute',

@@ -27,8 +27,13 @@ interface Service {
   price: number
   duration_minutes: number
   is_active: boolean
+  deposit_required: boolean | null
+  deposit_type: DepositType | null
+  deposit_amount: number | null
   created_at: string
 }
+
+type DepositType = 'fixed' | 'percentage'
 
 interface ServiceForm {
   id?: string
@@ -37,6 +42,9 @@ interface ServiceForm {
   price: string
   duration: string
   isActive: boolean
+  depositRequired: boolean
+  depositType: DepositType
+  depositAmount: string
 }
 
 const EMPTY_FORM: ServiceForm = {
@@ -45,6 +53,9 @@ const EMPTY_FORM: ServiceForm = {
   price: '',
   duration: '60',
   isActive: true,
+  depositRequired: false,
+  depositType: 'fixed',
+  depositAmount: '',
 }
 
 const DURATION_OPTIONS = [
@@ -142,6 +153,12 @@ export default function ProviderServicesScreen() {
       price: service.price.toString(),
       duration: service.duration_minutes.toString(),
       isActive: service.is_active,
+      depositRequired: service.deposit_required ?? false,
+      depositType: service.deposit_type ?? 'fixed',
+      depositAmount:
+        service.deposit_amount != null && service.deposit_amount > 0
+          ? service.deposit_amount.toString()
+          : '',
     })
     setIsEditing(true)
     setShowForm(true)
@@ -172,6 +189,34 @@ export default function ProviderServicesScreen() {
       return
     }
 
+    // Deposit validation only matters when a deposit is required.
+    const depositAmount = parseFloat(editingService.depositAmount)
+    if (editingService.depositRequired) {
+      const isPct = editingService.depositType === 'percentage'
+      if (isNaN(depositAmount) || depositAmount <= 0) {
+        Alert.alert(
+          'Valid deposit required',
+          isPct
+            ? 'Enter a deposit percentage greater than zero.'
+            : 'Enter a deposit amount greater than zero.',
+          [{ text: 'OK' }],
+        )
+        return
+      }
+      if (isPct && depositAmount > 100) {
+        Alert.alert('Deposit too high', 'A percentage deposit cannot exceed 100%.', [
+          { text: 'OK' },
+        ])
+        return
+      }
+      if (!isPct && depositAmount > price) {
+        Alert.alert('Deposit too high', 'A deposit cannot exceed the service price.', [
+          { text: 'OK' },
+        ])
+        return
+      }
+    }
+
     setSaving(true)
 
     const serviceData = {
@@ -181,6 +226,9 @@ export default function ProviderServicesScreen() {
       price,
       duration_minutes: parseInt(editingService.duration, 10) || 60,
       is_active: editingService.isActive,
+      deposit_required: editingService.depositRequired,
+      deposit_type: editingService.depositType,
+      deposit_amount: editingService.depositRequired && !isNaN(depositAmount) ? depositAmount : 0,
     }
 
     try {
@@ -458,6 +506,75 @@ export default function ProviderServicesScreen() {
                   numberOfLines={3}
                   textAlignVertical="top"
                 />
+
+                <View style={styles.activeRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.activeLabel}>Require deposit?</Text>
+                    <Text style={styles.activeSub}>
+                      Charged at booking confirmation
+                    </Text>
+                  </View>
+                  <Toggle
+                    value={editingService.depositRequired}
+                    onChange={(next) =>
+                      setEditingService((prev) => ({
+                        ...prev,
+                        depositRequired: next,
+                      }))
+                    }
+                  />
+                </View>
+
+                {editingService.depositRequired ? (
+                  <>
+                    <Text style={[styles.fieldLabel, { marginTop: 16 }]}>DEPOSIT TYPE</Text>
+                    <View style={styles.depositTypeRow}>
+                      {(['fixed', 'percentage'] as DepositType[]).map((t) => {
+                        const active = editingService.depositType === t
+                        return (
+                          <TouchableOpacity
+                            key={t}
+                            style={[styles.depositTypeBtn, active && styles.depositTypeBtnActive]}
+                            activeOpacity={0.8}
+                            onPress={() =>
+                              setEditingService((prev) => ({ ...prev, depositType: t }))
+                            }
+                          >
+                            <Text
+                              style={
+                                active ? styles.depositTypeTextActive : styles.depositTypeText
+                              }
+                            >
+                              {t === 'fixed' ? 'Fixed amount' : 'Percentage'}
+                            </Text>
+                          </TouchableOpacity>
+                        )
+                      })}
+                    </View>
+
+                    <Text style={[styles.fieldLabel, { marginTop: 16 }]}>
+                      {editingService.depositType === 'percentage'
+                        ? 'DEPOSIT PERCENTAGE'
+                        : 'DEPOSIT AMOUNT'}
+                    </Text>
+                    <View style={styles.priceWrap}>
+                      <Text style={styles.priceDollar}>
+                        {editingService.depositType === 'percentage' ? '%' : '$'}
+                      </Text>
+                      <TextInput
+                        style={[styles.input, styles.priceInput]}
+                        value={editingService.depositAmount}
+                        onChangeText={(v) =>
+                          setEditingService((prev) => ({ ...prev, depositAmount: v }))
+                        }
+                        placeholder={editingService.depositType === 'percentage' ? '25' : '20'}
+                        placeholderTextColor="rgba(240,232,213,0.25)"
+                        keyboardType="decimal-pad"
+                        inputAccessoryViewID={DONE_ACCESSORY_ID}
+                      />
+                    </View>
+                  </>
+                ) : null}
 
                 <View style={styles.activeRow}>
                   <View style={{ flex: 1 }}>
@@ -890,6 +1007,33 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 4,
+  },
+  depositTypeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  depositTypeBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  depositTypeBtnActive: {
+    borderColor: '#C8922A',
+    backgroundColor: 'rgba(200,146,42,0.12)',
+  },
+  depositTypeText: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_500Medium',
+  },
+  depositTypeTextActive: {
+    fontSize: 14,
+    color: '#C8922A',
+    fontFamily: 'Manrope_600SemiBold',
   },
   activeLabel: {
     fontSize: 15,

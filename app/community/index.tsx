@@ -50,6 +50,43 @@ const SAVED_KEY = 'saved'
 // Main community feed page size (Saved tab is not paginated).
 const POSTS_PAGE = 20
 
+// Optional client-side filters over the loaded feed. Service types are matched
+// case-insensitively against the poster's provider category; "Other" catches
+// anything not in the named set. Locations match the poster's neighborhood.
+const SERVICE_TYPES = [
+  'Hair',
+  'Lashes',
+  'Barber',
+  'Braider',
+  'Trainer',
+  'Nails',
+  'Makeup',
+  'Esthetics',
+  'Other',
+]
+const HOUSTON_NEIGHBORHOODS = [
+  'Downtown',
+  'Midtown',
+  'Montrose',
+  'The Heights',
+  'River Oaks',
+  'Uptown / Galleria',
+  'Museum District',
+  'Medical Center',
+  'EaDo',
+  'Rice Village',
+]
+
+// True when a post's provider category matches the selected service pill.
+function matchesServiceType(category: string, selected: string): boolean {
+  const cat = category.trim().toLowerCase()
+  if (!cat) return selected === 'Other'
+  if (selected === 'Other') {
+    return !SERVICE_TYPES.slice(0, -1).some((t) => cat.includes(t.toLowerCase()))
+  }
+  return cat.includes(selected.toLowerCase())
+}
+
 const REPORT_REASONS: { label: string; value: string }[] = [
   { label: 'Inappropriate content', value: 'inappropriate' },
   { label: 'Spam', value: 'spam' },
@@ -72,6 +109,10 @@ export default function CommunityFeed() {
   const [loadingMorePosts, setLoadingMorePosts] = useState(false)
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
+  // Optional service-type / location filters (null = show all).
+  const [serviceFilter, setServiceFilter] = useState<string | null>(null)
+  const [locationFilter, setLocationFilter] = useState<string | null>(null)
+  const [showLocationPicker, setShowLocationPicker] = useState(false)
 
   // Barter tab state.
   const [offers, setOffers] = useState<BarterOfferWithProvider[]>([])
@@ -193,8 +234,17 @@ export default function CommunityFeed() {
     } else if (!isSavedTab && activeCategory) {
       list = list.filter((p) => p.category === activeCategory)
     }
+    // Service-type and location filters apply on top of the above (client-side).
+    if (serviceFilter) {
+      list = list.filter((p) => matchesServiceType(p.provider.category, serviceFilter))
+    }
+    if (locationFilter) {
+      list = list.filter(
+        (p) => (p.provider.neighborhood ?? '').toLowerCase() === locationFilter.toLowerCase(),
+      )
+    }
     return list
-  }, [allPosts, isSavedTab, activeCategory, debouncedSearch])
+  }, [allPosts, isSavedTab, activeCategory, debouncedSearch, serviceFilter, locationFilter])
 
   async function toggleLike(postId: string) {
     const post = allPosts.find((p) => p.id === postId)
@@ -435,6 +485,50 @@ export default function CommunityFeed() {
         <Pill label="Saved" active={isSavedTab} onPress={() => setActiveCategory(SAVED_KEY)} />
       </ScrollView>
 
+      {/* Optional service-type + location filters */}
+      <Text style={styles.filtersLabel}>Filters</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
+        contentContainerStyle={styles.filterRow}
+      >
+        <FilterPill
+          label="All types"
+          active={serviceFilter === null}
+          onPress={() => setServiceFilter(null)}
+        />
+        {SERVICE_TYPES.map((t) => (
+          <FilterPill
+            key={t}
+            label={t}
+            active={serviceFilter === t}
+            onPress={() => setServiceFilter((prev) => (prev === t ? null : t))}
+          />
+        ))}
+      </ScrollView>
+      <View style={styles.locationRow}>
+        <TouchableOpacity
+          style={styles.locationDropdown}
+          activeOpacity={0.7}
+          onPress={() => setShowLocationPicker(true)}
+        >
+          <Feather name="map-pin" size={13} color="rgba(240,232,213,0.5)" />
+          <Text style={styles.locationDropdownText}>
+            {locationFilter ?? 'All locations'}
+          </Text>
+          <Feather name="chevron-down" size={14} color="rgba(240,232,213,0.4)" />
+        </TouchableOpacity>
+        {locationFilter ? (
+          <TouchableOpacity
+            onPress={() => setLocationFilter(null)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Text style={styles.locationClear}>Clear</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+
       {/* Search */}
       <View style={styles.searchRow}>
         <Feather name="search" size={16} color="rgba(240,232,213,0.35)" />
@@ -617,6 +711,52 @@ export default function CommunityFeed() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
+
+      {/* Location filter picker */}
+      <Modal
+        visible={showLocationPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowLocationPicker(false)}
+      >
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setShowLocationPicker(false)} />
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
+            <Text style={styles.modalTitle}>Filter by location</Text>
+            <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+              <TouchableOpacity
+                style={styles.locationOption}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setLocationFilter(null)
+                  setShowLocationPicker(false)
+                }}
+              >
+                <Text style={styles.locationOptionText}>All locations</Text>
+                {locationFilter === null ? (
+                  <Feather name="check" size={16} color="#C8922A" />
+                ) : null}
+              </TouchableOpacity>
+              {HOUSTON_NEIGHBORHOODS.map((n) => (
+                <TouchableOpacity
+                  key={n}
+                  style={styles.locationOption}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setLocationFilter(n)
+                    setShowLocationPicker(false)
+                  }}
+                >
+                  <Text style={styles.locationOptionText}>{n}</Text>
+                  {locationFilter === n ? (
+                    <Feather name="check" size={16} color="#C8922A" />
+                  ) : null}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   )
 }
@@ -751,6 +891,27 @@ function Pill({ label, active, onPress }: { label: string; active: boolean; onPr
   )
 }
 
+// Smaller pill for the secondary service-type filter row.
+function FilterPill({
+  label,
+  active,
+  onPress,
+}: {
+  label: string
+  active: boolean
+  onPress: () => void
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.filterPill, active && styles.filterPillActive]}
+      activeOpacity={0.8}
+      onPress={onPress}
+    >
+      <Text style={active ? styles.filterPillTextActive : styles.filterPillText}>{label}</Text>
+    </TouchableOpacity>
+  )
+}
+
 function PostCard({
   post,
   onLike,
@@ -880,6 +1041,67 @@ const styles = StyleSheet.create({
   },
   pillTextActive: { fontSize: 13, color: '#080808', fontFamily: 'Manrope_700Bold' },
   pillTextInactive: { fontSize: 13, color: 'rgba(240,232,213,0.6)', fontFamily: 'Manrope_500Medium' },
+  // Secondary filters (service type + location)
+  filtersLabel: {
+    paddingHorizontal: 16,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: 'rgba(240,232,213,0.4)',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  filterScroll: { maxHeight: 44, flexGrow: 0 },
+  filterRow: { paddingHorizontal: 16, paddingTop: 8, gap: 6 },
+  filterPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.15)',
+  },
+  filterPillActive: { backgroundColor: 'rgba(200,146,42,0.15)', borderColor: '#C8922A' },
+  filterPillText: { fontSize: 12, color: 'rgba(240,232,213,0.6)', fontFamily: 'Manrope_500Medium' },
+  filterPillTextActive: { fontSize: 12, color: '#C8922A', fontFamily: 'Manrope_600SemiBold' },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    gap: 12,
+  },
+  locationDropdown: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.15)',
+  },
+  locationDropdownText: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.8)',
+    fontFamily: 'Manrope_500Medium',
+  },
+  locationClear: {
+    fontSize: 12,
+    color: '#C8922A',
+    fontFamily: 'Manrope_600SemiBold',
+  },
+  locationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(240,232,213,0.06)',
+  },
+  locationOptionText: {
+    fontSize: 15,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+  },
   searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
