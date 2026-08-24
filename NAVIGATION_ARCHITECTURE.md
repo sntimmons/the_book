@@ -53,6 +53,17 @@ Business is a set of tools, not a second navigation system. The five tabs remain
 
 Community sits under GROW but must also be reachable within one tap of Discover. It is the primary reason a provider with no clients opens the app.
 
+## Business entry points
+
+The Business entry point appears in exactly two places, and only for users who own a provider business:
+
+1. Discover top bar. Badged when bookings need attention.
+2. Me tab, as a row.
+
+It must NOT appear on Reels, Bookings, or Messages. The five tabs are the primary navigation and a persistent Business control on every screen would compete with them.
+
+A provider reaches Business in at most two taps from anywhere: tab to Discover, tap Business.
+
 ## Bookings
 
 Bookings is one tab for everyone.
