@@ -323,7 +323,7 @@ export default function ProviderDashboardLayout() {
               }}
             >
               <Feather name="arrow-left" size={16} color="rgba(240,232,213,0.4)" />
-              <Text style={styles.switchModeText}>Back to The Book</Text>
+              <Text style={styles.switchModeText}>Switch to Client</Text>
             </TouchableOpacity>
 
             <TouchableOpacity

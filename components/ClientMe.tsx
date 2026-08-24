@@ -264,8 +264,9 @@ export function ClientMe({ onSwitchToStudio }: { onSwitchToStudio?: () => void }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
       >
-        {/* When a provider is previewing the client profile, a clear card at the
-            top into their studio (mirrors the dashboard's "Browse as a Client"). */}
+        {/* When a provider is in client mode, a clear card at the top into their
+            studio (mirrors the dashboard's "Browse as a Client"). Its action is
+            "Switch to Provider". */}
         {onSwitchToStudio && (
           <TouchableOpacity
             style={styles.modeCard}
@@ -276,6 +277,9 @@ export function ClientMe({ onSwitchToStudio }: { onSwitchToStudio?: () => void }
             <View style={{ flex: 1, marginLeft: 12 }}>
               <Text style={styles.modeCardTitle}>Your Provider Studio</Text>
               <Text style={styles.modeCardSubtitle}>Manage bookings, content, and clients</Text>
+              {/* Canonical mode-switch action label so the card reads as the
+                  "Switch to Provider" action, not just a destination. */}
+              <Text style={styles.modeCardAction}>Switch to Provider →</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color="#C8922A" />
           </TouchableOpacity>
