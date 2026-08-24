@@ -176,8 +176,9 @@ function RootNavigator() {
             false (Option B): providers LAND in the dashboard via router.replace,
             so it is the root of their stack. The gesture stays DISABLED here so a
             landed provider cannot swipe back across the auth boundary to welcome /
-            sign-up. They reach the shared app via the header "Explore" button and
-            the drawer's "Back to The Book"; both go to /(tabs)/. (If the flag were
+            sign-up. They reach the shared app via the dashboard's "Browse as a
+            Client" card and the drawer's "Switch to Client"; both go to /(tabs)/.
+            (If the flag were
             flipped back to true, the dashboard becomes a pushed section and the
             gesture re-enables to swipe back to the Me tab.) */}
         <Stack.Screen

@@ -731,4 +731,11 @@ export const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     marginTop: 2,
   },
+  // Canonical mode-switch action label on the "Your Provider Studio" card.
+  modeCardAction: {
+    fontSize: 12,
+    color: '#C8922A',
+    fontFamily: 'Manrope_600SemiBold',
+    marginTop: 6,
+  },
 })

@@ -8,10 +8,10 @@ import { styles } from '../../components/me/meStyles'
 
 // ── Role-aware entry ────────────────────────────────────────────────────────
 // Clients get ClientMe. Providers get ProviderMe with the My Studio entrance,
-// and can preview the client profile via "Switch to Client Profile". When a
-// provider is previewing, ClientMe shows a top "Switch to Provider Studio"
-// button (via onSwitchToStudio) to return — a clear, non-floating control that
-// mirrors the drawer's "Back to The Book".
+// and can enter client mode via "Switch to Client". In client mode, ClientMe
+// shows a top "Your Provider Studio" card (via onSwitchToStudio) whose action is
+// "Switch to Provider" — a clear, non-floating control that mirrors the drawer's
+// "Switch to Client".
 export default function MeScreen() {
   const { isProvider, roleLoading } = useAuth()
   const [viewAsClient, setViewAsClient] = useState(false)
