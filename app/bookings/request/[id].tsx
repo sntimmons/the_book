@@ -144,7 +144,7 @@ export default function BookingRequestScreen() {
       return
     }
     setActionLoading(false)
-    router.replace('/dashboard/provider/bookings' as never)
+    router.replace('/(tabs)/business/bookings' as never)
   }
 
   function handleAccept() {
@@ -201,7 +201,7 @@ export default function BookingRequestScreen() {
           style={s.backBtn}
           activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          onPress={() => router.replace('/dashboard/provider' as never)}
+          onPress={() => router.replace('/(tabs)/business' as never)}
         >
           <Ionicons name="home-outline" size={20} color="#F0E8D5" />
         </TouchableOpacity>
@@ -349,7 +349,7 @@ export default function BookingRequestScreen() {
         <View style={[s.actionBar, { paddingBottom: insets.bottom + 16 }]}>
           <Pressable
             style={s.acceptBtn}
-            onPress={() => router.replace('/dashboard/provider/bookings' as never)}
+            onPress={() => router.replace('/(tabs)/business/bookings' as never)}
           >
             <Text style={s.acceptText}>Back to Bookings</Text>
           </Pressable>

@@ -6,5 +6,5 @@ import { router } from 'expo-router'
 // stranded. Matches the dashboard home chevron from phase 1.
 export function dashboardBack() {
   if (router.canGoBack()) router.back()
-  else router.replace('/dashboard/provider')
+  else router.replace('/(tabs)/business')
 }

@@ -279,7 +279,7 @@ export default function RevenueDetail() {
             <Text style={s.sectionLabelInline}>By Service</Text>
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => router.push('/dashboard/provider/service-performance' as any)}
+              onPress={() => router.push('/(tabs)/business/service-performance' as any)}
             >
               <Text style={s.link}>Details</Text>
             </TouchableOpacity>
@@ -313,7 +313,7 @@ export default function RevenueDetail() {
             <Text style={s.sectionLabelInline}>Top Clients</Text>
             <TouchableOpacity
               activeOpacity={0.7}
-              onPress={() => router.push('/dashboard/provider/client-intelligence' as any)}
+              onPress={() => router.push('/(tabs)/business/client-intelligence' as any)}
             >
               <Text style={s.link}>See all</Text>
             </TouchableOpacity>
@@ -355,7 +355,7 @@ export default function RevenueDetail() {
               <TouchableOpacity
                 style={s.riskBtn}
                 activeOpacity={0.7}
-                onPress={() => router.push('/dashboard/provider/' as any)}
+                onPress={() => router.push('/(tabs)/business/' as any)}
               >
                 <Text style={s.riskBtnText}>View pending requests</Text>
                 <Feather name="chevron-right" size={14} color="#C8922A" />

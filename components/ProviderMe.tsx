@@ -150,7 +150,7 @@ export function ProviderMe() {
   // (rather than ship a dead control).
   const reviewsHref = providerId ? `/reviews/all/${providerId}` : null
   const rows: { icon: any; label: string; href: string }[] = [
-    { icon: 'image', label: 'My Portfolio', href: '/dashboard/provider/portfolio' },
+    { icon: 'image', label: 'My Portfolio', href: '/(tabs)/business/portfolio' },
     ...(reviewsHref
       ? [{ icon: 'star' as const, label: 'Reviews & Feedback', href: reviewsHref }]
       : []),
@@ -231,7 +231,7 @@ export function ProviderMe() {
         <TouchableOpacity
           style={styles.studioCard}
           activeOpacity={0.85}
-          onPress={() => router.push('/dashboard/provider' as never)}
+          onPress={() => router.push('/(tabs)/business' as never)}
         >
           <View style={styles.studioIcon}>
             <Feather name="grid" size={20} color="#080808" />

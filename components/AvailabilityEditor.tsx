@@ -340,7 +340,7 @@ export default function AvailabilityEditor({
             style: 'destructive',
             onPress: () => {
               if (router.canGoBack()) router.back()
-              else router.replace('/dashboard/provider')
+              else router.replace('/(tabs)/business')
             },
           },
         ],
@@ -348,7 +348,7 @@ export default function AvailabilityEditor({
       return
     }
     if (router.canGoBack()) router.back()
-    else if (mode === 'dashboard') router.replace('/dashboard/provider')
+    else if (mode === 'dashboard') router.replace('/(tabs)/business')
   }
 
   function tryOpenPanel() {
@@ -454,7 +454,7 @@ export default function AvailabilityEditor({
           {
             text: 'Go to that booking',
             onPress: () => {
-              router.push('/dashboard/provider/bookings' as never)
+              router.push('/(tabs)/business/bookings' as never)
             },
           },
           { text: 'Block anyway', style: 'destructive', onPress: () => commitBlackout(iso) },

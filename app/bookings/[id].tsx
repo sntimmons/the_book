@@ -297,7 +297,7 @@ export default function BookingDetailScreen() {
           see only the back button. */}
       {isProvider ? (
         <TouchableOpacity
-          onPress={() => router.replace('/dashboard/provider' as never)}
+          onPress={() => router.replace('/(tabs)/business' as never)}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           activeOpacity={0.7}
         >

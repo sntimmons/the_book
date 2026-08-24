@@ -264,7 +264,7 @@ export default function GoalDetail() {
               <TouchableOpacity
                 style={s.actionRow}
                 activeOpacity={0.7}
-                onPress={() => router.push('/dashboard/provider/' as any)}
+                onPress={() => router.push('/(tabs)/business/' as any)}
               >
                 <Feather name="check-circle" size={14} color="#C8922A" />
                 <Text style={s.actionText}>
@@ -276,7 +276,7 @@ export default function GoalDetail() {
             <TouchableOpacity
               style={s.actionRow}
               activeOpacity={0.7}
-              onPress={() => router.push('/dashboard/provider/client-intelligence' as any)}
+              onPress={() => router.push('/(tabs)/business/client-intelligence' as any)}
             >
               <Feather name="send" size={14} color="#C8922A" />
               <Text style={s.actionText}>Send rebook reminders to due clients</Text>

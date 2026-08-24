@@ -97,7 +97,7 @@ export default function ContractsList() {
           <TouchableOpacity
             style={styles.templateCard}
             activeOpacity={0.85}
-            onPress={() => router.push('/dashboard/provider/contract' as never)}
+            onPress={() => router.push('/(tabs)/business/contract' as never)}
           >
             <View style={[styles.templateIcon, hasContract ? styles.iconGreen : styles.iconAmber]}>
               <Feather

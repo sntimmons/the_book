@@ -278,7 +278,7 @@ export default function ProviderEditProfileScreen() {
         // The provider stack is built with router.replace (see the dashboard
         // _layout note), so back() here can cross the auth boundary to a
         // detached screen and leave the app frozen/untappable.
-        [{ text: 'Done', onPress: () => router.replace('/dashboard/provider') }],
+        [{ text: 'Done', onPress: () => router.replace('/(tabs)/business') }],
       )
     } catch (err: any) {
       console.log('Save exception:', err)

@@ -93,6 +93,9 @@ export default function TabLayout() {
           from Discover). */}
       <Tabs.Screen name="new" options={{ href: null }} />
       <Tabs.Screen name="search" options={{ href: null }} />
+      {/* Provider Business tools: a nested Stack that keeps the tab bar visible.
+          href: null so it is not a sixth tab. */}
+      <Tabs.Screen name="business" options={{ href: null }} />
     </Tabs>
   )
 }

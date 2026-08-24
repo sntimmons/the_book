@@ -167,7 +167,7 @@ export default function ProviderReview() {
       }
 
       setSubmitting(false)
-      router.replace('/dashboard/provider' as never)
+      router.replace('/(tabs)/business' as never)
     } catch (err) {
       console.log('Client review exception:', err)
       Alert.alert(
@@ -180,7 +180,7 @@ export default function ProviderReview() {
   }
 
   function handleSkip() {
-    router.replace('/dashboard/provider' as never)
+    router.replace('/(tabs)/business' as never)
   }
 
   return (
