@@ -3,16 +3,19 @@ import { supabase } from './supabase'
 // ── Blind reveal read layer ───────────────────────────────────────────────────
 //
 // A review is REVEALED only if the counterpart review exists for that booking_id
-// OR bookings.completed_at <= now() - interval '7 days'. We enforce this in the
-// READ PATH here (client side) so unrevealed rows never reach the UI, and we
-// derive the displayed aggregate from REVEALED rows only (never the stored
-// providers.average_rating, which a recompute trigger may bump pre-reveal and
-// would leak a hidden review).
+// OR bookings.completed_at <= now() - interval '7 days'. The displayed aggregate
+// is derived from REVEALED rows only (never the stored providers.average_rating,
+// which a recompute trigger may bump pre-reveal and would leak a hidden review).
 //
-// NOTE (reported to the team, not changed here): provider_reviews has a
-// using(true) SELECT RLS policy, so unrevealed rows are technically on the wire
-// even though this layer hides them. A server-side VIEW/RPC (or reveal-gated
-// RLS) would enforce this at the DB. See the report for the proposed policy.
+// provider_reviews: reveal is now enforced at the DATABASE via a SECURITY
+// DEFINER-gated SELECT policy, so the DB returns only revealed rows plus the
+// reader's own. fetchRevealedProviderReviews trusts that and does NOT re-filter
+// client side — re-filtering wrongly hid approved rows for non-participants,
+// whose RLS-blocked reads of client_reviews/bookings left the support sets empty.
+//
+// client_reviews: still enforced HERE (client side) via isRevealed(). Its SELECT
+// policy is participant-only, so the counterpart/completed_at support reads work
+// for the provider viewing a client's reputation. That path is unchanged.
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -80,28 +83,13 @@ export async function fetchRevealedProviderReviews(
   }>
   if (reviews.length === 0) return []
 
-  const bookingIds = Array.from(new Set(reviews.map((r) => r.booking_id).filter(Boolean)))
-
-  const [{ data: counterRows }, { data: bookingRows }] = await Promise.all([
-    supabase.from('client_reviews').select('booking_id').in('booking_id', bookingIds),
-    supabase.from('bookings').select('id, completed_at').in('id', bookingIds),
-  ])
-
-  const counterpart = new Set(
-    (counterRows ?? []).map((c: { booking_id: string }) => c.booking_id),
-  )
-  const completedAt = new Map<string, string | null>()
-  ;(bookingRows ?? []).forEach((b: { id: string; completed_at: string | null }) =>
-    completedAt.set(b.id, b.completed_at),
-  )
-
-  const now = Date.now()
-  const revealed = reviews.filter((r) =>
-    isRevealed(r.booking_id, counterpart, completedAt, now),
-  )
-
+  // The DB SELECT policy on provider_reviews is the single source of truth for
+  // reveal (SECURITY DEFINER-gated): every row returned here is already revealed
+  // or authored by the reader. No client-side re-filter — doing so previously
+  // dropped approved rows for non-participants whose RLS-blocked reads of
+  // client_reviews/bookings made the reveal support sets empty.
   const reviewerIds = Array.from(
-    new Set(revealed.map((r) => r.reviewer_user_id).filter(Boolean)),
+    new Set(reviews.map((r) => r.reviewer_user_id).filter(Boolean)),
   ) as string[]
   const nameById = new Map<string, string>()
   if (reviewerIds.length > 0) {
@@ -114,7 +102,7 @@ export async function fetchRevealedProviderReviews(
     )
   }
 
-  return revealed.map((r) => ({
+  return reviews.map((r) => ({
     id: r.id,
     bookingId: r.booking_id,
     rating: r.rating,
