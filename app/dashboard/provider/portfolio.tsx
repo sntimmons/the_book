@@ -16,6 +16,7 @@ import { useFocusEffect } from 'expo-router'
 import * as ImagePicker from 'expo-image-picker'
 import * as Sentry from '@sentry/react-native'
 import { usePanelContext } from '@/context/PanelContext'
+import { dashboardBack } from '@/lib/dashboardNav'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { uploadMedia } from '@/lib/storage'
@@ -158,6 +159,9 @@ export default function ProviderPortfolio() {
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <TouchableOpacity style={styles.menuBtn} onPress={dashboardBack} activeOpacity={0.8}>
+          <Feather name="chevron-left" size={20} color="#F0E8D5" />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.menuBtn} onPress={openPanel} activeOpacity={0.8}>
           <Feather name="menu" size={18} color="#F0E8D5" />
         </TouchableOpacity>
@@ -273,7 +277,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  menuBtnSpacer: { width: 36, height: 36 },
+  menuBtnSpacer: { width: 84, height: 36 },
   headerTitle: {
     flex: 1,
     textAlign: 'center',

@@ -340,6 +340,7 @@ export default function AvailabilityEditor({
             style: 'destructive',
             onPress: () => {
               if (router.canGoBack()) router.back()
+              else router.replace('/dashboard/provider')
             },
           },
         ],
@@ -347,6 +348,7 @@ export default function AvailabilityEditor({
       return
     }
     if (router.canGoBack()) router.back()
+    else if (mode === 'dashboard') router.replace('/dashboard/provider')
   }
 
   function tryOpenPanel() {
@@ -607,6 +609,9 @@ export default function AvailabilityEditor({
         </>
       ) : (
         <View style={[styles.dashHeader, { paddingTop: insets.top + 12 }]}>
+          <TouchableOpacity style={styles.iconBtn} onPress={tryNavigateBack} activeOpacity={0.8}>
+            <Feather name="chevron-left" size={20} color="#F0E8D5" />
+          </TouchableOpacity>
           <TouchableOpacity style={styles.iconBtn} onPress={tryOpenPanel} activeOpacity={0.8}>
             <Feather name="menu" size={18} color="#F0E8D5" />
           </TouchableOpacity>

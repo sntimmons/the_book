@@ -1,4 +1,5 @@
 import { View, Text, Pressable, StyleSheet, ImageSourcePropType, Alert } from 'react-native'
+import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import CrossfadeBackground from '../../components/CrossfadeBackground'
@@ -17,6 +18,15 @@ export default function SignupScreen() {
   return (
     <View style={styles.root}>
       <CrossfadeBackground images={authImages} fallback={authImages.length === 0} />
+
+      {/* Back to Welcome */}
+      <Pressable
+        onPress={() => router.back()}
+        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        style={[styles.backBtn, { top: insets.top + 12 }]}
+      >
+        <Feather name="chevron-left" size={24} color="rgba(240,232,213,0.8)" />
+      </Pressable>
 
       {/* Wordmark */}
       <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>
@@ -70,6 +80,11 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#080808',
+  },
+  backBtn: {
+    position: 'absolute',
+    left: 16,
+    zIndex: 2,
   },
   wordmark: {
     position: 'absolute',

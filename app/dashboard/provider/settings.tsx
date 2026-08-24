@@ -2,6 +2,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePanelContext } from '@/context/PanelContext'
+import { dashboardBack } from '@/lib/dashboardNav'
 
 export default function ProviderSettings() {
   const { openPanel } = usePanelContext()
@@ -10,6 +11,9 @@ export default function ProviderSettings() {
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <TouchableOpacity style={styles.menuBtn} onPress={dashboardBack} activeOpacity={0.8}>
+          <Feather name="chevron-left" size={20} color="#F0E8D5" />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.menuBtn} onPress={openPanel} activeOpacity={0.8}>
           <Feather name="menu" size={18} color="#F0E8D5" />
         </TouchableOpacity>
@@ -47,7 +51,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  menuBtnSpacer: { width: 36, height: 36 },
+  menuBtnSpacer: { width: 84, height: 36 },
   headerTitle: {
     flex: 1,
     textAlign: 'center',

@@ -192,7 +192,7 @@ export default function ProviderDashboardLayout() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: '#080808' },
-            animation: 'none',
+            animation: 'slide_from_right',
             gestureEnabled: true,
             fullScreenGestureEnabled: false,
           }}
