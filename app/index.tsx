@@ -180,13 +180,20 @@ const DEV_NAV: NavSection[] = [
       { label: 'Conversation', route: '/messages/1' },
     ],
   },
-  {
-    label: 'ADMIN',
-    items: [
-      { label: 'Admin Providers', route: '/admin/providers' },
-      { label: 'Admin Create Provider', route: '/admin/create-provider' },
-    ],
-  },
+  // Admin entry points are dev-only. Gated on __DEV__ so the ADMIN group (and its
+  // /admin route strings) is dead-code-eliminated from production/TestFlight
+  // bundles — matching the __DEV__ gate in app/admin/_layout.tsx.
+  ...(__DEV__
+    ? [
+        {
+          label: 'ADMIN',
+          items: [
+            { label: 'Admin Providers', route: '/admin/providers' },
+            { label: 'Admin Create Provider', route: '/admin/create-provider' },
+          ],
+        },
+      ]
+    : []),
 ]
 
 const SITE_MAP: SiteMapRoute[] = [
@@ -221,8 +228,13 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/dashboard/provider/settings', route: '/dashboard/provider/settings', status: 'Stub' },
   { label: '/messages', route: '/messages', status: 'Built' },
   { label: '/messages/[id]', route: '/messages/1', status: 'Built' },
-  { label: '/admin/providers', route: '/admin/providers', status: 'Stub' },
-  { label: '/admin/create-provider', route: '/admin/create-provider', status: 'Stub' },
+  // Dev-only: admin rows are excluded from production bundles (see __DEV__ gate).
+  ...(__DEV__
+    ? ([
+        { label: '/admin/providers', route: '/admin/providers', status: 'Stub' },
+        { label: '/admin/create-provider', route: '/admin/create-provider', status: 'Stub' },
+      ] as SiteMapRoute[])
+    : []),
   { label: '/book/service', route: '/book/service', status: 'Built' },
   { label: '/book/datetime', route: '/book/datetime', status: 'Built' },
   { label: '/book/policy', route: '/book/policy', status: 'Built' },
@@ -555,7 +567,7 @@ export default function WelcomeScreen() {
 
       {/* ── Site Map Modal ─────────────────────────────────────────── */}
       <Modal
-        visible={showSiteMap}
+        visible={__DEV__ && showSiteMap}
         transparent={false}
         animationType="slide"
         onRequestClose={() => setShowSiteMap(false)}
