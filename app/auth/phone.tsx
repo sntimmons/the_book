@@ -14,7 +14,6 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { resolveUserRole } from '@/lib/resolveUserRole'
-import { PROVIDER_LANDS_IN_TABS } from '@/lib/featureFlags'
 
 function formatPhone(digits: string): string {
   const d = digits.slice(0, 10)
@@ -75,8 +74,8 @@ export default function PhoneScreen() {
     if (session?.user) {
       const { role } = await resolveUserRole(session.user.id)
       if (role === 'provider') {
-        // Mode 3: providers land in the shared tabs (flag-gated).
-        router.replace(PROVIDER_LANDS_IN_TABS ? '/(tabs)/' : '/dashboard/provider')
+        // Providers land in the shared tabs (one shell, no modes).
+        router.replace('/(tabs)/')
         return
       }
       if (role === 'client') {

@@ -97,7 +97,7 @@ interface ProviderMeData {
   completed: number
 }
 
-export function ProviderMe({ onSwitchToClient }: { onSwitchToClient: () => void }) {
+export function ProviderMe() {
   const insets = useSafeAreaInsets()
   const { user, providerId } = useAuth()
   const [data, setData] = useState<ProviderMeData | null>(null)
@@ -275,17 +275,6 @@ export function ProviderMe({ onSwitchToClient }: { onSwitchToClient: () => void 
 
         {/* Grouped Coming Soon cluster — modest, less prominent than the hub card */}
         <ComingSoonCluster groups={PROVIDER_GROUPS} />
-
-        {/* Switch to client mode — a clear outlined button, mirroring the
-            "Your Provider Studio" card ("Switch to Provider") on the client side. */}
-        <TouchableOpacity
-          style={styles.switchStudioBtn}
-          activeOpacity={0.85}
-          onPress={onSwitchToClient}
-        >
-          <Feather name="repeat" size={15} color="#F0E8D5" />
-          <Text style={styles.switchStudioText}>Switch to Client</Text>
-        </TouchableOpacity>
       </ScrollView>
     </View>
   )

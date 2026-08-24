@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { Feather, Ionicons } from '@expo/vector-icons'
+import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -100,7 +100,7 @@ function Shimmer({ style }: { style: any }) {
   )
 }
 
-export function ClientMe({ onSwitchToStudio }: { onSwitchToStudio?: () => void } = {}) {
+export function ClientMe() {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
   const [activeTab, setActiveTab] = useState<MeTab>('bookings')
@@ -264,26 +264,6 @@ export function ClientMe({ onSwitchToStudio }: { onSwitchToStudio?: () => void }
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 100 }}
       >
-        {/* When a provider is in client mode, a clear card at the top into their
-            studio (mirrors the dashboard's "Browse as a Client"). Its action is
-            "Switch to Provider". */}
-        {onSwitchToStudio && (
-          <TouchableOpacity
-            style={styles.modeCard}
-            activeOpacity={0.85}
-            onPress={() => router.replace('/dashboard/provider')}
-          >
-            <Ionicons name="briefcase-outline" size={22} color="#C8922A" />
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.modeCardTitle}>Your Provider Studio</Text>
-              <Text style={styles.modeCardSubtitle}>Manage bookings, content, and clients</Text>
-              {/* Canonical mode-switch action label so the card reads as the
-                  "Switch to Provider" action, not just a destination. */}
-              <Text style={styles.modeCardAction}>Switch to Provider →</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color="#C8922A" />
-          </TouchableOpacity>
-        )}
 
         {/* Profile hero */}
         <View style={styles.hero}>

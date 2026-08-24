@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native'
-import { Feather, Ionicons } from '@expo/vector-icons'
+import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { usePanelContext } from '@/context/PanelContext'
@@ -357,26 +357,31 @@ export default function ProviderDashboard() {
   // Accurate total (the displayed list is capped at 20; "See all" has the rest).
   const pendingCount = earnings.pendingCount || pendingRequests.length
 
-  // Jump from the dashboard (business) into the shared app (Discover/Reels/etc).
-  // Always REPLACE into the tabs rather than router.back(): providers now land
-  // in the dashboard via replace, so the auth/welcome screens still sit below it
-  // in the stack (canGoBack() is true) and a back() would cross the auth boundary
-  // to the OTP screen. Replacing lands cleanly on Discover, and the (tabs) screen
-  // has its own gesture disabled so the boundary stays safe.
-  function goToSharedApp() {
-    router.replace('/(tabs)/')
+  // Exit the dashboard back to the shared tab shell. Dashboard is a pushed
+  // destination (from Me's My Studio), so normally this pops back to where the
+  // user came from. If history is empty — e.g. arriving here via a replace from
+  // a terminal flow — fall back to Discover so the user is never stranded.
+  function goBack() {
+    if (router.canGoBack()) router.back()
+    else router.replace('/(tabs)/')
   }
 
   return (
     <View style={styles.root}>
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity style={styles.menuBtn} onPress={openPanel} activeOpacity={0.8}>
-          <Feather name="menu" size={18} color="#F0E8D5" />
-        </TouchableOpacity>
+        <View style={styles.headerLeft}>
+          {/* Back control: dashboard is a pushed destination, so it needs a
+              visible exit to the tab shell (the hamburger is not a back control).
+              Falls back to Discover when history is empty. */}
+          <TouchableOpacity style={styles.menuBtn} onPress={goBack} activeOpacity={0.8}>
+            <Feather name="chevron-left" size={20} color="#F0E8D5" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuBtn} onPress={openPanel} activeOpacity={0.8}>
+            <Feather name="menu" size={18} color="#F0E8D5" />
+          </TouchableOpacity>
+        </View>
         <Text style={styles.headerTitle}>Dashboard</Text>
         <View style={styles.headerRight}>
-          {/* The door into the shared app now lives in a card below the earnings
-              summary (see "Browse as a Client"), not the header. */}
           <TouchableOpacity
             style={styles.menuBtn}
             activeOpacity={0.8}
@@ -455,20 +460,6 @@ export default function ProviderDashboard() {
             <Feather name="chevron-right" size={11} color="#C8922A" />
           </TouchableOpacity>
         </View>
-
-        {/* Door into the shared app — browse/book other providers as a client. */}
-        <TouchableOpacity
-          onPress={goToSharedApp}
-          style={styles.clientModeCard}
-          activeOpacity={0.85}
-        >
-          <Ionicons name="compass-outline" size={22} color="#F0E8D5" />
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.clientModeTitle}>Browse as a Client</Text>
-            <Text style={styles.clientModeSubtitle}>Discover and book other providers</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#C8922A" />
-        </TouchableOpacity>
 
         {/* Pending requests */}
         <View style={styles.section}>
@@ -679,28 +670,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  clientModeCard: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1A1A1A',
-    borderRadius: 12,
-    borderCurve: 'continuous',
-    borderLeftWidth: 3,
-    borderLeftColor: '#C8922A',
-    padding: 16,
-    marginBottom: 24,
-  },
-  clientModeTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  clientModeSubtitle: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.6)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
+    gap: 10,
   },
   notifDot: {
     position: 'absolute',

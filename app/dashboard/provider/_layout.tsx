@@ -308,25 +308,6 @@ export default function ProviderDashboardLayout() {
           {/* Bottom actions */}
           <View style={[styles.panelBottom, { paddingBottom: insets.bottom + 16 }]}>
             <TouchableOpacity
-              style={styles.switchModeRow}
-              activeOpacity={0.7}
-              onPress={() => {
-                closePanel()
-                // Always REPLACE into the shared tabs. Providers now land in the
-                // dashboard via replace (Option B), so the auth/welcome screens
-                // sit below it in the stack and router.back() would cross the auth
-                // boundary to the OTP screen. Replacing lands cleanly on Discover;
-                // the (tabs) screen keeps its own gesture disabled for safety.
-                setTimeout(() => {
-                  router.replace('/(tabs)/')
-                }, 50)
-              }}
-            >
-              <Feather name="arrow-left" size={16} color="rgba(240,232,213,0.4)" />
-              <Text style={styles.switchModeText}>Switch to Client</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={styles.signOutRow}
               activeOpacity={0.7}
               onPress={() => {
@@ -490,16 +471,6 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(240,232,213,0.06)',
     paddingHorizontal: 20,
     paddingTop: 16,
-  },
-  switchModeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  switchModeText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
   },
   signOutRow: {
     paddingHorizontal: 20,

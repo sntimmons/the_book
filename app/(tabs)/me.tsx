@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { ActivityIndicator, View } from 'react-native'
 import { StatusBar } from 'expo-status-bar'
 import { useAuth } from '../../context/AuthContext'
@@ -6,15 +5,13 @@ import { ClientMe } from '../../components/ClientMe'
 import { ProviderMe } from '../../components/ProviderMe'
 import { styles } from '../../components/me/meStyles'
 
-// ── Role-aware entry ────────────────────────────────────────────────────────
-// Clients get ClientMe. Providers get ProviderMe with the My Studio entrance,
-// and can enter client mode via "Switch to Client". In client mode, ClientMe
-// shows a top "Your Provider Studio" card (via onSwitchToStudio) whose action is
-// "Switch to Provider" — a clear, non-floating control that mirrors the drawer's
-// "Switch to Client".
+// ── Role-only entry ─────────────────────────────────────────────────────────
+// Role is derived from the account, never a mode the user toggles. Providers get
+// ProviderMe (with the My Studio entrance into their Business tools); everyone
+// else gets ClientMe. No viewAsClient / preview state — one shell, no modes
+// (NAVIGATION_ARCHITECTURE.md).
 export default function MeScreen() {
   const { isProvider, roleLoading } = useAuth()
-  const [viewAsClient, setViewAsClient] = useState(false)
 
   if (roleLoading) {
     return (
@@ -25,11 +22,5 @@ export default function MeScreen() {
     )
   }
 
-  if (isProvider && !viewAsClient) {
-    return <ProviderMe onSwitchToClient={() => setViewAsClient(true)} />
-  }
-
-  return (
-    <ClientMe onSwitchToStudio={isProvider ? () => setViewAsClient(false) : undefined} />
-  )
+  return isProvider ? <ProviderMe /> : <ClientMe />
 }

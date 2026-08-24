@@ -12,7 +12,6 @@ import {
 import * as SplashScreen from 'expo-splash-screen'
 import * as Sentry from '@sentry/react-native'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
-import { PROVIDER_LANDS_IN_TABS } from '@/lib/featureFlags'
 
 // Crash + error reporting. Disabled in dev (errors still hit the console) so we
 // only ingest real production failures. Must run before the root renders.
@@ -172,22 +171,10 @@ function RootNavigator() {
           name="(tabs)"
           options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}
         />
-        {/* Dashboard swipe-back is gated on PROVIDER_LANDS_IN_TABS, which is now
-            false (Option B): providers LAND in the dashboard via router.replace,
-            so it is the root of their stack. The gesture stays DISABLED here so a
-            landed provider cannot swipe back across the auth boundary to welcome /
-            sign-up. They reach the shared app via the dashboard's "Browse as a
-            Client" card and the drawer's "Switch to Client"; both go to /(tabs)/.
-            (If the flag were
-            flipped back to true, the dashboard becomes a pushed section and the
-            gesture re-enables to swipe back to the Me tab.) */}
-        <Stack.Screen
-          name="dashboard/provider"
-          options={{
-            gestureEnabled: PROVIDER_LANDS_IN_TABS,
-            fullScreenGestureEnabled: PROVIDER_LANDS_IN_TABS,
-          }}
-        />
+        {/* Dashboard is a PUSHED destination reached from the Me tab's My Studio
+            entrance, so it inherits the root swipe-back (gestureEnabled: true,
+            edge-only) — a provider swipes back to the tab shell. No explicit
+            override needed. */}
         <Stack.Screen
           name="path-selection"
           options={{ gestureEnabled: false, fullScreenGestureEnabled: false }}

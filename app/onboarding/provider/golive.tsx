@@ -17,11 +17,10 @@ import { useProviderStore } from '@/store/providerStore'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { uploadMedia, uploadMultiple } from '@/lib/storage'
-import { PROVIDER_LANDS_IN_TABS } from '@/lib/featureFlags'
 
-// Mode 3: a newly-live provider lands in the shared tabs (their studio is
-// reached via the Me tab's My Studio entrance). Flag-gated for rollback.
-const POST_GOLIVE_ROUTE = PROVIDER_LANDS_IN_TABS ? '/(tabs)/' : '/dashboard/provider'
+// A newly-live provider lands in the shared tabs (their studio is reached via
+// the Me tab's My Studio entrance). One shell, no modes.
+const POST_GOLIVE_ROUTE = '/(tabs)/'
 
 function parseDurationMinutes(value: string): number {
   if (!value) return 60
