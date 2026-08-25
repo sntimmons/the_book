@@ -132,7 +132,7 @@ export function ClientMe() {
         // or the user dropped off mid-flow). Fall back to auth metadata.
         setProfile({
           id: user.id,
-          name: user.email?.split('@')[0] ?? 'New Member',
+          name: 'Member',
           notes: null,
           avatar_url: null,
           neighborhood: null,
@@ -217,8 +217,7 @@ export function ClientMe() {
     }, [fetchProfileData]),
   )
 
-  const displayName =
-    profile?.name?.trim() || user?.email?.split('@')[0] || 'Member'
+  const displayName = profile?.name?.trim() || 'Member'
   const avatarInitial = displayName.charAt(0).toUpperCase()
   const memberSince = memberSinceLabel(profile?.created_at)
 

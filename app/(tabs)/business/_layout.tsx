@@ -130,10 +130,7 @@ export default function ProviderDashboardLayout() {
       })
   }, [providerProfile?.category_id])
 
-  const displayName =
-    providerProfile?.display_name?.trim() ||
-    user?.email?.split('@')[0] ||
-    'Provider'
+  const displayName = providerProfile?.display_name?.trim() || 'Provider'
   const metaParts = [categoryName, providerProfile?.neighborhood].filter(
     (s): s is string => !!s && s.length > 0,
   )

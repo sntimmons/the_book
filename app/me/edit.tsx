@@ -101,7 +101,7 @@ export default function EditProfileScreen() {
         if (data.avatar_url) setPhoto(data.avatar_url)
       } else {
         setForm({
-          name: user.email?.split('@')[0] ?? '',
+          name: 'Member',
           bio: '',
           neighborhood: '',
           phone: user.phone ?? '',

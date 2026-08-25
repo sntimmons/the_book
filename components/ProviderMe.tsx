@@ -125,8 +125,7 @@ export function ProviderMe() {
       }
       if (cancelled) return
       setData({
-        displayName:
-          prov?.display_name?.trim() || user.email?.split('@')[0] || 'Provider',
+        displayName: prov?.display_name?.trim() || 'Provider',
         category: categoryName,
         neighborhood: prov?.neighborhood ?? null,
         photoUrl: prov?.profile_photo_url ?? null,
