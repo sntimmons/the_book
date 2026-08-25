@@ -36,7 +36,7 @@ function parseDurationMinutes(value: string): number {
 
 export default function ProviderGoLive() {
   const insets = useSafeAreaInsets()
-  const { user } = useAuth()
+  const { user, retryRole } = useAuth()
   const [isGoingLive, setIsGoingLive] = useState(false)
   const [uploadStage, setUploadStage] = useState('')
   const [uploadProgress, setUploadProgress] = useState(0)
@@ -245,6 +245,12 @@ export default function ProviderGoLive() {
       }
 
       const providerDbId = providerData?.id
+
+      // The providers row now exists. Re-resolve the session role so isProvider
+      // flips to true in THIS session — AuthContext otherwise only resolves role
+      // once at login, when this brand-new account still owned no rows (which is
+      // what left a fresh provider stuck on the client Me screen).
+      retryRole()
 
       // STAGE 6: services. Delete-then-insert avoids unique-key duplicates
       // when a provider edits and re-saves.

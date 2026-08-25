@@ -77,7 +77,7 @@ const grid = StyleSheet.create({
 
 export default function ClientPreview() {
   const insets = useSafeAreaInsets()
-  const { user } = useAuth()
+  const { user, retryRole } = useAuth()
   const { name, notes, photo, reset } = useClientStore()
   const [isLoading, setIsLoading] = useState(false)
 
@@ -119,6 +119,10 @@ export default function ClientPreview() {
       console.log('Client save error:', error)
       // Non-critical, still navigate forward.
     }
+
+    // The clients row now exists. Re-resolve the session role so it settles as
+    // 'client' in this session, consistent with the provider path.
+    retryRole()
 
     reset()
     setIsLoading(false)
