@@ -160,10 +160,17 @@ export default function EditProfileScreen() {
       let avatarUrl: string | null = null
       if (photoChanged && photo) {
         const result = await uploadMedia(photo, user.id, 'profile', 'provider-media')
-        avatarUrl = result.url
-        if (result.error) {
-          console.log('Photo upload error:', result.error)
+        if (result.error || !result.url) {
+          // Surface the failure rather than saving as if the photo went through.
+          setSaving(false)
+          Alert.alert(
+            'Could not upload photo',
+            result.error ?? 'Your photo could not be uploaded. Please try again.',
+            [{ text: 'OK' }],
+          )
+          return
         }
+        avatarUrl = result.url
       }
 
       // created_at is intentionally omitted: the clients.created_at column

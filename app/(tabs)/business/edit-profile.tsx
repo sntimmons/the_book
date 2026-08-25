@@ -207,15 +207,33 @@ export default function ProviderEditProfileScreen() {
       let profilePhotoUrl = providerData.profile_photo_url
       if (photoChanged && photo) {
         const result = await uploadMedia(photo, user.id, 'profile', 'provider-media')
-        if (result.url) profilePhotoUrl = result.url
-        if (result.error) console.log('Photo upload error:', result.error)
+        if (result.error || !result.url) {
+          // Surface the failure instead of saving with the old photo, so the
+          // provider never sees "saved" with the change silently dropped.
+          setSaving(false)
+          Alert.alert(
+            'Could not upload photo',
+            result.error ?? 'Your profile photo could not be uploaded. Please try again.',
+            [{ text: 'OK' }],
+          )
+          return
+        }
+        profilePhotoUrl = result.url
       }
 
       let coverImageUrl = providerData.cover_image_url
       if (bannerChanged && banner) {
         const result = await uploadMedia(banner, user.id, 'banner', 'provider-media')
-        if (result.url) coverImageUrl = result.url
-        if (result.error) console.log('Banner upload error:', result.error)
+        if (result.error || !result.url) {
+          setSaving(false)
+          Alert.alert(
+            'Could not upload cover photo',
+            result.error ?? 'Your cover photo could not be uploaded. Please try again.',
+            [{ text: 'OK' }],
+          )
+          return
+        }
+        coverImageUrl = result.url
       }
 
       const specialtiesArray = form.specialties

@@ -102,6 +102,10 @@ export default function ProviderGoLive() {
     Sentry.addBreadcrumb({ message: 'Provider go live', category: 'onboarding' })
 
     try {
+      // Per-file upload failures, surfaced to the provider at the end rather
+      // than silently going live with missing media.
+      const uploadFailures: { uri: string; error: string }[] = []
+
       // STAGE 1: profile photo
       let profilePhotoUrl: string | null = null
       if (photo) {
@@ -110,6 +114,7 @@ export default function ProviderGoLive() {
         setUploadTotal(1)
         const result = await uploadMedia(photo, user.id, 'profile')
         profilePhotoUrl = result.url
+        if (result.error) uploadFailures.push({ uri: 'profile photo', error: result.error })
         setUploadProgress(1)
       }
 
@@ -121,12 +126,12 @@ export default function ProviderGoLive() {
         setUploadTotal(1)
         const result = await uploadMedia(banner, user.id, 'banner')
         bannerUrl = result.url
+        if (result.error) uploadFailures.push({ uri: 'cover photo', error: result.error })
         setUploadProgress(1)
       }
 
       // STAGE 3: portfolio photos
       let portfolioUrls: string[] = []
-      const uploadFailures: { uri: string; error: string }[] = []
       if (portfolioPhotos.length > 0) {
         setUploadStage('Uploading portfolio...')
         setUploadTotal(portfolioPhotos.length)
@@ -169,10 +174,11 @@ export default function ProviderGoLive() {
       // Surface any upload failures. Continue the go-live with whatever files
       // succeeded rather than aborting the whole flow.
       if (uploadFailures.length > 0) {
-        const totalMedia = portfolioPhotos.length + reels.length
+        const totalMedia =
+          (photo ? 1 : 0) + (banner ? 1 : 0) + portfolioPhotos.length + reels.length
         Alert.alert(
           'Some files did not upload',
-          `${uploadFailures.length} of ${totalMedia} files failed to upload. Your profile will be saved with the files that succeeded — you can add the rest later from your dashboard.`,
+          `${uploadFailures.length} of ${totalMedia} files failed to upload. Your profile will be saved with the files that succeeded. You can add the rest later from your dashboard.`,
         )
       }
 
@@ -270,10 +276,10 @@ export default function ProviderGoLive() {
 
       // STAGE 7: portfolio + reels URL persistence into the `posts` table.
       // Portfolio photos and reels both live in `posts`, differentiated by
-      // media_type ('image' vs 'video'); reels are simply posts rows with
-      // media_type='video'. A failure here must NOT block Go Live — the
-      // provider row already saved successfully above, so we log and move on
-      // rather than surfacing an error or returning early.
+      // media_type ('image' vs 'video'). A failure here does NOT block Go Live
+      // (the provider row already saved), but it is surfaced afterward so the
+      // provider knows to re-add their media from the dashboard.
+      let portfolioSaveFailed = false
       if (providerDbId && (portfolioUrls.length > 0 || reelUrls.length > 0)) {
         const postRows = [
           ...portfolioUrls.map((url, index) => ({
@@ -300,12 +306,33 @@ export default function ProviderGoLive() {
 
         const { error: postsError } = await supabase.from('posts').insert(postRows)
         if (postsError) {
-          console.log('Posts insert error (non-blocking):', postsError)
+          console.log('Posts insert error:', postsError)
+          portfolioSaveFailed = true
         }
       }
 
       setUploadStage('')
       setIsGoingLive(false)
+
+      // Go Live itself is never blocked. But a portfolio-first app going live
+      // with an empty portfolio and no warning is worse than telling the
+      // provider, so they can re-add their media from the dashboard.
+      if (portfolioSaveFailed) {
+        Alert.alert(
+          "Your portfolio didn't save",
+          'Your profile is live, but your photos and reels could not be saved. You can add them from your dashboard under Portfolio and Posts & Reels.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                reset()
+                router.replace(POST_GOLIVE_ROUTE as never)
+              },
+            },
+          ],
+        )
+        return
+      }
 
       setTimeout(() => {
         reset()

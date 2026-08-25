@@ -6,6 +6,7 @@
 //   contract-pdfs   — private (uploaded contract PDFs; viewed via signed URLs)
 //   contract-signatures — private (signature images; not written yet)
 // Public buckets serve via getPublicUrl; private buckets via createSignedUrl.
+import { File } from 'expo-file-system'
 import * as Sentry from '@sentry/react-native'
 import { supabase } from './supabase'
 
@@ -32,16 +33,6 @@ export function validateUpload(uri: string): { valid: boolean; error?: string } 
     valid: false,
     error: 'File type not supported. Please upload a JPG, PNG, or MP4 file.',
   }
-}
-
-async function uriToBlob(uri: string): Promise<Blob> {
-  // NOTE: React Native's fetch().blob() has historically returned 0-byte
-  // blobs for file:// URIs on some Expo SDKs. If uploads succeed but the
-  // stored file is empty, swap to an ArrayBuffer / FileSystem.readAsync
-  // approach. SDK 54 should be fine, but flag it during the first
-  // end-to-end test.
-  const response = await fetch(uri)
-  return await response.blob()
 }
 
 function generatePath(userId: string, folder: string, extension: string): string {
@@ -87,30 +78,42 @@ export async function uploadMedia(
 
     const ext = getExtension(uri)
     const path = generatePath(userId, folder, ext)
-    const blob = await uriToBlob(uri)
 
-    // Diagnose the 0-byte-blob issue: fetch().blob() has returned empty blobs for
-    // file:// URIs on some Expo SDKs, producing "successful" but empty uploads.
-    if (blob.size === 0) {
+    // Read the file straight off the native filesystem via expo-file-system's
+    // File API. fetch(uri).blob() is unreliable for file:// URIs on React
+    // Native — it can return a 0-byte blob, which previously uploaded an empty
+    // file that looked successful. File reads the real bytes, and File.exists /
+    // bytes.length let us refuse a missing or empty file before touching storage.
+    const file = new File(uri)
+    if (!file.exists) {
+      return { url: null, error: 'The selected file could not be found on your device.' }
+    }
+
+    const bytes = await file.bytes()
+    if (bytes.length === 0) {
+      // ABORT: never write an empty file and never return a URL for one.
       Sentry.captureException(
-        new Error(`Upload produced a 0-byte blob (bucket=${bucketName}, path=${path})`),
+        new Error(`Upload aborted: 0-byte file (bucket=${bucketName}, path=${path})`),
       )
+      return {
+        url: null,
+        error: 'That file appears to be empty. Please pick a different photo or video and try again.',
+      }
     }
 
     const contentType =
-      blob.type ||
-      (ext === 'mp4' || ext === 'mov' ? 'video/mp4' : 'image/jpeg')
+      file.type || (VIDEO_EXT.includes(ext) ? 'video/mp4' : 'image/jpeg')
 
     const { data, error } = await supabase.storage
       .from(bucketName)
-      .upload(path, blob, {
+      .upload(path, bytes, {
         contentType,
         upsert: false,
       })
 
     if (error) {
       console.log('Storage upload error:', error)
-      Sentry.captureException(error, { extra: { bucketName, path, blobSize: blob.size } })
+      Sentry.captureException(error, { extra: { bucketName, path, byteLength: bytes.length } })
       return { url: null, error: error.message }
     }
 
