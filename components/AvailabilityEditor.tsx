@@ -168,6 +168,29 @@ function cloneValue(v: AvailabilityValue): AvailabilityValue {
   }
 }
 
+// Build the DB rows for an AvailabilityValue. Shared by the dashboard save
+// (below) and go-live, so both write identical shapes to the same three tables.
+export function buildAvailabilityRows(providerId: string, value: AvailabilityValue) {
+  const hoursRows = DAYS.map((day) => ({
+    provider_id: providerId,
+    weekday: DAY_TO_WEEKDAY[day],
+    start_time: dateToDbTime(value.schedule[day].startTime),
+    end_time: dateToDbTime(value.schedule[day].endTime),
+    is_available: value.schedule[day].enabled,
+    timezone: 'America/Chicago',
+  }))
+  const blockedRows = value.blackoutDates.map((d) => ({
+    provider_id: providerId,
+    date: d,
+  }))
+  const preferences = {
+    provider_id: providerId,
+    buffer_minutes: value.bufferTime,
+    requires_manual_approval: !value.instantBooking,
+  }
+  return { hoursRows, blockedRows, preferences }
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────
 
 interface AvailabilityEditorProps {
@@ -228,7 +251,7 @@ export default function AvailabilityEditor({
     try {
       const { data: provider, error: provErr } = await supabase
         .from('providers')
-        .select('id')
+        .select('id, is_mobile')
         .eq('user_id', user.id)
         .maybeSingle()
       if (provErr) throw provErr
@@ -301,8 +324,8 @@ export default function AvailabilityEditor({
         }
       }
 
-      // TODO: providers.is_mobile column does not exist yet.
-      // When added, populate next.isMobile from the providers row.
+      next.isMobile =
+        (provider as { is_mobile?: boolean | null }).is_mobile ?? false
 
       savedSnapshot.current = cloneValue(next)
       setValue(next)
@@ -481,6 +504,11 @@ export default function AvailabilityEditor({
     }
     setSaving(true)
     try {
+      const { hoursRows, blockedRows, preferences } = buildAvailabilityRows(
+        providerId,
+        value,
+      )
+
       // 1. Weekly hours: replace all rows for this provider.
       const delHours = await supabase
         .from('provider_availability')
@@ -488,14 +516,6 @@ export default function AvailabilityEditor({
         .eq('provider_id', providerId)
       if (delHours.error) throw delHours.error
 
-      const hoursRows = DAYS.map((day) => ({
-        provider_id: providerId,
-        weekday: DAY_TO_WEEKDAY[day],
-        start_time: dateToDbTime(value.schedule[day].startTime),
-        end_time: dateToDbTime(value.schedule[day].endTime),
-        is_available: value.schedule[day].enabled,
-        timezone: 'America/Chicago',
-      }))
       const insHours = await supabase.from('provider_availability').insert(hoursRows)
       if (insHours.error) throw insHours.error
 
@@ -506,11 +526,7 @@ export default function AvailabilityEditor({
         .eq('provider_id', providerId)
       if (delBlocked.error) throw delBlocked.error
 
-      if (value.blackoutDates.length > 0) {
-        const blockedRows = value.blackoutDates.map((d) => ({
-          provider_id: providerId,
-          date: d,
-        }))
+      if (blockedRows.length > 0) {
         const insBlocked = await supabase.from('provider_blocked_dates').insert(blockedRows)
         if (insBlocked.error) throw insBlocked.error
       }
@@ -519,15 +535,15 @@ export default function AvailabilityEditor({
       // UI "Instant booking" = DB requires_manual_approval inverted.
       const upsertPrefs = await supabase
         .from('provider_booking_preferences')
-        .upsert(
-          {
-            provider_id: providerId,
-            buffer_minutes: value.bufferTime,
-            requires_manual_approval: !value.instantBooking,
-          },
-          { onConflict: 'provider_id' },
-        )
+        .upsert(preferences, { onConflict: 'provider_id' })
       if (upsertPrefs.error) throw upsertPrefs.error
+
+      // 4. Mobile-provider flag lives on the providers row.
+      const updMobile = await supabase
+        .from('providers')
+        .update({ is_mobile: value.isMobile })
+        .eq('id', providerId)
+      if (updMobile.error) throw updMobile.error
 
       savedSnapshot.current = cloneValue(value)
       setSavedFlash(true)
@@ -650,8 +666,8 @@ export default function AvailabilityEditor({
           </>
         )}
 
-        {/* Mobile provider toggle (top) */}
-        {/* TODO: providers.is_mobile column does not exist yet, persistence pending a schema update */}
+        {/* Mobile provider toggle (top). Persisted to providers.is_mobile via
+            handleSave (dashboard) and go-live (onboarding). */}
         <Text style={styles.sectionLabel}>SERVICE STYLE</Text>
         <View style={styles.card}>
           <View style={styles.toggleRow}>

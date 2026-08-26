@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { AvailabilityValue } from '@/components/AvailabilityEditor'
 
 export interface AddOn {
   name: string
@@ -30,6 +31,10 @@ interface ProviderOnboardingState {
   services: Service[]
   portfolioPhotos: string[]
   reels: string[]
+  // Availability captured in the onboarding AvailabilityEditor. Held here so
+  // go-live can persist it (weekly hours, blackout dates, booking prefs) after
+  // the providers row exists. null = the provider skipped the step.
+  availability: AvailabilityValue | null
 
   setName: (name: string) => void
   setBusinessName: (name: string) => void
@@ -44,6 +49,7 @@ interface ProviderOnboardingState {
   setServices: (services: Service[]) => void
   setPortfolioPhotos: (photos: string[]) => void
   setReels: (reels: string[]) => void
+  setAvailability: (availability: AvailabilityValue | null) => void
   reset: () => void
 }
 
@@ -61,6 +67,7 @@ const initialState = {
   services: [],
   portfolioPhotos: [],
   reels: [],
+  availability: null,
 }
 
 export const useProviderStore = create<ProviderOnboardingState>((set) => ({
@@ -78,5 +85,6 @@ export const useProviderStore = create<ProviderOnboardingState>((set) => ({
   setServices: (services) => set({ services }),
   setPortfolioPhotos: (portfolioPhotos) => set({ portfolioPhotos }),
   setReels: (reels) => set({ reels }),
+  setAvailability: (availability) => set({ availability }),
   reset: () => set(initialState),
 }))

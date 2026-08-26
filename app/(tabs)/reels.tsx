@@ -204,7 +204,7 @@ async function loadComments(postId: string): Promise<CommentRow[]> {
 
 export default function ReelsScreen() {
   const insets = useSafeAreaInsets()
-  const { user } = useAuth()
+  const { user, providerId: myProviderId } = useAuth()
   const [reels, setReels] = useState<Reel[]>([])
   // True until the first reels fetch resolves, so we show a spinner instead of
   // the empty state during the initial load.
@@ -451,6 +451,9 @@ export default function ReelsScreen() {
             isActive={index === currentIndex && screenFocused}
             currentIndex={currentIndex}
             total={reels.length}
+            // A provider cannot follow their own reel — the DB rejects the row
+            // and the button would only error. Hide the follow affordance.
+            isOwnReel={!!myProviderId && item.providerId === myProviderId}
             onLike={() => toggleLike(item.id)}
             onDoubleTapLike={() => likeReel(item.id)}
             onSave={() => toggleSave(item.id)}
@@ -488,6 +491,7 @@ interface ReelItemProps {
   isActive: boolean
   currentIndex: number
   total: number
+  isOwnReel: boolean
   onLike: () => void
   onDoubleTapLike: () => void
   onSave: () => void
@@ -502,6 +506,7 @@ function ReelItem({
   isActive,
   currentIndex,
   total,
+  isOwnReel,
   onLike,
   onDoubleTapLike,
   onSave,
@@ -691,9 +696,12 @@ function ReelItem({
         {/* Provider avatar + follow. Tapping toggles follow (does NOT navigate);
             the provider name in the caption is the link to their profile. */}
         <View style={styles.railAvatarGroup}>
+          {/* On your own reel the avatar stays for context, but the follow
+              affordance (tap, + badge, label) is hidden — same as the profile. */}
           <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={onFollow}
+            activeOpacity={isOwnReel ? 1 : 0.85}
+            onPress={isOwnReel ? undefined : onFollow}
+            disabled={isOwnReel}
             style={styles.railAvatarWrap}
           >
             <View style={styles.railAvatar}>
@@ -706,13 +714,15 @@ function ReelItem({
                 <Text style={styles.railAvatarInitials}>{providerInitials}</Text>
               )}
             </View>
-            {!reel.isFollowing && (
+            {!isOwnReel && !reel.isFollowing && (
               <View style={styles.followBadge}>
                 <Ionicons name="add" size={14} color="#080808" />
               </View>
             )}
           </TouchableOpacity>
-          <Text style={styles.followLabel}>{reel.isFollowing ? 'Following' : 'Follow'}</Text>
+          {!isOwnReel && (
+            <Text style={styles.followLabel}>{reel.isFollowing ? 'Following' : 'Follow'}</Text>
+          )}
         </View>
 
         {/* Like */}

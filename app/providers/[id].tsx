@@ -272,6 +272,12 @@ export default function ProviderProfilePage() {
     router.push('/book/service')
   }
 
+  // A user cannot act on their own provider profile. When the viewer owns this
+  // provider, hide follow / save / message / book. The database also rejects
+  // these self-referencing rows (see 20260825120000 migration); this keeps the
+  // controls from being shown only to fail.
+  const isOwnProfile = !!user && provider.user_id === user.id
+
   return (
     <ProviderProfile
       previewMode={false}
@@ -279,6 +285,7 @@ export default function ProviderProfilePage() {
       providerId={provider.id}
       isFollowing={isFollowing}
       isSaved={isSaved}
+      isOwnProfile={isOwnProfile}
       onBookNow={handleBookNow}
       onFollow={handleToggleFollow}
       onSave={handleToggleSave}
