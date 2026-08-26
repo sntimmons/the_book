@@ -54,6 +54,9 @@ export interface ProviderProfileProps {
   providerId?: string
   isFollowing?: boolean
   isSaved?: boolean
+  // When the viewer owns this provider, the follow / save / message / book
+  // controls are hidden entirely — a user cannot act on their own profile.
+  isOwnProfile?: boolean
   onBookNow?: () => void
   onFollow?: () => void
   onSave?: () => void
@@ -99,6 +102,7 @@ export default function ProviderProfile({
   providerId,
   isFollowing = false,
   isSaved = false,
+  isOwnProfile = false,
   onBookNow,
   onFollow,
   onSave,
@@ -211,8 +215,8 @@ export default function ProviderProfile({
             )}
           </View>
 
-          {/* Action buttons */}
-          {!previewMode && (
+          {/* Action buttons — hidden on your own profile */}
+          {!previewMode && !isOwnProfile && (
             <View style={styles.actionButtons}>
               <TouchableOpacity
                 style={[styles.followBtn, isFollowing && styles.followBtnActive]}
@@ -501,8 +505,8 @@ export default function ProviderProfile({
         ) : null}
       </ScrollView>
 
-      {/* ── STICKY BOOK NOW ── */}
-      {!previewMode && (
+      {/* ── STICKY BOOK NOW ── hidden on your own profile */}
+      {!previewMode && !isOwnProfile && (
         <View style={[styles.bookBar, { paddingBottom: insets.bottom + 12 }]}>
           <TouchableOpacity
             style={styles.messageBarBtn}

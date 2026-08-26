@@ -13,6 +13,7 @@ import { router } from 'expo-router'
 import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile from '@/components/ProviderProfile'
+import { buildAvailabilityRows } from '@/components/AvailabilityEditor'
 import { useProviderStore } from '@/store/providerStore'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
@@ -45,7 +46,7 @@ export default function ProviderGoLive() {
   const {
     name, businessName, category, customCategory, categoryId,
     location, bio, photo, banner, isMobile,
-    services, portfolioPhotos, reels,
+    services, portfolioPhotos, reels, availability,
     reset,
   } = useProviderStore()
 
@@ -227,6 +228,9 @@ export default function ProviderGoLive() {
             cover_image_url: bannerUrl,
             verification_status: 'pending',
             identity_verified: false,
+            // Mobile-provider flag comes from the availability step's toggle
+            // (falls back to the legacy store field if the step was skipped).
+            is_mobile: availability?.isMobile ?? isMobile,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'user_id' },
@@ -325,33 +329,91 @@ export default function ProviderGoLive() {
         }
       }
 
+      // STAGE 8: availability (weekly hours, blackout dates, booking prefs).
+      // Written after the providers row exists. Like the portfolio, a failure
+      // here does NOT block Go Live — it is surfaced afterward so the provider
+      // can re-set it from the dashboard.
+      let availabilitySaveFailed = false
+      if (providerDbId && availability) {
+        try {
+          const { hoursRows, blockedRows, preferences } = buildAvailabilityRows(
+            providerDbId,
+            availability,
+          )
+          const delHours = await supabase
+            .from('provider_availability')
+            .delete()
+            .eq('provider_id', providerDbId)
+          if (delHours.error) throw delHours.error
+          const insHours = await supabase
+            .from('provider_availability')
+            .insert(hoursRows)
+          if (insHours.error) throw insHours.error
+
+          const delBlocked = await supabase
+            .from('provider_blocked_dates')
+            .delete()
+            .eq('provider_id', providerDbId)
+          if (delBlocked.error) throw delBlocked.error
+          if (blockedRows.length > 0) {
+            const insBlocked = await supabase
+              .from('provider_blocked_dates')
+              .insert(blockedRows)
+            if (insBlocked.error) throw insBlocked.error
+          }
+
+          const upsertPrefs = await supabase
+            .from('provider_booking_preferences')
+            .upsert(preferences, { onConflict: 'provider_id' })
+          if (upsertPrefs.error) throw upsertPrefs.error
+        } catch (availErr) {
+          console.log('Availability save error:', availErr)
+          availabilitySaveFailed = true
+        }
+      }
+
+      // Empty availability (step skipped, or every day toggled off) means a
+      // provider cannot be booked — worth telling them at go-live.
+      const availabilityEmpty =
+        !availability ||
+        !Object.values(availability.schedule).some((d) => d.enabled)
+
       setUploadStage('')
       setIsGoingLive(false)
 
-      // Go Live itself is never blocked. But a portfolio-first app going live
-      // with an empty portfolio and no warning is worse than telling the
-      // provider, so they can re-add their media from the dashboard.
+      const finishAndGo = () => {
+        reset()
+        router.replace(POST_GOLIVE_ROUTE as never)
+      }
+
+      // Go Live itself is never blocked. Collect any post-save issues and show
+      // them together so the provider knows what to finish from the dashboard.
+      const issues: string[] = []
+      if (availabilitySaveFailed) {
+        issues.push(
+          'Your availability could not be saved. Set it from your dashboard under Availability so clients can book you.',
+        )
+      } else if (availabilityEmpty) {
+        issues.push(
+          "You haven't set your availability yet. Clients can't book you until you add it from your dashboard under Availability.",
+        )
+      }
       if (portfolioSaveFailed) {
+        issues.push(
+          'Your photos and reels could not be saved. You can add them from your dashboard under Portfolio and Posts & Reels.',
+        )
+      }
+
+      if (issues.length > 0) {
         Alert.alert(
-          "Your portfolio didn't save",
-          'Your profile is live, but your photos and reels could not be saved. You can add them from your dashboard under Portfolio and Posts & Reels.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                reset()
-                router.replace(POST_GOLIVE_ROUTE as never)
-              },
-            },
-          ],
+          "You're live — a couple of things to finish",
+          issues.join('\n\n'),
+          [{ text: 'OK', onPress: finishAndGo }],
         )
         return
       }
 
-      setTimeout(() => {
-        reset()
-        router.replace(POST_GOLIVE_ROUTE as never)
-      }, 1500)
+      setTimeout(finishAndGo, 1500)
     } catch (err: any) {
       console.log('Go live error:', err)
       setIsGoingLive(false)
