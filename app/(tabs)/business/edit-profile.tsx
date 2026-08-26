@@ -28,6 +28,7 @@ import NeighborhoodPicker from '../../../components/NeighborhoodPicker'
 
 interface ProviderForm {
   displayName: string
+  businessName: string
   bio: string
   location: string
   neighborhood: string
@@ -40,6 +41,7 @@ interface ProviderForm {
 interface ProviderData {
   id: string
   display_name: string | null
+  business_name: string | null
   bio: string | null
   location: string | null
   neighborhood: string | null
@@ -54,6 +56,7 @@ interface ProviderData {
 const BIO_LIMIT = 300
 const EMPTY_FORM: ProviderForm = {
   displayName: '',
+  businessName: '',
   bio: '',
   location: '',
   neighborhood: '',
@@ -113,7 +116,7 @@ export default function ProviderEditProfileScreen() {
       const { data, error } = await supabase
         .from('providers')
         .select(
-          'id, display_name, bio, location, neighborhood, profile_photo_url, cover_image_url, category_id, custom_category, specialties, years_experience',
+          'id, display_name, business_name, bio, location, neighborhood, profile_photo_url, cover_image_url, category_id, custom_category, specialties, years_experience',
         )
         .eq('user_id', user.id)
         .maybeSingle()
@@ -131,6 +134,7 @@ export default function ProviderEditProfileScreen() {
       setBanner(row.cover_image_url)
       setForm({
         displayName: row.display_name ?? '',
+        businessName: row.business_name ?? '',
         bio: row.bio ?? '',
         location: row.location ?? '',
         neighborhood: row.neighborhood ?? '',
@@ -254,6 +258,7 @@ export default function ProviderEditProfileScreen() {
 
       const updates = {
         display_name: form.displayName.trim(),
+        business_name: form.businessName.trim() || null,
         bio: form.bio.trim() || null,
         location: form.location.trim() || null,
         neighborhood: form.neighborhood.trim() || null,
@@ -470,6 +475,19 @@ export default function ProviderEditProfileScreen() {
                 placeholderTextColor="rgba(240,232,213,0.25)"
                 autoCapitalize="words"
                 onFocus={() => setFocused('displayName')}
+                onBlur={() => setFocused(null)}
+              />
+
+              {/* Business name (optional secondary name shown under display name) */}
+              <Text style={styles.fieldLabel}>BUSINESS NAME</Text>
+              <TextInput
+                style={[styles.input, focused === 'businessName' && styles.inputFocused]}
+                value={form.businessName}
+                onChangeText={(v) => updateField('businessName', v)}
+                placeholder="Optional — e.g. Blade Cuts Studio"
+                placeholderTextColor="rgba(240,232,213,0.25)"
+                autoCapitalize="words"
+                onFocus={() => setFocused('businessName')}
                 onBlur={() => setFocused(null)}
               />
 

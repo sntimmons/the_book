@@ -78,7 +78,7 @@ const grid = StyleSheet.create({
 export default function ClientPreview() {
   const insets = useSafeAreaInsets()
   const { user, retryRole } = useAuth()
-  const { name, notes, photo, reset } = useClientStore()
+  const { name, notes, neighborhood, photo, reset } = useClientStore()
   const [isLoading, setIsLoading] = useState(false)
 
   async function handleGoLive() {
@@ -107,8 +107,9 @@ export default function ClientPreview() {
       id: string
       name: string
       notes: string
+      neighborhood: string | null
       avatar_url?: string
-    } = { id: user.id, name, notes }
+    } = { id: user.id, name, notes, neighborhood: neighborhood.trim() || null }
     if (avatarUrl) updates.avatar_url = avatarUrl
 
     const { error } = await supabase

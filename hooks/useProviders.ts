@@ -6,6 +6,7 @@ export interface Provider {
   id: string
   user_id: string
   display_name: string
+  business_name: string | null
   username: string
   category_id: number | null
   // Free-text category typed by the provider when they picked "Other" during
@@ -61,6 +62,7 @@ const PUBLIC_PROVIDER_FIELDS = [
   'id',
   'user_id',
   'display_name',
+  'business_name',
   'username',
   'category_id',
   'custom_category',

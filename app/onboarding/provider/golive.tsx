@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile from '@/components/ProviderProfile'
 import { buildAvailabilityRows } from '@/components/AvailabilityEditor'
 import { useProviderStore } from '@/store/providerStore'
+import { DEFAULT_POLICY, policyToPoliciesRow, policyToBookingPrefs } from '@/lib/policy'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { uploadMedia, uploadMultiple } from '@/lib/storage'
@@ -46,7 +47,7 @@ export default function ProviderGoLive() {
   const {
     name, businessName, category, customCategory, categoryId,
     location, bio, photo, banner, isMobile,
-    services, portfolioPhotos, reels, availability,
+    services, portfolioPhotos, reels, availability, policy,
     reset,
   } = useProviderStore()
 
@@ -212,6 +213,7 @@ export default function ProviderGoLive() {
             user_id: user.id,
             display_name: displayNameValue,
             username: generatedUsername,
+            business_name: businessName || null,
             category_id: categoryId,
             // When the provider picked "Other", category_id is null and the
             // typed value lives in customCategory. Persist it so every display
@@ -372,6 +374,36 @@ export default function ProviderGoLive() {
         }
       }
 
+      // STAGE 9: booking policy. Every provider gets a policy row (defaults are
+      // real terms), so clients never agree to fabricated terms at booking.
+      // Non-blocking, surfaced afterward like the availability/portfolio writes.
+      let policySaveFailed = false
+      if (providerDbId) {
+        const effectivePolicy = policy ?? DEFAULT_POLICY
+        try {
+          // Fees / reschedule / travel → provider_policies.
+          const { error: policyError } = await supabase
+            .from('provider_policies')
+            .upsert(policyToPoliciesRow(providerDbId, effectivePolicy), {
+              onConflict: 'provider_id',
+            })
+          if (policyError) throw policyError
+
+          // Cancellation window + grace → provider_booking_preferences (their
+          // home). Only these columns are sent, so this merges with the
+          // availability step's buffer/approval upsert on the same row.
+          const { error: prefsError } = await supabase
+            .from('provider_booking_preferences')
+            .upsert(policyToBookingPrefs(providerDbId, effectivePolicy), {
+              onConflict: 'provider_id',
+            })
+          if (prefsError) throw prefsError
+        } catch (policyErr) {
+          console.log('Policy save error:', policyErr)
+          policySaveFailed = true
+        }
+      }
+
       // Empty availability (step skipped, or every day toggled off) means a
       // provider cannot be booked — worth telling them at go-live.
       const availabilityEmpty =
@@ -396,6 +428,11 @@ export default function ProviderGoLive() {
       } else if (availabilityEmpty) {
         issues.push(
           "You haven't set your availability yet. Clients can't book you until you add it from your dashboard under Availability.",
+        )
+      }
+      if (policySaveFailed) {
+        issues.push(
+          'Your cancellation and reschedule policies could not be saved. Set them from your dashboard under Policies.',
         )
       }
       if (portfolioSaveFailed) {
