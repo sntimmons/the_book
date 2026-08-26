@@ -63,10 +63,6 @@ export default function ProviderServices() {
     return () => clearTimeout(t)
   }, [])
 
-  const priceNum = parseFloat(draftPrice) || 0
-  const clientPays = priceNum > 0 ? (priceNum * 1.05).toFixed(2) : null
-  const providerReceives = priceNum > 0 ? (priceNum * 0.97).toFixed(2) : null
-
   function resetDraft() {
     setDraftName('')
     setDraftPrice('')
@@ -351,22 +347,6 @@ export default function ProviderServices() {
                     placeholderTextColor="rgba(240,232,213,0.25)"
                   />
                 </View>
-
-                {/* Live payout preview */}
-                {clientPays && providerReceives && (
-                  <View style={styles.payoutPreview}>
-                    <View style={styles.payoutRow}>
-                      <Text style={styles.payoutLabel}>Client pays</Text>
-                      <Text style={styles.payoutValue}>${clientPays}</Text>
-                      <Text style={styles.payoutSep}>·</Text>
-                      <Text style={styles.payoutLabel}>You receive</Text>
-                      <Text style={styles.payoutValueAccent}>${providerReceives}</Text>
-                    </View>
-                    <Text style={styles.payoutNote}>
-                      Includes 3% platform fee and 5% client booking protection fee.
-                    </Text>
-                  </View>
-                )}
               </View>
 
               {/* Duration */}
@@ -874,43 +854,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_500Medium',
   },
 
-  // Payout preview
-  payoutPreview: {
-    marginTop: 8,
-  },
-  payoutRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  payoutLabel: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  payoutValue: {
-    fontSize: 11,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
-  payoutValueAccent: {
-    fontSize: 11,
-    color: '#C8922A',
-    fontFamily: 'Manrope_500Medium',
-  },
-  payoutSep: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.25)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  payoutNote: {
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.25)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 4,
-    lineHeight: 14,
-  },
 
   // Duration pills
   durationPillRow: {

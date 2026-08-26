@@ -102,7 +102,7 @@ export default function ClientPreferences() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Set your preferences</Text>
-        <Text style={styles.topBarStep}>Step 2 of 4</Text>
+        <Text style={styles.topBarStep}>Step 2 of 3</Text>
       </View>
 
       {/* Scrollable content */}
@@ -236,7 +236,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   progressFill: {
-    width: '50%',
+    width: '67%',
     height: 4,
     backgroundColor: 'rgba(240,232,213,0.6)',
   },

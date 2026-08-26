@@ -449,8 +449,6 @@ export default function ReelsScreen() {
           <ReelItem
             reel={item}
             isActive={index === currentIndex && screenFocused}
-            currentIndex={currentIndex}
-            total={reels.length}
             // A provider cannot follow their own reel — the DB rejects the row
             // and the button would only error. Hide the follow affordance.
             isOwnReel={!!myProviderId && item.providerId === myProviderId}
@@ -489,8 +487,6 @@ export default function ReelsScreen() {
 interface ReelItemProps {
   reel: Reel
   isActive: boolean
-  currentIndex: number
-  total: number
   isOwnReel: boolean
   onLike: () => void
   onDoubleTapLike: () => void
@@ -504,8 +500,6 @@ interface ReelItemProps {
 function ReelItem({
   reel,
   isActive,
-  currentIndex,
-  total,
   isOwnReel,
   onLike,
   onDoubleTapLike,
@@ -520,9 +514,6 @@ function ReelItem({
   const videoRef = useRef<Video>(null)
   const lastTapAt = useRef(0)
   const burst = useRef(new Animated.Value(0)).current
-
-  // Horizontal scrubber: no real video time yet, so reflect progress through the feed.
-  const progressPct = total > 0 ? ((currentIndex + 1) / total) * 100 : 0
 
   // Restart the video from the top every time this card becomes active,
   // and force a pause + rewind when it goes inactive so audio cannot
@@ -669,8 +660,8 @@ function ReelItem({
         pointerEvents="none"
       />
 
-      {/* Top header: Reels wordmark, For You tab, camera. (No back chevron —
-          Reels is now a root tab; switch away via the bottom bar.) */}
+      {/* Top header: Reels wordmark and For You tab. No back chevron here:
+          Reels is a root tab, so switch away via the bottom bar. */}
       <View style={[styles.header, { top: insets.top + 8 }]}>
         <View style={styles.headerLeft}>
           <Text style={styles.wordmark}>Reels</Text>
@@ -681,14 +672,9 @@ function ReelItem({
           <View style={styles.tabUnderline} />
         </View>
 
-        <TouchableOpacity
-          activeOpacity={0.7}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={styles.cameraBtn}
-          onPress={() => {}}
-        >
-          <Ionicons name="camera" size={22} color="#F0E8D5" />
-        </TouchableOpacity>
+        {/* Spacer keeps the For You tab balanced. A capture entry point will
+            live here once recording exists; until then, no dead control. */}
+        <View style={styles.cameraBtn} />
       </View>
 
       {/* Right rail: avatar+Follow, heart, comment, share, Book */}
@@ -829,11 +815,6 @@ function ReelItem({
         <Text style={styles.caption} numberOfLines={2} ellipsizeMode="tail">
           {reel.caption}
         </Text>
-      </View>
-
-      {/* Bottom horizontal scrubber — sits just above the tab bar. */}
-      <View style={[styles.scrubberTrack, { bottom: insets.bottom + 64 }]}>
-        <View style={[styles.scrubberFill, { width: `${progressPct}%` }]} />
       </View>
     </View>
   )
@@ -1288,20 +1269,6 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.9)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 23,
-  },
-
-  // Bottom horizontal scrubber
-  scrubberTrack: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 2,
-    backgroundColor: 'rgba(240,232,213,0.2)',
-  },
-  scrubberFill: {
-    height: 2,
-    backgroundColor: '#F0E8D5',
   },
 
   // Comment sheet

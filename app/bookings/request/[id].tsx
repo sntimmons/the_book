@@ -37,6 +37,7 @@ interface RequestBooking {
   requested_time: string | null
   message: string | null
   status: string
+  created_at: string | null
 }
 
 export default function BookingRequestScreen() {
@@ -63,7 +64,7 @@ export default function BookingRequestScreen() {
     try {
       const { data: b } = await supabase
         .from('bookings')
-        .select('id, user_id, provider_id, service_name, requested_date, requested_time, message, status')
+        .select('id, user_id, provider_id, service_name, requested_date, requested_time, message, status, created_at')
         .eq('id', id)
         .maybeSingle()
       if (!b) {
@@ -245,6 +246,12 @@ export default function BookingRequestScreen() {
   }
 
   const isPending = booking.status === 'pending'
+  // Client-side 24h expiry guard. A request past its window can no longer be
+  // accepted or declined here. The DB has no expiry concept yet, so this only
+  // gates the UI; a stale request stays 'pending' server-side.
+  const isExpired =
+    !!booking.created_at &&
+    new Date(booking.created_at).getTime() + 24 * 60 * 60 * 1000 - Date.now() <= 0
   const dimStats = aggregateClientDimensions(reviews)
 
   return (
@@ -330,16 +337,21 @@ export default function BookingRequestScreen() {
       {/* Accept / Decline (only while pending) */}
       {isPending ? (
         <View style={[s.actionBar, { paddingBottom: insets.bottom + 16 }]}>
+          {isExpired ? (
+            <Text style={s.expiredNote}>
+              This request has expired and can no longer be accepted or declined.
+            </Text>
+          ) : null}
           <Pressable
-            style={[s.acceptBtn, actionLoading && s.btnDisabled]}
-            disabled={actionLoading}
+            style={[s.acceptBtn, (actionLoading || isExpired) && s.btnDisabled]}
+            disabled={actionLoading || isExpired}
             onPress={handleAccept}
           >
             <Text style={s.acceptText}>Accept Booking</Text>
           </Pressable>
           <Pressable
-            style={[s.declineBtn, actionLoading && s.btnDisabled]}
-            disabled={actionLoading}
+            style={[s.declineBtn, (actionLoading || isExpired) && s.btnDisabled]}
+            disabled={actionLoading || isExpired}
             onPress={handleDecline}
           >
             <Text style={s.declineText}>Decline Request</Text>
@@ -526,6 +538,12 @@ const s = StyleSheet.create({
     gap: 12,
   },
   btnDisabled: { opacity: 0.5 },
+  expiredNote: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_500Medium',
+    textAlign: 'center',
+  },
   acceptBtn: {
     height: 54,
     borderRadius: 14,

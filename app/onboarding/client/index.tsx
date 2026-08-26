@@ -68,7 +68,7 @@ export default function ClientProfileSetup() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Set up your profile</Text>
-        <Text style={styles.topBarStep}>Step 1 of 4</Text>
+        <Text style={styles.topBarStep}>Step 1 of 3</Text>
       </View>
 
       {/* Scrollable form */}
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   progressFill: {
-    width: '25%',
+    width: '33%',
     height: 4,
     backgroundColor: 'rgba(240,232,213,0.6)',
   },

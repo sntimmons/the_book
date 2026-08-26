@@ -87,6 +87,14 @@ function timeRemaining(createdAt: string): string {
   return `${minutes}m left`
 }
 
+// A request past its 24h window can no longer be accepted or declined from the
+// UI. This is a client-side guard only; see note in payloads about server-side
+// expiry not existing yet.
+function isRequestExpired(createdAt: string): boolean {
+  const deadline = new Date(createdAt).getTime() + 24 * 60 * 60 * 1000
+  return deadline - Date.now() <= 0
+}
+
 function SkeletonCard({ index }: { index: number }) {
   const opacity = useRef(new Animated.Value(0.4)).current
   useEffect(() => {
@@ -433,7 +441,7 @@ export default function ProviderDashboard() {
         )}
 
         <View style={styles.earningsCard}>
-          <Text style={styles.earningsLabel}>LIFETIME EARNINGS</Text>
+          <Text style={styles.earningsLabel}>COMPLETED SERVICE VALUE</Text>
           <Text style={styles.earningsAmount}>${earnings.total.toFixed(2)}</Text>
           <View style={styles.earningsStats}>
             <View style={styles.earningStat}>
@@ -488,7 +496,9 @@ export default function ProviderDashboard() {
               <Text style={styles.emptyRequestsSub}>New requests will appear here.</Text>
             </View>
           ) : (
-            pendingRequests.map((req, i) => (
+            pendingRequests.map((req, i) => {
+              const expired = isRequestExpired(req.created_at)
+              return (
               <View
                 key={req.id}
                 style={[
@@ -528,7 +538,12 @@ export default function ProviderDashboard() {
                   </Text>
                   <View style={styles.requestActions}>
                     <Pressable
-                      style={[styles.requestBtn, styles.requestBtnDecline]}
+                      style={[
+                        styles.requestBtn,
+                        styles.requestBtnDecline,
+                        expired && styles.requestBtnDisabled,
+                      ]}
+                      disabled={expired}
                       onPress={() => handleDecline(req)}
                     >
                       <Feather name="x" size={14} color="rgba(240,232,213,0.5)" />
@@ -550,7 +565,12 @@ export default function ProviderDashboard() {
                       <Feather name="message-circle" size={14} color="rgba(240,232,213,0.7)" />
                     </Pressable>
                     <Pressable
-                      style={[styles.requestBtn, styles.requestBtnAccept]}
+                      style={[
+                        styles.requestBtn,
+                        styles.requestBtnAccept,
+                        expired && styles.requestBtnDisabled,
+                      ]}
+                      disabled={expired}
                       onPress={() => handleAccept(req)}
                     >
                       <Feather name="check" size={14} color="#080808" />
@@ -558,7 +578,8 @@ export default function ProviderDashboard() {
                   </View>
                 </View>
               </View>
-            ))
+              )
+            })
           )}
         </View>
 
@@ -936,6 +957,9 @@ const styles = StyleSheet.create({
   },
   requestBtnAccept: {
     backgroundColor: '#F0E8D5',
+  },
+  requestBtnDisabled: {
+    opacity: 0.35,
   },
   quickGrid: {
     flexDirection: 'row',
