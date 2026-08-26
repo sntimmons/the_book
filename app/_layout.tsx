@@ -108,7 +108,7 @@ function RoleErrorScreen({ message, onRetry }: { message: string; onRetry: () =>
 }
 
 function RootNavigator() {
-  const { session, isLoading, roleError, retryRole } = useAuth()
+  const { session, isLoading, role, roleLoading, roleError, retryRole } = useAuth()
   const segments = useSegments()
   const router = useRouter()
 
@@ -123,8 +123,23 @@ function RootNavigator() {
       if (inTabsGroup || inDashboard || inOnboarding) {
         router.replace('/')
       }
+      return
     }
-  }, [session, isLoading, segments])
+
+    // Defense-in-depth for the "permanent nameless client" trap: a signed-in
+    // user whose role resolved to null (no clients or providers row, i.e. has
+    // not chosen a path yet) must never sit in the tab shell or dashboard,
+    // where the app would otherwise mint a clients row and lock them in as a
+    // client forever. Route them to path selection instead. Onboarding and
+    // path-selection are excluded (role null is a legitimate in-progress state
+    // there); roleError has its own retry screen; while roleLoading we wait
+    // rather than bounce a user whose role is mid-resolve (e.g. just-onboarded).
+    if (session && !roleLoading && !roleError && role === null) {
+      if (inTabsGroup || inDashboard) {
+        router.replace('/path-selection')
+      }
+    }
+  }, [session, isLoading, role, roleLoading, roleError, segments])
 
   if (isLoading) {
     return (

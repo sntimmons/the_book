@@ -1,11 +1,9 @@
-import { useEffect } from 'react'
 import { Tabs } from 'expo-router'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
 import TabIcon from '@/components/TabIcon'
 import { useAuth } from '@/context/AuthContext'
-import { ensureClientRow } from '@/lib/ensureClientRow'
 
 type IconTabName = 'index' | 'reels' | 'bookings' | 'messages' | 'me'
 
@@ -80,20 +78,11 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 }
 
 export default function TabLayout() {
-  const { user, role, roleLoading } = useAuth()
-
-  // Orphan safety net: a signed-in user who reaches the shared shell with no
-  // role (neither provider nor client row) still needs a clients row so their
-  // name resolves in messaging instead of showing "Client". Done here rather
-  // than at auth-resolve so a provider still completing onboarding — who is not
-  // in the tab shell yet — never gets a junk client row. Gated on role === null;
-  // resolved providers/clients are skipped.
-  useEffect(() => {
-    if (!roleLoading && role === null && user) {
-      void ensureClientRow(user.id)
-    }
-  }, [roleLoading, role, user])
-
+  // A role-less user is redirected to path selection before reaching the shell
+  // (see RootNavigator in app/_layout.tsx), so no orphan clients-row backfill
+  // runs here anymore. Minting a row on tab mount silently trapped brand-new
+  // users as permanent nameless clients; the backfill now happens only when a
+  // user commits to the client path (app/path-selection.tsx).
   return (
     <Tabs
       tabBar={(props) => <CustomTabBar {...props} />}

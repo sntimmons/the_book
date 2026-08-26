@@ -64,10 +64,7 @@ export default function BookPolicy() {
     }
   }, [providerId])
 
-  const depositAmount = selectedService?.depositRequired ? selectedService.depositAmount : null
   const servicePrice = selectedService?.price ?? '$145'
-  const protectionFee = '$7.25'
-  const dueAtAppointment = '$107.25'
 
   return (
     <View style={styles.root}>
@@ -134,25 +131,6 @@ export default function BookPolicy() {
             <Text style={styles.priceLabel}>Service price</Text>
             <Text style={styles.priceValue}>{servicePrice}.00</Text>
           </View>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Booking protection fee (5%)</Text>
-            <Text style={styles.priceValue}>+{protectionFee}</Text>
-          </View>
-          <View style={styles.priceRow}>
-            <Text style={[styles.priceLabel, styles.depositLabel]}>Authorization hold (charged on acceptance)</Text>
-            <Text style={[styles.priceValue, styles.depositValue]}>{depositAmount ?? '$45.00'}</Text>
-          </View>
-          <View style={styles.priceRow}>
-            <Text style={styles.priceRemainingLabel}>Due at appointment</Text>
-            <Text style={styles.priceRemainingValue}>{dueAtAppointment}</Text>
-          </View>
-
-          <View style={styles.authNote}>
-            <Feather name="info" size={11} color="rgba(240,232,213,0.3)" />
-            <Text style={styles.authNoteText}>
-              Your card is held but not charged until your provider accepts.
-            </Text>
-          </View>
         </View>
 
         {/* Policy sections */}
@@ -188,18 +166,9 @@ export default function BookPolicy() {
             <PolicyLine tone="clock" text={policy.grace} />
           </View>
 
-          {/* Deposit note */}
-          <View style={styles.depositNote}>
-            <Feather name="info" size={14} color="#C8922A" style={{ marginTop: 2 }} />
-            <Text style={styles.depositNoteText}>
-              A hold of {depositAmount ?? '$45.00'} will be placed on your card when you request.
-              It converts to a real charge only when your provider accepts. If declined it releases instantly.
-            </Text>
-          </View>
-
           {/* Agree checkbox */}
           <TouchableOpacity
-            style={styles.checkboxRow}
+            style={[styles.checkboxRow, styles.checkboxRowTop]}
             activeOpacity={0.7}
             onPress={() => setAgreedToPolicy(!agreedToPolicy)}
           >
@@ -208,8 +177,6 @@ export default function BookPolicy() {
             </View>
             <Text style={styles.checkboxText}>
               I have read and agree to the provider's cancellation and reschedule policies.
-              I understand my deposit is non-refundable if I cancel within 24 hours.
-              I understand my card will be authorized but not charged until my provider confirms my booking request.
             </Text>
           </TouchableOpacity>
         </View>
@@ -357,42 +324,6 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
   },
-  depositLabel: {
-    fontSize: 13,
-    color: '#C8922A',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  depositValue: {
-    fontSize: 13,
-    color: '#C8922A',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  priceRemainingLabel: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  priceRemainingValue: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  authNote: {
-    flexDirection: 'row',
-    gap: 6,
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.07)',
-    marginTop: 8,
-    paddingTop: 8,
-  },
-  authNoteText: {
-    flex: 1,
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.35)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 15,
-  },
   policySections: {
     paddingHorizontal: 20,
     marginTop: 16,
@@ -430,32 +361,15 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     lineHeight: 18,
   },
-  depositNote: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-    marginTop: 16,
-    marginBottom: 16,
-    padding: 14,
-    backgroundColor: 'rgba(200,146,42,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.15)',
-    borderRadius: 12,
-    borderCurve: 'continuous',
-  },
-  depositNoteText: {
-    flex: 1,
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.6)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 17,
-  },
   checkboxRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 12,
     paddingVertical: 4,
     marginBottom: 8,
+  },
+  checkboxRowTop: {
+    marginTop: 16,
   },
   checkbox: {
     width: 22,
