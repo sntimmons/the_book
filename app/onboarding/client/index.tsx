@@ -25,7 +25,7 @@ const BIO_LIMIT = 150
 export default function ClientProfileSetup() {
   const insets = useSafeAreaInsets()
   const [focused, setFocused] = useState<FocusedField>(null)
-  const { setName, setNotes, photo, setPhoto } = useClientStore()
+  const { setName, setNotes, setNeighborhood: setStoreNeighborhood, photo, setPhoto } = useClientStore()
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [neighborhood, setNeighborhood] = useState('')
@@ -191,6 +191,7 @@ export default function ClientProfileSetup() {
           onPress={() => {
             setName(`${firstName} ${lastName}`.trim())
             setNotes(bio)
+            setStoreNeighborhood(neighborhood)
             router.push('/onboarding/client/preferences')
           }}
         >

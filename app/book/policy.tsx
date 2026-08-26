@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -10,10 +11,18 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
+import { supabase } from '@/lib/supabase'
+import {
+  DEFAULT_POLICY,
+  PolicyDisplay,
+  policyToDisplay,
+  rowsToPolicy,
+} from '@/lib/policy'
 
 export default function BookPolicy() {
   const insets = useSafeAreaInsets()
   const {
+    providerId,
     providerName,
     providerCategory,
     providerLocation,
@@ -23,6 +32,37 @@ export default function BookPolicy() {
     agreedToPolicy,
     setAgreedToPolicy,
   } = useBookingStore()
+
+  // Show the REAL policy for this provider. If they somehow have no row, fall
+  // back to the explicit defaults — never invent terms the client then agrees
+  // to. Defaults render immediately; the fetch replaces them if a row exists.
+  const [policy, setPolicy] = useState<PolicyDisplay>(policyToDisplay(DEFAULT_POLICY))
+  useEffect(() => {
+    let cancelled = false
+    if (!providerId) return
+    ;(async () => {
+      // Policy spans two tables: provider_policies (fees/reschedule/travel) and
+      // provider_booking_preferences (cancellation window + grace).
+      const [policiesRes, prefsRes] = await Promise.all([
+        supabase.from('provider_policies').select('*').eq('provider_id', providerId).maybeSingle(),
+        supabase
+          .from('provider_booking_preferences')
+          .select('cancellation_window_hours, lateness_grace_minutes')
+          .eq('provider_id', providerId)
+          .maybeSingle(),
+      ])
+      if (cancelled) return
+      if (!policiesRes.data && !prefsRes.data) return // keep explicit defaults
+      setPolicy(
+        policyToDisplay(
+          rowsToPolicy((policiesRes.data as any) ?? null, (prefsRes.data as any) ?? null),
+        ),
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [providerId])
 
   const depositAmount = selectedService?.depositRequired ? selectedService.depositAmount : null
   const servicePrice = selectedService?.price ?? '$145'
@@ -118,45 +158,34 @@ export default function BookPolicy() {
         {/* Policy sections */}
         <View style={styles.policySections}>
 
-          {/* Cancellation */}
+          {/* Cancellation — real terms for this provider */}
           <Text style={styles.sectionLabel}>CANCELLATION POLICY</Text>
-          <View style={styles.policyCard}>
-            <View style={styles.policyRow}>
-              <Feather name="check-circle" size={13} color="#4CAF50" />
-              <Text style={styles.policyText}>Free cancellation up to 24 hours before</Text>
-            </View>
-            <View style={[styles.policyRow, { marginBottom: 0 }]}>
-              <Feather name="alert-circle" size={13} color="#C8922A" />
-              <Text style={styles.policyText}>50% fee if cancelled within 24 hours</Text>
-            </View>
-            <View style={[styles.policyRow, { marginBottom: 0, marginTop: 8 }]}>
-              <Feather name="x-circle" size={13} color="#E05C5C" />
-              <Text style={styles.policyText}>100% charge for no-shows</Text>
-            </View>
+          <View style={[styles.policyCard, styles.policyCardGap]}>
+            <PolicyLine tone="ok" text={policy.cancellation.free} />
+            {policy.cancellation.fee && (
+              <PolicyLine tone="warn" text={policy.cancellation.fee} />
+            )}
+            {policy.cancellation.noShow && (
+              <PolicyLine tone="bad" text={policy.cancellation.noShow} />
+            )}
           </View>
 
           {/* Reschedule */}
           <Text style={[styles.sectionLabel, { marginTop: 16 }]}>RESCHEDULE POLICY</Text>
-          <View style={styles.policyCard}>
-            <View style={styles.policyRow}>
-              <Feather name="check-circle" size={13} color="#4CAF50" />
-              <Text style={styles.policyText}>Free reschedule up to 24 hours before</Text>
-            </View>
-            <View style={[styles.policyRow, { marginBottom: 0 }]}>
-              <Feather name="alert-circle" size={13} color="#C8922A" />
-              <Text style={styles.policyText}>One reschedule allowed per booking</Text>
-            </View>
+          <View style={[styles.policyCard, styles.policyCardGap]}>
+            <PolicyLine tone="ok" text={policy.reschedule.window} />
+            {policy.reschedule.limit && (
+              <PolicyLine tone="warn" text={policy.reschedule.limit} />
+            )}
+            {policy.reschedule.fee && (
+              <PolicyLine tone="warn" text={policy.reschedule.fee} />
+            )}
           </View>
 
           {/* Late arrival */}
           <Text style={[styles.sectionLabel, { marginTop: 16 }]}>LATE ARRIVAL</Text>
           <View style={styles.policyCard}>
-            <View style={[styles.policyRow, { marginBottom: 0 }]}>
-              <Feather name="clock" size={13} color="#C8922A" />
-              <Text style={styles.policyText}>
-                15 minute grace period. After that the appointment may be forfeited.
-              </Text>
-            </View>
+            <PolicyLine tone="clock" text={policy.grace} />
           </View>
 
           {/* Deposit note */}
@@ -197,6 +226,29 @@ export default function BookPolicy() {
           </Text>
         </Pressable>
       </View>
+    </View>
+  )
+}
+
+const POLICY_TONES = {
+  ok: { icon: 'check-circle' as const, color: '#4CAF50' },
+  warn: { icon: 'alert-circle' as const, color: '#C8922A' },
+  bad: { icon: 'x-circle' as const, color: '#E05C5C' },
+  clock: { icon: 'clock' as const, color: '#C8922A' },
+}
+
+function PolicyLine({
+  tone,
+  text,
+}: {
+  tone: keyof typeof POLICY_TONES
+  text: string
+}) {
+  const { icon, color } = POLICY_TONES[tone]
+  return (
+    <View style={[styles.policyRow, { marginBottom: 0 }]}>
+      <Feather name={icon} size={13} color={color} />
+      <Text style={styles.policyText}>{text}</Text>
     </View>
   )
 }
@@ -361,6 +413,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderCurve: 'continuous',
     padding: 14,
+  },
+  policyCardGap: {
+    gap: 8,
   },
   policyRow: {
     flexDirection: 'row',

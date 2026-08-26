@@ -250,6 +250,7 @@ export default function ProviderProfilePage() {
 
   const providerData: ProviderData = {
     name: provider.display_name,
+    businessName: provider.business_name ?? undefined,
     category: categoryName,
     location,
     bio: provider.bio ?? undefined,

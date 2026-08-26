@@ -35,6 +35,7 @@ const NAV_SECTIONS = [
       { icon: 'home',        label: 'Dashboard',   route: '/(tabs)/business',              badge: null },
       { icon: 'calendar',    label: 'Bookings',     route: '/(tabs)/business/bookings',     badge: null },
       { icon: 'clock',       label: 'Availability', route: '/(tabs)/business/availability', badge: null },
+      { icon: 'file-text',   label: 'Policies',     route: '/(tabs)/business/policies',     badge: null },
       { icon: 'users',       label: 'My Clients',   route: '/(tabs)/business/clients',      badge: null },
       // TEMP: routes into the client tab inbox. Replace when provider-scoped navigation is built (Bucket 4 design item).
       { icon: 'message-circle', label: 'Messages',  route: '/(tabs)/messages',                 badge: null },
