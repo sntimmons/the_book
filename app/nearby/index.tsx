@@ -93,7 +93,10 @@ function StoryItem({
   provider: Provider
   categories: Category[]
 }) {
-  const role = categoryName(provider.category_id, categories)
+  const role =
+    categoryName(provider.category_id, categories) ||
+    provider.custom_category ||
+    ''
   return (
     <TouchableOpacity
       style={s.story}
@@ -130,7 +133,10 @@ function ProviderRow({
   provider: Provider
   categories: Category[]
 }) {
-  const role = categoryName(provider.category_id, categories)
+  const role =
+    categoryName(provider.category_id, categories) ||
+    provider.custom_category ||
+    ''
   const hood = providerHood(provider)
   const rating = ratingValue(provider)
   const available = isAvailableNow(provider)

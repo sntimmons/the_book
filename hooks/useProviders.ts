@@ -8,6 +8,10 @@ export interface Provider {
   display_name: string
   username: string
   category_id: number | null
+  // Free-text category typed by the provider when they picked "Other" during
+  // onboarding (no matching row in the categories table). Displayed as a
+  // fallback wherever category_id is null. See fix/custom-category.
+  custom_category: string | null
   bio: string | null
   location: string | null
   neighborhood: string | null
@@ -59,6 +63,7 @@ const PUBLIC_PROVIDER_FIELDS = [
   'display_name',
   'username',
   'category_id',
+  'custom_category',
   'bio',
   'location',
   'neighborhood',
@@ -323,6 +328,9 @@ export function useProviderSearch(
           `bio.ilike.%${term}%`,
           `location.ilike.%${term}%`,
           `neighborhood.ilike.%${term}%`,
+          // Free-text "Other" category, so a provider is findable by the trade
+          // they typed even when it has no row in the categories table.
+          `custom_category.ilike.%${term}%`,
         ]
         if (catIds.length > 0) {
           orParts.push(`category_id.in.(${catIds.join(',')})`)

@@ -231,7 +231,9 @@ export default function ProviderProfilePage() {
   }
 
   const categoryName =
-    categories.find((c) => c.id === provider.category_id)?.name || 'Provider'
+    categories.find((c) => c.id === provider.category_id)?.name ||
+    provider.custom_category ||
+    'Provider'
 
   const location = provider.neighborhood ?? provider.location ?? ''
 
