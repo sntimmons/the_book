@@ -24,13 +24,11 @@ export default function ProviderPayouts() {
       <View style={styles.body}>
         <Ionicons name="wallet-outline" size={34} color="rgba(200,146,42,0.6)" />
         <Text style={styles.title}>Payout setup coming soon</Text>
-        <Text style={styles.subtitle}>Secure payouts through Stripe Connect.</Text>
+        <Text style={styles.subtitle}>Payouts are not available during beta.</Text>
 
         <View style={styles.note}>
           <Text style={styles.noteText}>
-            You will be able to link your bank account and receive payouts directly
-            when this launches. Your earnings from completed bookings are tracked in
-            the meantime.
+            The value of your completed services is tracked here in the meantime.
           </Text>
         </View>
       </View>

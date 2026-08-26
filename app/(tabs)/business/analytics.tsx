@@ -143,7 +143,7 @@ export default function ProviderAnalytics() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scrollPad}>
         {/* SECTION 1 — Key metrics (2x2) */}
         <View style={s.metricGrid}>
-          <MetricCard label="Total Earned" value={money(data.totalEarned)} />
+          <MetricCard label="Completed Value" value={money(data.totalEarned)} />
           <MetricCard label="This Month" value={money(data.earnedThisMonth)} />
           <MetricCard label="Completed" value={`${data.completedCount}`} sub="bookings" />
           <MetricCard label="Clients Served" value={`${data.uniqueClients}`} sub="unique" />
@@ -164,12 +164,12 @@ export default function ProviderAnalytics() {
           ))}
         </ScrollView>
 
-        {/* SECTION 3 — Earnings chart (placeholder) */}
-        <Text style={s.sectionLabel}>EARNINGS</Text>
+        {/* SECTION 3: Completed value chart (placeholder) */}
+        <Text style={s.sectionLabel}>COMPLETED VALUE</Text>
         <View style={s.card}>
           <View style={s.chartPlaceholder}>
             <Feather name="trending-up" size={22} color="rgba(240,232,213,0.2)" />
-            <Text style={s.chartPlaceholderText}>Earnings over time — requires development build</Text>
+            <Text style={s.chartPlaceholderText}>Completed value over time (requires development build)</Text>
           </View>
           <View style={s.chartStatsRow}>
             <View style={s.chartStat}>

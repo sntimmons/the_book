@@ -27,7 +27,7 @@ export default function ClientUploads() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Build your vibe</Text>
-        <Text style={styles.topBarStep}>Step 3 of 4</Text>
+        <Text style={styles.topBarStep}>Step 3 of 3</Text>
       </View>
 
       <ScrollView
@@ -104,7 +104,7 @@ export default function ClientUploads() {
         {/* Skip */}
         <TouchableOpacity
           activeOpacity={0.6}
-          onPress={() => router.push('/onboarding/client/payment')}
+          onPress={() => router.push('/onboarding/client/preview')}
         >
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
@@ -114,7 +114,7 @@ export default function ClientUploads() {
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
         <Pressable
           style={({ pressed }) => [styles.continueBtn, pressed && { opacity: 0.88 }]}
-          onPress={() => router.push('/onboarding/client/payment')}
+          onPress={() => router.push('/onboarding/client/preview')}
         >
           <Text style={styles.continueBtnText}>Continue</Text>
         </Pressable>
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   progressFill: {
-    width: '75%',
+    width: '100%',
     height: 4,
     backgroundColor: 'rgba(240,232,213,0.6)',
   },

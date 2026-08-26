@@ -39,9 +39,8 @@ export default function ProviderPayout() {
         <Text style={styles.heading}>Payout setup coming soon</Text>
 
         <Text style={styles.bodyText}>
-          We are setting up secure payouts through Stripe Connect. You will be able
-          to link your bank account and receive payouts directly when this launches.
-          Your earnings from completed bookings will be tracked in the meantime.
+          Payouts are not available during beta. The value of your completed
+          services will be tracked in the meantime.
         </Text>
       </View>
 

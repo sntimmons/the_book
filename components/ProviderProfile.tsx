@@ -77,25 +77,6 @@ const MOCK_PROVIDER: ProviderData = {
   isLive: true,
 }
 
-const MOCK_POSTS = [
-  {
-    id: '1',
-    text: 'Just wrapped up a full day of appointments. Houston, y\'all keep me busy and I love it. Slots opening up next Thursday, link in bio to book.',
-    timestamp: '2 hours ago',
-    likes: 24,
-    comments: 3,
-    hasPhoto: false,
-  },
-  {
-    id: '2',
-    text: 'Before and after from today. Client wanted a clean fade with a hard part. Came out clean.',
-    timestamp: 'Yesterday',
-    likes: 47,
-    comments: 8,
-    hasPhoto: true,
-  },
-]
-
 export default function ProviderProfile({
   previewMode = false,
   provider: providerProp,
@@ -164,12 +145,6 @@ export default function ProviderProfile({
                 activeOpacity={0.8}
               >
                 <Feather name="chevron-left" size={18} color="#F0E8D5" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bannerBtn, { top: insets.top + 12, right: 64 }]}
-                activeOpacity={0.8}
-              >
-                <Feather name="flag" size={16} color="rgba(240,232,213,0.5)" />
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.bannerBtn, { top: insets.top + 12, right: 16 }]}
@@ -298,9 +273,9 @@ export default function ProviderProfile({
           contentContainerStyle={styles.badgesRow}
           style={styles.badgesScroll}
         >
-          <View style={[styles.badge, styles.badgeGreen]}>
-            <Feather name="check-circle" size={12} color="#4CAF50" />
-            <Text style={styles.badgeText}>Phone Verified</Text>
+          <View style={[styles.badge, styles.badgeMuted]}>
+            <Feather name="clock" size={12} color="rgba(240,232,213,0.4)" />
+            <Text style={styles.badgeText}>Verification coming soon</Text>
           </View>
           {provider.isVerified && (
             <View style={[styles.badge, styles.badgeGreen]}>
@@ -369,11 +344,6 @@ export default function ProviderProfile({
                       </View>
                     </View>
                   ))}
-                  {services.length > 3 && (
-                    <Text style={styles.seeAll}>
-                      See all {services.length} services →
-                    </Text>
-                  )}
                 </>
               ) : (
                 <Text style={styles.emptyText}>No services listed yet.</Text>
@@ -423,7 +393,6 @@ export default function ProviderProfile({
             <View style={[styles.section, { marginTop: 24 }]}>
               <View style={styles.portfolioHeader}>
                 <Text style={styles.sectionLabel}>REELS</Text>
-                {!previewMode && <Text style={styles.portfolioAction}>See all →</Text>}
               </View>
               <ScrollView
                 horizontal
@@ -452,50 +421,19 @@ export default function ProviderProfile({
         {/* ── POSTS TAB ── */}
         {activeTab === 'posts' && (
           <View style={styles.section}>
-            {previewMode ? (
-              <View style={styles.postsEmpty}>
-                <Feather name="edit" size={32} color="rgba(240,232,213,0.12)" />
-                <Text style={styles.postsEmptyTitle}>Your posts will appear here</Text>
-                <Text style={styles.postsEmptySub}>
-                  Share updates, photos, and reels to stay top of mind with clients.
-                </Text>
-              </View>
-            ) : (
-              MOCK_POSTS.map((post) => (
-                <View key={post.id} style={styles.postCard}>
-                  <View style={styles.postTopRow}>
-                    <View style={styles.postAvatar}>
-                      <Feather name="user" size={16} color="rgba(240,232,213,0.4)" />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.postAuthor}>{provider.name}</Text>
-                      <Text style={styles.postTime}>{post.timestamp}</Text>
-                    </View>
-                    <Feather name="more-horizontal" size={18} color="rgba(240,232,213,0.3)" />
-                  </View>
-                  <Text style={styles.postText}>{post.text}</Text>
-                  {post.hasPhoto && (
-                    <View style={styles.postPhotoPlaceholder} />
-                  )}
-                  <View style={styles.postActions}>
-                    <TouchableOpacity style={styles.postAction} activeOpacity={0.7}>
-                      <Feather name="heart" size={18} color="rgba(240,232,213,0.4)" />
-                      <Text style={styles.postActionCount}>{post.likes}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.postAction} activeOpacity={0.7}>
-                      <Feather name="message-circle" size={18} color="rgba(240,232,213,0.4)" />
-                      <Text style={styles.postActionCount}>{post.comments}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.postAction} activeOpacity={0.7}>
-                      <Feather name="share" size={18} color="rgba(240,232,213,0.4)" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.postAction, { marginLeft: 'auto' }]} activeOpacity={0.7}>
-                      <Feather name="bookmark" size={18} color="rgba(240,232,213,0.4)" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))
-            )}
+            <View style={styles.postsEmpty}>
+              <Feather name="edit" size={32} color="rgba(240,232,213,0.12)" />
+              {previewMode ? (
+                <>
+                  <Text style={styles.postsEmptyTitle}>Your posts will appear here</Text>
+                  <Text style={styles.postsEmptySub}>
+                    Share updates, photos, and reels to stay top of mind with clients.
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.postsEmptyTitle}>No posts yet</Text>
+              )}
+            </View>
           </View>
         )}
 
@@ -924,13 +862,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_500Medium',
     marginTop: 3,
   },
-  seeAll: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_500Medium',
-    textAlign: 'center',
-    marginTop: 12,
-  },
 
   // Portfolio
   portfolioHeader: {
@@ -996,66 +927,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     textAlign: 'center',
     lineHeight: 18,
-  },
-  postCard: {
-    marginBottom: 20,
-  },
-  postTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-  postAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  postAuthor: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  postTime: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  postText: {
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 21,
-    marginBottom: 12,
-  },
-  postPhotoPlaceholder: {
-    width: '100%',
-    height: 280,
-    borderRadius: 12,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    marginBottom: 12,
-  },
-  postActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 20,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.05)',
-  },
-  postAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  postActionCount: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
   },
 
   // Book bar
