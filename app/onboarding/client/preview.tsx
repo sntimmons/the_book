@@ -32,16 +32,6 @@ function Silhouette({ size = 40, opacity = 0.18 }: { size?: number; opacity?: nu
   )
 }
 
-function Stars({ n = 5, size = 10 }: { n?: number; size?: number }) {
-  return (
-    <View style={{ flexDirection: 'row', gap: 1.5 }}>
-      {Array.from({ length: n }).map((_, i) => (
-        <Text key={i} style={{ fontSize: size, color: '#C8922A', lineHeight: size + 3 }}>★</Text>
-      ))}
-    </View>
-  )
-}
-
 // 6 placeholder photo boxes in a 3-col grid
 function PhotoGrid() {
   return (
@@ -417,26 +407,6 @@ const s = StyleSheet.create({
     height: 96,
     borderRadius: 48,
   },
-  badge: {
-    position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#C8922A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2.5,
-    borderColor: '#080808',
-  },
-  badgeCheck: {
-    fontSize: 11,
-    color: '#080808',
-    fontWeight: '700',
-    fontFamily: 'Manrope_700Bold',
-    lineHeight: 13,
-  },
   heroName: {
     fontSize: 24,
     fontWeight: '700',
@@ -450,13 +420,6 @@ const s = StyleSheet.create({
     color: 'rgba(240,232,213,0.5)',
     fontFamily: 'Manrope_400Regular',
     marginTop: 6,
-    textAlign: 'center',
-  },
-  heroSince: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.35)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 4,
     textAlign: 'center',
   },
   editRow: {
@@ -475,76 +438,11 @@ const s = StyleSheet.create({
     fontFamily: 'Manrope_500Medium',
   },
 
-  // ── SOCIAL STATS ──────────────────────────────────
-  statsRow: {
-    flexDirection: 'row',
-    paddingVertical: 20,
-    paddingHorizontal: 8,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statNum: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 3,
-    textAlign: 'center',
-  },
-  ratingStar: {
-    fontSize: 13,
-    color: '#C8922A',
-    lineHeight: 20,
-  },
-
-  // ── TRUST BADGES ──────────────────────────────────
+  // ── VERIFICATION ──────────────────────────────────
   trustSection: {
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 16,
-  },
-  badgeScroll: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingTop: 10,
-    paddingRight: 20,
-  },
-  trustBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  badgeGreen: {
-    backgroundColor: 'rgba(76,175,80,0.08)',
-    borderColor: 'rgba(76,175,80,0.2)',
-  },
-  badgeAmber: {
-    backgroundColor: 'rgba(200,146,42,0.08)',
-    borderColor: 'rgba(200,146,42,0.2)',
-  },
-  badgeIconGreen: {
-    fontSize: 13,
-    color: '#4CAF50',
-  },
-  badgeIconAmber: {
-    fontSize: 13,
-    color: '#C8922A',
-  },
-  badgeText: {
-    fontSize: 11,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
   },
 
   // ── PHOTO GRID ────────────────────────────────────
@@ -600,100 +498,12 @@ const s = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
   },
-  bookingStats: {
-    flexDirection: 'row',
-    marginTop: 16,
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.07)',
-    overflow: 'hidden',
-  },
-  bookingStat: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  bookingDivider: {
-    width: 1,
-    backgroundColor: 'rgba(240,232,213,0.07)',
-    marginVertical: 12,
-  },
-  bookingNum: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  bookingNumLabel: {
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.38)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 4,
-    textAlign: 'center',
-  },
 
   // ── PROVIDER REVIEWS ──────────────────────────────
   reviewsSection: {
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 16,
-  },
-  reviewsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  reviewsSummary: {
-    fontSize: 13,
-    color: '#C8922A',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  reviewDivider: {
-    height: 1,
-    backgroundColor: 'rgba(240,232,213,0.05)',
-  },
-  reviewCard: {
-    paddingVertical: 16,
-  },
-  reviewTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  reviewerPhoto: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reviewerName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  reviewerMeta: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.38)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  reviewText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.65)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 19,
-    marginTop: 10,
-  },
-  seeAll: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.38)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
   },
 
   // ── FIXED CTA ─────────────────────────────────────
