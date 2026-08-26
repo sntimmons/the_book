@@ -174,13 +174,11 @@ export default function ClientProfileSetup() {
           </View>
         </View>
 
-        {/* Verify row */}
+        {/* Identity verification does not exist yet. Neutral, non-tappable
+            line: no claim a check happened, no badge promise, no dead action. */}
         <View style={styles.verifyRow}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.verifyTitle}>Verify your identity</Text>
-            <Text style={styles.verifySubtext}>Get a verified badge to build trust.</Text>
-          </View>
-          <Text style={styles.verifyLink}>Verify →</Text>
+          <Feather name="clock" size={13} color="rgba(240,232,213,0.4)" />
+          <Text style={styles.verifyNote}>Identity verification coming soon.</Text>
         </View>
       </ScrollView>
 
@@ -402,27 +400,14 @@ const styles = StyleSheet.create({
   },
   verifyRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
     marginTop: 16,
   },
-  verifyTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  verifySubtext: {
-    fontSize: 12,
+  verifyNote: {
+    fontSize: 13,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  verifyLink: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
   },
   cta: {
     backgroundColor: '#080808',

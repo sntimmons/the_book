@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   View,
   Text,
+  Image,
   ScrollView,
   Pressable,
   TouchableOpacity,
@@ -27,16 +28,6 @@ function Silhouette({ size = 40, opacity = 0.18 }: { size?: number; opacity?: nu
     <View style={{ alignItems: 'center', gap: size * 0.06 }}>
       <View style={{ width: head, height: head, borderRadius: head / 2, backgroundColor: color }} />
       <View style={{ width: bodyW, height: bodyH, borderTopLeftRadius: bodyH, borderTopRightRadius: bodyH, backgroundColor: color }} />
-    </View>
-  )
-}
-
-function Stars({ n = 5, size = 10 }: { n?: number; size?: number }) {
-  return (
-    <View style={{ flexDirection: 'row', gap: 1.5 }}>
-      {Array.from({ length: n }).map((_, i) => (
-        <Text key={i} style={{ fontSize: size, color: '#C8922A', lineHeight: size + 3 }}>★</Text>
-      ))}
     </View>
   )
 }
@@ -174,69 +165,35 @@ export default function ClientPreview() {
           {/* Photo */}
           <View style={s.photoWrap}>
             <View style={s.photoCircle}>
-              <Silhouette size={40} opacity={0.18} />
-            </View>
-            <View style={s.badge}>
-              <Text style={s.badgeCheck}>✓</Text>
+              {photo ? (
+                <Image source={{ uri: photo }} style={s.photoImage} resizeMode="cover" />
+              ) : (
+                <Silhouette size={40} opacity={0.18} />
+              )}
             </View>
           </View>
 
-          <Text style={s.heroName}>Jasmine Turner</Text>
-          <Text style={s.heroLocation}>Heights, Houston</Text>
-          <Text style={s.heroSince}>Member since January 2024</Text>
+          <Text style={s.heroName}>{name || 'Your name'}</Text>
+          {neighborhood ? (
+            <Text style={s.heroLocation}>{neighborhood}</Text>
+          ) : null}
 
-          <TouchableOpacity activeOpacity={0.7} style={s.editRow}>
+          <TouchableOpacity activeOpacity={0.7} style={s.editRow} onPress={() => router.back()}>
             <Text style={s.editIcon}>✎</Text>
             <Text style={s.editLabel}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── SOCIAL STATS ─────────────────────────── */}
-        <View style={s.statsRow}>
-          <View style={s.statItem}>
-            <Text style={s.statNum}>23</Text>
-            <Text style={s.statLabel}>Bookings</Text>
-          </View>
-          <View style={s.statItem}>
-            <Text style={s.statNum}>142</Text>
-            <Text style={s.statLabel}>Following</Text>
-          </View>
-          <View style={s.statItem}>
-            <Text style={s.statNum}>89</Text>
-            <Text style={s.statLabel}>Followers</Text>
-          </View>
-          <View style={s.statItem}>
-            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 2, justifyContent: 'center' }}>
-              <Text style={s.statNum}>4.8</Text>
-              <Text style={s.ratingStar}>★</Text>
-            </View>
-            <Text style={s.statLabel}>My Rating</Text>
-          </View>
-        </View>
-
         <View style={s.sep} />
 
-        {/* ── TRUST BADGES ─────────────────────────── */}
+        {/* ── VERIFICATION ─────────────────────────── */}
+        {/* Verification does not exist yet: a neutral, unearned pill. No green
+            check, no "Phone/ID/Payment" claims a new client never earned. */}
         <View style={s.trustSection}>
-          <Text style={s.microLabel}>VERIFIED</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={s.badgeScroll}
-          >
-            <View style={[s.trustBadge, s.badgeGreen]}>
-              <Text style={s.badgeIconGreen}>✓</Text>
-              <Text style={s.badgeText}>Phone Verified</Text>
-            </View>
-            <View style={[s.trustBadge, s.badgeGreen]}>
-              <Text style={s.badgeIconGreen}>⬡</Text>
-              <Text style={s.badgeText}>ID Verified</Text>
-            </View>
-            <View style={[s.trustBadge, s.badgeAmber]}>
-              <Text style={s.badgeIconAmber}>▣</Text>
-              <Text style={s.badgeText}>Payment Active</Text>
-            </View>
-          </ScrollView>
+          <View style={s.comingPill}>
+            <Feather name="clock" size={12} color="rgba(240,232,213,0.4)" />
+            <Text style={s.comingPillText}>Verification coming soon</Text>
+          </View>
         </View>
 
         <View style={s.sep} />
@@ -269,72 +226,15 @@ export default function ClientPreview() {
         {/* ── BOOKING HISTORY ──────────────────────── */}
         <View style={s.bookingSection}>
           <Text style={s.microLabel}>BOOKING HISTORY</Text>
-          <View style={s.bookingStats}>
-            <View style={s.bookingStat}>
-              <Text style={s.bookingNum}>23</Text>
-              <Text style={s.bookingNumLabel}>Appointments</Text>
-            </View>
-            <View style={s.bookingDivider} />
-            <View style={s.bookingStat}>
-              <Text style={s.bookingNum}>96%</Text>
-              <Text style={s.bookingNumLabel}>Show Rate</Text>
-            </View>
-            <View style={s.bookingDivider} />
-            <View style={s.bookingStat}>
-              <Text style={[s.bookingNum, { color: '#4CAF50' }]}>0</Text>
-              <Text style={s.bookingNumLabel}>No-shows</Text>
-            </View>
-          </View>
+          <Text style={s.emptyText}>No booking history yet.</Text>
         </View>
 
         <View style={s.sep} />
 
         {/* ── PROVIDER REVIEWS ─────────────────────── */}
         <View style={s.reviewsSection}>
-          <View style={s.reviewsHeader}>
-            <Text style={s.microLabel}>PROVIDER REVIEWS</Text>
-            <Text style={s.reviewsSummary}>4.8 · 18 reviews</Text>
-          </View>
-
-          {/* Review 1 */}
-          <View style={s.reviewCard}>
-            <View style={s.reviewTop}>
-              <View style={s.reviewerPhoto}>
-                <Silhouette size={22} opacity={0.25} />
-              </View>
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={s.reviewerName}>Elena Ross</Text>
-                <Text style={s.reviewerMeta}>Silk Press, Oct 12 2023</Text>
-              </View>
-              <Stars n={5} size={10} />
-            </View>
-            <Text style={s.reviewText}>
-              Jasmine is an absolute dream client. Always early, knows exactly what she wants, and tips well. Would accept her booking any time.
-            </Text>
-          </View>
-
-          <View style={s.reviewDivider} />
-
-          {/* Review 2 */}
-          <View style={s.reviewCard}>
-            <View style={s.reviewTop}>
-              <View style={s.reviewerPhoto}>
-                <Silhouette size={22} opacity={0.25} />
-              </View>
-              <View style={{ flex: 1, marginLeft: 10 }}>
-                <Text style={s.reviewerName}>Marcus J.</Text>
-                <Text style={s.reviewerMeta}>Fade + Line-up, Sep 3 2023</Text>
-              </View>
-              <Stars n={5} size={10} />
-            </View>
-            <Text style={s.reviewText}>
-              Great communication beforehand. Showed up on time and was easy to work with. Would definitely book again.
-            </Text>
-          </View>
-
-          <TouchableOpacity activeOpacity={0.6} style={{ marginTop: 20, marginBottom: 4 }}>
-            <Text style={s.seeAll}>See all 18 reviews</Text>
-          </TouchableOpacity>
+          <Text style={s.microLabel}>PROVIDER REVIEWS</Text>
+          <Text style={s.emptyText}>No reviews yet.</Text>
         </View>
 
         {/* Bottom spacer, clears fixed CTA */}
@@ -453,6 +353,34 @@ const s = StyleSheet.create({
     marginBottom: 0,
   },
 
+  // Shared honest empty state
+  emptyText: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.4)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 10,
+  },
+
+  // Neutral "coming soon" pill (replaces the fake verified badges)
+  comingPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderColor: 'rgba(240,232,213,0.1)',
+  },
+  comingPillText: {
+    fontSize: 11,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_500Medium',
+  },
+
   // ── HERO ─────────────────────────────────────────
   hero: {
     alignItems: 'center',
@@ -472,26 +400,12 @@ const s = StyleSheet.create({
     backgroundColor: 'rgba(240,232,213,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
-  badge: {
-    position: 'absolute',
-    bottom: 1,
-    right: 1,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#C8922A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2.5,
-    borderColor: '#080808',
-  },
-  badgeCheck: {
-    fontSize: 11,
-    color: '#080808',
-    fontWeight: '700',
-    fontFamily: 'Manrope_700Bold',
-    lineHeight: 13,
+  photoImage: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
   heroName: {
     fontSize: 24,
@@ -506,13 +420,6 @@ const s = StyleSheet.create({
     color: 'rgba(240,232,213,0.5)',
     fontFamily: 'Manrope_400Regular',
     marginTop: 6,
-    textAlign: 'center',
-  },
-  heroSince: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.35)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 4,
     textAlign: 'center',
   },
   editRow: {
@@ -531,76 +438,11 @@ const s = StyleSheet.create({
     fontFamily: 'Manrope_500Medium',
   },
 
-  // ── SOCIAL STATS ──────────────────────────────────
-  statsRow: {
-    flexDirection: 'row',
-    paddingVertical: 20,
-    paddingHorizontal: 8,
-  },
-  statItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statNum: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 3,
-    textAlign: 'center',
-  },
-  ratingStar: {
-    fontSize: 13,
-    color: '#C8922A',
-    lineHeight: 20,
-  },
-
-  // ── TRUST BADGES ──────────────────────────────────
+  // ── VERIFICATION ──────────────────────────────────
   trustSection: {
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 16,
-  },
-  badgeScroll: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingTop: 10,
-    paddingRight: 20,
-  },
-  trustBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  badgeGreen: {
-    backgroundColor: 'rgba(76,175,80,0.08)',
-    borderColor: 'rgba(76,175,80,0.2)',
-  },
-  badgeAmber: {
-    backgroundColor: 'rgba(200,146,42,0.08)',
-    borderColor: 'rgba(200,146,42,0.2)',
-  },
-  badgeIconGreen: {
-    fontSize: 13,
-    color: '#4CAF50',
-  },
-  badgeIconAmber: {
-    fontSize: 13,
-    color: '#C8922A',
-  },
-  badgeText: {
-    fontSize: 11,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
   },
 
   // ── PHOTO GRID ────────────────────────────────────
@@ -656,100 +498,12 @@ const s = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
   },
-  bookingStats: {
-    flexDirection: 'row',
-    marginTop: 16,
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.07)',
-    overflow: 'hidden',
-  },
-  bookingStat: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  bookingDivider: {
-    width: 1,
-    backgroundColor: 'rgba(240,232,213,0.07)',
-    marginVertical: 12,
-  },
-  bookingNum: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  bookingNumLabel: {
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.38)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 4,
-    textAlign: 'center',
-  },
 
   // ── PROVIDER REVIEWS ──────────────────────────────
   reviewsSection: {
     paddingHorizontal: 20,
     paddingTop: 20,
     paddingBottom: 16,
-  },
-  reviewsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  reviewsSummary: {
-    fontSize: 13,
-    color: '#C8922A',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  reviewDivider: {
-    height: 1,
-    backgroundColor: 'rgba(240,232,213,0.05)',
-  },
-  reviewCard: {
-    paddingVertical: 16,
-  },
-  reviewTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  reviewerPhoto: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reviewerName: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  reviewerMeta: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.38)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  reviewText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.65)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 19,
-    marginTop: 10,
-  },
-  seeAll: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.38)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
   },
 
   // ── FIXED CTA ─────────────────────────────────────

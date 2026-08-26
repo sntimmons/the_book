@@ -8,6 +8,8 @@ import {
 } from 'react-native'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { useAuth } from '@/context/AuthContext'
+import { ensureClientRow } from '@/lib/ensureClientRow'
 
 function Card({
   icon,
@@ -58,6 +60,17 @@ function Card({
 
 export default function PathSelection() {
   const insets = useSafeAreaInsets()
+  const { user } = useAuth()
+
+  // The user has committed to the client path. Backfill a placeholder clients
+  // row now (best-effort) so they resolve as a client and their name shows as
+  // "Member" rather than "Client" in messaging even if they leave onboarding
+  // early. Client onboarding overwrites the name with their real one at the
+  // end. Providers never reach this, so they never get a junk client row.
+  function chooseClient() {
+    if (user) void ensureClientRow(user.id)
+    router.push('/onboarding/client')
+  }
 
   return (
     <View style={styles.root}>
@@ -72,7 +85,7 @@ export default function PathSelection() {
             icon="⌕"
             title="I'm booking"
             subtitle={"Discover and book the best\nproviders in Houston."}
-            onPress={() => router.push('/onboarding/client')}
+            onPress={chooseClient}
           />
           <Card
             icon="✦"

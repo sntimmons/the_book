@@ -103,7 +103,7 @@ function ToggleRow({
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets()
-  const { user } = useAuth()
+  const { user, isProvider } = useAuth()
 
   const email = user?.email ?? 'Not set'
   const phone = maskPhone(user?.phone)
@@ -168,6 +168,24 @@ export default function SettingsScreen() {
             isLast
           />
         </View>
+
+        {/* PROVIDER: escape hatch so a client (including anyone who was routed
+            in as a client without choosing) can still reach provider
+            onboarding. On go-live a providers row is created and provider role
+            takes precedence, so it also frees an already-trapped client. */}
+        {!isProvider && (
+          <>
+            <GroupLabel>Provider</GroupLabel>
+            <View style={s.group}>
+              <NavRow
+                icon="briefcase-outline"
+                label="Set up a provider profile"
+                onPress={() => router.push('/onboarding/provider' as never)}
+                isLast
+              />
+            </View>
+          </>
+        )}
 
         {/* PAYMENTS */}
         <GroupLabel>Payments</GroupLabel>
