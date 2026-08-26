@@ -28,30 +28,61 @@ alter table public.providers
 -- ── reusable self-reference guard ───────────────────────────────────────────
 -- TG_ARGV[0] is the name of the column on the NEW row that holds the acting
 -- user's id. We compare it to the owner (providers.user_id) of NEW.provider_id.
+--
+-- FAIL CLOSED: `to_jsonb(new) ->> col` returns NULL both when a column is NULL
+-- and when it does NOT EXIST — so a mis-named actor column would silently let
+-- every row through (a fail-open, the same failure shape as the bugs this
+-- migration fixes). We use the jsonb `?` key-existence test to raise on a
+-- missing actor_col or provider_id instead of allowing the write.
 create or replace function public.reject_self_provider_action()
 returns trigger
 language plpgsql
 as $$
 declare
-  actor_col text := tg_argv[0];
-  actor_id  uuid;
-  owner_id  uuid;
+  actor_col       text  := tg_argv[0];
+  row_json        jsonb := to_jsonb(new);
+  actor_id        uuid;
+  target_provider uuid;
+  owner_id        uuid;
 begin
-  actor_id := (to_jsonb(new) ->> actor_col)::uuid;
+  -- Misconfiguration is an error, not a pass: if the named actor column or
+  -- provider_id is absent on this table, refuse the row loudly.
+  if actor_col is null then
+    raise exception
+      'reject_self_provider_action on %: missing actor column trigger argument',
+      tg_table_name
+      using errcode = 'undefined_column';
+  end if;
+  if not (row_json ? actor_col) then
+    raise exception
+      'reject_self_provider_action on %: actor column "%" does not exist',
+      tg_table_name, actor_col
+      using errcode = 'undefined_column';
+  end if;
+  if not (row_json ? 'provider_id') then
+    raise exception
+      'reject_self_provider_action on %: provider_id column does not exist',
+      tg_table_name
+      using errcode = 'undefined_column';
+  end if;
 
-  -- Nothing to compare against; let other constraints handle nulls.
-  if actor_id is null or new.provider_id is null then
+  actor_id        := (row_json ->> actor_col)::uuid;
+  target_provider := (row_json ->> 'provider_id')::uuid;
+
+  -- A genuinely NULL actor or provider is not a self-reference; leave those to
+  -- the FK / NOT NULL constraints. (The columns provably exist by this point.)
+  if actor_id is null or target_provider is null then
     return new;
   end if;
 
   select user_id into owner_id
   from public.providers
-  where id = new.provider_id;
+  where id = target_provider;
 
   if owner_id is not null and owner_id = actor_id then
     raise exception
       'self-referential row on % rejected: user % owns provider %',
-      tg_table_name, actor_id, new.provider_id
+      tg_table_name, actor_id, target_provider
       using errcode = 'check_violation';
   end if;
 
