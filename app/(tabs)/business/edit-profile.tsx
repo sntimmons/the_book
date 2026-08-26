@@ -33,6 +33,8 @@ interface ProviderForm {
   neighborhood: string
   specialties: string
   yearsExperience: string
+  // Free-text category, used only when no mapped category is selected ("Other").
+  customCategory: string
 }
 
 interface ProviderData {
@@ -44,6 +46,7 @@ interface ProviderData {
   profile_photo_url: string | null
   cover_image_url: string | null
   category_id: number | null
+  custom_category: string | null
   specialties: string[] | null
   years_experience: number | null
 }
@@ -56,6 +59,7 @@ const EMPTY_FORM: ProviderForm = {
   neighborhood: '',
   specialties: '',
   yearsExperience: '',
+  customCategory: '',
 }
 
 function Shimmer({ style }: { style: any }) {
@@ -109,7 +113,7 @@ export default function ProviderEditProfileScreen() {
       const { data, error } = await supabase
         .from('providers')
         .select(
-          'id, display_name, bio, location, neighborhood, profile_photo_url, cover_image_url, category_id, specialties, years_experience',
+          'id, display_name, bio, location, neighborhood, profile_photo_url, cover_image_url, category_id, custom_category, specialties, years_experience',
         )
         .eq('user_id', user.id)
         .maybeSingle()
@@ -132,6 +136,7 @@ export default function ProviderEditProfileScreen() {
         neighborhood: row.neighborhood ?? '',
         specialties: row.specialties?.join(', ') ?? '',
         yearsExperience: row.years_experience?.toString() ?? '',
+        customCategory: row.custom_category ?? '',
       })
     } catch (err) {
       console.log('Load error:', err)
@@ -253,6 +258,12 @@ export default function ProviderEditProfileScreen() {
         location: form.location.trim() || null,
         neighborhood: form.neighborhood.trim() || null,
         category_id: selectedCategoryId,
+        // Persist the free-text category only when no mapped category is
+        // selected ("Other"); otherwise clear it so the two never conflict.
+        custom_category:
+          selectedCategoryId == null && form.customCategory.trim()
+            ? form.customCategory.trim()
+            : null,
         profile_photo_url: profilePhotoUrl,
         cover_image_url: coverImageUrl,
         // specialties is NOT NULL (default '{}') in the DB, so an empty list
@@ -328,8 +339,13 @@ export default function ProviderEditProfileScreen() {
     form.displayName.trim().charAt(0).toUpperCase() ||
     providerData?.display_name?.charAt(0).toUpperCase() ||
     'P'
+  // When a mapped category is selected, show its name. When "Other" is active
+  // (no mapped id), show the provider's typed text so both the preview header
+  // and the selector row reflect their custom category.
   const selectedCategoryName =
-    categories.find((c) => c.id === selectedCategoryId)?.name ?? ''
+    selectedCategoryId != null
+      ? categories.find((c) => c.id === selectedCategoryId)?.name ?? ''
+      : form.customCategory.trim()
 
   return (
     <KeyboardAvoidingView
@@ -478,6 +494,26 @@ export default function ProviderEditProfileScreen() {
                 />
               </Pressable>
 
+              {/* Free-text category, shown only when "Other" is active (no
+                  mapped category). Lets providers affected by the earlier bug
+                  fix their own category without database access. */}
+              {selectedCategoryId == null && (
+                <TextInput
+                  style={[
+                    styles.input,
+                    { marginTop: 8 },
+                    focused === 'customCategory' && styles.inputFocused,
+                  ]}
+                  value={form.customCategory}
+                  onChangeText={(v) => updateField('customCategory', v)}
+                  placeholder="Describe what you do (e.g. Mobile Detailing)"
+                  placeholderTextColor="rgba(240,232,213,0.25)"
+                  autoCapitalize="words"
+                  onFocus={() => setFocused('customCategory')}
+                  onBlur={() => setFocused(null)}
+                />
+              )}
+
               {/* Bio */}
               <Text style={styles.fieldLabel}>BIO</Text>
               <TextInput
@@ -607,6 +643,29 @@ export default function ProviderEditProfileScreen() {
                 </TouchableOpacity>
               )
             })}
+            {/* "Other" clears the mapped category and reveals the free-text
+                input so providers can enter a category not in the list. */}
+            <TouchableOpacity
+              style={styles.sheetRow}
+              activeOpacity={0.7}
+              onPress={() => {
+                setSelectedCategoryId(null)
+                setHasChanges(true)
+                setShowCategorySheet(false)
+              }}
+            >
+              <Text
+                style={[
+                  styles.sheetRowText,
+                  selectedCategoryId == null && styles.sheetRowTextActive,
+                ]}
+              >
+                Other
+              </Text>
+              {selectedCategoryId == null && (
+                <Ionicons name="checkmark" size={18} color="#C8922A" />
+              )}
+            </TouchableOpacity>
             <View style={{ height: 24 }} />
           </ScrollView>
         </View>

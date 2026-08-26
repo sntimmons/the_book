@@ -109,7 +109,7 @@ export function ProviderMe() {
       const { data: prov } = await supabase
         .from('providers')
         .select(
-          'id, display_name, category_id, neighborhood, profile_photo_url, average_rating, review_count, completed_count',
+          'id, display_name, category_id, custom_category, neighborhood, profile_photo_url, average_rating, review_count, completed_count',
         )
         .eq('user_id', user.id)
         .maybeSingle()
@@ -122,6 +122,10 @@ export function ProviderMe() {
           .eq('id', prov.category_id)
           .maybeSingle()
         if (cat?.name) categoryName = cat.name
+      }
+      // No mapped category — fall back to the provider's free-text "Other" value.
+      if (!categoryName && prov?.custom_category) {
+        categoryName = prov.custom_category
       }
       if (cancelled) return
       setData({

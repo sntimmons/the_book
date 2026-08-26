@@ -124,7 +124,10 @@ function ProviderTile({
 }) {
   const tier = height >= 360 ? 'xl' : height >= 300 ? 'lg' : 'sm'
   const big = tier !== 'sm'
-  const cat = categoryName(provider.category_id, categories)
+  const cat =
+    categoryName(provider.category_id, categories) ||
+    provider.custom_category ||
+    ''
   // Badge uses real signal only — featured first, then trending. Shown on the
   // extra-large card where the Figma places a label pill.
   const badge =

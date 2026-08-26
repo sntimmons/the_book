@@ -212,6 +212,14 @@ export default function ProviderGoLive() {
             display_name: displayNameValue,
             username: generatedUsername,
             category_id: categoryId,
+            // When the provider picked "Other", category_id is null and the
+            // typed value lives in customCategory. Persist it so every display
+            // surface can fall back to it. When a real category was chosen,
+            // clear any custom text so the two never conflict.
+            custom_category:
+              categoryId == null && customCategory?.trim()
+                ? customCategory.trim()
+                : null,
             bio: bio || null,
             location: locationValue,
             neighborhood: locationValue,

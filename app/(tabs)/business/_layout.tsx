@@ -23,6 +23,7 @@ interface ProviderProfileLite {
   id: string
   display_name: string | null
   category_id: number | null
+  custom_category: string | null
   neighborhood: string | null
   profile_photo_url: string | null
 }
@@ -83,7 +84,7 @@ export default function ProviderDashboardLayout() {
     if (!user) return
     supabase
       .from('providers')
-      .select('id, display_name, category_id, neighborhood, profile_photo_url')
+      .select('id, display_name, category_id, custom_category, neighborhood, profile_photo_url')
       .eq('user_id', user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -117,7 +118,9 @@ export default function ProviderDashboardLayout() {
   useEffect(() => {
     const categoryId = providerProfile?.category_id
     if (categoryId == null) {
-      setCategoryName('')
+      // No mapped category — fall back to the provider's free-text "Other"
+      // value so the drawer shows their trade instead of nothing.
+      setCategoryName(providerProfile?.custom_category ?? '')
       return
     }
     supabase
@@ -128,7 +131,7 @@ export default function ProviderDashboardLayout() {
       .then(({ data }) => {
         if (data?.name) setCategoryName(data.name)
       })
-  }, [providerProfile?.category_id])
+  }, [providerProfile?.category_id, providerProfile?.custom_category])
 
   const displayName = providerProfile?.display_name?.trim() || 'Provider'
   const metaParts = [categoryName, providerProfile?.neighborhood].filter(

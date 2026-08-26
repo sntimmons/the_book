@@ -44,7 +44,10 @@ function formatCount(n: number): string {
 }
 
 function subtitleFor(p: Provider, categories: Category[]): string {
-  return [categoryName(p.category_id, categories), providerHood(p)]
+  return [
+    categoryName(p.category_id, categories) || p.custom_category || '',
+    providerHood(p),
+  ]
     .filter(Boolean)
     .join(' · ')
 }
