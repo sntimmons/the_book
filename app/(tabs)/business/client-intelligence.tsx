@@ -114,10 +114,10 @@ export default function ClientIntelligence() {
       const nameById = new Map<string, string>()
       const hoodById = new Map<string, string | null>()
       if (clientIds.length > 0) {
-        // Select * so a missing `neighborhood` column never breaks the query.
+        // Provider-scoped identity: only the fields this screen uses.
         const { data: clientRows } = await supabase
-          .from('clients')
-          .select('*')
+          .from('clients_provider')
+          .select('id, name, neighborhood')
           .in('id', clientIds)
         ;(clientRows ?? []).forEach((c: any) => {
           nameById.set(c.id, c.name || 'Client')

@@ -94,7 +94,7 @@ export async function fetchRevealedProviderReviews(
   const nameById = new Map<string, string>()
   if (reviewerIds.length > 0) {
     const { data: clientRows } = await supabase
-      .from('clients')
+      .from('clients_public')
       .select('id, name')
       .in('id', reviewerIds)
     ;(clientRows ?? []).forEach((c: { id: string; name: string | null }) =>

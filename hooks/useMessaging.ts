@@ -138,7 +138,7 @@ export function useConversations() {
           .select('id, display_name')
           .in('id', Array.from(new Set(providerOtherIds))),
         supabase
-          .from('clients')
+          .from('clients_provider')
           .select('id, name')
           .in('id', Array.from(new Set(clientOtherIds))),
         supabase

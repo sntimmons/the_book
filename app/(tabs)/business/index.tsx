@@ -213,7 +213,7 @@ export default function ProviderDashboard() {
       const pendingWithNames = await Promise.all(
         pendingRows.map(async (b) => {
           const { data: client } = await supabase
-            .from('clients')
+            .from('clients_provider')
             .select('name')
             .eq('id', b.user_id)
             .maybeSingle()

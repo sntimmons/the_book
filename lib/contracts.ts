@@ -185,7 +185,7 @@ export async function fetchProviderSignatures(
   const clientMap = new Map<string, string>()
   if (clientIds.length > 0) {
     const { data: clients } = await supabase
-      .from('clients')
+      .from('clients_provider')
       .select('id, name')
       .in('id', clientIds)
     for (const c of (clients as { id: string; name: string | null }[] | null) ?? []) {
@@ -228,7 +228,7 @@ export async function fetchSignedContract(
   let clientName = 'Client'
   if (signature.clientUserId) {
     const { data: client } = await supabase
-      .from('clients')
+      .from('clients_provider')
       .select('name')
       .eq('id', signature.clientUserId)
       .maybeSingle()
