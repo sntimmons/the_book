@@ -151,7 +151,7 @@ export default function RevenueDetail() {
       const nameById = new Map<string, string>()
       if (clientIds.length > 0) {
         const { data: clientRows } = await supabase
-          .from('clients')
+          .from('clients_provider')
           .select('id, name')
           .in('id', clientIds)
         ;(clientRows ?? []).forEach((c: { id: string; name: string | null }) => {

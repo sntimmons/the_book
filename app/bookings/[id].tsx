@@ -160,11 +160,21 @@ export default function BookingDetailScreen() {
         }
       }
 
-      const { data: clientRow } = await supabase
-        .from('clients')
-        .select('name')
-        .eq('id', bookingData.user_id)
-        .maybeSingle()
+      // Role-aware client name lookup. A provider viewing the counterpart client
+      // reads the provider-scoped view; a client viewing their own booking reads
+      // their own row from the base clients table (self-service).
+      const viewerIsProvider = providerRow?.user_id === user.id
+      const { data: clientRow } = viewerIsProvider
+        ? await supabase
+            .from('clients_provider')
+            .select('name')
+            .eq('id', bookingData.user_id)
+            .maybeSingle()
+        : await supabase
+            .from('clients')
+            .select('name')
+            .eq('id', bookingData.user_id)
+            .maybeSingle()
       setClientName(clientRow?.name || 'Client')
     } catch (err) {
       console.log('Booking detail error:', err)

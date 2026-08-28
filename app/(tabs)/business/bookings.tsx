@@ -154,7 +154,7 @@ export default function ProviderBookings() {
       const userIds = Array.from(new Set(rows.map((r) => r.user_id).filter(Boolean)))
       if (userIds.length > 0) {
         const { data: clientRows } = await supabase
-          .from('clients')
+          .from('clients_provider')
           .select('id, name')
           .in('id', userIds)
         const next: Record<string, string> = {}

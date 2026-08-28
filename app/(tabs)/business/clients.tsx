@@ -156,7 +156,7 @@ export default function ProviderClients() {
       // Only `name` is confirmed on the clients table. avatar_url and
       // neighborhood are schema gaps flagged for Phase C; omit them gracefully.
       const { data: clientRows } = await supabase
-        .from('clients')
+        .from('clients_provider')
         .select('id, name')
         .in('id', ids)
 

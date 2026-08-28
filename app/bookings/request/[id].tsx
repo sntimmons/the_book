@@ -90,7 +90,7 @@ export default function BookingRequestScreen() {
 
       const [{ data: c }, repRes, completion] = await Promise.all([
         supabase
-          .from('clients')
+          .from('clients_provider')
           .select('name, created_at')
           .eq('id', clientUserId)
           .maybeSingle(),

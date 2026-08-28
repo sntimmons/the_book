@@ -255,7 +255,7 @@ export function useNotifications() {
             senderName = provider?.display_name || 'Provider'
           } else {
             const { data: client } = await supabase
-              .from('clients')
+              .from('clients_provider')
               .select('name')
               .eq('id', otherId)
               .maybeSingle()

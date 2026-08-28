@@ -79,7 +79,7 @@ export default function ProviderReview() {
       setProviderDbId(providerRow?.id ?? null)
 
       const { data: clientRow } = await supabase
-        .from('clients')
+        .from('clients_provider')
         .select('name')
         .eq('id', bookingRow.user_id)
         .maybeSingle<{ name: string | null }>()

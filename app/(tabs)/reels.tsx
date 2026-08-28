@@ -174,7 +174,7 @@ async function resolveCommenterNames(userIds: string[]): Promise<Map<string, str
   const map = new Map<string, string>()
   if (userIds.length === 0) return map
   const [clientsRes, providersRes] = await Promise.all([
-    supabase.from('clients').select('id, name').in('id', userIds),
+    supabase.from('clients_public').select('id, name').in('id', userIds),
     supabase.from('providers').select('user_id, display_name').in('user_id', userIds),
   ])
   for (const c of (clientsRes.data as { id: string; name: string | null }[] | null) ?? []) {

@@ -72,7 +72,7 @@ export default function ChatScreen() {
         if (!cancelled) setOtherPartyName(provider?.display_name || 'Provider')
       } else {
         const { data: client } = await supabase
-          .from('clients')
+          .from('clients_provider')
           .select('name')
           .eq('id', otherPartyId)
           .maybeSingle()
