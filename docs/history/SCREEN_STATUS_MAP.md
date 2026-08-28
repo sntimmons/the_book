@@ -1,3 +1,18 @@
+> ## HISTORICAL SNAPSHOT - NOT CURRENT-STATE DOCUMENTATION
+>
+> **Snapshot date:** ~2026-06-02 (last edited). **Development era:** before the
+> Community hub, Contracts, and blind-reveal Reviews were built, and before the
+> provider dashboard moved from `app/dashboard/provider/*` into
+> `app/(tabs)/business/*`.
+>
+> This file is a point-in-time audit kept for historical reference. It is **not
+> authoritative** and is known to be stale: it labels Community, Contracts, and
+> Reviews as "MISSING" (all now built), references routes that have since moved,
+> and audits migrations in a different repo (`~/the-book`). **When this document
+> conflicts with the current source code, the source code wins.** For current
+> navigation see [../architecture/NAVIGATION.md](../architecture/NAVIGATION.md);
+> for the docs index see [../README.md](../README.md).
+
 # Screen Status Map (v1)
 
 Walks the Master Product Sitemap against the actual code in `~/the-book-app` (and migrations in `~/the-book/supabase/migrations`). Read-only audit, no code changes.

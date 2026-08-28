@@ -1,3 +1,15 @@
+> ## HISTORICAL SNAPSHOT - NOT CURRENT-STATE DOCUMENTATION
+>
+> **Snapshot date:** ~2026-05-31 (last edited). **Development era:** the
+> `phase-a-pass-1-nav-cleanup` branch, when the app had ~51 screens (it now has
+> 115+).
+>
+> This file is a point-in-time button/route punch list kept for historical
+> reference. It is **not authoritative** current-state documentation and is
+> known to be stale. **When this document conflicts with the current source
+> code, the source code wins.** For the docs index see
+> [../README.md](../README.md).
+
 # PASS 1 — Button & Route Inventory
 
 Generated for branch `phase-a-pass-1-nav-cleanup`. Punch list for later passes.
