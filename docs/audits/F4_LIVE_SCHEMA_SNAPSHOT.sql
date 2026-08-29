@@ -7,6 +7,13 @@
 -- It is NOT a migration and MUST NOT be executed against any database.
 -- No row data, no auth.users data, no secrets/credentials are included.
 -- Objects are owned by 'postgres' (Supabase default) unless noted.
+--
+-- CORRECTION (2026-08-29, discovered by F5B execution validation): the original
+-- capture omitted SEQUENCES (relkind 'S'); section 1c below adds the one live
+-- application-owned sequence. Object-count summary now: 39 tables, 1 SEQUENCE,
+-- 2 views, 11 functions, 17 triggers, 158 constraints, 58 non-constraint
+-- indexes, 97 public policies, 12 storage.objects policies, 4 buckets,
+-- 5 extensions.
 -- =============================================================================
 
 -- ============================= 1. EXTENSIONS =============================
@@ -18,6 +25,14 @@ create extension if not exists "pgcrypto" with schema extensions;  -- v1.3  -- a
 create extension if not exists "plpgsql" with schema pg_catalog;  -- v1.0  -- default
 create extension if not exists "supabase_vault" with schema vault;  -- v0.3.1  -- supabase-managed / infra
 create extension if not exists "uuid-ossp" with schema extensions;  -- v1.1  -- app-relevant
+
+-- ============================= 1c. SEQUENCES (1) [CORRECTION - F5B] =============================
+-- Exact live sequence, owner postgres. Serial-style, OWNED BY categories.id.
+-- Live relacl: {postgres,anon,authenticated,service_role}=rwU (USAGE/SELECT/UPDATE).
+create sequence public.categories_id_seq
+  as integer increment by 1 minvalue 1 maxvalue 2147483647 start with 1 cache 1 no cycle;
+alter sequence public.categories_id_seq owned by public.categories.id;
+grant usage, select, update on sequence public.categories_id_seq to anon, authenticated, service_role;
 
 -- ============================= 2. TABLES (39) =============================
 

@@ -24,6 +24,18 @@
 create extension if not exists "pgcrypto" with schema extensions;   -- gen_random_uuid()
 create extension if not exists "uuid-ossp" with schema extensions;
 
+-- ============================= 1b. SEQUENCES (1) =============================
+-- CORRECTION (F5B): the F4 relation capture excluded sequences (relkind 'S').
+-- categories.id is a serial-style integer PK whose default references this
+-- owned sequence; it must exist BEFORE the categories table below. Ownership
+-- (OWNED BY) is set after the table/column exists (see section 2b). Exact live
+-- attributes: integer, start 1, increment 1, minvalue 1, maxvalue 2147483647,
+-- cache 1, no cycle. Live ACL grants anon/authenticated/service_role USAGE,
+-- SELECT, UPDATE (reproduced as-is).
+create sequence if not exists public.categories_id_seq
+  as integer increment by 1 minvalue 1 maxvalue 2147483647 start with 1 cache 1 no cycle;
+grant usage, select, update on sequence public.categories_id_seq to anon, authenticated, service_role;
+
 -- ============================= 2. TABLES (39) =============================
 
 create table public.barter_interests (
@@ -506,6 +518,11 @@ create table public.shifts (
   actual numeric not null,
   created_at timestamp with time zone default now()
 );
+
+-- ============================= 2b. SEQUENCE OWNERSHIP =============================
+-- CORRECTION (F5B): bind categories_id_seq to categories.id now that the column
+-- exists (matches live OWNED BY dependency; drops the sequence with the table).
+alter sequence public.categories_id_seq owned by public.categories.id;
 
 -- ===================== 3. CONSTRAINTS (PK/UNIQUE/FK/CHECK) =====================
 alter table public.barter_interests add constraint barter_interests_pkey PRIMARY KEY (id);

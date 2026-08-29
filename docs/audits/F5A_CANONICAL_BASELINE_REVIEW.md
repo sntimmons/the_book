@@ -41,7 +41,28 @@ see Sections 4 and 7).
 | Storage buckets | 4 | `insert ... on conflict do nothing` |
 | clients revokes (S1B) | 2 | preserve exact live ACL |
 
-File length: 1683 lines.
+File length: 1683 lines (pre-correction; see 2b).
+
+## 2b. CORRECTION (F5B) - sequences added
+
+The initial F5A static review (sections 2-3 below, preserved as originally
+written) MISSED a capture-methodology omission: the F4 relation capture used
+`relkind in ('r','v','m')` and excluded **SEQUENCES** (`relkind 'S'`). F5B
+execution on the disposable project surfaced this as `SQLSTATE 42P01: relation
+"categories_id_seq" does not exist` at `public.categories.id`.
+
+- **Sequence count (live):** 1 - `public.categories_id_seq` (integer, start 1,
+  increment 1, minvalue 1, maxvalue 2147483647, cache 1, no cycle), owner
+  postgres, `OWNED BY categories.id`, serial-style (not an identity column).
+  Live ACL grants anon/authenticated/service_role USAGE/SELECT/UPDATE. It is the
+  only `nextval`-backed column across all 39 tables.
+- **Corrected baseline** now adds: `create sequence` before the tables section,
+  `alter sequence ... owned by categories.id` after the tables section, and the
+  sequence grants - preserving live truth (not swapped for an identity column).
+- **Corrected static-equivalence expectation:** add a **Sequences 1 / 1 MATCH**
+  row to the table below; all other rows unchanged.
+- The tables in the counts table (section 2) remain accurate; only sequences
+  were missing. Original counts are retained for history.
 
 ## 3. Static equivalence vs F4 (object-by-object)
 
