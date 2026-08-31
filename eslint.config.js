@@ -31,4 +31,27 @@ module.exports = [
       'react/no-unescaped-entities': 'warn',
     },
   },
+  {
+    // Test tooling (Batch 5A): Jest globals for the plain-JS setup/config files,
+    // and allowance for the jest.mock()-before-import pattern (mocks are hoisted
+    // and must precede imports). Scoped to the test suite so app rules are
+    // unchanged.
+    files: ['__tests__/**/*.{ts,tsx}', 'jest.setup.js', 'jest.config.js', 'test/**/*.js'],
+    languageOptions: {
+      globals: {
+        jest: 'readonly',
+        describe: 'readonly',
+        it: 'readonly',
+        test: 'readonly',
+        expect: 'readonly',
+        beforeAll: 'readonly',
+        afterAll: 'readonly',
+        beforeEach: 'readonly',
+        afterEach: 'readonly',
+      },
+    },
+    rules: {
+      'import/first': 'off',
+    },
+  },
 ]

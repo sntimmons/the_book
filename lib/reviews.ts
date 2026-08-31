@@ -42,7 +42,7 @@ export interface ReviewAggregate {
   count: number
 }
 
-function isRevealed(
+export function isRevealed(
   bookingId: string,
   counterpart: Set<string>,
   completedAt: Map<string, string | null>,

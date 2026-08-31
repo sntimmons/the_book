@@ -24,7 +24,7 @@ import { uploadMedia, uploadMultiple } from '@/lib/storage'
 // the Me tab's My Studio entrance). One shell, no modes.
 const POST_GOLIVE_ROUTE = '/(tabs)/'
 
-function parseDurationMinutes(value: string): number {
+export function parseDurationMinutes(value: string): number {
   if (!value) return 60
   const trimmed = value.toLowerCase()
   const hourMatch = trimmed.match(/(\d+(?:\.\d+)?)\s*hr/)

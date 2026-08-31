@@ -19,7 +19,7 @@ import { useAuth } from '@/context/AuthContext'
 import { checkRateLimit } from '@/lib/rateLimit'
 
 // Convert "May 28, 2026" to "2026-05-28" for the date column.
-function toIsoDate(displayDate: string): string {
+export function toIsoDate(displayDate: string): string {
   const d = new Date(displayDate)
   if (Number.isNaN(d.getTime())) return displayDate
   const yyyy = d.getFullYear()
@@ -34,7 +34,7 @@ function toIsoDate(displayDate: string): string {
 // string parsing. Returns null if inputs are missing or malformed, so a bad
 // value can never throw "Date value out of bounds" (appointment_time is
 // nullable).
-function buildAppointmentTime(
+export function buildAppointmentTime(
   isoDate: string | null | undefined,
   displayTime: string | null | undefined,
 ): string | null {

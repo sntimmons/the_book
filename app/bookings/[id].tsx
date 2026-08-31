@@ -49,7 +49,7 @@ type StatusBucket =
   | 'cancelled'
   | 'no_show'
 
-function statusBucket(status: string): StatusBucket {
+export function statusBucket(status: string): StatusBucket {
   switch (status) {
     case 'pending':
       return 'pending'
@@ -83,7 +83,7 @@ interface StatusStyle {
 // Distinct fg/bg/border per status keeps the pill readable on the dark
 // background. The dropped beta states (arriving/checked_in/rescheduled) reuse
 // the accepted "Confirmed" green so any legacy rows look consistent.
-function getStatusStyle(status: string): StatusStyle {
+export function getStatusStyle(status: string): StatusStyle {
   switch (status) {
     case 'pending':
       return { fg: '#C8922A', bg: 'rgba(200,146,42,0.12)', border: 'rgba(200,146,42,0.4)' }
