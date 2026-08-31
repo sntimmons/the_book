@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts,.tsx --max-warnings 0",
+    "lint:ci": "eslint . --ext .ts,.tsx --max-warnings 210",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "test": "jest",
     "test:watch": "jest --watch",

@@ -15,6 +15,14 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci --legacy-peer-deps
-      - run: npm run typecheck
-      - name: Lint (warn only for now)
-        run: npm run lint || true
+      # Cheap static checks first (fail fast), then the unit suite. Every step is
+      # blocking — no `|| true`, no continue-on-error.
+      - name: Typecheck
+        run: npm run typecheck
+      # Baseline lint gate: fails on ANY ESLint error, and on more than the frozen
+      # warning baseline (see lint:ci in package.json). New lint debt blocks PRs;
+      # the existing backlog does not. The baseline number should only decrease.
+      - name: Lint (baseline gate)
+        run: npm run lint:ci
+      - name: Unit tests
+        run: npm test -- --runInBand
