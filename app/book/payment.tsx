@@ -77,6 +77,9 @@ export default function BookPayment() {
   } = useBookingStore()
   const [isProcessing, setIsProcessing] = useState(false)
   const [processError, setProcessError] = useState('')
+  // Set when a booking was created but its contract signature failed to save.
+  // While set, submitting retries only the signature (no duplicate booking).
+  const [pendingBookingId, setPendingBookingId] = useState<string | null>(null)
 
   // Service price — shown for information only. At request time nothing is
   // charged or held; payment happens later, after the provider accepts.
@@ -107,71 +110,85 @@ export default function BookPayment() {
     setIsProcessing(true)
     setProcessError('')
 
-    // Server-side rate limit (max 3 booking requests/hour/client). Expected
-    // behavior, not an error — no Sentry capture.
-    const rl = await checkRateLimit(user.id, 'booking_create')
-    if (!rl.allowed) {
-      setIsProcessing(false)
-      Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')
-      return
-    }
-
-    Sentry.addBreadcrumb({
-      message: 'Booking submit',
-      category: 'booking',
-      data: { providerId, serviceId: selectedService.id ?? null },
-    })
-
     try {
-      // rawDate is YYYY-MM-DD (set in book/datetime.tsx) and selectedTime is
-      // "H:MM AM/PM". Build appointment_time from numeric parts; if it cannot
-      // be assembled it stays null rather than crashing the save.
-      const dateForRow = rawDate || toIsoDate(selectedDate)
-      const appointmentTime = buildAppointmentTime(rawDate, selectedTime)
+      // When a prior attempt created the booking but its contract signature
+      // failed to save, `pendingBookingId` holds that booking's id. In that case
+      // we must NOT create a second booking — we retry ONLY the signature insert
+      // against the existing booking. A fresh submit (no pending id) creates the
+      // booking first.
+      let bookingId = pendingBookingId
 
-      const { data: booking, error } = await supabase
-        .from('bookings')
-        .insert({
-          user_id: user.id,
-          provider_id: providerId,
-          service_id: selectedService.id || null,
-          service_name: selectedService.name,
-          requested_date: dateForRow,
-          requested_time: selectedTime,
-          appointment_time: appointmentTime,
-          message: bookingMessage || null,
-          status: 'pending',
-          payment_status: 'unpaid',
-          payment_amount: servicePrice,
-          created_at: new Date().toISOString(),
+      if (!bookingId) {
+        // Server-side rate limit (max 3 booking requests/hour/client). Expected
+        // behavior, not an error — no Sentry capture. Only applies to creating a
+        // new booking, not to retrying a signature on an existing one.
+        const rl = await checkRateLimit(user.id, 'booking_create')
+        if (!rl.allowed) {
+          setIsProcessing(false)
+          Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')
+          return
+        }
+
+        Sentry.addBreadcrumb({
+          message: 'Booking submit',
+          category: 'booking',
+          data: { providerId, serviceId: selectedService.id ?? null },
         })
-        .select('id')
-        .single()
 
-      if (error) {
-        console.log('Booking insert error:', error)
-        Sentry.captureException(error)
-        // Surface the real reason rather than hiding every failure behind a
-        // single generic line. If the request fails because of a schema or
-        // permission problem (e.g. a missing column or an RLS rule), the tester
-        // now sees exactly what went wrong so it can be reported and fixed.
-        setProcessError(
-          error.message
-            ? `We could not send your request: ${error.message}`
-            : 'We could not send your request. Please try again.',
-        )
-        setIsProcessing(false)
-        return
+        // rawDate is YYYY-MM-DD (set in book/datetime.tsx) and selectedTime is
+        // "H:MM AM/PM". Build appointment_time from numeric parts; if it cannot
+        // be assembled it stays null rather than crashing the save.
+        const dateForRow = rawDate || toIsoDate(selectedDate)
+        const appointmentTime = buildAppointmentTime(rawDate, selectedTime)
+
+        const { data: booking, error } = await supabase
+          .from('bookings')
+          .insert({
+            user_id: user.id,
+            provider_id: providerId,
+            service_id: selectedService.id || null,
+            service_name: selectedService.name,
+            requested_date: dateForRow,
+            requested_time: selectedTime,
+            appointment_time: appointmentTime,
+            message: bookingMessage || null,
+            status: 'pending',
+            payment_status: 'unpaid',
+            payment_amount: servicePrice,
+            created_at: new Date().toISOString(),
+          })
+          .select('id')
+          .single()
+
+        if (error) {
+          console.log('Booking insert error:', error)
+          Sentry.captureException(error)
+          // Surface the real reason rather than hiding every failure behind a
+          // single generic line. If the request fails because of a schema or
+          // permission problem (e.g. a missing column or an RLS rule), the tester
+          // now sees exactly what went wrong so it can be reported and fixed.
+          setProcessError(
+            error.message
+              ? `We could not send your request: ${error.message}`
+              : 'We could not send your request. Please try again.',
+          )
+          setIsProcessing(false)
+          return
+        }
+
+        bookingId = booking.id
       }
 
       // If the client signed the provider's contract earlier in the flow, write
-      // the signature row now that the booking (and its id) exists. Best-effort:
-      // a failure here should not block the confirmed request. The signature is
-      // a placeholder (null url) until the real canvas ships in an EAS build.
+      // the signature row now that the booking (and its id) exists. This is part
+      // of the signing flow: a FAILED signature insert must NOT advance to the
+      // confirmed screen as though signing succeeded. Instead we keep the created
+      // booking's id, stay on this screen, and let the user retry the signature
+      // (the button re-runs this handler, which skips booking creation) or go back.
       if (contractSigned && contractId) {
         const { error: sigError } = await supabase.from('contract_signatures').insert({
           contract_id: contractId,
-          booking_id: booking.id,
+          booking_id: bookingId,
           client_user_id: user.id,
           signature_url: null,
           signed_at: new Date().toISOString(),
@@ -180,13 +197,21 @@ export default function BookPayment() {
         if (sigError) {
           console.log('Contract signature insert error:', sigError)
           Sentry.captureException(sigError)
+          setPendingBookingId(bookingId)
+          setProcessError(
+            'Your booking request was sent, but we could not save your contract signature. Tap Retry Signature to record it now, or go back.',
+          )
+          setIsProcessing(false)
+          return
         }
       }
 
+      // Signing (if any) succeeded — clear any pending retry state and continue.
+      setPendingBookingId(null)
       setIsProcessing(false)
       router.push({
         pathname: '/book/confirmed',
-        params: { bookingId: booking.id },
+        params: { bookingId },
       })
     } catch (err: any) {
       console.log('Booking error:', err)
@@ -310,7 +335,9 @@ export default function BookPayment() {
               <Text style={styles.confirmBtnText}>Sending your request...</Text>
             </View>
           ) : (
-            <Text style={styles.confirmBtnText}>Send Booking Request</Text>
+            <Text style={styles.confirmBtnText}>
+              {pendingBookingId ? 'Retry Signature' : 'Send Booking Request'}
+            </Text>
           )}
         </Pressable>
 

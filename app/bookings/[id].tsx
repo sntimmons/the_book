@@ -63,6 +63,12 @@ function statusBucket(status: string): StatusBucket {
       return 'completed'
     case 'no_show':
       return 'no_show'
+    case 'rescheduled':
+      // A rescheduled booking is still active/upcoming — not terminal. Treat it
+      // like an accepted booking so provider actions stay available. Mirrors
+      // bookingTab() in lib/bookingStatus.ts, which maps rescheduled -> upcoming.
+      // (This action-level bucket is intentionally finer-grained than bookingTab.)
+      return 'accepted'
     default:
       return 'cancelled'
   }

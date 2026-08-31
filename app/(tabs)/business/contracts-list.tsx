@@ -46,16 +46,21 @@ export default function ContractsList() {
         return
       }
       if (refresh) setRefreshing(true)
-      const [contract, sigs] = await Promise.all([
-        fetchProviderContract(providerId),
-        fetchProviderSignatures(providerId),
-      ])
-      setHasContract(!!contract)
-      setContractTitle(contract?.title ?? '')
-      setContractType(contract?.contractType ?? 'text')
-      setSignatures(sigs)
-      setLoading(false)
-      setRefreshing(false)
+      try {
+        const [contract, sigs] = await Promise.all([
+          fetchProviderContract(providerId),
+          fetchProviderSignatures(providerId),
+        ])
+        setHasContract(!!contract)
+        setContractTitle(contract?.title ?? '')
+        setContractType(contract?.contractType ?? 'text')
+        setSignatures(sigs)
+      } catch (e) {
+        console.log('Load contracts error:', e)
+      } finally {
+        setLoading(false)
+        setRefreshing(false)
+      }
     },
     [providerId],
   )

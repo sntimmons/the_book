@@ -63,21 +63,26 @@ export default function ContractEditor() {
       setLoading(false)
       return
     }
-    const contract = await fetchProviderContract(providerId)
-    if (contract) {
-      setTitle(contract.title || DEFAULT_TITLE)
-      setBody(contract.body || '')
-      setMode(contract.contractType)
-      setHasContract(true)
-      if (contract.contractType === 'pdf' && contract.pdfUrl) {
-        setPdfUrl(contract.pdfUrl)
-        // Prefer the stored original filename; fall back to the storage basename
-        // for PDFs uploaded before the pdf_filename column existed.
-        setPdfName(contract.pdfFilename || basename(contract.pdfUrl))
-        setPdfDate(contract.updatedAt ?? contract.createdAt)
+    try {
+      const contract = await fetchProviderContract(providerId)
+      if (contract) {
+        setTitle(contract.title || DEFAULT_TITLE)
+        setBody(contract.body || '')
+        setMode(contract.contractType)
+        setHasContract(true)
+        if (contract.contractType === 'pdf' && contract.pdfUrl) {
+          setPdfUrl(contract.pdfUrl)
+          // Prefer the stored original filename; fall back to the storage basename
+          // for PDFs uploaded before the pdf_filename column existed.
+          setPdfName(contract.pdfFilename || basename(contract.pdfUrl))
+          setPdfDate(contract.updatedAt ?? contract.createdAt)
+        }
       }
+    } catch (e) {
+      console.log('Load contract error:', e)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [providerId])
 
   useFocusEffect(
