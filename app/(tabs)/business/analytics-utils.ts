@@ -107,12 +107,24 @@ export const CANCEL_STATUSES = [
   'late_cancelled',
 ]
 
-// TODO: revert to completed only
-// before production launch
-// During dev/testing, any booking in an active status counts toward analytics
-// so the screens show real data. Production should treat only 'completed' as
-// revenue-earning. Use isEarning() in place of `status === 'completed'`.
-export const DEV_EARNING_STATUSES = [
+// Realized revenue / earnings / client spend count ONLY completed bookings.
+// Batch 4A: this previously also included active statuses
+// (accepted/pending/checked_in/arriving) for dev demo data, which overstated the
+// "COMPLETED SERVICE VALUE" and revenue figures. isCompletedEarning() keeps the
+// rule centralized instead of a bare `status === 'completed'` scattered per call.
+export const COMPLETED_EARNING_STATUSES = ['completed']
+
+export const isCompletedEarning = (status: string | null | undefined): boolean =>
+  COMPLETED_EARNING_STATUSES.includes(status || '')
+
+// Schedule utilization / booked capacity is a DIFFERENT business concept from
+// realized revenue: any booking that occupies a slot consumes capacity, not just
+// completed ones. An upcoming/accepted/pending appointment still fills the
+// calendar, so this set is intentionally broader than COMPLETED_EARNING_STATUSES.
+// This preserves the pre-Batch-4A behavior for utilization — it must NOT be
+// collapsed into completed-only, which would silently change the utilization
+// metric while fixing revenue.
+export const BOOKED_UTILIZATION_STATUSES = [
   'completed',
   'accepted',
   'pending',
@@ -120,8 +132,8 @@ export const DEV_EARNING_STATUSES = [
   'arriving',
 ]
 
-export const isEarning = (status: string | null | undefined): boolean =>
-  DEV_EARNING_STATUSES.includes(status || '')
+export const isBookedForUtilization = (status: string | null | undefined): boolean =>
+  BOOKED_UTILIZATION_STATUSES.includes(status || '')
 
 export interface BookingRow {
   id: string

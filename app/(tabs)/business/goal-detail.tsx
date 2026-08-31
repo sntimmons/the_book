@@ -23,7 +23,7 @@ import {
   goalKey,
   BookingRow,
   inMonth,
-  isEarning,
+  isCompletedEarning,
   getProviderDbId,
 } from './analytics-utils'
 import { DoneAccessory, DONE_ACCESSORY_ID } from '../../../components/DoneAccessory'
@@ -98,9 +98,7 @@ export default function GoalDetail() {
       const goalAmount = parseFloat(goalStr) || 2000
 
       const cur = currentMonthRange()
-      // TODO: revert to completed only
-      // before production launch
-      const completed = bookings.filter((b) => isEarning(b.status))
+      const completed = bookings.filter((b) => isCompletedEarning(b.status))
       const thisMonthCompleted = completed.filter((b) =>
         inMonth(b.created_at, cur.start, cur.end),
       )

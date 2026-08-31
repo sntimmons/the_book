@@ -23,7 +23,7 @@ import {
   CANCEL_STATUSES,
   BookingRow,
   ServiceRow,
-  isEarning,
+  isCompletedEarning,
   getProviderDbId,
 } from './analytics-utils'
 
@@ -102,18 +102,14 @@ export default function ServicePerformance() {
         ]),
       ) as string[]
 
-      // TODO: revert to completed only
-      // before production launch
       const allServicesRevenue = bookings
-        .filter((b) => isEarning(b.status))
+        .filter((b) => isCompletedEarning(b.status))
         .reduce((s, b) => s + (b.payment_amount || 0), 0)
 
       const ranked: SvcPerf[] = names
         .map((name) => {
           const sb = bookings.filter((b) => b.service_name === name)
-          // TODO: revert to completed only
-          // before production launch
-          const completed = sb.filter((b) => isEarning(b.status))
+          const completed = sb.filter((b) => isCompletedEarning(b.status))
           const cancel = sb.filter((b) => CANCEL_STATUSES.includes(b.status || ''))
           const noShow = sb.filter((b) => b.status === 'no_show')
           const totalRevenue = completed.reduce((s, b) => s + (b.payment_amount || 0), 0)

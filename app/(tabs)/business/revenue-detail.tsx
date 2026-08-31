@@ -20,7 +20,7 @@ import {
   BookingRow,
   ServiceRow,
   inMonth,
-  isEarning,
+  isCompletedEarning,
   getProviderDbId,
 } from './analytics-utils'
 
@@ -100,9 +100,7 @@ export default function RevenueDetail() {
         if (s.name && s.duration_minutes) durByName.set(s.name, s.duration_minutes)
       })
 
-      // TODO: revert to completed only
-      // before production launch
-      const completed = bookings.filter((b) => isEarning(b.status))
+      const completed = bookings.filter((b) => isCompletedEarning(b.status))
       const totalRevenue = completed.reduce((s, b) => s + (b.payment_amount || 0), 0)
 
       const cur = currentMonthRange()

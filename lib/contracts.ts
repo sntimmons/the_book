@@ -120,10 +120,14 @@ export async function fetchProviderContract(providerId: string): Promise<Contrac
     .eq('provider_id', providerId)
     .eq('is_active', true)
     .maybeSingle()
-  if (error || !data) {
-    if (error) console.log('Fetch provider contract error:', error)
-    return null
+  // Distinguish a genuine "no contract exists" (data null, no error) from a
+  // technical failure (network/query/RLS). A real error must NOT be collapsed to
+  // null, or a caller could treat a failed lookup as "no contract required".
+  if (error) {
+    console.log('Fetch provider contract error:', error)
+    throw error
   }
+  if (!data) return null
   return mapContract(data as RawContractRow)
 }
 
@@ -149,7 +153,15 @@ export async function fetchContractSignature(
 export async function fetchProviderSignatures(
   providerId: string,
 ): Promise<SignedContractRow[]> {
-  const contract = await fetchProviderContract(providerId)
+  // Provider's own list view; a contract-lookup failure degrades to an empty
+  // list here (not a booking gate), so swallow it rather than crashing the list.
+  let contract: Contract | null
+  try {
+    contract = await fetchProviderContract(providerId)
+  } catch (e) {
+    console.log('Fetch provider signatures (contract lookup) error:', e)
+    return []
+  }
   if (!contract) return []
 
   const { data, error } = await supabase

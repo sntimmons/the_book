@@ -23,7 +23,8 @@ import {
   DAY_LABELS_FULL,
   CANCEL_STATUSES,
   BookingRow,
-  isEarning,
+  isCompletedEarning,
+  isBookedForUtilization,
   getProviderDbId,
 } from './analytics-utils'
 
@@ -180,19 +181,19 @@ export default function ScheduleDetail() {
         const db = bookings.filter(
           (b) => b.requested_date && getDayOfWeek(b.requested_date) === d,
         )
-        // TODO: revert to completed only
-        // before production launch
-        const completed = db.filter((b) => isEarning(b.status))
+        // Realized revenue for the day: completed bookings only.
+        const completed = db.filter((b) => isCompletedEarning(b.status))
         const revenue = completed.reduce((s, b) => s + (b.payment_amount || 0), 0)
         const cancels = db.filter((b) => CANCEL_STATUSES.includes(b.status || '')).length
         const cancelRate = db.length > 0 ? (cancels / db.length) * 100 : 0
         return { day: dayName, count: db.length, revenue, cancelRate }
       }).filter((d) => d.count > 0)
 
-      // Capacity: bookedHours from accepted + completed; availableHours from open days.
-      // TODO: revert to completed only
-      // before production launch
-      const bookedBookings = bookings.filter((b) => isEarning(b.status))
+      // Capacity/utilization: any booking that occupies a slot counts toward
+      // booked hours (upcoming/accepted/pending as well as completed), NOT just
+      // completed ones. This is a separate concept from revenue and intentionally
+      // uses the broader utilization set — see analytics-utils.ts.
+      const bookedBookings = bookings.filter((b) => isBookedForUtilization(b.status))
       const bookedHours = bookedBookings.length * HOURS_PER_BOOKING
       // Available hours: open days * estimated 8h window (no start/end columns confirmed).
       const openDayCount =

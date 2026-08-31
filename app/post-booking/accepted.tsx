@@ -258,7 +258,7 @@ export default function BookingAccepted() {
         notes:
           'Booked on The Book.' +
           (data.depositAmount > 0
-            ? ' Deposit charged: ' + money(data.depositAmount) + '.'
+            ? ' Deposit due: ' + money(data.depositAmount) + '.'
             : ''),
       })
 
@@ -370,7 +370,7 @@ export default function BookingAccepted() {
 
           <Text style={styles.subtext}>
             {data.providerName.split(' ')[0]} confirmed your booking.{'\n'}
-            Your {money(data.depositAmount)} deposit has been charged.
+            Your {money(data.depositAmount)} deposit is not charged yet.
           </Text>
 
           <View style={styles.card}>
@@ -425,9 +425,9 @@ export default function BookingAccepted() {
 
             <View style={styles.depositRow}>
               <View style={styles.depositLeft}>
-                <Feather name="check-circle" size={13} color="#4CAF50" />
+                <Feather name="clock" size={13} color="#B9A88F" />
                 <Text style={styles.depositText}>
-                  {money(data.depositAmount)} deposit charged
+                  {money(data.depositAmount)} deposit — not charged yet
                 </Text>
               </View>
               {data.balanceAmount != null && (

@@ -11,6 +11,7 @@ import {
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import * as Sentry from '@sentry/react-native'
 import { useBookingStore } from '@/store/bookingStore'
 import { fetchProviderContract, Contract } from '@/lib/contracts'
 
@@ -20,26 +21,44 @@ export default function BookContract() {
 
   const [contract, setContract] = useState<Contract | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const [agreed, setAgreed] = useState(false)
   const [signed, setSigned] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const c = providerId ? await fetchProviderContract(providerId) : null
-      if (cancelled) return
-      // No contract for this provider — skip the step entirely.
-      if (!c) {
-        router.replace('/book/payment')
-        return
+      try {
+        const c = providerId ? await fetchProviderContract(providerId) : null
+        if (cancelled) return
+        // A genuine "no contract exists" (null, no error) skips the step.
+        if (!c) {
+          router.replace('/book/payment')
+          return
+        }
+        setContract(c)
+        setLoading(false)
+      } catch (e) {
+        // A technical failure must NOT masquerade as "no contract" and skip
+        // signing. Surface an error so the client can retry rather than
+        // proceeding to book without agreeing to the provider's contract.
+        if (cancelled) return
+        Sentry.captureException(e)
+        setLoadError(true)
+        setLoading(false)
       }
-      setContract(c)
-      setLoading(false)
     })()
     return () => {
       cancelled = true
     }
-  }, [providerId])
+  }, [providerId, reloadKey])
+
+  function retryLoad() {
+    setLoadError(false)
+    setLoading(true)
+    setReloadKey((k) => k + 1)
+  }
 
   function signAndContinue() {
     if (!agreed || !contract) return
@@ -60,6 +79,27 @@ export default function BookContract() {
       <View style={styles.root}>
         <View style={styles.centerBody}>
           <ActivityIndicator color="rgba(240,232,213,0.4)" />
+        </View>
+      </View>
+    )
+  }
+
+  if (loadError) {
+    // Contract lookup failed technically — do not silently skip signing.
+    return (
+      <View style={styles.root}>
+        <View style={styles.centerBody}>
+          <Text style={styles.title}>Could not load the agreement</Text>
+          <Text style={styles.bodyText}>
+            We could not load this service agreement. Please check your connection
+            and try again before continuing.
+          </Text>
+          <TouchableOpacity style={styles.iconBtn} onPress={retryLoad} activeOpacity={0.8}>
+            <Text style={styles.headerTitle}>Try again</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()} activeOpacity={0.8}>
+            <Text style={styles.headerTitle}>Go back</Text>
+          </TouchableOpacity>
         </View>
       </View>
     )

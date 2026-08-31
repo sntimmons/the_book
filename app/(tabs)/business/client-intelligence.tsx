@@ -19,7 +19,7 @@ import {
   monthRange,
   BookingRow,
   inMonth,
-  isEarning,
+  isCompletedEarning,
   getProviderDbId,
 } from './analytics-utils'
 
@@ -127,10 +127,8 @@ export default function ClientIntelligence() {
 
       const aggs: ClientAgg[] = clientIds.map((id) => {
         const cb = bookings.filter((b) => b.user_id === id)
-        // TODO: revert to completed only
-        // before production launch
         const completed = cb
-          .filter((b) => isEarning(b.status))
+          .filter((b) => isCompletedEarning(b.status))
           .filter((b) => b.requested_date)
           .sort(
             (a, b) =>
