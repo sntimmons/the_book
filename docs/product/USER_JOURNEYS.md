@@ -120,12 +120,16 @@ listed explicitly so they are not mistaken for defects (cross-check
 - **Current status:** delivery-model-specific safety (address disclosure timing, masked contact, check-in/out, safety contact, incident reporting) is **not built**; no mechanism chosen. A liability waiver is **not** a substitute for real safety controls.
 - **Open decisions:** the home/house-call safety mechanism set — **RESEARCH / PRODUCT DESIGN REQUIRED.**
 
-## J13 — Pre-booking message request → provider acceptance → conversation  ·  **PRODUCT DIRECTION**
-- **Actor:** client (or prospective client) and provider.
-- **Entry (intended):** contact a provider before booking.
-- **Steps (intended):** initial contact/request → provider receives a message **request** → provider may accept → accepted conversation appears in the primary inbox.
-- **Current status:** pre-booking messaging is desired and must not be prohibited; the **request/accept** model itself is **not yet built** (current messaging is one inbox tied to bookings).
-- **Open decisions:** exact request/accept implementation and inbox surfacing.
+## J13 — Pre-booking message request → provider acceptance → conversation  ·  **IMPLEMENTED (beta)**
+- **Actor:** client → provider.
+- **Entry:** ANY client-initiated pre-booking contact routes through the same centralized entry (`openMessageEntry` → `messageEntryAction`): the provider-profile **Message** button (`app/providers/[id].tsx`) **and** the booking **"Message them directly"** path when a provider has no availability (`app/book/datetime.tsx`). It opens an existing open/pending conversation, or composes a new request (`app/messages/new.tsx`) when none exists or the last one was declined — no entry point creates a free/ungated chat.
+- **Steps (current):** client composes **one** initial message → **Send Message Request** (`sendPrebookingRequest`) creates a `pending` conversation + first message → the client sees a "Message request sent" thread with **no composer** → the provider sees it under the **Requests** filter in Messages and opens the thread to **Accept** or **Decline** (`setRequestStatus`).
+  - **Accept** → `request_status='accepted'`; the same conversation becomes a normal two-way chat in the main inbox (no duplicate).
+  - **Decline** → `request_status='declined'`; soft-closed; client sees "This provider isn't available to chat right now."; the client may **re-request** later (re-opens the same conversation), and duplicate active pending requests are prevented (one conversation per pair).
+- **Server enforcement:** migration `20260901000000` (triggers + RLS): one initial client message while pending; no provider message while pending; no messages after decline; only the provider accepts/declines; only the client re-opens a declined request. Booking conversations are unaffected. (DB security suite validated 14 authorization cases.)
+- **Expected end state:** an accepted request is a normal conversation; a declined one is closed with soft copy; booking messaging still works.
+- **Status:** IMPLEMENTED (beta). Composer state logic is centralized in `lib/messageRequests.ts`.
+- **Open decisions:** conversation-merging when a chat later becomes a booking (only `booking_id` attach today); cooldown/anti-spam (none in beta); structured notifications/moderation (not built).
 
 ## J14 — Provider chooses policy / contract behavior  ·  **PARTIAL / UNDECIDED**
 - **Actor:** provider.
