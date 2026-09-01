@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   InputAccessoryView,
   Keyboard,
@@ -15,12 +16,23 @@ import {
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
-import { Message, useMessages } from '../../hooks/useMessaging'
+import { Message, useMessages, setRequestStatus } from '../../hooks/useMessaging'
 import { useAuth } from '../../context/AuthContext'
 import { supabase } from '../../lib/supabase'
+import {
+  composerState,
+  type RequestStatus,
+  type ViewerRole,
+} from '@/lib/messageRequests'
 
 const INPUT_ACCESSORY_ID = 'chatInput'
 const GROUP_WINDOW_MS = 5 * 60 * 1000
+
+// Monotonic per-mount suffix so two concurrent mounts of the same conversation
+// never share a realtime channel topic (which would throw "cannot add
+// postgres_changes after subscribe" and blank the screen) — mirrors the
+// channelInstanceSeq guard in hooks/useMessaging.ts.
+let statusChannelSeq = 0
 
 function formatMessageTime(dateStr: string): string {
   return new Date(dateStr).toLocaleTimeString('en-US', {
@@ -40,6 +52,10 @@ export default function ChatScreen() {
   const [otherPartyName, setOtherPartyName] = useState('')
   const [bookingService, setBookingService] = useState('')
   const [convoFound, setConvoFound] = useState<boolean | null>(null)
+  const [requestStatus, setRequestStatusState] = useState<RequestStatus>(null)
+  const [viewerRole, setViewerRole] = useState<ViewerRole>('client')
+  const [statusBusy, setStatusBusy] = useState(false)
+  const statusChannelId = useRef(++statusChannelSeq)
   const flatListRef = useRef<FlatList<Message>>(null)
 
   useEffect(() => {
@@ -48,7 +64,7 @@ export default function ChatScreen() {
       if (!id || !user) return
       const { data: convo } = await supabase
         .from('conversation')
-        .select('client_id, provider_id, booking_id')
+        .select('client_id, provider_id, booking_id, request_status')
         .eq('id', id)
         .maybeSingle()
 
@@ -62,6 +78,8 @@ export default function ChatScreen() {
 
       const isClient = convo.client_id === user.id
       const otherPartyId = isClient ? convo.provider_id : convo.client_id
+      setViewerRole(isClient ? 'client' : 'provider')
+      setRequestStatusState((convo.request_status as RequestStatus) ?? null)
 
       if (isClient) {
         const { data: provider } = await supabase
@@ -94,6 +112,29 @@ export default function ChatScreen() {
     }
   }, [id, user])
 
+  // Live-update this thread's request status: when the provider accepts/declines,
+  // the composer/notice reacts without the client having to leave and reopen.
+  // Scoped to THIS conversation id (RLS still limits delivery to participants);
+  // cleaned up on unmount / conversation change.
+  useEffect(() => {
+    if (!id) return
+    const channel = supabase
+      .channel('conversation-status-' + id + '-' + statusChannelId.current)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'conversation', filter: 'id=eq.' + id },
+        (payload) => {
+          const next =
+            ((payload.new as { request_status?: RequestStatus })?.request_status ?? null)
+          setRequestStatusState(next)
+        },
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [id])
+
   useEffect(() => {
     if (messages.length > 0) {
       const t = setTimeout(() => {
@@ -110,6 +151,26 @@ export default function ChatScreen() {
     const ok = await sendMessage(text)
     if (!ok) setInputText(text)
   }
+
+  // Provider accepts/declines a pending incoming request.
+  async function handleRequestDecision(status: 'accepted' | 'declined') {
+    if (statusBusy) return
+    setStatusBusy(true)
+    const res = await setRequestStatus(id as string, status)
+    setStatusBusy(false)
+    if (!res.ok) {
+      Alert.alert('Could not update', res.error ?? 'Please try again.')
+      return
+    }
+    if (status === 'accepted') {
+      setRequestStatusState('accepted') // composer opens for both parties
+    } else {
+      // Declined requests leave the active list; return to the inbox.
+      router.back()
+    }
+  }
+
+  const gate = composerState(requestStatus, viewerRole)
 
   const hasText = inputText.trim().length > 0
   const avatarInitial = (otherPartyName || 'C').charAt(0).toUpperCase()
@@ -257,42 +318,74 @@ export default function ChatScreen() {
           />
         )}
 
-        {/* Input bar */}
-        <View style={[styles.inputBar, { paddingBottom: insets.bottom + 12 }]}>
-          <TextInput
-            style={styles.input}
-            value={inputText}
-            onChangeText={setInputText}
-            placeholder="Message..."
-            placeholderTextColor="rgba(240,232,213,0.25)"
-            multiline
-            maxLength={1000}
-            inputAccessoryViewID={
-              Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined
-            }
-            onSubmitEditing={handleSend}
-            blurOnSubmit={false}
-          />
-          <TouchableOpacity
-            style={[styles.sendBtn, hasText && styles.sendBtnActive]}
-            onPress={handleSend}
-            disabled={sending || !hasText}
-            activeOpacity={0.8}
-          >
-            {sending ? (
-              <ActivityIndicator
-                color={hasText ? '#080808' : 'rgba(240,232,213,0.3)'}
-                size="small"
-              />
-            ) : (
-              <Ionicons
-                name="send"
-                size={18}
-                color={hasText ? '#080808' : 'rgba(240,232,213,0.2)'}
-              />
-            )}
-          </TouchableOpacity>
-        </View>
+        {/* Composer / request controls, gated by the request status. */}
+        {gate.canCompose ? (
+          <View style={[styles.inputBar, { paddingBottom: insets.bottom + 12 }]}>
+            <TextInput
+              style={styles.input}
+              value={inputText}
+              onChangeText={setInputText}
+              placeholder="Message..."
+              placeholderTextColor="rgba(240,232,213,0.25)"
+              multiline
+              maxLength={1000}
+              inputAccessoryViewID={
+                Platform.OS === 'ios' ? INPUT_ACCESSORY_ID : undefined
+              }
+              onSubmitEditing={handleSend}
+              blurOnSubmit={false}
+            />
+            <TouchableOpacity
+              style={[styles.sendBtn, hasText && styles.sendBtnActive]}
+              onPress={handleSend}
+              disabled={sending || !hasText}
+              activeOpacity={0.8}
+            >
+              {sending ? (
+                <ActivityIndicator
+                  color={hasText ? '#080808' : 'rgba(240,232,213,0.3)'}
+                  size="small"
+                />
+              ) : (
+                <Ionicons
+                  name="send"
+                  size={18}
+                  color={hasText ? '#080808' : 'rgba(240,232,213,0.2)'}
+                />
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : gate.showAcceptDecline ? (
+          <View style={[styles.requestBar, { paddingBottom: insets.bottom + 12 }]}>
+            <Text style={styles.requestPrompt}>{otherPartyName} sent a message request.</Text>
+            <View style={styles.requestBtns}>
+              <TouchableOpacity
+                style={[styles.declineBtn, statusBusy && styles.btnBusy]}
+                onPress={() => handleRequestDecision('declined')}
+                disabled={statusBusy}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.declineText}>Decline</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.acceptBtn, statusBusy && styles.btnBusy]}
+                onPress={() => handleRequestDecision('accepted')}
+                disabled={statusBusy}
+                activeOpacity={0.85}
+              >
+                {statusBusy ? (
+                  <ActivityIndicator color="#080808" size="small" />
+                ) : (
+                  <Text style={styles.acceptText}>Accept</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={[styles.noticeBar, { paddingBottom: insets.bottom + 12 }]}>
+            <Text style={styles.noticeText}>{gate.notice}</Text>
+          </View>
+        )}
       </KeyboardAvoidingView>
 
       {Platform.OS === 'ios' && (
@@ -504,6 +597,56 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: 'rgba(240,232,213,0.08)',
     backgroundColor: '#080808',
+  },
+  requestBar: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(240,232,213,0.08)',
+    backgroundColor: '#080808',
+    gap: 12,
+  },
+  requestPrompt: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.75)',
+    fontFamily: 'Manrope_500Medium',
+    textAlign: 'center',
+  },
+  requestBtns: { flexDirection: 'row', gap: 10 },
+  declineBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(240,232,213,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.12)',
+  },
+  declineText: { fontSize: 15, color: 'rgba(240,232,213,0.7)', fontFamily: 'Manrope_600SemiBold' },
+  acceptBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0E8D5',
+  },
+  acceptText: { fontSize: 15, color: '#080808', fontFamily: 'Manrope_700Bold' },
+  btnBusy: { opacity: 0.6 },
+  noticeBar: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(240,232,213,0.08)',
+    backgroundColor: '#080808',
+  },
+  noticeText: {
+    fontSize: 14,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_500Medium',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   input: {
     flex: 1,

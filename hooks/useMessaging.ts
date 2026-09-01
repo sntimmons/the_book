@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Alert } from 'react-native'
+import { router } from 'expo-router'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { checkRateLimit } from '../lib/rateLimit'
+import { messageEntryAction } from '../lib/messageRequests'
 
 // Monotonic counter so each hook instance gets a unique realtime channel name.
 // Two concurrent mounts must not share a channel topic, or the second subscribe
@@ -46,6 +48,8 @@ export interface Conversation {
   booking_id: string | null
   last_message_at: string | null
   created_at: string
+  // Pre-booking request lifecycle (null = open/booking/legacy conversation).
+  request_status: 'pending' | 'accepted' | 'declined' | null
   other_party_name: string
   other_party_id: string
   last_message_preview: string
@@ -423,5 +427,130 @@ export async function getOrCreateConversation(
   } catch (err) {
     console.log('getOrCreate error:', err)
     return null
+  }
+}
+
+// ── Pre-booking message requests ─────────────────────────────────────────────
+// A client's pre-booking contact is a REQUEST, not a free chat: one initial
+// message, then the provider accepts/declines. The server (RLS + triggers)
+// enforces this; these helpers drive the client/provider UI.
+
+export interface PrebookingConversation {
+  id: string
+  request_status: 'pending' | 'accepted' | 'declined' | null
+  booking_id: string | null
+}
+
+// The existing conversation for a client↔provider pair, or null. Used to decide
+// whether "Message" opens a thread or composes a new request.
+export async function findConversation(
+  clientId: string,
+  providerId: string,
+): Promise<PrebookingConversation | null> {
+  const { data } = await supabase
+    .from('conversation')
+    .select('id, request_status, booking_id')
+    .eq('client_id', clientId)
+    .eq('provider_id', providerId)
+    .maybeSingle()
+  return (data as PrebookingConversation | null) ?? null
+}
+
+// Send a pre-booking message request: create a new pending conversation with the
+// first message, OR re-open a previously declined one. Returns the conversation id.
+// Refuses to create a second message if an open/pending conversation already exists
+// (the server also enforces this) — returns that conversation id instead.
+export async function sendPrebookingRequest(
+  clientId: string,
+  providerId: string,
+  firstMessage: string,
+): Promise<{ conversationId: string | null; created: boolean; error?: string }> {
+  const body = firstMessage.trim()
+  if (!body) return { conversationId: null, created: false, error: 'Message is empty.' }
+  try {
+    const existing = await findConversation(clientId, providerId)
+
+    // An open or already-pending conversation exists -> do not create a duplicate;
+    // just open it (the caller navigates there).
+    if (existing && existing.request_status !== 'declined') {
+      return { conversationId: existing.id, created: false }
+    }
+
+    let conversationId: string
+    const nowIso = new Date().toISOString()
+    if (existing && existing.request_status === 'declined') {
+      // Re-request: re-open the declined conversation before sending.
+      const { error: reErr } = await supabase
+        .from('conversation')
+        .update({ request_status: 'pending', request_opened_at: nowIso })
+        .eq('id', existing.id)
+      if (reErr) return { conversationId: null, created: false, error: reErr.message }
+      conversationId = existing.id
+    } else {
+      const { data: created, error: cErr } = await supabase
+        .from('conversation')
+        .insert({
+          client_id: clientId,
+          provider_id: providerId,
+          booking_id: null,
+          request_status: 'pending',
+          request_opened_at: nowIso,
+          created_at: nowIso,
+        })
+        .select('id')
+        .single()
+      if (cErr || !created) return { conversationId: null, created: false, error: cErr?.message }
+      conversationId = created.id
+    }
+
+    const { error: mErr } = await supabase.from('messages').insert({
+      conversation_id: conversationId,
+      sender_id: clientId,
+      content: body,
+      is_read: false,
+      created_at: new Date().toISOString(),
+    })
+    if (mErr) return { conversationId, created: false, error: mErr.message }
+    return { conversationId, created: true }
+  } catch (err: any) {
+    return { conversationId: null, created: false, error: err?.message ?? 'Failed to send request.' }
+  }
+}
+
+// Provider accepts/declines an incoming pending request. Server enforces that only
+// the provider owner may do this and only from 'pending'.
+export async function setRequestStatus(
+  conversationId: string,
+  status: 'accepted' | 'declined',
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase
+    .from('conversation')
+    .update({ request_status: status })
+    .eq('id', conversationId)
+  if (error) {
+    return { ok: false, error: error.message }
+  }
+  return { ok: true }
+}
+
+// Centralized "Message" entry for ANY client-initiated pre-booking contact
+// (provider profile, no-availability booking path, …). Resolves — via the same
+// messageEntryAction decision — whether to open an existing open/pending
+// conversation or compose a new request, and navigates there. Booking-linked
+// conversations are unaffected (they are reached through their own flows).
+export async function openMessageEntry(
+  clientId: string,
+  providerId: string,
+  providerName?: string,
+): Promise<void> {
+  const existing = await findConversation(clientId, providerId)
+  const action = messageEntryAction(existing?.request_status ?? null, !!existing)
+  if (action === 'open' && existing) {
+    router.push(`/messages/${existing.id}` as never)
+  } else {
+    router.push({
+      pathname: '/messages/new',
+      params: { providerId, providerName: providerName ?? '' },
+    } as never)
   }
 }
