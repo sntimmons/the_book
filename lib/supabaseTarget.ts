@@ -1,8 +1,9 @@
-// Production-target guard for NON-PRODUCTION tooling (seed scripts, DB/security
-// tests, Maestro E2E setup, CI safety checks). This is NOT wired into the app's
-// production runtime — a production build must be free to target production. Its
-// only job is to make test/dev/seed tooling fail immediately if it is ever
-// pointed at the production Supabase project.
+// Production-target guard, shared by NON-PRODUCTION tooling (seed scripts,
+// DB/security tests, Maestro E2E setup, CI safety checks) AND the __DEV__-only
+// dev account switcher. It lives in lib/ (not test/) so the app can import it
+// without pulling test-only code into the bundle. It only rejects the production
+// project; it does NOT prevent a normal production build from targeting
+// production, because it is invoked exclusively from dev/test/tooling paths.
 
 // The production project ref. A URL/ref equal to this is rejected by the guard.
 export const PRODUCTION_SUPABASE_REF = 'kxregomuawwcqvisuhtr'

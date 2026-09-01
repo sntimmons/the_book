@@ -17,13 +17,17 @@ export async function getProviderDbId(
     return prov?.id ?? null
   }
   if (__DEV__) {
+    // Dev fallback when there is no session (DEV_MODE signed-out). Resolve the
+    // seeded NON-PROD provider by its stable username instead of a personal name,
+    // so this never targets a real/personal identity. On non-prod this is the
+    // `test_provider` seed; on any project without it, returns null.
     const { data: prov } = await supabase
       .from('providers')
       .select('id')
-      .eq('display_name', 'Stephen')
+      .eq('username', 'test_provider')
       .maybeSingle()
     const id = prov?.id ?? null
-    console.log('[analytics] DEV MODE: using provider', id)
+    console.log('[analytics] DEV MODE: using seeded provider', id)
     return id
   }
   return null

@@ -77,25 +77,29 @@ export default function ProviderGoLive() {
       return
     }
 
-    // Dev-mode bypass: when DEV_MODE is on in app/_layout.tsx the auth gate
-    // is open and there is no signed-in user. Let the tester complete the
-    // flow optimistically (no DB write) so the dashboard is reachable.
-    // Once DEV_MODE is flipped to false before TestFlight this branch
-    // becomes unreachable in practice.
     if (!user) {
-      Alert.alert(
-        'Signed-out preview',
-        'You are not signed in. Skipping save and continuing to your dashboard.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              reset()
-              router.replace(POST_GOLIVE_ROUTE as never)
+      // DEV-ONLY signed-out preview: when the DEV_MODE auth gate is open there is
+      // no session; let the tester complete optimistically (no DB write). This
+      // shortcut is gated by __DEV__ so it can NEVER ship-activate in a release.
+      if (__DEV__) {
+        Alert.alert(
+          'Signed-out preview',
+          'You are not signed in. Skipping save and continuing to your dashboard.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                reset()
+                router.replace(POST_GOLIVE_ROUTE as never)
+              },
             },
-          },
-        ],
-      )
+          ],
+        )
+        return
+      }
+      // Production: a signed-out state is never a successful go-live. Do not skip
+      // persistence and navigate as if it worked — surface a session error and stop.
+      Alert.alert('Not signed in', 'Please sign in again to publish your profile.')
       return
     }
 
