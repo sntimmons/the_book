@@ -104,13 +104,14 @@ listed explicitly so they are not mistaken for defects (cross-check
 - **QA rule:** lack of a self-service flow alone is **not** proof the badge is fraudulent; an admin/approved-process-managed state may be legitimate; an admin-set flag is **not automatically sufficient** evidence either. Undocumented process → **QUESTION / UNKNOWN — PRODUCT DECISION / TRUST-SAFETY DEFINITION REQUIRED**; flag any UI claim implying more than the actual process supports.
 - **Open decisions:** same as J9.
 
-## J11 — Attempt transaction while unverified → verification gate  ·  **PARTIAL / PRODUCT IMPLEMENTATION REQUIRED**
-- **Actor:** unverified client or provider.
-- **Entry:** attempting a transaction/booking (either side).
-- **Steps (intended):** attempt transaction → if not verified, a **verification gate** → verify (J9/J10) → continue the transaction.
-- **Expected end state (intended):** transactions require an identity-verified counterparty on both sides; unverified identities are materially prevented from transacting.
-- **Current status:** **not implemented** — browsing is open (correct) but the pre-transaction verification gate does not exist yet; bookings can currently be created without verification. This is a known PARTIAL against the approved direction, not a hidden regression.
-- **Open decisions:** exact gate placement, per-side sequencing, and any grace period. The current placeholder "**14-day to verify**" copy is **UNDECIDED / PLACEHOLDER** — QA must flag any UI presenting it as established policy.
+## J11 — Attempt transaction while unverified → verification gate  ·  **PARTIAL (beta gate live; real verification not built)**
+- **Actor:** client (provider-side gate deferred).
+- **Entry:** **Book Now** on a provider profile (start of the booking journey).
+- **Steps — CURRENT IMPLEMENTATION (beta):** Book Now → centralized verification gate (`lib/verificationGate.ts`) → because client verification state is not modeled, the gate resolves to **`unverified_beta_bypass`** → a **trust/education notice** (`app/book/verification.tsx`) is shown once per booking attempt → **Continue Booking** → `/book/service` (existing flow unchanged). The notice **changes no verification state** (no `identity_verified=true`, no fake row, no "Verified" success). It is acknowledged in `bookingStore.verificationNoticeAcknowledged`, which is **reset at the start of each booking attempt** (`setProvider`, on Book Now) and also cleared on `reset()` — so abandoning one attempt and starting a new one re-shows the notice (per-attempt, not per-session).
+- **Steps — INTENDED (future `required` mode):** attempt transaction → if not verified, a **hard** verification gate → verify (J9/J10, both sides) → continue. `resolveVerificationGate(..., 'required')` already models `unverified_hard_block` without reshaping the journey.
+- **Expected end state (intended):** transactions require an identity-verified **client AND provider**; unverified identities are materially prevented from transacting.
+- **Current status:** the **beta education gate is live**; **real verification and hard enforcement are not built**; bookings can still be created without verification (intentional beta bypass). Provider-side gate is deferred.
+- **Open decisions:** the verification vendor/process, per-side sequencing, and any grace period. The placeholder "**14-day to verify**" copy is **UNDECIDED / PLACEHOLDER** and is **not** used by this gate — QA must flag any UI presenting it as established policy.
 
 ## J12 — Verified client → home-based / mobile (house-call) service booking  ·  **RESEARCH / PRODUCT DESIGN REQUIRED**
 - **Actor:** verified client + home-based/mobile provider.
