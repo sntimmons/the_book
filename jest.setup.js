@@ -15,10 +15,28 @@ jest.mock('@supabase/supabase-js', () => ({
   },
 }))
 
+// Second backstop: if any future integration setup provides a real Supabase URL
+// to the test process, it must never be the production project. B5A unit tests
+// set no such env, so this is a no-op for them.
+const PRODUCTION_SUPABASE_REF = 'kxregomuawwcqvisuhtr'
+const configuredTestUrl =
+  process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.TEST_SUPABASE_URL
+if (configuredTestUrl && configuredTestUrl.includes(PRODUCTION_SUPABASE_REF)) {
+  throw new Error(
+    `Tests must not target the production Supabase project (${PRODUCTION_SUPABASE_REF}).`,
+  )
+}
+
 // Native/navigation modules that screen files import at module load. These are
 // mocked globally so a screen module can be imported purely to reach its pure
 // helper exports, without executing native code or navigation. The pure helpers
 // under test never call these; the mocks only satisfy the import graph.
+// AsyncStorage has no native module under Jest; use its official mock so modules
+// that import it (e.g. the real lib/supabase in the config test) can load.
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
+)
+
 jest.mock('@sentry/react-native', () => ({
   captureException: jest.fn(),
   captureMessage: jest.fn(),
