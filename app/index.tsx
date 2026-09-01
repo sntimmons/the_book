@@ -20,6 +20,7 @@ import { router } from 'expo-router'
 import { Feather } from '@expo/vector-icons'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { devSignInStatus } from '../lib/devAuth'
 
 const SLIDES = [
   {
@@ -67,26 +68,28 @@ const STATUS_COLOR: Record<RouteStatus, string> = {
 }
 
 // ─── DEV-ONLY account quick-switch ──────────────────────────────────────────
-// DEV-ONLY account quick-switch via real sign-in. Hardcoded dev credentials.
-// DO NOT SHIP. Remove this section before production (Phase 4 hardening).
-// Selecting an account does a real supabase.auth.signInWithPassword, so a real
-// session exists and auth.uid() is set (RLS-protected writes work).
+// DEV-ONLY account quick-switch via real sign-in. Credentials come ENTIRELY from
+// EXPO_PUBLIC_DEV_* env vars — no password or login identity is hardcoded here.
+// These are dev/test values for NON-PRODUCTION seed accounts only: EXPO_PUBLIC_*
+// is bundled, so they must never be production credentials or personal accounts,
+// and production never sets them (the switcher is __DEV__-gated and additionally
+// refuses the production project — see signInAs).
 type DevAccount = {
   kind: 'provider' | 'client'
   label: string
   email: string
 }
 
-const DEV_PASSWORD = 'thebookdev123'
+// Read from the dev environment; absent in production builds (which don't set
+// these), leaving DEV_ACCOUNTS empty.
+const DEV_CLIENT_EMAIL = process.env.EXPO_PUBLIC_DEV_CLIENT_EMAIL
+const DEV_PROVIDER_EMAIL = process.env.EXPO_PUBLIC_DEV_PROVIDER_EMAIL
+const DEV_PASSWORD = process.env.EXPO_PUBLIC_DEV_PASSWORD
 
 const DEV_ACCOUNTS: DevAccount[] = [
-  { kind: 'client', label: 'Test Client', email: 'testclient@thebook.dev' },
-  { kind: 'provider', label: 'Marcus Delray', email: 'seed-coachmarcusd@thebook.internal' },
-  { kind: 'provider', label: 'Nia Laurent (lash tech)', email: 'seed-nalashbynia@thebook.internal' },
-  { kind: 'provider', label: 'Kendra Simmons', email: 'seed-kendrastyles@thebook.internal' },
-  { kind: 'provider', label: 'Zara Baptise', email: 'seed-zarabraid@thebook.internal' },
-  { kind: 'provider', label: 'Stephen', email: 'stephentimmons1214@gmail.com' },
-]
+  DEV_CLIENT_EMAIL && { kind: 'client', label: 'Test Client', email: DEV_CLIENT_EMAIL },
+  DEV_PROVIDER_EMAIL && { kind: 'provider', label: 'Test Provider', email: DEV_PROVIDER_EMAIL },
+].filter(Boolean) as DevAccount[]
 
 const DEV_NAV: NavSection[] = [
   {
@@ -277,6 +280,24 @@ export default function WelcomeScreen() {
   // auth.uid()) exists, which RLS-protected writes require.
   async function signInAs(account: DevAccount) {
     if (!__DEV__ || switchingEmail) return
+    // Hard guard (independent of __DEV__): never authenticate against production,
+    // and never proceed without a configured dev password (no hardcoded fallback).
+    const status = devSignInStatus(process.env.EXPO_PUBLIC_SUPABASE_URL, DEV_PASSWORD)
+    if (status === 'refused-production') {
+      Alert.alert(
+        'Dev sign-in disabled',
+        'The dev account switcher cannot target the production project.',
+      )
+      return
+    }
+    if (status === 'not-configured') {
+      Alert.alert(
+        'Dev sign-in not configured',
+        'Set EXPO_PUBLIC_DEV_CLIENT_EMAIL / EXPO_PUBLIC_DEV_PROVIDER_EMAIL / ' +
+          'EXPO_PUBLIC_DEV_PASSWORD (see .env.example) to use the dev switcher.',
+      )
+      return
+    }
     setSwitchingEmail(account.email)
     const { data, error } = await supabase.auth.signInWithPassword({
       email: account.email,

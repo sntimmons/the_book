@@ -67,6 +67,9 @@ export default function PhoneScreen() {
   // Returning users (with an existing session) go to their destination;
   // everyone else is treated as a new user.
   async function handleDevBypass() {
+    // Defensive: this bypass must never execute in a production build, even if
+    // some future caller is not itself __DEV__-gated (the button already is).
+    if (!__DEV__) return
     const {
       data: { session },
     } = await supabase.auth.getSession()

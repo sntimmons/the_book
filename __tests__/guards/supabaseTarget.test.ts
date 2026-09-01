@@ -2,7 +2,7 @@ import {
   projectRefFromUrl,
   assertNotProductionSupabase,
   PRODUCTION_SUPABASE_REF,
-} from '@/test/guards/supabaseTarget'
+} from '@/lib/supabaseTarget'
 
 // Locks the production-target guard used by seed/DB-test/E2E tooling: it must
 // reject the production ref and accept non-prod refs.
