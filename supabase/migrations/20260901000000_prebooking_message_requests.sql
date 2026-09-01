@@ -95,8 +95,17 @@ begin
       end if;
     end if;
   end if;
-  if new.request_status = 'pending' and new.request_opened_at is null then
-    new.request_opened_at := now();
+  -- request_opened_at is a SECURITY BOUNDARY (it scopes the one-initial-message
+  -- rule), so it must be server-authoritative: for any non-service_role pending
+  -- row, stamp it with server time and IGNORE any client-supplied value. A client
+  -- must not be able to future-date it to slip messages past the pending gate.
+  -- clock_timestamp() (real wall clock), not now()/transaction time, so the
+  -- boundary strictly precedes any message inserted afterward even inside one
+  -- transaction, and a re-request always advances past prior-cycle messages.
+  if new.request_status = 'pending' then
+    new.request_opened_at := clock_timestamp();
+  else
+    new.request_opened_at := null;
   end if;
   return new;
 end;
@@ -179,10 +188,22 @@ begin
         raise exception 'Only the client may re-open a declined request.'
           using errcode = 'check_violation';
       end if;
+      -- Re-request opens a NEW request cycle: the server sets a fresh
+      -- request_opened_at (ignoring any client value) so the one-initial-message
+      -- allowance resets and prior-cycle messages fall outside the new window.
+      new.request_opened_at := clock_timestamp();
     else
       raise exception 'Invalid request status transition.'
         using errcode = 'check_violation';
     end if;
+  end if;
+
+  -- request_opened_at is server-authoritative and only ever changes via the
+  -- transitions above; a client may not otherwise mutate this security boundary.
+  if new.request_opened_at is distinct from old.request_opened_at
+     and not (old.request_status = 'declined' and new.request_status = 'pending') then
+    raise exception 'request_opened_at may not be changed directly.'
+      using errcode = 'check_violation';
   end if;
 
   return new;
@@ -210,6 +231,13 @@ begin
   if auth.role() = 'service_role' then
     return new;
   end if;
+
+  -- messages.created_at is used as the pending-cycle enforcement boundary, so for
+  -- any client insert it must be SERVER-authoritative — a client must not be able
+  -- to backdate created_at to keep the pending message-count at zero. Stamp it with
+  -- server time; this also preserves natural ordering (each insert gets a later
+  -- clock value). service_role (handled above) keeps its supplied value.
+  new.created_at := clock_timestamp();
 
   select * into v_conv from public.conversation where id = new.conversation_id;
   if not found then

@@ -31,6 +31,7 @@ import { getOrCreateConversation } from '@/hooks/useMessaging'
 function makeBuilder(cfg: {
   existing?: any
   insertResult?: { data?: any; error?: any }
+  attachError?: any
 }) {
   const b: any = {
     select: jest.fn(() => b),
@@ -41,8 +42,9 @@ function makeBuilder(cfg: {
     single: jest.fn(() =>
       Promise.resolve(cfg.insertResult ?? { data: { id: 'new-id' }, error: null }),
     ),
-    // makes `await mockBuilder` (after update().eq()) resolve
-    then: (onF: any, onR: any) => Promise.resolve({ data: null, error: null }).then(onF, onR),
+    // makes `await mockBuilder` (after update().eq()) resolve to the attach result
+    then: (onF: any, onR: any) =>
+      Promise.resolve({ data: null, error: cfg.attachError ?? null }).then(onF, onR),
   }
   return b
 }
@@ -105,5 +107,18 @@ describe('getOrCreateConversation booking upgrade', () => {
     expect(id).toBe('created-5')
     expect(mockBuilder.insert).toHaveBeenCalled()
     expect(mockBuilder.update).not.toHaveBeenCalled()
+  })
+
+  it('does NOT silently pretend success when the booking-attach update fails', async () => {
+    mockBuilder = makeBuilder({
+      existing: { id: 'conv-6', booking_id: null, request_status: 'pending' },
+      attachError: { message: 'attach rejected' },
+    })
+    const id = await getOrCreateConversation(CLIENT, PROVIDER, BOOKING)
+    // The attach failed → the conversation may still be request-gated, so the
+    // helper must surface failure (null) rather than return an id the caller
+    // would treat as an open chat.
+    expect(mockBuilder.update).toHaveBeenCalled()
+    expect(id).toBeNull()
   })
 })

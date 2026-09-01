@@ -388,10 +388,18 @@ export async function getOrCreateConversation(
       // Never overwrite an existing booking_id — that stays the initial booking;
       // later bookings for the same pair simply reuse this thread.
       if (bookingId && !existing.booking_id) {
-        await supabase
+        const { error: attachError } = await supabase
           .from('conversation')
           .update({ booking_id: bookingId, request_status: 'accepted' })
           .eq('id', existing.id)
+        if (attachError) {
+          // Don't silently pretend the booking attached — the conversation may
+          // still be request-gated (pending/declined), so surface the failure to
+          // the caller (null) instead of returning an id it would treat as an
+          // open chat. (No console here to avoid new lint debt; the null return
+          // is the actionable signal.)
+          return null
+        }
       }
       return existing.id
     }
