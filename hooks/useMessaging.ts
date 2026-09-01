@@ -17,29 +17,17 @@ let channelInstanceSeq = 0
 //   GET /rest/v1/conversations → PGRST205 (table not found)
 // All queries below use the singular name.
 //
-// RLS POLICIES STILL NEEDED before any real users touch the app:
-//
-//   conversation INSERT:
+// RLS state (verified on the live schema): `conversation` has RLS ENABLED and its
+// SELECT policy is participant-scoped —
 //     auth.uid() = client_id OR
 //     auth.uid() IN (SELECT user_id FROM providers WHERE id = provider_id)
-//
-//   conversation SELECT:
-//     auth.uid() = client_id OR
-//     auth.uid() IN (SELECT user_id FROM providers WHERE id = provider_id)
-//
-//   messages INSERT:
-//     auth.uid() = sender_id AND auth.uid() IN (
-//       SELECT client_id FROM conversation WHERE id = conversation_id
-//       UNION
-//       SELECT p.user_id FROM providers p
-//         JOIN conversation c ON c.provider_id = p.id
-//         WHERE c.id = conversation_id
-//     )
-//
-//   messages SELECT: same membership check as INSERT minus the sender_id eq.
-//
-// `messages` already has RLS on; `conversation` SELECT currently allows
-// anon (empty array on probe). Tighten both before launch.
+// so anon (whose auth.uid() is null) matches no participant rows and reads nothing
+// (the earlier "empty array on probe" was anon being filtered out, not open access).
+// A participant-scoped INSERT policy and the `messages` membership policies are
+// likewise in place; the pre-booking request integrity (one initial message, no
+// provider send while pending, no send after decline, provider-only accept/decline,
+// client-only re-open, and the client force-pending / booking-ownership checks) is
+// enforced by the SECURITY DEFINER triggers in migration 20260901000000.
 
 export interface Conversation {
   id: string
@@ -389,11 +377,24 @@ export async function getOrCreateConversation(
   try {
     const { data: existing } = await supabase
       .from('conversation')
-      .select('id')
+      .select('id, booking_id, request_status')
       .eq('client_id', clientId)
       .eq('provider_id', providerId)
       .maybeSingle()
-    if (existing) return existing.id
+    if (existing) {
+      // A real booking supersedes any prior pre-booking REQUEST for this pair:
+      // attach the booking and open the conversation for two-way messaging, so a
+      // pending/declined request never blocks messaging about an actual booking.
+      // Never overwrite an existing booking_id — that stays the initial booking;
+      // later bookings for the same pair simply reuse this thread.
+      if (bookingId && !existing.booking_id) {
+        await supabase
+          .from('conversation')
+          .update({ booking_id: bookingId, request_status: 'accepted' })
+          .eq('id', existing.id)
+      }
+      return existing.id
+    }
 
     const { data: created, error } = await supabase
       .from('conversation')

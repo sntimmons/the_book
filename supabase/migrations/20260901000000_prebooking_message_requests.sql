@@ -49,9 +49,17 @@ create unique index if not exists conversation_one_pending_prebooking
   where request_status = 'pending';
 
 -- ── 2. Conversation INSERT clamp ─────────────────────────────────────────────
--- A client may only ever CREATE a pending request (never a pre-accepted/declined
--- one), so "cannot accept your own request" holds at creation too. Booking/normal
--- conversations pass through with request_status = null.
+-- Client-initiated PRE-BOOKING contact must be a request — the server does not
+-- rely on the UI. Rules for a non-service_role insert:
+--   * any non-null, non-pending status is clamped to 'pending' (a client can
+--     never create a pre-accepted/declined conversation);
+--   * a CLIENT creating a NON-booking conversation (auth.uid() = client_id and
+--     booking_id is null) is forced to 'pending' even if they supplied null, so a
+--     client cannot craft an ungated open chat.
+-- Provider/business/community-initiated contact (auth.uid() <> client_id, e.g. a
+-- provider messaging a client, or a barter match where the caller owns the
+-- provider slot) and booking-linked conversations (booking_id not null) are left
+-- open — those remain a separate, deferred product question.
 create or replace function public.enforce_conversation_insert()
 returns trigger
 language plpgsql
@@ -62,8 +70,30 @@ begin
   if auth.role() = 'service_role' then
     return new;
   end if;
+  -- A non-null, non-pending status is never allowed at creation.
   if new.request_status is not null and new.request_status <> 'pending' then
     new.request_status := 'pending';
+  end if;
+  -- CLIENT-initiated inserts are gated so a client cannot craft an ungated chat:
+  if auth.uid() = new.client_id then
+    if new.booking_id is null then
+      -- Non-booking client contact must be a pending REQUEST (even if null supplied).
+      if new.request_status is null then
+        new.request_status := 'pending';
+      end if;
+    else
+      -- A booking-linked client conversation must reference a REAL booking for
+      -- this exact pair — no fake booking_id may buy an open chat.
+      if not exists (
+        select 1 from public.bookings b
+        where b.id = new.booking_id
+          and b.user_id = new.client_id
+          and b.provider_id = new.provider_id
+      ) then
+        raise exception 'That booking does not belong to this conversation.'
+          using errcode = 'check_violation';
+      end if;
+    end if;
   end if;
   if new.request_status = 'pending' and new.request_opened_at is null then
     new.request_opened_at := now();
@@ -108,7 +138,9 @@ begin
     where p.id = old.provider_id and p.user_id = auth.uid()
   );
 
-  -- A booking may only be ATTACHED once (null -> value) by a participant.
+  -- A booking may only be ATTACHED once (null -> value) by a participant, and the
+  -- booking must genuinely belong to this conversation's client↔provider pair —
+  -- booking_id must never become a privilege-escalation vector.
   if new.booking_id is distinct from old.booking_id then
     if old.booking_id is not null then
       raise exception 'A conversation''s booking may not be reassigned.'
@@ -118,11 +150,26 @@ begin
       raise exception 'Only a participant may attach a booking.'
         using errcode = 'check_violation';
     end if;
+    if not exists (
+      select 1 from public.bookings b
+      where b.id = new.booking_id
+        and b.user_id = old.client_id
+        and b.provider_id = old.provider_id
+    ) then
+      raise exception 'That booking does not belong to this conversation.'
+        using errcode = 'check_violation';
+    end if;
   end if;
 
   -- Request status transitions.
   if new.request_status is distinct from old.request_status then
-    if old.request_status = 'pending' and new.request_status in ('accepted', 'declined') then
+    -- BOOKING SUPERSEDES THE REQUEST: when a legitimate booking is attached
+    -- (null -> value, validated above) the conversation opens for normal two-way
+    -- booking messaging regardless of any prior pending/declined request state.
+    if old.booking_id is null and new.booking_id is not null
+       and new.request_status = 'accepted' then
+      null; -- allowed for a participant; booking ownership already verified
+    elsif old.request_status = 'pending' and new.request_status in ('accepted', 'declined') then
       if not v_is_provider then
         raise exception 'Only the provider may accept or decline a request.'
           using errcode = 'check_violation';
