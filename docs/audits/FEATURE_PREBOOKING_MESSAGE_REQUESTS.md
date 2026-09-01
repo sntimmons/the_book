@@ -1,9 +1,12 @@
 # Feature — Pre-Booking Message Requests
 
-**Result: PASS (pending QA sign-off).** Clients can contact a provider before booking as
-a **message request**: one initial message, then the provider accepts (→ normal chat) or
-declines (soft-closed). Enforced server-side (migration + triggers + RLS), not just in the
-UI. Booking conversations are unaffected. Messaging stays one unified inbox.
+**Result: PASS (pre-merge correction pass complete; pending QA sign-off).** Clients can
+contact a provider before booking as a **message request**: one initial message, then the
+provider accepts (→ normal chat) or declines (soft-closed). Enforced server-side (migration +
+triggers + RLS), not just in the UI. Booking conversations are unaffected, and a **real
+booking supersedes any prior request** — it opens the same thread for two-way messaging.
+Messaging stays one unified inbox. Two PR-level findings (QA-REGRESSION-001 HIGH,
+QA-TRUTH-001 MEDIUM) were **resolved before merge** — see the dedicated section below.
 
 ## Current messaging architecture discovered
 - One **singular** `conversation` table (id, client_id, provider_id, booking_id,
@@ -33,13 +36,21 @@ UI. Booking conversations are unaffected. Messaging stays one unified inbox.
 ## RLS / security model (server-authoritative)
 Three SECURITY DEFINER triggers (service_role bypass), mirroring the SB3b style, plus one
 new RLS policy:
-- `enforce_conversation_insert` — a client may only ever CREATE a `pending` request
-  (any other status is clamped to `pending`); sets `request_opened_at` if missing. So a
-  client **cannot self-accept at creation**.
+- `enforce_conversation_insert` — a client may only ever CREATE a `pending` request:
+  any non-pending status is clamped to `pending`, **and a client-initiated conversation
+  cannot be an ungated open chat** — if `auth.uid() = client_id` and `booking_id IS NULL`,
+  status is forced to `pending` even when the client supplied `null` (closes QA-TRUTH-001),
+  and if the client supplies a `booking_id` it must reference a **real booking for this
+  exact pair** or the insert is rejected (so a fabricated `booking_id` cannot buy an open
+  chat). Sets `request_opened_at` if missing. A client thus cannot self-accept at creation.
+  Provider/community-initiated inserts (`auth.uid() <> client_id`) are left untouched.
 - `enforce_conversation_update` — identity fields immutable; `booking_id` attachable once
-  (null→value) by a participant; transitions restricted: `pending→accepted/declined` only
-  by the **provider**, `declined→pending` only by the **client**; all other transitions
-  rejected.
+  (null→value) by a participant **and only if that booking genuinely belongs to the
+  conversation's client↔provider pair** (booking_id is never a privilege-escalation vector);
+  transitions restricted: attaching a legitimate booking may open the conversation
+  (`null booking_id + request → accepted`) for a participant — **a real booking supersedes a
+  prior pending/declined request** (QA-REGRESSION-001); `pending→accepted/declined` only by
+  the **provider**, `declined→pending` only by the **client**; all other transitions rejected.
 - `enforce_prebooking_message_rules` (on `messages`) — open conversations (booking-linked,
   legacy null, or accepted) pass; **declined blocks**; **pending** allows only the client's
   single initial message of the current cycle (scoped by `request_opened_at`) and blocks
@@ -48,11 +59,19 @@ new RLS policy:
   update their conversation (accept/decline, re-request, attach booking, `last_message_at`);
   integrity is enforced by the trigger above.
 
-**DB security suite (rolled-back role simulation on non-prod) — 14/14 pass:** create
-pending+first ALLOW; 2nd message BLOCK; client-accept BLOCK; duplicate-pending BLOCK;
-wrong-provider accept BLOCK; provider-accept ALLOW; both-message-after-accept ALLOW;
-pre-accept clamped to pending; client-decline BLOCK; provider-decline ALLOW;
-message-after-decline BLOCK; re-request ALLOW; booking conversation two messages ALLOW.
+**DB security suite (rolled-back role simulation on non-prod) — 21/21 pass.**
+*Original 14 authorization cases (re-run, no regression):* create pending+first ALLOW;
+2nd message BLOCK; client-accept BLOCK; duplicate-pending BLOCK; wrong-provider accept
+BLOCK; provider-accept ALLOW; both-message-after-accept ALLOW; pre-accept clamped to
+pending; client-decline BLOCK; provider-decline ALLOW; message-after-decline BLOCK;
+re-request ALLOW; booking conversation two messages ALLOW (now using a REAL booking).
+*Correction-pass cases (§ booking supersession + insert gate):* (A) client null-status
+non-booking insert → forced `pending`; (B) pending→attach-legit-booking → open two-way,
+client+provider both send; (C) declined→attach-legit-booking → open two-way; (D) attach a
+booking that does NOT belong to the pair → BLOCK; (E) accepted→attach-legit-booking → still
+two-way, same row; (G) client insert with a FAKE `booking_id` → BLOCK. All pass. *(This
+remains a manual role-simulation run against non-prod, not a committed automated harness —
+see the honesty note below.)*
 
 ## Request lifecycle
 `null` (open/booking/legacy) · `pending` (one client message, awaiting provider) ·
@@ -84,10 +103,17 @@ sent for a client) with a count; Bookings unchanged. Declined requests are hidde
 active lists. No separate messaging product; no role mode (per NAVIGATION.md).
 
 ## Booking-conversation regression status
-Unaffected. Booking conversations have `request_status=null` (open) and the message trigger
-treats `booking_id IS NOT NULL` / null-status / accepted as open → normal two-way messaging.
-`getOrCreateConversation` (booking flows) is unchanged. DB suite T12 confirms two-way booking
-messages allowed.
+Unaffected, and now explicitly hardened (QA-REGRESSION-001). Booking conversations have
+`request_status=null` (open) and the message trigger treats `booking_id IS NOT NULL` /
+null-status / accepted as open → normal two-way messaging. `getOrCreateConversation` now,
+when called **with** a real `bookingId` and an existing pre-booking conversation is found,
+attaches the booking and flips the row to open (`booking_id`, `request_status='accepted'`)
+instead of early-returning the still-restricted row — so a prior `pending`/`declined`
+request can never block messaging about an actual booking. It **never** overwrites an
+existing `booking_id` (the first booking stays; later bookings reuse the one thread), and it
+does nothing when called without a `bookingId`. DB suite cases B/C/E + the committed
+`getOrCreateConversation` unit tests confirm the upgrade; T12 confirms an existing booking
+conversation stays a normal two-way chat.
 
 ## Navigation changes
 - Provider profile **Message** → `messageEntryAction` → open existing thread or
@@ -99,17 +125,24 @@ messages allowed.
 ## Files changed
 - **New:** `supabase/migrations/20260901000000_prebooking_message_requests.sql`,
   `lib/messageRequests.ts`, `app/messages/new.tsx`,
-  `__tests__/lib/messageRequests.test.ts`, this report.
+  `__tests__/lib/messageRequests.test.ts`,
+  `__tests__/hooks/getOrCreateConversation.test.ts` (correction pass), this report.
 - **Modified:** `hooks/useMessaging.ts`, `app/providers/[id].tsx`, `app/messages/[id].tsx`,
   `app/(tabs)/messages.tsx`, `docs/product/BETA_SCOPE.md`, `docs/product/USER_JOURNEYS.md`.
 
 ## Tests
-- Unit: `__tests__/lib/messageRequests.test.ts` (8) — composer state per status/role, active
+- Unit: `__tests__/lib/messageRequests.test.ts` — composer state per status/role, active
   request, inbox section, message-entry action.
-- DB/security: the 14-case rolled-back role simulation above (run against non-prod;
+- Unit (correction pass): `__tests__/hooks/getOrCreateConversation.test.ts` (5) — locks the
+  booking-upgrade behavior: existing pending + booking → attaches booking & opens (does not
+  early-return untouched); existing declined + booking → upgrades; existing booking-linked →
+  reused without overwriting booking_id; existing pending + no bookingId → reused unchanged;
+  none → create. (Mocks Supabase; the server triggers are the real authority, validated by
+  the DB role-simulation.)
+- DB/security: the 21-case rolled-back role simulation above (run against non-prod;
   authorization does not rely on UI disabling).
-- Suite: **16 suites / 92 tests** (was 15/84; +1 suite, +8 unit tests). Typecheck exit 0;
-  `lint:ci` exit 0 (210, no new debt).
+- Suite: **17 suites / 100 tests** (was 16/95; +1 suite, +5 unit tests). Typecheck exit 0;
+  `lint:ci` exit 0 (210 warnings, no new debt).
 
 ## QA Agent 1 output
 Agent 1 (QA / Journey Reviewer) ran **read-only** (feature acceptance + J13). **Verdict:
@@ -153,17 +186,61 @@ codebase's `channelInstanceSeq` pattern (risking a "cannot add postgres_changes 
 subscribe" blank-screen on a double-mount). Since that was a robustness defect in the code
 just added for the QA-UX-001 fix, it was **corrected in the same pass**: the status channel
 now appends a monotonic per-mount suffix (`conversation-status-<id>-<seq>`), mirroring
-`hooks/useMessaging.ts`. Gates remained green (16 suites / 95 tests).
+`hooks/useMessaging.ts`. Gates remained green (16 suites / 95 tests **at that pass**; the
+later pre-merge correction pass added the `getOrCreateConversation` suite → **17 suites /
+100 tests**, the current count).
 
-**Coverage-gap correction (honest):** the "14-case DB security suite" cited above was a
+**Coverage-gap correction (honest):** the DB security suite cited above (now **21 cases** —
+14 original authorization + 6 booking-supersession/insert-gate + 1 fake-booking-insert) is a
 **manual rolled-back role-simulation run against non-prod during development — it is NOT a
 committed automated test** (the B5B DB/security harness does not exist yet). The QA agent
 correctly could not locate/execute it. The only committed automated coverage is the pure
-`lib/messageRequests.ts` unit tests; the server triggers/RLS are validated by the manual
-simulation only. Standing up a committed DB/security harness (B5B) that includes these 14
-cases is a recommended follow-up.
+`lib/messageRequests.ts` unit tests plus the `getOrCreateConversation` booking-upgrade unit
+tests; the server triggers/RLS are validated by the manual simulation only. Standing up a
+committed DB/security harness (B5B) that includes these 21 cases is a recommended follow-up.
 
 Full QA output is returned separately to the reviewer.
+
+## PR #19 review findings — RESOLVED BEFORE MERGE (pre-merge correction pass)
+Agent 1's **PR-level** review (read-only, on the pushed branch) returned **PASS WITH
+FINDINGS** with two confirmed issues. Both were accepted and corrected on the branch
+**before merge**; the migration (not yet in production) was corrected in place — no second
+corrective migration was added. History preserved: the findings were real and are recorded,
+not rewritten away.
+
+- **QA-REGRESSION-001 · HIGH · CONFIRMED → RESOLVED BEFORE MERGE** — original finding:
+  `getOrCreateConversation(userId, providerId, bookingId)` early-returned an existing
+  conversation's id immediately; if that row was a `pending`/`declined` pre-booking request
+  with `booking_id` null, a subsequent real booking never attached and the request
+  restrictions kept blocking messaging about the actual booking. **Correction:** the helper
+  now, when called with a real `bookingId` and an existing conversation lacking one, attaches
+  the booking and opens the row (`request_status='accepted'`) on the **same** conversation
+  (no duplicate, existing booking_id never overwritten); the `enforce_conversation_update`
+  trigger authorizes this transition **server-side** and validates that the booking belongs
+  to the pair. Locked by the new `getOrCreateConversation` unit tests + DB cases B/C/E.
+- **QA-TRUTH-001 · MEDIUM · CONFIRMED → RESOLVED BEFORE MERGE** — original finding: the
+  request gate was effectively UI-driven — a client could bypass it by inserting a
+  conversation directly with `booking_id=null` and `request_status=null` and get an open
+  chat. **Correction:** `enforce_conversation_insert` now forces a client-initiated
+  non-booking conversation to `pending` server-side regardless of the supplied status, and
+  additionally rejects a client-supplied `booking_id` that isn't a real booking for the pair
+  (closing the sibling "fake booking_id" vector). Provider/business/community-initiated
+  contact (`auth.uid() <> client_id`) is deliberately left open — a separate product
+  question, not forced into the request model. Locked by DB cases A + G.
+
+**Realtime publication (QA-UX-001 follow-up, §checked):** the conversation-UPDATE realtime
+subscription that unlocks the composer on accept requires `public.conversation` to be a
+member of the `supabase_realtime` publication. On the non-prod project the publication
+**exists but is empty** (no tables — this also affects the pre-existing `messages` realtime),
+and **no migration manages publication membership** (it is dashboard/config-managed). So
+conversation realtime is **not** verifiably working on non-prod today. This is an
+environment/deploy-config gap, **not** a dead-end: the thread re-reads `request_status` on
+every mount, so the composer still unlocks when the client re-opens the thread; realtime only
+makes it live-in-place. **Not changed here** (per instruction, publication config is not
+modified blindly) — flagged for the deploy runbook: enable Realtime for `conversation`
+(matching however `messages` is enabled), or add a guarded `alter publication
+supabase_realtime add table public.conversation;` if publication membership should become
+migration-managed.
 
 ## Limitations
 - Client verified state / verification gating is unrelated here (unchanged).
@@ -179,6 +256,8 @@ Cooldown/anti-spam; conversation-merge semantics; whether providers can initiate
 a request; request notifications/moderation. All deferred (documented, not invented).
 
 ## PASS / FAIL
-**PASS** — server-authoritative request model (14/14 DB checks), truthful soft-decline copy,
-one unified inbox, booking messaging intact, tests green, no new lint debt. Pending QA
-sign-off.
+**PASS** — server-authoritative request model (21/21 DB checks), client-bypass and
+fake-booking vectors closed server-side, a real booking supersedes a prior request on the
+same thread (no duplicate), truthful soft-decline copy, one unified inbox, booking messaging
+intact and hardened, tests green (17 suites / 100), no new lint debt. Both pre-merge findings
+(QA-REGRESSION-001, QA-TRUTH-001) resolved before merge. Pending QA sign-off.
