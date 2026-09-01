@@ -23,10 +23,11 @@ keep changes safe and reviewable. Read [README.md](README.md) and
 - **Schema changes require migrations.** Do not edit the schema in the Supabase
   dashboard. Add a new, timestamped migration file under `supabase/migrations/`
   for every schema change so history is preserved.
-- **The committed schema is not yet reconciled with production.** The baseline
-  migration was reconstructed from code, so it is not guaranteed to reproduce the
-  live database. See [docs/README.md](docs/README.md#open-items--pending-investigations).
-  Until reconciliation (Batch F2) lands, treat migrations with caution.
+- **The committed schema is reconciled with production (Batches F3–F5).** The
+  canonical baseline migration was reconciled against the live database and **verified
+  to reproduce** on a fresh non-production project (Batch 6AB). The active chain is the
+  8 `supabase/migrations/*` files. Add a new timestamped migration for every schema
+  change. (`DATA_MODEL.md`/`SECURITY_MODEL.md` remain planned.)
 
 ## Changes that require explicit review
 
