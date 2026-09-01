@@ -30,7 +30,10 @@ Distinguish three things whenever you read or write docs:
 
 | Document | Category | Status |
 |---|---|---|
+| [product/BETA_SCOPE.md](product/BETA_SCOPE.md) | Product | **Authoritative (current-state)** - the product-truth ledger: what each surface is (REAL / PARTIAL / PLACEHOLDER / DEFERRED / UNDECIDED). |
+| [product/USER_JOURNEYS.md](product/USER_JOURNEYS.md) | Product | **Authoritative (acceptance intent)** - canonical journeys, expected end states, and current status. |
 | [architecture/NAVIGATION.md](architecture/NAVIGATION.md) | Architecture | **Authoritative** - the governing navigation model (one account, no modes, five shared tabs, RLS is the enforcement boundary). |
+| [../.agents/qa-journey-reviewer/](../.agents/qa-journey-reviewer/) | Agents | **Authoritative** - the read-only QA / Journey Reviewer agent definition. |
 | [../supabase/README.md](../supabase/README.md) | Architecture / Data | **Authoritative, with caveats** - schema baseline notes and known gaps. The baseline is reconstructed from code, not production history (see open items P0). |
 | [../supabase/functions/README.md](../supabase/functions/README.md) | Operations / Security | **Authoritative** - the `rate-limit` Edge Function: limits, deploy, secrets. |
 | [../README.md](../README.md) | Entry point | **Authoritative** - repo overview, stack, install/run, env caveat. |
@@ -45,7 +48,8 @@ empty for now (no placeholder files). **Authoritative product and data/security
 docs are deliberately deferred until after schema reconciliation (Batch F2),
 because writing them against an unverified schema would bake in errors.**
 
-- `product/` - `PRODUCT.md`, `BETA_SCOPE.md`, `USER_JOURNEYS.md`
+- `product/` - `BETA_SCOPE.md` and `USER_JOURNEYS.md` are now **written and
+  authoritative** (current-state); `PRODUCT.md` remains planned.
 - `architecture/` - `ARCHITECTURE.md`, `DATA_MODEL.md` (after F2)
 - `security/` - `SECURITY_MODEL.md`, `SECURITY_BACKLOG.md` (after F2)
 - `testing/` - `TESTING.md`
@@ -58,48 +62,51 @@ because writing them against an unverified schema would bake in errors.**
 Carried forward from the handoff audit. These are recorded here so they are not
 lost during foundation work. **None are fixed in this documentation batch.**
 
-### P0 - Live database truth / schema reconciliation (next: Batch F2)
-The committed migrations were reconstructed from code analysis and live REST
-probes, not from real migration history, and the RLS section was never dumped
-from production. Only `providers`, `bookings`, and `clients` have their full
-confirmed column lists; everything else is inferred. **Running the migrations is
-not guaranteed to reproduce production.** Batch F2 will reconcile the live
-database (service-role schema dump + `pg_policies` dump) before any authoritative
-`DATA_MODEL.md` or `SECURITY_MODEL.md` is written. See
-[../supabase/README.md](../supabase/README.md) "Known gaps" and "For the engineer
-taking this over."
+### P0 - Live database truth / schema reconciliation — **RESOLVED (Batches F3–F5)**
+> **Status update:** the schema has been reconciled against production and a
+> canonical baseline migration was produced and **verified to reproduce** on a
+> fresh non-production project (Batch 6AB). The active migration chain is the 8
+> `supabase/migrations/*` files. `DATA_MODEL.md`/`SECURITY_MODEL.md` remain planned.
+>
+> _Original note (historical):_ The committed migrations were reconstructed from code
+> analysis and live REST probes, not from real migration history, and the RLS section
+> was never dumped from production. Only `providers`, `bookings`, and `clients` had full
+> confirmed column lists; everything else was inferred. Running the migrations was not
+> guaranteed to reproduce production.
 
-### P0 - Booking write-integrity not enforced server-side
-The `bookings` UPDATE policy scopes to participants but does not restrict which
-columns/values a participant may set, so a client can in principle set
-`status='completed'` / `no_show_flag` / `payment_*` directly. The UI hides those
-actions from clients, but UI is not security. Enforcement (per-role column grants
-or a trigger) is owed. Documented in [../supabase/README.md](../supabase/README.md)
-gap #4. Fix is out of scope for foundation docs; it belongs in the security
-backlog once F2 lands.
+### P0 - Booking write-integrity not enforced server-side — **RESOLVED (Security Batch 3B)**
+> **Status update:** enforced. A `BEFORE INSERT/UPDATE` trigger
+> (`enforce_booking_write_integrity`) plus per-actor status authorship now neutralize
+> client-seeded `status`/`no_show_flag`/`payment_*` and restrict which fields each
+> actor may change. See `supabase/migrations/20260830010000_*` and
+> `docs/audits/SECURITY_BATCH_3B_BOOKING_WRITE_INTEGRITY_FINAL.md`.
+>
+> _Original note (historical):_ The `bookings` UPDATE policy scoped to participants but
+> did not restrict which columns/values a participant could set, so a client could in
+> principle set `status='completed'` / `no_show_flag` / `payment_*` directly.
 
-### P1 - OPEN / NOT FIXED: Contracts save failure
-The contracts save path is failing on device and is **not fixed**.
+### P1 - Contracts: client fetch/signature paths **FIXED (Batch 4A)**; provider-side save **still to verify**
+> **Status update:** the client-side contract path was hardened in Batch 4A —
+> `fetchProviderContract` now throws on a real error instead of silently skipping the
+> signing gate, and a failed `contract_signatures` insert no longer advances as
+> success (it surfaces an error and offers retry). Schema is reconciled (F3–F5), so the
+> live column shape is now known. **Not yet re-verified:** the original provider-side
+> *save* symptom (a possible null `provider_id` write). Track it as a QA/engineering
+> item, not a foundation blocker.
+>
+> _Original note (historical):_ the contracts save path was failing on device; working
+> theory was a save executing with a null `provider_id` rejected by a live NOT NULL
+> constraint, with the screen swallowing the underlying database error.
 
-- The **live** `contracts` table reportedly has `provider_id`, `user_id`, and
-  `body` as `NOT NULL`, where the repo migration differs.
-- Working theory: the save may execute with a **null `provider_id`**, which the
-  live NOT NULL constraint rejects.
-- The current contract screen reportedly **swallows the underlying database
-  error**, surfacing a generic or misleading message instead of the real cause.
-- **Status: OPEN.** Do not consider this resolved. It should be re-investigated
-  after schema reconciliation (F2), since the true column shape is part of the
-  same schema-drift problem. Prior investigation notes live in the session
-  history; capture them in the security/data backlog when those docs are written.
-
-### P2 - Lint warning baseline (maintainability)
-`npm run lint` reports 207 warnings (0 errors) against the app code under
-`--max-warnings 0`, so `npm run check` is red at the lint step even though
-`tsc --noEmit` passes. The warnings are pre-existing (verified identical on
-pristine `main`) and are mostly `no-console` and `@typescript-eslint/array-type`.
-CI's lint step is non-blocking (`|| true`), so CI stays green. Clearing this
-baseline (or adjusting the rule set) is a dedicated maintainability batch; do not
-fix it inline inside unrelated work.
+### P2 - Lint warning baseline (maintainability) — **partially addressed (Batch 5D)**
+> **Status update:** CI is no longer non-blocking here. `npm run lint:ci`
+> (`--max-warnings 210`) is now a **blocking** CI gate: any ESLint error or any new
+> warning beyond the frozen baseline of **210** fails CI, while the existing backlog
+> does not. The baseline is meant to ratchet **down** over time. Clearing the backlog
+> remains a dedicated maintainability batch; do not fix it inline in unrelated work.
+>
+> _Original note (historical):_ `npm run lint` reported 207 warnings (0 errors) under
+> `--max-warnings 0`; CI's lint step was non-blocking (`|| true`).
 
 ### Verified dead-code cleanup candidates (do NOT remove yet)
 Suspected leftovers from a Next.js/web template that do not appear to belong to
@@ -117,8 +124,12 @@ or used by build/deployment tooling.** Recorded here as candidates only:
 ### Known stale in-code artifacts (informational)
 - The `__DEV__` dev sitemap in `app/index.tsx` labels now-built Business screens
   as "Stub"; its status labels are not reliable.
-- `app/index.tsx` contains a `__DEV__`-gated hardcoded-credential quick-switch
-  marked "DO NOT SHIP" in-code. Not shippable; flagged for the security backlog.
+- ~~`app/index.tsx` contains a `__DEV__`-gated hardcoded-credential quick-switch
+  marked "DO NOT SHIP".~~ **RESOLVED (Batch 6D):** the hardcoded dev password and
+  personal/seed login emails were removed; the dev switcher now reads
+  `EXPO_PUBLIC_DEV_*` env vars (non-prod only) and hard-refuses the production
+  project. The historically exposed credential was rotated out of every affected
+  account.
 - Two source comments still reference the old `NAVIGATION_ARCHITECTURE.md` path
   (`app/auth/verify.tsx`, `app/(tabs)/me.tsx`). Not updated in this batch to
   avoid touching application code; update in a later comment-only pass.
