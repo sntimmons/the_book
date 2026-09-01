@@ -36,7 +36,13 @@ module.exports = [
     // and allowance for the jest.mock()-before-import pattern (mocks are hoisted
     // and must precede imports). Scoped to the test suite so app rules are
     // unchanged.
-    files: ['__tests__/**/*.{ts,tsx}', 'jest.setup.js', 'jest.config.js', 'test/**/*.js'],
+    files: [
+      '__tests__/**/*.{ts,tsx}',
+      'jest.setup.js',
+      'jest.config.js',
+      'test/**/*.js',
+      'scripts/**/*.{js,mjs}',
+    ],
     languageOptions: {
       globals: {
         jest: 'readonly',
@@ -52,6 +58,10 @@ module.exports = [
     },
     rules: {
       'import/first': 'off',
+      // The require()-then-reset pattern is standard in module-config tests.
+      '@typescript-eslint/no-require-imports': 'off',
+      // Tooling/seed scripts and tests may log to the console.
+      'no-console': 'off',
     },
   },
 ]
