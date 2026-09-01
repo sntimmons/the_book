@@ -208,7 +208,7 @@ just added for the QA-UX-001 fix, it was **corrected in the same pass**: the sta
 now appends a monotonic per-mount suffix (`conversation-status-<id>-<seq>`), mirroring
 `hooks/useMessaging.ts`. Gates remained green (16 suites / 95 tests **at that pass**; the
 later pre-merge correction pass added the `getOrCreateConversation` suite → **17 suites /
-100 tests**, the current count).
+101 tests**, the current count).
 
 **Coverage-gap correction (honest):** the DB security suite cited above (now **25 cases** —
 14 original authorization + 6 booking-supersession/insert-gate + 1 fake-booking-insert + 4
