@@ -34,6 +34,11 @@ interface BookingState {
   // has no contract, so no signature is written.
   contractId: string | null
   contractSigned: boolean
+  // Beta identity-verification trust notice: set true once the user has
+  // acknowledged it in the current booking attempt, so it is not shown again on
+  // re-entry. Cleared by reset() (i.e. when the booking flow resets). This is
+  // NOT long-term "never show again" persistence — it is per-booking-attempt.
+  verificationNoticeAcknowledged: boolean
 
   setProvider: (id: string, name: string, category: string, location: string) => void
   setSelectedService: (service: BookingService) => void
@@ -44,6 +49,7 @@ interface BookingState {
   setBookingPhotos: (photos: string[]) => void
   setAgreedToPolicy: (agreed: boolean) => void
   setContractSigned: (contractId: string) => void
+  setVerificationNoticeAcknowledged: (acknowledged: boolean) => void
   reset: () => void
 }
 
@@ -61,9 +67,20 @@ export const useBookingStore = create<BookingState>((set) => ({
   agreedToPolicy: false,
   contractId: null,
   contractSigned: false,
+  verificationNoticeAcknowledged: false,
 
+  // setProvider marks the START of a booking attempt (called from Book Now). It
+  // resets the per-attempt verification-notice acknowledgement so that abandoning
+  // one attempt and starting a new one re-shows the notice, while preserving the
+  // provider context set here.
   setProvider: (id, name, category, location) =>
-    set({ providerId: id, providerName: name, providerCategory: category, providerLocation: location }),
+    set({
+      providerId: id,
+      providerName: name,
+      providerCategory: category,
+      providerLocation: location,
+      verificationNoticeAcknowledged: false,
+    }),
   setSelectedService: (service) => set({ selectedService: service }),
   setSelectedDate: (date) => set({ selectedDate: date }),
   setRawDate: (date) => set({ rawDate: date }),
@@ -72,6 +89,8 @@ export const useBookingStore = create<BookingState>((set) => ({
   setBookingPhotos: (photos) => set({ bookingPhotos: photos }),
   setAgreedToPolicy: (agreed) => set({ agreedToPolicy: agreed }),
   setContractSigned: (contractId) => set({ contractId, contractSigned: true }),
+  setVerificationNoticeAcknowledged: (acknowledged) =>
+    set({ verificationNoticeAcknowledged: acknowledged }),
   reset: () => set({
     providerId: '',
     providerName: '',
@@ -86,5 +105,6 @@ export const useBookingStore = create<BookingState>((set) => ({
     agreedToPolicy: false,
     contractId: null,
     contractSigned: false,
+    verificationNoticeAcknowledged: false,
   }),
 }))

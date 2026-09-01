@@ -11,6 +11,11 @@ import { useLocalSearchParams, router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile, { ProviderData, ProviderService } from '@/components/ProviderProfile'
 import { useBookingStore } from '@/store/bookingStore'
+import {
+  resolveVerificationGate,
+  requiresVerificationNotice,
+  isClientIdentityVerified,
+} from '@/lib/verificationGate'
 import { useProvider, useCategories } from '../../hooks/useProviders'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -269,7 +274,21 @@ export default function ProviderProfilePage() {
 
   function handleBookNow() {
     if (!provider) return
+    // Start a NEW booking attempt: setProvider preserves provider context AND
+    // resets the per-attempt verification-notice acknowledgement.
     setProvider(provider.id, provider.display_name, categoryName, location)
+    // Centralized transaction verification gate at the START of the booking
+    // journey (before service selection), so future real verification never
+    // surprises a user who has already picked a service/date. In beta the gate
+    // resolves to a bypass-with-notice for unverified clients, shown once per
+    // attempt. Read the acknowledgement fresh (setProvider just reset it) to avoid
+    // a stale render snapshot.
+    const gate = resolveVerificationGate(isClientIdentityVerified())
+    const acknowledged = useBookingStore.getState().verificationNoticeAcknowledged
+    if (requiresVerificationNotice(gate) && !acknowledged) {
+      router.push('/book/verification')
+      return
+    }
     router.push('/book/service')
   }
 
