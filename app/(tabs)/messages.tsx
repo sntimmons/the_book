@@ -13,8 +13,9 @@ import { Ionicons } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Conversation, useConversations } from '../../hooks/useMessaging'
+import { inboxSection } from '@/lib/messageRequests'
 
-type Filter = 'all' | 'bookings'
+type Filter = 'all' | 'requests' | 'bookings'
 
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return ''
@@ -65,10 +66,21 @@ export default function MessagesInboxScreen() {
     setRefreshing(false)
   }
 
+  // 'all' shows open conversations only (pending requests live under Requests;
+  // declined requests are hidden from the active lists). 'requests' shows pending
+  // requests (incoming for a provider, sent for a client). 'bookings' unchanged.
   const filtered =
-    activeFilter === 'all'
-      ? conversations
-      : conversations.filter((c) => c.booking_id !== null)
+    activeFilter === 'requests'
+      ? conversations.filter((c) => inboxSection(c.request_status) === 'requests')
+      : activeFilter === 'bookings'
+        ? conversations.filter(
+            (c) => c.booking_id !== null && inboxSection(c.request_status) !== 'hidden',
+          )
+        : conversations.filter((c) => inboxSection(c.request_status) === 'active')
+
+  const requestCount = conversations.filter(
+    (c) => inboxSection(c.request_status) === 'requests',
+  ).length
 
   return (
     <View style={styles.root}>
@@ -81,8 +93,9 @@ export default function MessagesInboxScreen() {
       </View>
 
       <View style={styles.tabs}>
-        {(['all', 'bookings'] as Filter[]).map((tab) => {
+        {(['all', 'requests', 'bookings'] as Filter[]).map((tab) => {
           const active = activeFilter === tab
+          const label = tab === 'all' ? 'All' : tab === 'requests' ? 'Requests' : 'Bookings'
           return (
             <TouchableOpacity
               key={tab}
@@ -91,7 +104,8 @@ export default function MessagesInboxScreen() {
               onPress={() => setActiveFilter(tab)}
             >
               <Text style={active ? styles.tabTextActive : styles.tabTextInactive}>
-                {tab === 'all' ? 'All' : 'Bookings'}
+                {label}
+                {tab === 'requests' && requestCount > 0 ? ` (${requestCount})` : ''}
               </Text>
               {active && <View style={styles.tabUnderline} />}
             </TouchableOpacity>
@@ -118,7 +132,9 @@ export default function MessagesInboxScreen() {
           <Text style={styles.emptySub}>
             {activeFilter === 'bookings'
               ? 'Messages from bookings will appear here.'
-              : 'Message a provider to get started.'}
+              : activeFilter === 'requests'
+                ? 'Message requests will appear here.'
+                : 'Message a provider to get started.'}
           </Text>
         </View>
       ) : (

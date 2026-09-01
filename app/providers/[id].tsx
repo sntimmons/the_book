@@ -20,7 +20,7 @@ import { useProvider, useCategories } from '../../hooks/useProviders'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { cacheBustedPhoto } from '@/lib/image'
-import { getOrCreateConversation } from '../../hooks/useMessaging'
+import { openMessageEntry } from '../../hooks/useMessaging'
 
 export default function ProviderProfilePage() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -310,9 +310,9 @@ export default function ProviderProfilePage() {
       onFollow={handleToggleFollow}
       onSave={handleToggleSave}
       onMessage={async () => {
-        if (!user) return
-        const convoId = await getOrCreateConversation(user.id, provider.id)
-        if (convoId) router.push(`/messages/${convoId}` as any)
+        if (!user || !provider) return
+        // Pre-booking contact is a message REQUEST (centralized entry).
+        await openMessageEntry(user.id, provider.id, provider.display_name)
       }}
     />
   )

@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import { getOrCreateConversation } from '../../hooks/useMessaging'
+import { openMessageEntry } from '../../hooks/useMessaging'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -330,8 +330,9 @@ export default function BookDateTime() {
               style={styles.messageBtn}
               onPress={async () => {
                 if (!user || !providerId) return
-                const convoId = await getOrCreateConversation(user.id, providerId)
-                if (convoId) router.push(`/messages/${convoId}` as never)
+                // Pre-booking contact is a message REQUEST — same centralized entry
+                // as the provider-profile Message button (not a free open chat).
+                await openMessageEntry(user.id, providerId, providerName)
               }}
             >
               <Feather name="message-circle" size={14} color="#080808" />
