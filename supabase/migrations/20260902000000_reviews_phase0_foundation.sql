@@ -171,6 +171,7 @@ begin
 end;
 $$;
 alter function public.recompute_provider_rating() owner to postgres;
+revoke all on function public.recompute_provider_rating() from public;  -- SEC-TRIGGER-201 (trigger fn; not directly callable, revoked for consistency)
 
 -- A client_review insert/delete reveals/unreveals the counterpart provider review,
 -- so refresh that booking's provider aggregate too.
@@ -341,13 +342,18 @@ begin
          or new.cancellation_actor is distinct from old.cancellation_actor
          or new.no_show_flag     is distinct from old.no_show_flag
       then raise exception 'Only completed_at may change when completing' using errcode = 'check_violation'; end if;
-      -- SEC-DATA-003: completed_at is SERVER-authoritative.
-      if old.status is distinct from 'completed' then
-        -- completion transition: stamp server time, ignore any supplied value
-        -- (a client-clock / backdated / future-dated value cannot set the review clock).
+      -- SEC-DATA-003 / SEC-DATA-201: completed_at is SERVER-authoritative and
+      -- stamped exactly ONCE — on the FIRST-EVER completion. Keying on
+      -- `old.completed_at is null` (not `old.status <> 'completed'`) means a status
+      -- round-trip (completed → accepted/no_show → completed) can NOT re-stamp it:
+      -- completed_at survives those transitions (each branch forbids changing it), so
+      -- on any later re-completion it is already set and is held immutable. This keeps
+      -- the review window and any achieved reveal from being reset by a provider.
+      if old.completed_at is null then
+        -- first completion: stamp server time, ignore any supplied value.
         new.completed_at := now();
       else
-        -- already completed: the review-clock anchor is immutable.
+        -- already completed at some point: the review-clock anchor is immutable.
         if new.completed_at is distinct from old.completed_at then
           raise exception 'completed_at is immutable once set' using errcode = 'check_violation';
         end if;
