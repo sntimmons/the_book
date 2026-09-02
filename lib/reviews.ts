@@ -1,21 +1,26 @@
 import { supabase } from './supabase'
 
-// ── Blind reveal read layer ───────────────────────────────────────────────────
+// ── Blind reveal read layer (DB is authoritative — Phase 0) ──────────────────
 //
-// A review is REVEALED only if the counterpart review exists for that booking_id
-// OR bookings.completed_at <= now() - interval '7 days'. The displayed aggregate
-// is derived from REVEALED rows only (never the stored providers.average_rating,
-// which a recompute trigger may bump pre-reveal and would leak a hidden review).
+// The DATABASE owns review reveal and eligibility. The canonical rule lives once
+// in SQL (migration 20260902000000): a review is revealed when the booking is
+// eligible (status='completed' AND under_review=false) AND (the counterpart
+// review exists OR the 7-day window from the server-stamped completed_at has
+// closed). One 7-day definition, one `<=` boundary. TypeScript no longer decides
+// whether hidden reviews are visible.
 //
-// provider_reviews: reveal is now enforced at the DATABASE via a SECURITY
-// DEFINER-gated SELECT policy, so the DB returns only revealed rows plus the
-// reader's own. fetchRevealedProviderReviews trusts that and does NOT re-filter
-// client side — re-filtering wrongly hid approved rows for non-participants,
-// whose RLS-blocked reads of client_reviews/bookings left the support sets empty.
+// provider_reviews: reveal is enforced by a single SECURITY DEFINER-gated SELECT
+// policy (public.provider_review_revealed). The DB returns only revealed rows plus
+// the reader's own; fetchRevealedProviderReviews trusts that and does NOT
+// re-filter. The displayed aggregate derives from REVEALED rows only; the stored
+// providers.average_rating/review_count are also recomputed over revealed rows
+// only (so a blind review never moves the public number).
 //
-// client_reviews: still enforced HERE (client side) via isRevealed(). Its SELECT
-// policy is participant-only, so the counterpart/completed_at support reads work
-// for the provider viewing a client's reputation. That path is unchanged.
+// client_reviews: the SELECT policy is AUTHOR-ONLY (a provider reads reviews they
+// wrote; clients never read this table) — that is the privacy boundary, in the DB.
+// public.client_review_revealed() is the DB gate any FUTURE cross-provider
+// client-reputation read path MUST use. isRevealed() below is now a PRESENTATION
+// helper over the author's own rows only — it is NOT the privacy boundary.
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
 
