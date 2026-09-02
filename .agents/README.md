@@ -11,7 +11,7 @@ never duplicates.
 |---|---|---|---|
 | 1 | **QA / Journey Reviewer** (`qa-journey-reviewer/`) | **READ-ONLY** | **Active** |
 | 2 | **Security Reviewer** (`security-reviewer/`) | **READ-ONLY** | **Active** |
-| 3 | Codebase Auditor | read-only (planned) | Planned |
+| 3 | **Codebase Auditor** (`codebase-auditor/`) | **READ-ONLY** | **Active** |
 | 4 | Implementation Engineer | bounded writes (planned) | Planned |
 
 Each agent gets its own directory with the same four files: `AGENT.md` (mission,
@@ -43,6 +43,10 @@ false-positive controls), `OUTPUT_FORMAT.md` (finding + review schema), `SOURCES
 - `Security review branch: <name>` — security review of a feature branch.
 - `Security audit: <area>` — security review of a surface (e.g. `messaging`, `bookings`).
 - `Security review feature: <spec-or-path>` — check a feature's server-side boundaries.
+- `Codebase audit: <area or "current product architecture">` — read-only structural/maintainability audit.
+- `Codebase audit PR #NN` — structural review of a PR's diff.
+- `Audit duplication: <surface>` / `Audit dead code: <area>` — targeted structural sweeps.
 
 The mode is inferred from the verb + object; no knowledge of internals required. QA (Agent 1)
-owns journey/product-truth; Security (Agent 2) owns the server-side trust boundary.
+owns journey/product-truth; Security (Agent 2) owns the server-side trust boundary; Codebase
+Auditor (Agent 3) owns code structure and maintainability.
