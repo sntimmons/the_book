@@ -15,6 +15,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import { startBooking } from '../../lib/startBooking'
 
 const CATEGORIES = [
   'Great results',
@@ -94,6 +95,15 @@ export default function WriteReview() {
   const providerFirstName = providerName
     ? providerName.split(' ')[0]
     : 'your provider'
+
+  // Rebook goes through the SAME centralized booking-start boundary as every
+  // other entry (CODE-DRIFT-001): it establishes the CORRECT provider context
+  // from this booking (never stale booking-store state from a prior attempt) and
+  // evaluates the verification gate. Guarded until the provider id has loaded.
+  function handleRebook() {
+    if (!bookingProviderId) return
+    startBooking({ id: bookingProviderId, name: providerFullName })
+  }
 
   // Real service + date from the booking, e.g. "Classic Full Set · May 28".
   // Falls back to whatever is available rather than a hardcoded value.
@@ -322,7 +332,7 @@ export default function WriteReview() {
             <TouchableOpacity
               style={styles.rebookPill}
               activeOpacity={0.7}
-              onPress={() => router.push('/book/service')}
+              onPress={handleRebook}
             >
               <Text style={styles.rebookPillText}>Rebook</Text>
             </TouchableOpacity>

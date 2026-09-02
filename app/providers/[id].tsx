@@ -10,12 +10,7 @@ import {
 import { useLocalSearchParams, router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile, { ProviderData, ProviderService } from '@/components/ProviderProfile'
-import { useBookingStore } from '@/store/bookingStore'
-import {
-  resolveVerificationGate,
-  requiresVerificationNotice,
-  isClientIdentityVerified,
-} from '@/lib/verificationGate'
+import { startBooking } from '@/lib/startBooking'
 import { useProvider, useCategories } from '../../hooks/useProviders'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -27,7 +22,6 @@ export default function ProviderProfilePage() {
   const insets = useSafeAreaInsets()
   const { provider, services, loading } = useProvider(id as string)
   const { categories } = useCategories()
-  const { setProvider } = useBookingStore()
   const { user } = useAuth()
   const [isFollowing, setIsFollowing] = useState(false)
   const [followerCount, setFollowerCount] = useState(0)
@@ -274,22 +268,16 @@ export default function ProviderProfilePage() {
 
   function handleBookNow() {
     if (!provider) return
-    // Start a NEW booking attempt: setProvider preserves provider context AND
-    // resets the per-attempt verification-notice acknowledgement.
-    setProvider(provider.id, provider.display_name, categoryName, location)
-    // Centralized transaction verification gate at the START of the booking
-    // journey (before service selection), so future real verification never
-    // surprises a user who has already picked a service/date. In beta the gate
-    // resolves to a bypass-with-notice for unverified clients, shown once per
-    // attempt. Read the acknowledgement fresh (setProvider just reset it) to avoid
-    // a stale render snapshot.
-    const gate = resolveVerificationGate(isClientIdentityVerified())
-    const acknowledged = useBookingStore.getState().verificationNoticeAcknowledged
-    if (requiresVerificationNotice(gate) && !acknowledged) {
-      router.push('/book/verification')
-      return
-    }
-    router.push('/book/service')
+    // Centralized booking-start boundary: establishes provider context (resetting
+    // the per-attempt verification-notice acknowledgement) and evaluates the
+    // verification gate in ONE place, routing to the notice or the service step.
+    // See lib/startBooking.ts (CODE-DRIFT-001).
+    startBooking({
+      id: provider.id,
+      name: provider.display_name,
+      category: categoryName,
+      location,
+    })
   }
 
   // A user cannot act on their own provider profile. When the viewer owns this

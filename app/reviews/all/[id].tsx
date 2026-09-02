@@ -11,7 +11,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
-import { useBookingStore } from '@/store/bookingStore'
+import { startBooking } from '@/lib/startBooking'
 import {
   fetchRevealedProviderReviews,
   aggregateFromRevealed,
@@ -31,7 +31,6 @@ const CHIPS: { key: ReviewSort; label: string }[] = [
 export default function SeeAllReviews() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const insets = useSafeAreaInsets()
-  const { setProvider } = useBookingStore()
 
   const [reviews, setReviews] = useState<RevealedReview[]>([])
   const [providerName, setProviderName] = useState('')
@@ -86,8 +85,15 @@ export default function SeeAllReviews() {
 
   function handleBookNow() {
     if (!id) return
-    setProvider(id as string, providerName, providerCategory, providerLocation)
-    router.push('/book/service')
+    // Rebook goes through the SAME centralized booking-start boundary as the
+    // provider profile, so the verification gate is evaluated here too
+    // (CODE-DRIFT-001). See lib/startBooking.ts.
+    startBooking({
+      id: id as string,
+      name: providerName,
+      category: providerCategory,
+      location: providerLocation,
+    })
   }
 
   return (
