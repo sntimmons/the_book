@@ -100,7 +100,10 @@ authority — and truly so**: both sides of that comparison are server-stamped w
 `clock_timestamp()` (`request_opened_at` on pending-open/re-request; `messages.created_at` on
 insert), so a client cannot backdate a message or future-date the request window to slip past
 the one-message limit (QA-TRUTH-002). A re-request opens a fresh cycle with a new server
-`request_opened_at`.
+`request_opened_at`. The count is also **atomic under concurrency**: the message trigger takes
+a `SELECT … FOR UPDATE` row lock on the conversation before counting, so two simultaneous
+initial-message inserts for the same conversation can never both pass (SEC-DATA-001; migration
+`20260901010000_prebooking_message_concurrency.sql`).
 
 ## Accept / decline behavior
 Provider opens the pending thread (surfaced under the **Requests** filter) → **Accept**
@@ -284,6 +287,45 @@ modified blindly) — flagged for the deploy runbook: enable Realtime for `conve
 (matching however `messages` is enabled), or add a guarded `alter publication
 supabase_realtime add table public.conversation;` if publication membership should become
 migration-managed.
+
+## Post-merge security review (Agent 2) — SEC-DATA-001 concurrency correction
+After the feature merged to `main`, the newly-built **Security Reviewer (Agent 2)** ran a
+read-only proving-ground review and found **SEC-DATA-001 (MEDIUM, data-integrity)**: the
+"exactly one initial message while pending" gate was a **non-atomic read-then-insert** — the
+message trigger's `SELECT count(*)` had no lock, so under READ COMMITTED two concurrent
+initial-message inserts for the same pending conversation could both observe count 0 and both
+commit (an anti-spam invariant violation; no user-boundary crossing, no privilege escalation).
+
+- **Architecture decision:** serialize per-conversation with a `SELECT … FOR UPDATE` row lock
+  in the existing BEFORE INSERT trigger — chosen over an advisory lock (hash-collision /
+  less obvious) and a constraint/exclusion approach (needs schema expansion for the dynamic
+  cycle boundary). The lock is scoped to a single conversation row, so it never serializes
+  other conversations; it is held only for the insert transaction; the insert takes no other
+  contended lock, so there is no deadlock cycle. No schema change; only the function body.
+- **Correction:** a **new forward migration** `20260901010000_prebooking_message_concurrency.sql`
+  (the prior `20260901000000` is already merged to `main`; migration history is not rewritten)
+  replaces only `enforce_prebooking_message_rules`.
+- **Concurrency validation (manual, non-prod, genuinely concurrent — the Management API SQL
+  endpoint runs parallel sessions, verified by a 2×`pg_sleep(2)`→~2.4s wall probe):** with the
+  vulnerable function, a two-racer test (both transactions held open post-insert) reproduced
+  the race **6/6 iterations (two messages committed)**; with the `FOR UPDATE` fix, **15/15
+  iterations** yielded exactly one success + one one-message rejection + final count 1. Plus:
+  concurrent **second** attempts after an existing message → **both rejected**; concurrent
+  sends on **different** conversations → **both succeed** (no cross-blocking); a **re-request**
+  cycle under concurrency → exactly **one** new initial message. The prior **25/25** role-sim
+  cases still pass (no regression).
+- **Not part of this fix:** Agent 2 noted `sendPrebookingRequest` does not call
+  `checkRateLimit`. This is **not** the boundary — a crafted client using the anon key bypasses
+  any client-side limiter entirely, so the DB `FOR UPDATE` gate is authoritative regardless.
+  Client-side rate limiting on that path is optional defense-in-depth, **not added here**.
+- **Still deferred (unchanged):** **SEC-AUTHZ-002 (LOW)** — a provider-initiated INSERT can set
+  an unvalidated `booking_id` — remains open and tied to the provider/community-initiated
+  contact product decision (QA-STATE-001); **not** fixed in this pass. **SEC-DATA-003 (NOTE,
+  FK gap)** and **SEC-COVERAGE-001 (NOTE)** also remain open.
+- **Coverage note (B5B):** this correction does **not** stand up the committed CI DB/security
+  harness. The concurrency test and the 25 role-sim cases are **manual, non-CI** validation;
+  a committed DB/security harness (including a concurrency case) is still the recommended
+  follow-up.
 
 ## Limitations
 - Client verified state / verification gating is unrelated here (unchanged).
