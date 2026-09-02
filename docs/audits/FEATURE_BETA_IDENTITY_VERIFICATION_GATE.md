@@ -22,10 +22,12 @@ beta bookings proceed.
   this so the booking journey needn't be reshaped later.
 
 ## Exact gate placement
-`Provider Profile → Book Now → verification gate → Service Selection`
-(`app/providers/[id].tsx` `handleBookNow`, line ~275). The gate runs **after**
-`setProvider(...)` (so provider booking context is preserved) and **before**
-`/book/service`.
+`Book/Rebook → startBooking() → verification gate → Service Selection`. As of the
+CODE-DRIFT-001 correction (below), **every** client booking/rebooking entry routes
+through the single boundary `lib/startBooking.ts` (`startBooking`), which establishes
+provider context (via `setProvider`, so the per-attempt acknowledgement resets) and
+evaluates the gate **before** `/book/service`. Originally the gate lived only in
+`app/providers/[id].tsx` `handleBookNow`; that handler now delegates to `startBooking`.
 
 ## Centralized gate architecture (`lib/verificationGate.ts`)
 One source of truth — no scattered `if (!identity_verified)`:
@@ -97,6 +99,41 @@ row, or show a "Verified" state. No Supabase write anywhere in the feature.
 - Direct deep-link to `/book/service` bypasses the gate by design (no global route guard
   added; §12 said not to rewrite navigation). The centralized helper is the seam to add a
   transaction-entry guard later.
+
+## CODE-DRIFT-001 correction — booking-start centralization (RESOLVED)
+Agent 3 (Codebase Auditor) re-raised the above as **CODE-DRIFT-001 (MEDIUM, CONFIRMED)**:
+the gate was evaluated only in the provider-profile `handleBookNow`, while two rebook
+entries pushed straight to `/book/service` (`app/reviews/all/[id].tsx` — with correct
+provider context; `app/post-booking/review.tsx` — with **no** provider context, risking a
+booking against stale booking-store state). Harmless under `beta-notice` (education-only),
+but a future `beta-notice → required` flip would not have covered these paths — defeating
+the gate's "flip without reshaping the flow" design. *(Original discovery is preserved above,
+not rewritten.)*
+
+- **Architecture decision:** one narrow client-side boundary `startBooking(providerCtx)`
+  (`lib/startBooking.ts`) that every booking/rebooking entry calls. It establishes provider
+  context, evaluates the gate via a single pure decision `resolveBookingStartDecision`
+  (composed from the existing `verificationGate` helpers), and routes. It does **not** own
+  the booking flow. No duplicate verification-decision logic is introduced.
+- **Correctness upgrade:** the pure decision distinguishes `proceed` / `show_notice` /
+  `blocked`, using `canProceedWithTransaction` — so a future `required` + unverified attempt
+  resolves to **`blocked`** (never silently proceeds). (The prior inline logic keyed only on
+  `requiresVerificationNotice`, which is `false` for a hard block, and would have fallen
+  through to `/book/service` in `required` mode.)
+- **Entries migrated:** `app/providers/[id].tsx` `handleBookNow`, `app/reviews/all/[id].tsx`
+  `handleBookNow`, `app/post-booking/review.tsx` rebook (now guarded, sets the correct
+  provider id/name from the booking — never stale). `submitted.tsx` and `care/index.tsx`
+  "book again" route to the provider **profile** (which uses `startBooking`), so they were
+  already covered.
+- **No product-policy change:** enforcement mode stays `beta-notice`; no verification vendor,
+  schema, copy, or beta-notice behavior changed. Acknowledgement remains per-attempt
+  (`setProvider` resets it).
+- **Validation:** committed tests in `__tests__/lib/startBooking.test.ts` (12) — the pure
+  decision across both modes (verified/beta/required, including the `blocked` hard-block),
+  provider-context establishment + stale-state reset, the beta routing, and a **static route
+  census** asserting no in-scope screen navigates to `/book/service` directly except the
+  boundary and the post-notice `book/verification.tsx` Continue. Gates: typecheck 0, lint 210
+  (baseline), 18 suites / 113 tests. **Disposition: CODE-DRIFT-001 RESOLVED.**
 
 ## Tests
 - `__tests__/lib/verificationGate.test.ts` (6): verified→proceed/no-notice;
