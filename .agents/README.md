@@ -10,7 +10,7 @@ never duplicates.
 | # | Agent | Access | Status |
 |---|---|---|---|
 | 1 | **QA / Journey Reviewer** (`qa-journey-reviewer/`) | **READ-ONLY** | **Active** |
-| 2 | Security Reviewer | read-only (planned) | Planned |
+| 2 | **Security Reviewer** (`security-reviewer/`) | **READ-ONLY** | **Active** |
 | 3 | Codebase Auditor | read-only (planned) | Planned |
 | 4 | Implementation Engineer | bounded writes (planned) | Planned |
 
@@ -39,5 +39,10 @@ false-positive controls), `OUTPUT_FORMAT.md` (finding + review schema), `SOURCES
 - `QA full audit: <area>` — all journeys in an area (e.g. `booking`).
 - `QA feature acceptance: <spec-or-path>` — check an implementation against a spec.
 - `QA smoke: <checklist>` — static/paper smoke review (does not replace Maestro/manual).
+- `Security review PR #NN` — read-only security/authorization review of a PR.
+- `Security review branch: <name>` — security review of a feature branch.
+- `Security audit: <area>` — security review of a surface (e.g. `messaging`, `bookings`).
+- `Security review feature: <spec-or-path>` — check a feature's server-side boundaries.
 
-The mode is inferred from the verb + object; no knowledge of internals required.
+The mode is inferred from the verb + object; no knowledge of internals required. QA (Agent 1)
+owns journey/product-truth; Security (Agent 2) owns the server-side trust boundary.
