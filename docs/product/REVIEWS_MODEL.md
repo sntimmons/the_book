@@ -31,7 +31,9 @@ schema names, deferred to Phase 2.)*
 
 ## Eligibility vs reveal — two separate clocks (Phase 0, server-authoritative)
 - **Eligibility** ("when can this be reviewed?"): a booking is reviewable when
-  `status='completed'` **AND** `under_review=false` **AND** the review window is open.
+  `completed_at IS NOT NULL` **AND** `under_review=false` **AND** the review window is open.
+  Note the anchor is the immutable server-stamped **`completed_at`, not live `status`** —
+  see SEC-DATA-101 below; `review_eligible()` deliberately contains no `status` test.
   Delayed-deliverable eligibility (photography/videography/creative) is **deferred** — no
   `delivered_at` or category timing yet. Enforced by `public.review_eligible(booking_id)`.
 - **Review window:** **7 days** from the **server-authoritative** `completed_at` (one definition,
@@ -107,7 +109,105 @@ separate from shared conduct. Typed boolean columns (mirroring `client_reviews`)
 lower-friction alternative but grow a migration per signal and don't model a shared vocabulary as
 cleanly. **Decide in Phase 2**; whichever is chosen, it inherits the single reveal gate from Phase 0.
 
+## Phase 1 — UX consumes the Phase 0 contract (implemented)
+Phase 1 makes the review experience accurately reflect the Phase 0 server contract (no DB
+contract change; one additive read helper). **submitted ≠ revealed:** the client confirmation
+now says the review was **submitted and stays private** until the other side reviews or the
+window closes — never "now live/public/visible". A single server-authoritative read,
+`review_opportunity(booking_id, direction)` (migration `20260903000000`), returns one of
+`eligible / already_submitted / window_closed / under_review / not_completed /
+not_participant`. It is `SECURITY DEFINER`, `authenticated`-only (anon EXECUTE explicitly
+revoked), and fails closed for a null `auth.uid()`. It **composes** the Phase 0 predicates rather than
+restating them: the 7-day window comes from `review_window_closed()` (one definition; the UI
+never computes it client-side), and the positive answer is gated on `review_eligible()` — the
+same predicate both INSERT policies use — so the helper can never report `eligible` for a
+booking the write boundary would reject. The `completed_at` / `under_review` branches above it
+exist only to explain **why** a booking is not eligible; they are not a second definition. When
+`review_eligible()` later gains a condition (`delivered_at`, category windows), this stays
+correct automatically instead of inviting the user into a form the DB will refuse. Consumers: a **persistent provider→client "Review client" entry** on a completed
+booking's detail (survives skipping the completion prompt; keyed by `booking_id`, so repeat
+bookings are independently reviewable); a **proactive client entry gate** (no routing into a
+guaranteed-fail form); and **truthful terminal submit messages** ("already reviewed", "the
+review period has ended", "under review") instead of a permanent retry loop — mapped by
+re-reading the authoritative state (all RLS `WITH CHECK` rejections surface as `42501`). No
+structured signals, `delivered_at`, category timing, editing, or moderation (Phase 2+).
+
+## `no_show` — recorded, but not a service review (Phase 1 decision)
+A `no_show` is a real booking event that **should** matter to reputation, but it is **not a
+completed service experience**. Phase 1 therefore draws the line at *what kind of* reputation
+it feeds:
+
+- **No normal 1-5 star service-quality review flow** in either direction for a `no_show` —
+  neither party is asked to rate service quality, quality of work, or outcome, because the
+  service did not occur. Two independent mechanisms, at the right layers: the booking list
+  offers the review CTA only for `status='completed'` (a presentation rule), and a booking
+  that never completed has `completed_at IS NULL`, so `review_opportunity()` resolves it to
+  `not_completed` (the authoritative rule).
+- **Eligibility is NOT gated on live status.** `review_opportunity()` deliberately contains
+  no `status='no_show'` test. Testing live status there would let a provider suppress an
+  already-earned client review — the exact vector Phase 0 closed as **SEC-DATA-101** — and
+  would disagree with `review_eligible()`, which the INSERT policies use.
+- **DECIDED: `completed → no_show` is an ILLEGAL transition** (migration `20260904000000`).
+  `completed` and `no_show` are **alternative outcomes**; a legitimately completed booking
+  cannot later become a no-show through the normal lifecycle. Enforced by one added condition
+  in the `no_show` branch of `enforce_booking_write_integrity()`: `old.completed_at is not
+  null` raises. This is the reason the read helper needs no status test — the contradictory
+  state `completed_at IS NOT NULL AND status='no_show'` is now **unreachable for
+  authenticated writers going forward** (a `BEFORE` trigger on new writes; it rewrites no
+  pre-existing row, and `service_role` still bypasses). That is sufficient: since neither
+  `review_opportunity()` nor `review_eligible()` tests live status, any legacy row in that
+  state is treated identically by both — reviewable — which is the intended
+  anti-suppression posture. The `completed_at` anchor keeps its guarantee. No other transition's legality
+  changed. `service_role` still bypasses the trigger, so an **administrative correction
+  workflow remains possible — it is a later product/ops concern and is NOT built here.** A
+  genuine void on a completed booking is expressed via `under_review` (service_role-only).
+- **The event is preserved, never suppressed.** The booking keeps `status = 'no_show'` and
+  `no_show_flag`; it still appears in the Past tab with a "No show" pill, and it already
+  feeds `fetchClientCompletionRate()`.
+- **Past-tab grouping is not review eligibility.** The Past tab correctly groups `completed`
+  + `no_show`; review entry is driven only by the server-authoritative review state.
+
+**Future (NOT Phase 1, NOT Phase 2-committed):** a separate **conduct / reliability**
+reputation layer, distinct from service-quality stars, could incorporate verified Book
+transaction history and platform-recorded events — no-show, late cancellation, repeated
+last-minute rescheduling, communication responsiveness, on-time behavior, completion
+reliability, and following booking policy. It should be grounded in events The Book itself
+records rather than free-text opinion. Schema, scoring, surfacing, and any ranking or
+enforcement effects are **explicitly undesigned** and out of scope here.
+
+## Phase 1 — submission rules and confirmations (decided)
+- **A rating-only review is VALID.** A selected 1–5 star rating is sufficient to submit in
+  **both** directions. Free text and tags are **optional**; no Phase 2 structured signal is
+  required. (The client form previously demanded >10 characters of text *or* a tag, so a
+  client who only tapped stars could not submit at all.) Client `canPost = parsedRating != null`
+  mirrors the provider's `canSubmit = rating > 0`.
+- **A negative experience is a NORMAL review.** Every selected 1-5 star rating continues
+  through the **same** review flow, carrying the rating (`satisfaction` → `review?rating=N` →
+  the value written to the row). A low rating is never discarded, never routed into a different
+  system, and no control asks the client to affirm the experience was good — the single CTA is
+  rating-neutral ("Continue to review"). Ordinary dissatisfaction is **not** an incident:
+  "Report a problem" is a clearly separate, secondary action into the `reports` system
+  (safety / billing / conduct), it carries no rating, and taking it leaves the booking's review
+  opportunity open. Serious safety/incident handling remains later work.
+- **Both submissions are confirmed, and both confirmations are blind-truthful.** A successful
+  provider→client review no longer exits silently: it shows **"Review submitted" / "Your
+  review stays private until they submit theirs or the review window closes."** — the shared
+  `REVIEW_SUBMITTED_TITLE` / `REVIEW_SUBMITTED_BODY` constants, rendered through the existing
+  shared state screen rather than new navigation. Neither direction may say *now live*,
+  *public*, *visible immediately*, or *posted publicly*.
+
 ## Out of scope (later phases)
-Structured signal UI, `delivered_at`/deliverable eligibility, category review policies, provider
-delivery workflow, client delivery confirmation, persistent provider→client CTA, client reputation
-profile, safety/report system, moderation, reputation ranking, free-text policy change.
+The Phase 2 structured-**signal schema/vocabulary** (a shared `review_signals` model),
+`delivered_at`/deliverable eligibility, category review policies, provider delivery workflow,
+client delivery confirmation, a public client reputation **profile**, conduct/reliability
+reputation (incl. no-show and cancellation signals), safety/report system, moderation,
+reputation ranking, review editing, free-text policy change.
+
+*Already SHIPPED, and therefore NOT in the list above (pre-dates Phase 1 — do not read these as
+unapproved scope):* the provider review form's four typed accountability booleans on
+`client_reviews` (`showed_up` / `on_time` / `followed_policy` / `payment_completed`) and the
+client reputation summary a provider sees on a booking request, aggregated by
+`aggregateClientDimensions()`. What Phase 2 would add is the shared signal *vocabulary*, not
+these existing typed columns.
+
+*(The persistent provider→client CTA moved OUT of this list — it shipped in Phase 1 above.)*

@@ -9,6 +9,9 @@ import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
+import { reviewOpportunityCopy } from '../../lib/reviews'
+import ReviewStateScreen from '../../components/ReviewStateScreen'
+import { useReviewOpportunity } from '../../hooks/useReviewOpportunity'
 
 const RATING_RESPONSE: Record<number, string> = {
   5: 'Amazing!',
@@ -29,10 +32,15 @@ function formatShortDate(iso: string | null): string | null {
 export default function SatisfactionCheck() {
   const { id } = useLocalSearchParams<{ id?: string }>()
   const [rating, setRating] = useState(0)
-  const [hoveredRating, setHoveredRating] = useState(0)
   const [providerName, setProviderName] = useState<string | null>(null)
   const [serviceName, setServiceName] = useState<string | null>(null)
   const [requestedDate, setRequestedDate] = useState<string | null>(null)
+  // Proactive entry gate (QA-JOURNEY-001). Server-authoritative; `loading` keeps the
+  // star picker off screen until the state is known (CODE-STATE-002).
+  const { opportunity: reviewOpp, loading: oppLoading } = useReviewOpportunity(
+    id,
+    'client_to_provider',
+  )
 
   // Resolve the real provider name + service/date from the booking
   // (bookings -> provider_id -> providers.display_name). Mirrors the
@@ -89,8 +97,29 @@ export default function SatisfactionCheck() {
     return '/post-booking/review' + (parts.length ? '?' + parts.join('&') : '')
   }
 
+  // Reporting is a separate system (reports), not a review path — it takes no
+  // rating. Ordinary negative feedback must NOT be routed here.
   function issueHref() {
     return id ? '/post-booking/issue?id=' + id : '/post-booking/issue'
+  }
+
+  // Not eligible to review → show the truthful terminal state instead of the star
+  // picker, with a safe exit and no retry. `terminal` covers already_submitted /
+  // window_closed / under_review AND the impossible-state arrivals reachable by a
+  // stale deep link or notification: not_completed (includes no_show — a no-show is
+  // not a completed service, so there is no service-quality review to leave) and
+  // not_participant. 'eligible' and 'unknown' (transient read failure) fall through
+  // to the normal flow; the DB stays authoritative on the actual submit.
+  const oppCopy = reviewOpportunityCopy(reviewOpp, 'client_to_provider')
+  if (oppLoading) return <View style={styles.root} />
+  if (oppCopy.terminal) {
+    return (
+      <ReviewStateScreen
+        title={oppCopy.title}
+        body={oppCopy.body}
+        onExit={() => router.replace('/(tabs)/bookings' as never)}
+      />
+    )
   }
 
   return (
@@ -112,7 +141,6 @@ export default function SatisfactionCheck() {
                 <TouchableOpacity
                   key={i}
                   activeOpacity={0.7}
-                  onPressIn={() => setHoveredRating(i + 1)}
                   onPress={() => setRating(i + 1)}
                 >
                   <Feather
@@ -142,16 +170,29 @@ export default function SatisfactionCheck() {
                   !canContinue && styles.primaryBtnTextInactive,
                 ]}
               >
-                Yes, it was great
+                {/* Rating-neutral, and the path EVERY rating takes. A negative
+                    service experience is still a normal review: 1-5 stars all
+                    continue here, with the rating carried in the route param.
+                    The label must never make a client affirm a positive
+                    experience to leave a negative review (QA-UX-001). */}
+                Continue to review
               </Text>
             </TouchableOpacity>
 
+            {/* Reporting a problem is a SEPARATE action from reviewing, not the
+                negative-review branch. It previously read "Something wasn't right",
+                which captured ordinary dissatisfaction into the incident/report
+                system (app/post-booking/issue.tsx writes `reports`, incl. safety and
+                billing) and silently discarded the star rating. Ordinary negative
+                feedback now stays in the normal review flow above; this remains only
+                for genuine problems that need follow-up, and the review opportunity
+                is untouched either way — the booking stays reviewable. */}
             <TouchableOpacity
               style={styles.secondaryBtn}
               activeOpacity={0.7}
               onPress={() => router.push(issueHref() as never)}
             >
-              <Text style={styles.secondaryBtnText}>Something wasn't right</Text>
+              <Text style={styles.secondaryBtnText}>Report a problem</Text>
             </TouchableOpacity>
           </View>
 

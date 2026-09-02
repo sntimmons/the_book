@@ -16,6 +16,8 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { getOrCreateConversation } from '../../hooks/useMessaging'
 import { bookingStatusLabel } from '../../lib/bookingStatus'
+import { reviewOpportunityCopy, ReviewOpportunity } from '../../lib/reviews'
+import { useReviewOpportunity } from '../../hooks/useReviewOpportunity'
 
 interface BookingDetail {
   id: string
@@ -123,6 +125,15 @@ export default function BookingDetailScreen() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [isProvider, setIsProvider] = useState(false)
+  // Persistent provider→client review opportunity (QA-JOURNEY-002). Server-
+  // authoritative (RPC review_opportunity); the client never computes the window.
+  // Read only for a provider on a completed booking; same hook, same loading
+  // convention as the post-booking screens (CODE-STATE-002).
+  const { opportunity: reviewOpp, loading: reviewOppLoading } = useReviewOpportunity(
+    id as string | undefined,
+    'provider_to_client',
+    isProvider && booking?.status === 'completed',
+  )
 
   const fetchBookingDetail = useCallback(async () => {
     if (!id || !user) {
@@ -447,10 +458,14 @@ export default function BookingDetailScreen() {
           isProvider={isProvider}
           bookingId={booking.id}
           actionLoading={actionLoading}
+          reviewOpp={reviewOppLoading ? 'unknown' : reviewOpp}
           onCancel={handleCancel}
           onMarkCompleted={handleMarkCompleted}
           onMarkNoShow={handleMarkNoShow}
           onMessage={messageOtherParty}
+          onReviewClient={() =>
+            router.push(`/post-booking/provider-review?id=${booking.id}` as never)
+          }
           onBack={() => router.back()}
         />
       </View>
@@ -489,22 +504,44 @@ interface ActionButtonsProps {
   isProvider: boolean
   bookingId: string
   actionLoading: boolean
+  reviewOpp: ReviewOpportunity
   onCancel: () => void
   onMarkCompleted: () => void
   onMarkNoShow: () => void
   onMessage: () => void
+  onReviewClient: () => void
   onBack: () => void
 }
 
 function ActionButtons(props: ActionButtonsProps) {
-  const { bucket, isProvider, bookingId, actionLoading, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onBack } = props
+  const { bucket, isProvider, bookingId, actionLoading, reviewOpp, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onReviewClient, onBack } = props
 
   // Terminal states for both sides.
   if (bucket === 'cancelled' || bucket === 'completed' || bucket === 'no_show') {
+    // Persistent provider→client review entry on a COMPLETED booking (QA-JOURNEY-002):
+    // keys off booking_id, so each completed booking is independently reviewable.
+    const showReview = isProvider && bucket === 'completed' && reviewOpp !== 'unknown'
+    const rc = showReview ? reviewOpportunityCopy(reviewOpp, 'provider_to_client') : null
     return (
-      <Pressable style={styles.primaryBtnFull} onPress={onBack}>
-        <Text style={styles.primaryBtnText}>Back to Bookings</Text>
-      </Pressable>
+      <>
+        {rc?.actionable ? (
+          <Pressable style={styles.primaryBtnFull} onPress={onReviewClient}>
+            <Text style={styles.primaryBtnText}>{rc.label}</Text>
+          </Pressable>
+        ) : rc?.terminal && rc.label !== '' ? (
+          <View style={styles.reviewStateNote}>
+            <Text style={styles.reviewStateText}>{rc.body}</Text>
+          </View>
+        ) : null}
+        <Pressable
+          style={rc?.actionable ? styles.secondaryBtnFull : styles.primaryBtnFull}
+          onPress={onBack}
+        >
+          <Text style={rc?.actionable ? styles.secondaryBtnText : styles.primaryBtnText}>
+            Back to Bookings
+          </Text>
+        </Pressable>
+      </>
     )
   }
 
@@ -824,6 +861,31 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
+  },
+  secondaryBtnFull: {
+    borderRadius: 14,
+    height: 52,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(240,232,213,0.07)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.12)',
+    marginTop: 10,
+  },
+  reviewStateNote: {
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.10)',
+    marginBottom: 10,
+  },
+  reviewStateText: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.7)',
+    fontFamily: 'Manrope_500Medium',
+    textAlign: 'center',
   },
   dangerBtnHalf: {
     flex: 1,

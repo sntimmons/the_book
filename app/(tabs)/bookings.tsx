@@ -192,7 +192,7 @@ export default function BookingsScreen() {
             )}
 
             {activeStatus === 'past' && (
-              <Text style={styles.sectionLabel}>COMPLETED APPOINTMENTS</Text>
+              <Text style={styles.sectionLabel}>PAST APPOINTMENTS</Text>
             )}
 
             {data.map((b) => (
@@ -262,6 +262,7 @@ function BookingCard({
       <View style={styles.actionRow}>
         <CardActions
           status={status}
+          bookingStatus={booking.status}
           isPast={isPast}
           bookingId={booking.id}
           providerId={booking.provider_id}
@@ -330,12 +331,17 @@ function handleReschedule(
 
 function CardActions({
   status,
+  bookingStatus,
   isPast,
   providerId,
   bookingId,
   userId,
 }: {
   status: Status
+  // The RAW booking status. The Past TAB is a grouping (completed + no_show);
+  // review eligibility is NOT the same thing, so the review CTA keys off this,
+  // never off `status`. (QA-JOURNEY-001)
+  bookingStatus: string
   isPast: boolean
   bookingId: string
   providerId: string
@@ -391,10 +397,19 @@ function CardActions({
     )
   }
   if (status === 'past') {
+    // Past = completed OR no_show. Only a COMPLETED service has a service-quality
+    // review to leave; a no_show never enters the star/review flow (QA-JOURNEY-001).
+    // The no-show itself is still recorded on the booking and shown in the status
+    // pill — it is preserved, not hidden. Conduct/reliability reputation for
+    // no-shows is a later phase (docs/product/REVIEWS_MODEL.md).
+    // Whether the review is still OPEN (window/under_review/already submitted) stays
+    // server-authoritative and is resolved by the satisfaction entry gate.
     return (
       <>
         <ActionButton label="Book Again" onPress={() => router.push(`/providers/${providerId}` as never)} />
-        <ActionButton label="Leave Review" onPress={() => router.push(`/post-booking/satisfaction?id=${bookingId}` as never)} />
+        {bookingStatus === 'completed' && (
+          <ActionButton label="Leave Review" onPress={() => router.push(`/post-booking/satisfaction?id=${bookingId}` as never)} />
+        )}
       </>
     )
   }

@@ -16,6 +16,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { startBooking } from '../../lib/startBooking'
+import { reviewOpportunityCopy, reviewSubmitErrorMessage } from '../../lib/reviews'
+import ReviewStateScreen from '../../components/ReviewStateScreen'
+import { useReviewOpportunity } from '../../hooks/useReviewOpportunity'
 
 const CATEGORIES = [
   'Great results',
@@ -52,6 +55,7 @@ export default function WriteReview() {
   const [serviceName, setServiceName] = useState<string | null>(null)
   const [requestedDate, setRequestedDate] = useState<string | null>(null)
   const [posting, setPosting] = useState(false)
+
 
   // Parsed star rating carried from satisfaction. Clamp to 1-5; default to
   // null if missing or invalid so we can warn instead of inserting bad data.
@@ -115,6 +119,15 @@ export default function WriteReview() {
     loadBooking()
   }, [loadBooking])
 
+  // Deep-link / stale-navigation defense (QA-JOURNEY-001). This form is reachable
+  // directly, bypassing the satisfaction entry gate, so it re-checks the
+  // server-authoritative opportunity itself rather than letting an impossible
+  // state fall through to a submit failure and a "please try again" loop.
+  const { opportunity: reviewOpp, loading: oppLoading } = useReviewOpportunity(
+    id,
+    'client_to_provider',
+  )
+
   function toggleCategory(cat: string) {
     setSelectedCategories((prev) => {
       if (prev.includes(cat)) {
@@ -125,8 +138,12 @@ export default function WriteReview() {
     })
   }
 
-  const canPost =
-    reviewText.trim().length > 10 || selectedCategories.length > 0
+  // PRODUCT DECISION: a rating-only review IS valid. A selected 1-5 star rating is
+  // sufficient to submit; free text and tags are OPTIONAL, and no Phase 2 structured
+  // signal is required. (Previously this demanded >10 chars of text OR a tag, so a
+  // client who only tapped stars had no way to submit at all.) Mirrors the provider
+  // form's `rating > 0` rule, so both directions apply the same principle.
+  const canPost = parsedRating != null
 
   async function handlePost() {
     if (!canPost || posting) return
@@ -185,32 +202,45 @@ export default function WriteReview() {
           error.code === '23505' ||
           (error.message?.includes('provider_reviews_booking_id_key') ?? false)
         if (isDuplicate) {
+          // Already reviewed. One message and one destination, from the same copy map
+          // every other surface uses (CODE-DUP-004). Deliberately NOT the success
+          // screen: this submit wrote nothing, so it must not read as a fresh post.
           setPosting(false)
-          Alert.alert(
-            'Already reviewed',
-            'You have already reviewed this booking.',
-            [
-              {
-                text: 'OK',
-                onPress: () =>
-                  router.push(('/post-booking/submitted?id=' + id) as never),
-              },
-            ],
-          )
+          const dup = reviewOpportunityCopy('already_submitted', 'client_to_provider')
+          Alert.alert(dup.title, dup.body, [
+            {
+              text: 'Done',
+              onPress: () => router.replace('/(tabs)/bookings' as never),
+            },
+          ])
           return
         }
         console.log('Post review error:', error)
+        // All RLS WITH CHECK rejections surface as 42501, so re-read the
+        // authoritative opportunity state to show a truthful, non-retry message
+        // (window closed / under review) instead of "try again" (QA-JOURNEY-001).
+        const truthful = await reviewSubmitErrorMessage(id as string, 'client_to_provider')
         Alert.alert(
-          'Could not post review',
-          'Something went wrong. Please try again.',
-          [{ text: 'OK' }],
+          truthful?.title ?? 'Could not post review',
+          truthful?.body ?? 'Something went wrong. Please try again.',
+          [
+            {
+              text: truthful ? 'Done' : 'OK',
+              onPress: truthful
+                ? () => router.replace('/(tabs)/bookings' as never)
+                : undefined,
+            },
+          ],
         )
         setPosting(false)
         return
       }
 
       setPosting(false)
-      router.push(('/post-booking/submitted?id=' + id) as never)
+      // replace, not push: NAVIGATION.md forbids returning into a completed
+      // irreversible step. With push, back re-entered this form with stale
+      // opportunity state and Post Review still enabled (CODE-ROUTE-010).
+      router.replace(('/post-booking/submitted?id=' + id) as never)
     } catch (err) {
       console.log('Post review exception:', err)
       Alert.alert(
@@ -222,10 +252,28 @@ export default function WriteReview() {
     }
   }
 
-  // Skip writes nothing per spec. Route home rather than to submitted, so
-  // submitted only ever shows when a row was actually written.
+  // Skip writes nothing per spec, and the label now says so (QA-TRUTH-001 — it
+  // previously read "post without a written review", claiming a post that never
+  // happened). Route home rather than to submitted, so submitted only ever shows
+  // when a row was actually written.
+  // Skip remains a genuine "post nothing" exit; a rating-only review is now
+  // submittable via Post Review, so Skip is a real choice rather than the only
+  // enabled control.
   function handleSkip() {
     router.push('/(tabs)/' as never)
+  }
+
+  // Terminal (non-retryable) state → truthful screen with a safe exit, never the form.
+  const oppCopy = reviewOpportunityCopy(reviewOpp, 'client_to_provider')
+  if (oppLoading) return <View style={styles.root} />
+  if (oppCopy.terminal) {
+    return (
+      <ReviewStateScreen
+        title={oppCopy.title}
+        body={oppCopy.body}
+        onExit={() => router.replace('/(tabs)/bookings' as never)}
+      />
+    )
   }
 
   return (
@@ -262,9 +310,20 @@ export default function WriteReview() {
           <Text style={styles.providerName}>{providerFullName}</Text>
           <Text style={styles.serviceDate}>{serviceLine}</Text>
 
+          {/* Must show the rating that will actually be submitted (parsedRating),
+              not a fixed five stars (QA-TRUTH-003). */}
           <View style={styles.starDisplay}>
-            {[0, 1, 2, 3, 4].map((i) => (
-              <Feather key={i} name="star" size={24} color="#C8922A" />
+            {[1, 2, 3, 4, 5].map((n) => (
+              <Feather
+                key={n}
+                name="star"
+                size={24}
+                color={
+                  parsedRating != null && n <= parsedRating
+                    ? '#C8922A'
+                    : 'rgba(240,232,213,0.22)'
+                }
+              />
             ))}
           </View>
           <TouchableOpacity activeOpacity={0.7} onPress={() => router.back()}>
@@ -302,7 +361,7 @@ export default function WriteReview() {
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>YOUR REVIEW</Text>
           <Text style={styles.helperBlock}>
-            Tell others what made this appointment great. Your review helps {providerFirstName} grow her business.
+            Tell others how the appointment went. Your review helps {providerFirstName} grow their business.
           </Text>
 
           <View style={[styles.inputContainer, focused && styles.inputContainerFocused]}>
@@ -327,7 +386,9 @@ export default function WriteReview() {
           <View style={styles.rebookRow}>
             <View style={styles.rebookLeft}>
               <Text style={styles.rebookTitle}>Book {providerFirstName} again</Text>
-              <Text style={styles.rebookSub}>She has availability next week</Text>
+              {/* No availability claim: this screen never reads the provider's
+                  schedule, so it cannot assert one (QA-TRUTH-002). */}
+              <Text style={styles.rebookSub}>See their next openings</Text>
             </View>
             <TouchableOpacity
               style={styles.rebookPill}
@@ -348,7 +409,7 @@ export default function WriteReview() {
             style={styles.communityIcon}
           />
           <Text style={styles.communityText}>
-            Reviews are public and help the Houston provider community. Offensive or false reviews are removed by our team.
+            Your review stays private until they review you too or the review window closes. You have 7 days after completion to leave a review.
           </Text>
         </View>
       </ScrollView>
@@ -375,7 +436,7 @@ export default function WriteReview() {
           activeOpacity={0.7}
           onPress={handleSkip}
         >
-          <Text style={styles.skipText}>Skip, post without a written review</Text>
+          <Text style={styles.skipText}>Skip for now — nothing will be posted</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>

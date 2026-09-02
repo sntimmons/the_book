@@ -65,9 +65,17 @@ documents are authoritative for **what should exist**. When they conflict, the a
 **reports the mismatch** — it does not silently pick a side. Crucially, the "source code
 wins" rule resolves *what exists*; it does **not** override an explicit approved Product
 Owner decision about *what should exist*. Code that contradicts an approved product
-decision is an **implementation mismatch** the agent reports as a finding (e.g. the review
-reveal timing: code = 7 days, approved intent = ~1 hour). Historical docs never override
-newer approved docs or code.
+decision is an **implementation mismatch** the agent reports as a finding (e.g. a UI that
+claims a review is publicly visible the moment it is submitted, when the approved model
+keeps it blind until reveal). Historical docs never override newer approved docs or code.
+
+**Superseded product decisions are not findings.** A newer explicit Product decision
+overrides any older stated intent, including one still quoted in an older audit, report,
+or checklist. Before raising a product-truth mismatch, confirm the "approved" side against
+the CURRENT `docs/product/*` — do not carry an intent forward from historical material.
+*(Worked example: review reveal timing. An earlier ~1-hour one-sided fallback was
+reconsidered and **rejected**; the approved model is counterpart-submission or a **7-day**
+window. The code does 7 days and is therefore CORRECT. Do not raise ~1 hour.)*
 
 ## Severity (user impact, not implementation effort)
 
