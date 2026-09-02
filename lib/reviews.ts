@@ -369,3 +369,150 @@ export function initialsOf(name: string): string {
     .map((p) => p.charAt(0).toUpperCase())
     .join('')
 }
+
+// ── Phase 1: review-opportunity state (server-authoritative) ──────────────────
+//
+// The DB owns eligibility/window/reveal (Phase 0). The UI must accurately REPRESENT
+// a review opportunity without duplicating that logic. getReviewOpportunity() reads
+// the single server-authoritative predicate (RPC review_opportunity, migration
+// 20260903000000); reviewOpportunityCopy() is a pure presentation map. Submitted !=
+// revealed: the confirmation copy never claims public visibility.
+
+export type ReviewDirection = 'client_to_provider' | 'provider_to_client'
+
+export type ReviewOpportunity =
+  | 'eligible'
+  | 'already_submitted'
+  | 'window_closed'
+  | 'under_review'
+  | 'not_completed'
+  | 'not_participant'
+  | 'unknown'
+
+// Reads the DB's authoritative review-opportunity state for a booking + direction.
+// Never computes the 7-day window client-side. Returns 'unknown' only on a read error.
+export async function getReviewOpportunity(
+  bookingId: string,
+  direction: ReviewDirection,
+): Promise<ReviewOpportunity> {
+  const { data, error } = await supabase.rpc('review_opportunity', {
+    p_booking_id: bookingId,
+    p_direction: direction,
+  })
+  // On any read error, fall back to 'unknown' → the UI shows no review entry
+  // rather than a wrong one; the DB remains authoritative on the actual submit.
+  if (error) return 'unknown'
+  return (data as ReviewOpportunity) ?? 'unknown'
+}
+
+export interface ReviewOpportunityCopy {
+  // true only when a review may be started now (show the actionable CTA).
+  actionable: boolean
+  // true when this is a settled, truthful end state: render an explanation and a
+  // safe exit, and NEVER invite a retry. False for 'eligible' and for 'unknown'
+  // (a transient read failure, which must not be presented as a verdict).
+  terminal: boolean
+  // the entry CTA label when actionable; '' when there is no review entry at all.
+  label: string
+  // title/body for a terminal state or a rejected submit (empty for 'eligible').
+  title: string
+  body: string
+}
+
+// Pure presentation for each opportunity state. Direction changes only the labels.
+export function reviewOpportunityCopy(
+  opportunity: ReviewOpportunity,
+  direction: ReviewDirection,
+): ReviewOpportunityCopy {
+  const isProvider = direction === 'provider_to_client'
+  switch (opportunity) {
+    case 'eligible':
+      return {
+        actionable: true,
+        terminal: false,
+        label: isProvider ? 'Review client' : 'Leave review',
+        title: '',
+        body: '',
+      }
+    case 'already_submitted':
+      return {
+        actionable: false,
+        terminal: true,
+        label: isProvider ? 'Client reviewed' : 'Reviewed',
+        title: isProvider ? 'Client reviewed' : 'Reviewed',
+        body: isProvider
+          ? 'You already reviewed this client for this booking.'
+          : 'You already reviewed this booking.',
+      }
+    case 'window_closed':
+      return {
+        actionable: false,
+        terminal: true,
+        label: 'Review period ended',
+        title: 'Review period ended',
+        body: 'The review period for this booking has ended.',
+      }
+    case 'under_review':
+      return {
+        actionable: false,
+        terminal: true,
+        label: 'Under review',
+        title: 'Under review',
+        body: 'This booking is currently under review. Review activity is temporarily paused.',
+      }
+    // not_completed covers any booking that never became a completed service —
+    // including no_show. A no-show is a real, recorded booking event, but it is
+    // NOT a completed service experience, so there is no service-quality review
+    // to leave. (Conduct/reliability reputation is a later phase; see
+    // docs/product/REVIEWS_MODEL.md.) Terminal and truthful — never a retry.
+    case 'not_completed':
+      return {
+        actionable: false,
+        terminal: true,
+        label: '',
+        title: 'No review for this booking',
+        body: 'This booking isn\u2019t eligible for a review because the appointment wasn\u2019t completed.',
+      }
+    // The caller is not the client/provider for this booking + direction. Say so
+    // without confirming anything about the booking itself.
+    case 'not_participant':
+      return {
+        actionable: false,
+        terminal: true,
+        label: '',
+        title: 'Review unavailable',
+        body: 'This review isn\u2019t available for this booking.',
+      }
+    // unknown: a transient read failure. No entry, but NOT a terminal verdict —
+    // the caller keeps its own generic handling rather than asserting a state.
+    default:
+      return { actionable: false, terminal: false, label: '', title: '', body: '' }
+  }
+}
+
+// Shared post-submission confirmation copy. submitted != revealed: this text may
+// state that a review was RECORDED, and must never claim it is live/public/visible.
+// Both directions use the same wording so the two-sided model reads symmetrically.
+export const REVIEW_SUBMITTED_TITLE = 'Review submitted'
+
+export const REVIEW_SUBMITTED_BODY =
+  'Your review stays private until they submit theirs or the review window closes. ' +
+  'This keeps reviews fair for both sides.'
+
+// Maps a failed review INSERT to a truthful terminal message, by re-reading the
+// authoritative opportunity state (all RLS WITH CHECK rejections surface as 42501,
+// so the error code alone can't distinguish window-closed vs under_review vs
+// already-reviewed). Returns null when the state looks eligible/unknown → caller
+// shows its generic retry message.
+export async function reviewSubmitErrorMessage(
+  bookingId: string,
+  direction: ReviewDirection,
+): Promise<{ title: string; body: string } | null> {
+  const opp = await getReviewOpportunity(bookingId, direction)
+  const c = reviewOpportunityCopy(opp, direction)
+  // Every terminal state (including not_completed / not_participant, reachable via
+  // a stale deep link) gets a truthful message and a safe exit. Only 'eligible' and
+  // 'unknown' fall through to the caller's generic retry.
+  if (c.terminal) return { title: c.title, body: c.body }
+  return null
+}

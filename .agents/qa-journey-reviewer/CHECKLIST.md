@@ -90,14 +90,22 @@ not an invented requirement.
 - **Reviews require a completed Book transaction** (no random/friend/competitor/open
   public reviews); reviews are blind and two-sided; both client and provider reputation
   matter.
-- **Review reveal timing is a decided IMPLEMENTATION MISMATCH, not an open question.**
-  Approved intent = reveal on counterpart submission, else **~1 hour**; the code does
-  **7 days** (`lib/reviews.ts` `SEVEN_DAYS_MS`; DB `provider_review_revealed`
-  `interval '7 days'`). When reviewing the completed-transaction → two-sided-review
-  journey, report this as: **Severity MEDIUM, Confidence CONFIRMED**, Expected =
-  ~1-hour-or-counterpart, Actual = 7-day-or-counterpart, **Owner = Implementation
-  Engineer** (not BLOCKER — the review system still functions; not UNDECIDED — the intent
-  is decided).
+- **Review reveal timing is DECIDED AND IMPLEMENTED — do not report it as a mismatch.**
+  Approved model: blind until **both sides submit** (reveal immediately), otherwise
+  submitted reviews reveal when the **7-day window closes** from the server-authoritative
+  `completed_at`; late submissions blocked; `under_review` blocks submission and holds
+  reveal. The code does exactly this (DB-authoritative, migration `20260902000000`), so it
+  is **CORRECT**. *(An earlier ~1-hour one-sided fallback was reconsidered and **rejected**
+  — a one-sided early reveal enables retaliation. `~1 hour` is stale; do NOT raise it, and
+  do not treat older audits/reports that still cite it as current approved truth.)* Still
+  DO flag: any copy claiming a review is public/live at submission time, any client-side
+  re-derivation of the window, or any path that lets a late/blocked review through.
+- **`no_show` is not reviewable.** A no-show is a recorded booking event but not a
+  completed service, so there must be **no 1-5 star service-quality review flow** in
+  either direction — while the no-show itself stays visible on the booking. The Past tab
+  groups `completed` + `no_show`; that grouping is correct, but review eligibility must
+  never be derived from it. Conduct/reliability reputation for no-shows is a LATER phase:
+  do not flag its absence as a defect, and do flag any Phase 2 leakage.
 - **Do not flag existing free-text reviews** merely because structured input is a future
   direction.
 - **Client accountability is an escalating model** — never assert "three bad reviews =

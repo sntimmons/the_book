@@ -66,12 +66,18 @@ listed explicitly so they are not mistaken for defects (cross-check
 - **Actor:** client and provider (each reviews the other).
 - **Entry:** post-booking review flow after completion.
 - **Steps:** submit rating/review (blind) → reveal applies.
-- **Reveal — IMPLEMENTATION MISMATCH:**
-  - **CURRENT IMPLEMENTATION:** revealed when the **counterpart review exists** OR the booking `completed_at` is **≥ 7 days** ago (`lib/reviews.ts`; DB `provider_review_revealed`).
-  - **APPROVED PRODUCT INTENT:** reveal on **counterpart submission**, otherwise a timed reveal of **~1 hour** (the 7-day timing is explicitly rejected). Exact mechanics may need final design, but the target is ~1 hour. **Not UNDECIDED** — a decided intent the code has not met. (Do not change review code here.)
+- **Reveal — APPROVED AND IMPLEMENTED (no mismatch):**
+  - **APPROVED PRODUCT MODEL:** blind until **both sides submit** (reveal immediately), otherwise submitted reviews reveal when the **7-day window closes**, measured from the server-authoritative `completed_at`. Late submissions are blocked; `under_review` blocks submission and holds reveal.
+  - **CURRENT IMPLEMENTATION:** matches — DB-authoritative (`review_eligible` / `provider_review_revealed` / `client_review_revealed`, migration `20260902000000`).
+  - **No ~1-hour fallback.** *(Historical note: an earlier ~1-hour one-sided reveal concept was reconsidered and **rejected** — a one-sided early reveal lets the not-yet-revealed party see and retaliate, defeating blind review. See `BETA_SCOPE.md` and `REVIEWS_MODEL.md`. Do **not** report the 7-day timing as an implementation mismatch.)*
 - **Approved core rule:** reviews may **only** come from **completed transactions through The Book** — no random/friend/competitor/open public reviews. Both client and provider reputation matter (two distinct reputation contexts on one verified identity).
-- **Status:** IMPLEMENTED (transaction-gated, blind, two-sided) with a **reveal-timing mismatch** to be fixed by engineering (see QA classification in the implementation record).
-- **Open decisions:** free-text vs structured review input (PRODUCT DIRECTION); whether reviews additionally require identity-verified parties (ties to J9/J10). *(Reveal timing is NOT open — it is a decided target with a pending implementation fix.)*
+- **`completed → no_show` is an ILLEGAL transition** (decided): `completed` and `no_show` are
+  alternative outcomes, enforced at the DB write boundary (migration `20260904000000`). An
+  administrative correction workflow is a later product/ops concern and is not built.
+- **A rating-only review is valid** in both directions — stars alone submit; text and tags are optional.
+- **`no_show` is NOT reviewable:** a no-show is a recorded booking event but not a completed service experience, so it produces **no service-quality (1–5 star) review flow** in either direction. The event is preserved on the booking; conduct/reliability reputation is a later phase (`REVIEWS_MODEL.md`).
+- **Status:** IMPLEMENTED (transaction-gated, blind, two-sided, 7-day window).
+- **Open decisions:** free-text vs structured review input (PRODUCT DIRECTION); whether reviews additionally require identity-verified parties (ties to J9/J10). *(Reveal timing is NOT open and NOT a mismatch — it is decided and implemented.)*
 
 ## J7 — Provider onboarding → Go Live
 - **Actor:** user becoming a provider.

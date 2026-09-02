@@ -14,6 +14,14 @@ import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
+import {
+  reviewOpportunityCopy,
+  reviewSubmitErrorMessage,
+  REVIEW_SUBMITTED_TITLE,
+  REVIEW_SUBMITTED_BODY,
+} from '../../lib/reviews'
+import ReviewStateScreen from '../../components/ReviewStateScreen'
+import { useReviewOpportunity } from '../../hooks/useReviewOpportunity'
 import { useAuth } from '../../context/AuthContext'
 
 const RATING_RESPONSE: Record<number, string> = {
@@ -53,6 +61,9 @@ export default function ProviderReview() {
   const [booking, setBooking] = useState<BookingForReview | null>(null)
   const [providerDbId, setProviderDbId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // QA-UX-004: a successful provider review must not exit silently — submit and skip
+  // were previously indistinguishable. Flips to true only after the insert succeeds.
+  const [submitted, setSubmitted] = useState(false)
 
   // Load the real booking + client + service. Per spec: data only, no restyle.
   const load = useCallback(async () => {
@@ -107,6 +118,14 @@ export default function ProviderReview() {
     load()
   }, [load])
 
+  // Deep-link / stale-navigation defense (QA-JOURNEY-001). Reachable directly from
+  // the completion prompt AND from the persistent booking-detail entry, so it
+  // re-checks the server-authoritative opportunity rather than failing at submit.
+  const { opportunity: reviewOpp, loading: oppLoading } = useReviewOpportunity(
+    id,
+    'provider_to_client',
+  )
+
   function handleRate(value: number) {
     setRating(value)
   }
@@ -157,17 +176,27 @@ export default function ProviderReview() {
 
       if (error) {
         console.log('Client review insert error:', error)
+        // RLS WITH CHECK rejections all surface as 42501; re-read the authoritative
+        // opportunity state for a truthful, non-retry message (already reviewed /
+        // window closed / under review) instead of a generic retry (QA-STATE-006).
+        const truthful = await reviewSubmitErrorMessage(id as string, 'provider_to_client')
         Alert.alert(
-          'Could not submit rating',
-          'Something went wrong. Please try again.',
-          [{ text: 'OK' }],
+          truthful?.title ?? 'Could not submit rating',
+          truthful?.body ?? 'Something went wrong. Please try again.',
+          [
+            {
+              text: truthful ? 'Done' : 'OK',
+              onPress: truthful ? () => router.replace('/(tabs)/business' as never) : undefined,
+            },
+          ],
         )
         setSubmitting(false)
         return
       }
 
+      // QA-UX-004: confirm the write instead of navigating away silently.
       setSubmitting(false)
-      router.replace('/(tabs)/business' as never)
+      setSubmitted(true)
     } catch (err) {
       console.log('Client review exception:', err)
       Alert.alert(
@@ -181,6 +210,38 @@ export default function ProviderReview() {
 
   function handleSkip() {
     router.replace('/(tabs)/business' as never)
+  }
+
+  // Successful submission → truthful confirmation, reusing the shared state screen
+  // rather than adding new navigation architecture (QA-UX-004). The copy is the shared
+  // constant, so both directions describe the blind window identically and neither
+  // claims the review is live/public.
+  if (submitted) {
+    return (
+      <ReviewStateScreen
+        icon="check-circle"
+        title={REVIEW_SUBMITTED_TITLE}
+        body={REVIEW_SUBMITTED_BODY}
+        exitLabel="Back to bookings"
+        onExit={() => router.replace('/(tabs)/business/bookings' as never)}
+      />
+    )
+  }
+
+  // Terminal (non-retryable) state → truthful screen with a safe exit, never the form.
+  // Includes not_completed, which is what a no_show booking resolves to: a no-show
+  // is not a completed service, so there is no service-quality rating to give.
+  const oppCopy = reviewOpportunityCopy(reviewOpp, 'provider_to_client')
+  if (oppLoading) return <View style={styles.root} />
+  if (oppCopy.terminal) {
+    return (
+      <ReviewStateScreen
+        title={oppCopy.title}
+        body={oppCopy.body}
+        exitLabel="Back to bookings"
+        onExit={() => router.replace('/(tabs)/business/bookings' as never)}
+      />
+    )
   }
 
   return (

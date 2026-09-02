@@ -74,20 +74,18 @@ export default function ReviewSubmitted() {
             </View>
           </Animated.View>
 
-          <Text style={styles.headline}>Review posted.</Text>
+          <Text style={styles.headline}>Review submitted</Text>
 
           <Text style={styles.subtext}>
-            Your review helps the Houston community find great providers. Thank you.
+            Thanks for sharing your experience. There{'’'}s nothing else you need to do.
           </Text>
 
           <View style={styles.impactNote}>
-            <Text style={styles.impactTitle}>
-              {provider != null
-                ? `Your review is now live on ${firstName}'s profile.`
-                : 'Your review is now live on the provider profile.'}
-            </Text>
+            <Text style={styles.impactTitle}>Your review stays private for now.</Text>
             <Text style={styles.impactSub}>
-              Other Houston clients can now see your experience before booking.
+              {provider != null
+                ? `It becomes visible once ${firstName} reviews you too, or when the review window closes. This keeps reviews fair for both sides.`
+                : 'It becomes visible once the provider reviews you too, or when the review window closes. This keeps reviews fair for both sides.'}
             </Text>
           </View>
 
