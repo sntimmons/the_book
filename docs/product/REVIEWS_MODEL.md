@@ -67,13 +67,17 @@ timestamp. TypeScript owns presentation only.
 - **SEC-DATA-002 (MED) fixed:** `providers.average_rating`/`review_count` recompute over **revealed**
   provider reviews only (a blind review never moves the public number); a counterpart `client_review`
   triggers a recompute.
-- **SEC-DATA-003 (MED) fixed:** `completed_at` is **server-stamped** on the completion transition and
+- **SEC-DATA-003 (MED) fixed:** `completed_at` is **server-stamped on the FIRST-EVER completion** and
   **immutable** thereafter (no backdate/future-date/mutate/clear by an authenticated actor) — the
   review clock can't be manipulated.
 - **SEC-DATA-101 (MED) closed:** reveal and eligibility are anchored on the immutable, server-stamped
   `completed_at` (**not** live `status`), so a provider **cannot suppress a revealed review** or block
   a client's review by transitioning a completed booking to `cancelled_by_provider`/`no_show`. A
   genuine void is expressed via `under_review` (a dispute hold, service_role-only), which holds reveal.
+- **SEC-DATA-201 (MED) closed:** `completed_at` is stamped **once** (keyed on `old.completed_at IS NULL`),
+  so a status **round-trip** (`completed → accepted/no_show → completed`) does **not** re-stamp it — the
+  7-day window and any achieved reveal cannot be reset. (The transition legality itself is a deferred
+  booking-lifecycle product question; the review-clock consequence is closed regardless.)
 - **SEC-TRIGGER-102 (LOW) closed:** explicit `EXECUTE` grants (not default-privilege reliance) on the
   policy-referenced functions (`review_eligible` → authenticated; `provider_review_revealed` →
   authenticated, anon); internal helpers are not role-granted.
@@ -86,12 +90,12 @@ timestamp. TypeScript owns presentation only.
   both INSERT policies.
 - **SEC-TRUTH-001 (LOW) fixed:** `under_review` now actually blocks review submission.
 
-**Validation:** rolled-back non-prod role simulation, 27/27 checks pass (eligibility both
+**Validation:** rolled-back non-prod role simulation, 28/28 checks pass (eligibility both
 directions, forged-client-id block, under_review block, window-close block, reveal
 counterpart/window/hold, no cross-provider conduct leak, completed_at authority, revealed-only
-aggregate, repeat booking, and reveal-latching after a post-completion cancel). This is a
-**manual, non-CI** simulation — the committed B5B DB/security harness does not exist yet and
-remains a follow-up.
+aggregate, repeat booking, reveal-latching after a post-completion cancel, and completed_at
+stamp-once across a status round-trip). This is a **manual, non-CI** simulation — the committed
+B5B DB/security harness does not exist yet and remains a follow-up.
 
 ## Phase 2 structured-signal storage — recommendation (not yet implemented)
 The two tables already model structured data differently (`client_reviews` = typed booleans;
