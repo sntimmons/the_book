@@ -140,11 +140,17 @@ State Steward and this durable PM document set. Several documentation and govern
 follow-ups have merged since — #31 (the Steward's `Area` enum, merged **first**, so the new
 open question's area was already declared when it arrived), then #30, #32, #33, #34 and #35.
 
-None of them changed application behaviour, migrations, RLS, CI, or agent tool grants. That is
-the whole of the claim; it does **not** mean none of them changed a repository fact. Some of
-them did, and [ROADMAP.md](ROADMAP.md) is authoritative for which — it carries a Completed row
-per delivered capability, each row citing the merge that delivered it, under its own anchor.
-This document deliberately does not restate that; a second copy would drift.
+None of them changed application behaviour, migrations, RLS, CI, or agent tool grants —
+**verified at `4ff72ddf8ecbcbe28c36da1e790d106fffcbbb54`**, which post-dates this document's
+anchor. That local verification note scopes this one negative claim to the commit where it was
+actually checked; it does **not** advance the whole-document anchor, which stays at `e7ccd87`
+for the reason given below. A claim about commits later than the anchor has to say where it
+was checked, or the header would be promising a verification that never happened.
+
+That is the whole of the claim; it does **not** mean none of them changed a repository fact.
+Some of them did, and [ROADMAP.md](ROADMAP.md) is authoritative for which — it carries a
+Completed row per delivered capability, each row citing the merge that delivered it, under its
+own anchor. This document deliberately does not restate that; a second copy would drift.
 
 **This document's** anchor stays at `e7ccd87` because nothing *it* asserts changed after that
 commit: the 14 migration files, the agent grant and allowlist, the reviews and messaging
