@@ -28,6 +28,27 @@ TEST_SUPABASE_DB_URL='postgresql://...' node scripts/db-security-test.mjs
 
 Exit code is `0` only if every assertion passes.
 
+## Execution modes (and why it matters)
+
+The suites are **one multi-statement script wrapped in a single transaction**, so they
+must be sent over a protocol that accepts multiple commands per message:
+
+| `TEST_SUPABASE_DB_URL` | Client | Protocol |
+|---|---|---|
+| set (CI) | `psql -f` | simple query — multiple commands per message are legal |
+| unset (local) | `supabase db query --linked` | Management API — also multi-statement safe |
+
+**Do not use `supabase db query --db-url`.** It sends the script through the *extended*
+query protocol (a prepared statement), and PostgreSQL rejects that with
+`cannot insert multiple commands into a prepared statement`. That is exactly how this
+harness failed in CI the first time a real connection string was configured.
+
+The connection string must be the **Session pooler** URI (port `5432`), not the
+Transaction pooler. The harness relies on temp tables, `pg_temp` functions and one
+transaction spanning the whole script — all of which need a backend dedicated to the
+session. `psql` receives the credentials through `PG*` environment variables, never on
+the command line, so the password never appears in process `argv`.
+
 ## Safety
 
 - **Non-production only.** The runner extracts the project ref from the target and
@@ -54,8 +75,10 @@ Exit code is `0` only if every assertion passes.
 | `_fixtures.sql` | The shared cast — client, provider, outsider, one booking per review state, one conversation per request state — plus fixture-sanity and harness-integrity checks |
 | `reviews.test.sql` | Reviews Phase 0/1 trust boundaries |
 | `messaging.test.sql` | Pre-booking message-request trust boundaries |
-| `_report.sql` | Aggregates results; the runner reads this and sets the exit code |
+| `_report.sql` | Aggregates results into one JSON column; the runner reads it and sets the exit code |
 | `../../scripts/db-security-test.mjs` | Production guard, execution, reporting |
+| `../../scripts/b5bExec.mjs` | Pure helpers: `PG*` env derivation and report parsing |
+| `../../scripts/prodRef.mjs` | Production-ref constant and URL-based ref resolution |
 
 To add a suite: create `<name>.test.sql`, use the `pg_temp.chk*` helpers, and add it to
 `SUITES` in the runner (before `_report.sql`).
@@ -114,13 +137,14 @@ When the secret is absent the behaviour depends on the event:
 | same-repo `pull_request` | runs; failure fails the build | warns and skips |
 | fork `pull_request` | n/a — GitHub withholds secrets from forks | warns and skips |
 
-⚠️ **`TEST_SUPABASE_DB_URL` is not configured yet.** Until it is added, this job fails on
-push to `main` and skips on pull requests, and the harness is effectively local-only.
+`TEST_SUPABASE_DB_URL` **is configured** for this repository, so the job runs on pull
+requests and on `main`. If it is ever removed, `main` fails by design — restore the secret
+rather than weakening the gate.
 
 ### Required repository configuration
 
 | Secret | Value |
 |---|---|
-| `TEST_SUPABASE_DB_URL` | Postgres connection string for the **non-production** project (Supabase → Project Settings → Database → Connection string). Must never be a production URL — the runner refuses the production ref. |
+| `TEST_SUPABASE_DB_URL` | **Session pooler** connection URI (port **5432**) for the **non-production** project: Supabase → Project Settings → Database → Connection string → *Session pooler*. Must never be a production URL — the runner refuses the production ref, refuses port `6543` (Transaction pooler), and refuses an `sslmode` that would disable TLS. |
 
-Until that secret is added, the job reports a skip notice and the harness is local-only.
+The secret is configured; a fork PR still skips, because GitHub withholds secrets from forks.

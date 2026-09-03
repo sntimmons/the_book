@@ -103,7 +103,8 @@ stamp-once across a status round-trip). That was a **manual, non-CI** simulation
 **non-production** project inside an always-rolled-back transaction, wired to CI as the
 `db-security` job. It asserts real Postgres enforcement — RLS exercised as the `authenticated`
 role, triggers, grants and `SECURITY DEFINER` behaviour. See `supabase/tests/README.md` for
-scope and the required `TEST_SUPABASE_DB_URL` secret, which is **not configured yet**.
+scope, the execution modes, and the required `TEST_SUPABASE_DB_URL` secret (the Session
+pooler URI).
 
 ## Phase 2 structured-signal storage — recommendation (not yet implemented)
 The two tables already model structured data differently (`client_reviews` = typed booleans;

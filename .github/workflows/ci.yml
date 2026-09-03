@@ -44,7 +44,8 @@ jobs:
   #                  secret are not blocked by a credential they cannot have.
   # It is never `continue-on-error`: whenever the secret IS available the job runs and a
   # failing assertion fails the build. See supabase/tests/README.md for the secret to
-  # configure. It is NOT configured yet, so today this job fails on push to main.
+  # configure. See supabase/tests/README.md for the current secret status and the exact
+  # connection-string requirements (Session pooler, port 5432).
   db-security:
     runs-on: ubuntu-latest
     steps:

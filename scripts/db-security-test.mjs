@@ -13,6 +13,22 @@
 // Usage (CI or explicit target):
 //   TEST_SUPABASE_DB_URL='postgresql://...' node scripts/db-security-test.mjs
 //
+// EXECUTION MODE. The suites are one multi-statement script wrapped in a single
+// transaction, so it must be sent over a protocol that accepts multiple commands per
+// message:
+//   * TEST_SUPABASE_DB_URL set -> psql, which sends a -f script using the SIMPLE query
+//     protocol. Multiple commands per message are legal there.
+//   * otherwise -> `supabase db query --linked`, which posts the script to the
+//     Management API. Also multi-statement safe; used for local convenience.
+// What must NOT be used is `supabase db query --db-url`: it issues the script through
+// the EXTENDED query protocol (a prepared statement), and PostgreSQL rejects that with
+// "cannot insert multiple commands into a prepared statement". That is exactly how this
+// harness failed in CI once a real connection string was configured.
+//
+// The Session pooler (port 5432, session mode) is required rather than the Transaction
+// pooler: the harness relies on temp tables, pg_temp functions and a transaction that
+// spans the whole script, all of which need a dedicated backend for the session.
+//
 // Secrets are read from the environment. Nothing is hardcoded and the connection
 // string is never printed -- only the project ref, which is not a credential.
 import { execFileSync } from 'node:child_process'
@@ -21,6 +37,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { PRODUCTION_SUPABASE_REF, refFromTarget } from './prodRef.mjs'
+import { psqlEnvFrom, parseReport } from './b5bExec.mjs'
 
 const SUITES = [
   'supabase/tests/_helpers.sql',
@@ -31,7 +48,9 @@ const SUITES = [
 ]
 
 const dbUrl = process.env.TEST_SUPABASE_DB_URL || ''
-let target
+// Only used by the Supabase CLI (linked) path; the psql path takes its target from
+// PG* environment variables instead.
+let cliTarget
 if (dbUrl) {
   const ref = refFromTarget(dbUrl)
   // Refuse anything we cannot positively identify as non-production. An
@@ -47,8 +66,22 @@ if (dbUrl) {
     console.error(`REFUSING to run against the PRODUCTION project (ref ${ref}).`)
     process.exit(1)
   }
+  // The harness needs a backend dedicated to the session (temp tables, pg_temp
+  // functions, one transaction spanning the script). The Transaction pooler does not
+  // provide that.
+  try {
+    if (new URL(dbUrl).port === '6543') {
+      console.error(
+        'REFUSING: port 6543 is the Supabase TRANSACTION pooler. This harness needs the\n' +
+          'SESSION pooler (port 5432): it uses temp tables, pg_temp functions and a single\n' +
+          'transaction spanning the whole script, which require a dedicated backend.',
+      )
+      process.exit(1)
+    }
+  } catch {
+    /* refFromTarget already validated the URL; nothing further to do here */
+  }
   console.log(`target: non-production project ${ref} (via TEST_SUPABASE_DB_URL)`)
-  target = ['--db-url', dbUrl]
 } else {
   // Local convenience: the CLI's linked project. Verify it is not production
   // BEFORE issuing any query against it.
@@ -76,7 +109,7 @@ if (dbUrl) {
     process.exit(1)
   }
   console.log(`target: non-production project ${linkedRef} (linked)`)
-  target = ['--linked']
+  cliTarget = ['--linked']
 }
 
 // One transaction, always rolled back: the harness leaves zero residue even when an
@@ -91,6 +124,13 @@ const sql = [
 const onDisk = readdirSync('supabase/tests')
   .filter((f) => f.endsWith('.test.sql'))
   .map((f) => `supabase/tests/${f}`)
+// _report.sql aggregates _results and must run LAST: a suite registered after it would
+// have its assertions excluded from the totals while the run still reported success.
+if (SUITES[SUITES.length - 1] !== 'supabase/tests/_report.sql') {
+  console.error('supabase/tests/_report.sql must be the LAST entry in SUITES.')
+  process.exit(1)
+}
+
 const unregistered = onDisk.filter((f) => !SUITES.includes(f))
 if (unregistered.length > 0) {
   console.error(`Unregistered test suite(s): ${unregistered.join(', ')}`)
@@ -103,17 +143,46 @@ writeFileSync(file, sql)
 
 let raw
 try {
-  raw = execFileSync('supabase', ['db', 'query', ...target, '--file', file], {
-    encoding: 'utf8',
-    maxBuffer: 32 * 1024 * 1024,
-  })
+  if (dbUrl) {
+    // psql -f uses the simple query protocol, so the multi-statement script is legal.
+    // -v ON_ERROR_STOP=1 aborts on the first SQL error instead of continuing and
+    // reporting a misleading partial result; -t -A strips headers and alignment so the
+    // final JSON row prints as one parseable line; -X ignores any local psqlrc.
+    raw = execFileSync(
+      'psql',
+      ['-v', 'ON_ERROR_STOP=1', '-X', '-q', '-t', '-A', '-f', file],
+      {
+        encoding: 'utf8',
+        maxBuffer: 32 * 1024 * 1024,
+        env: psqlEnvFrom(dbUrl, process.env),
+        // Capture stderr rather than letting Node echo the child's raw output straight
+        // to ours: the redaction below is the single choke point, and an inherited
+        // stream would bypass it (SEC-SECRET-001).
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+  } else {
+    raw = execFileSync('supabase', ['db', 'query', ...cliTarget, '--file', file], {
+      encoding: 'utf8',
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  }
 } catch (err) {
-  // Scrub: a CLI error can echo the invocation, which would include the URL.
-  const raw = String(err.stdout || '') + String(err.stderr || err.message || '')
+  if (err && err.code === 'ENOENT' && dbUrl) {
+    console.error(
+      'psql was not found. The DB-URL path needs a PostgreSQL client (postgresql-client),\n' +
+        'which is preinstalled on GitHub ubuntu runners. Install it, or unset\n' +
+        'TEST_SUPABASE_DB_URL to use the linked-project path instead.',
+    )
+    process.exit(1)
+  }
+  // Scrub: a client error can echo the invocation, which could include the URL.
+  const errOut = String(err.stdout || '') + String(err.stderr || err.message || '')
   // Redact unconditionally. The previous exact-substring scrub was a no-op on the
   // --linked path (dbUrl is empty there) and missed re-quoted or component-split
   // forms, so any postgres URL in the output is stripped regardless of origin.
-  const msg = (dbUrl ? raw.split(dbUrl).join('<redacted>') : raw).replace(
+  const msg = (dbUrl ? errOut.split(dbUrl).join('<redacted>') : errOut).replace(
     /postgres(?:ql)?:\/\/[^\s"'<>]+/gi,
     '<redacted>',
   )
@@ -126,15 +195,9 @@ try {
   } catch {}
 }
 
-const start = raw.indexOf('{')
-const end = raw.lastIndexOf('}') + 1
-if (start === -1) {
-  console.error('DB harness produced no parseable result.')
-  process.exit(1)
-}
-const row = (JSON.parse(raw.slice(start, end)).rows ?? [])[0]
+const row = parseReport(raw)
 if (!row) {
-  console.error('DB harness returned no report row.')
+  console.error('DB harness produced no parseable report row.')
   process.exit(1)
 }
 
