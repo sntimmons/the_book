@@ -49,3 +49,10 @@ sentry.properties.local
 /android
 
 supabase/.temp/
+
+# Local scratch: generated audit/inspection output (e.g. tmp/f2-live-db-audit/, a live
+# DB schema dump). Nothing here has ever been tracked and nothing in the app, scripts,
+# CI or docs reads from it -- tooling that needs a temp file uses the system temp dir
+# (os.tmpdir()), not this path. Anchored with a leading slash so it matches ONLY the
+# repo-root directory, never a nested tmp/ somewhere in the source tree.
+/tmp/
