@@ -141,15 +141,16 @@ follow-ups have merged since — #31 (the Steward's `Area` enum, merged **first*
 open question's area was already declared when it arrived), then #30, #32, #33 and #34.
 
 None of them changed application behaviour, migrations, RLS, CI, or agent tool grants. That is
-the whole of the claim; it does **not** mean none of them changed a repository fact. #31 and
-#33 delivered governance capability — a declared `Area` value and the Steward's reconciliation
-contract — which is why each earns a ROADMAP row and why ROADMAP's anchor advances to the
-merge that delivered the artifact it cites.
+the whole of the claim; it does **not** mean none of them changed a repository fact. Some of
+them did, and [ROADMAP.md](ROADMAP.md) is authoritative for which — it carries a Completed row
+per delivered capability, each row citing the merge that delivered it, under its own anchor.
+This document deliberately does not restate that; a second copy would drift.
 
-**This document's** anchor stays at `e7ccd87` because nothing it asserts changed after that
+**This document's** anchor stays at `e7ccd87` because nothing *it* asserts changed after that
 commit: the 14 migration files, the agent grant and allowlist, the reviews and messaging
 surfaces, and every code path cited below are unchanged. An anchor is per-document — it moves
-when *that document's* asserted facts move, not whenever `main` does.
+when that document's own asserted facts move, not whenever `main` does, which is why this file
+and `ROADMAP.md` can truthfully carry different anchors.
 
 ---
 

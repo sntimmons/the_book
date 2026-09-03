@@ -73,8 +73,9 @@ A path that existed before the work cannot prove the work happened.
 
 **Nothing in flight.** Session 3 merged (PR #29, `2ae0fd0`). Documentation and governance
 merges have followed — #31 (`f4e8d86`, the `Area` enum) landed first, then #30 (`e7ccd87`),
-#32 (`f83bea2`) and the PRs carrying this convention. Per the row inclusion rule above, only
-#31 earned a Completed row. **Session 4 has not started.**
+#32 (`f83bea2`), #33 (`ad95855`, which introduced this convention) and #34 (`dbe5dd7`). Per
+the row inclusion rule above, #31 and #33 earned Completed rows; #30, #32 and #34 did not.
+**Session 4 has not started.**
 
 ---
 
