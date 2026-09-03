@@ -112,9 +112,8 @@ verification. Key entries:
 - **Navigation (authoritative):** [docs/architecture/NAVIGATION.md](docs/architecture/NAVIGATION.md)
 - **Current state (start here):** [docs/product/CURRENT_STATE.md](docs/product/CURRENT_STATE.md)
 - **Migration ledger, non-production (authoritative):** [docs/operations/MIGRATION_LEDGER.md](docs/operations/MIGRATION_LEDGER.md)
-- **Schema notes (partly superseded):** [supabase/README.md](supabase/README.md) - its
-  install instructions reference a baseline migration that no longer exists under
-  `supabase/migrations/`; prefer the ledger and the canonical baseline migration.
+- **Supabase entry point (authoritative):** [supabase/README.md](supabase/README.md) -
+  active migration chain, canonical baseline, and what must never be applied.
 - **Rate-limit function (authoritative):** [supabase/functions/README.md](supabase/functions/README.md)
 - **Historical audits (not current-state):** [docs/history/](docs/history/)
 - **How to contribute safely:** [CONTRIBUTING.md](CONTRIBUTING.md)

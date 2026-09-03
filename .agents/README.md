@@ -23,9 +23,16 @@ false-positive controls), `OUTPUT_FORMAT.md` (finding + review schema), `SOURCES
 The Project State Steward is the only agent with write access, and it is deliberately
 narrower than an implementation agent: an exhaustive allowlist of five project-management
 documents under `docs/product/`, no code, no SQL, no CI, and no agent definitions —
-including its own. Claude Code declares tools per agent rather than per path, so that
-allowlist is enforced by its specification and by PR review; a Steward diff touching
-anything outside it is a defect in the run, not a change to accept.
+including its own.
+
+Be precise about how that is enforced. Its adapter grants **no `Bash`**, which
+*mechanically* prevents shell, git, GitHub, database and CI execution through it. But Claude
+Code declares tools per agent rather than per path, so `Read`/`Edit`/`Write` are repo-wide at
+the tool layer: the five-file allowlist and the secret-read prohibition are **policy controls
+backed by review, not a filesystem sandbox**. A Steward diff touching anything outside the
+allowlist is a defect in the run, not a change to accept. Mechanical governance protection
+(CODEOWNERS or a CI path check) is a follow-up, and should land before any wider-permission
+agent is introduced.
 
 ## Shared governance (applies to every agent)
 

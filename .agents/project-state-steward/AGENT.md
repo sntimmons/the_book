@@ -68,16 +68,29 @@ Everything else in the repository is **read-only** to this agent, including
 `docs/README.md` — those have other owners. If one of them is wrong, the Steward reports
 the conflict; it does not edit them.
 
-**Tooling note:** the Steward's grant is `Read, Grep, Glob, Edit, Write` — deliberately
-**no `Bash`**. That absence is real, tool-layer enforcement: merging, pushing, deleting
-branches, committing, running migrations, and any database or CI mutation are *impossible*
-for this agent, not merely forbidden by text.
+**Tooling note — what is mechanically enforced, and what is not.**
 
-What the tool layer does **not** enforce is *which files* `Edit`/`Write` may touch — Claude
-Code declares tools per agent, not per path. The write allowlist above is therefore enforced
-by this specification and by PR review, not by the tool layer.
-Any diff from a Steward run that touches a file outside the allowlist is a defect in the
-run and must be rejected in review, not accepted because "the change looked fine".
+*Mechanically enforced.* The grant is `Read, Grep, Glob, Edit, Write` — deliberately **no
+`Bash`**. Because the adapter grants no shell, this agent cannot execute git, `gh`, the
+Supabase CLI, `psql`, migrations, CI, or any script. Merging, pushing, deleting branches and
+mutating a database are *impossible through this adapter*, not merely forbidden by text.
+
+*Not mechanically enforced.* Claude Code declares tools per agent, **not per path**, so
+`Read`, `Edit` and `Write` are repo-wide at the tool layer. This means:
+
+- the **five-file write allowlist** is a policy control, not a filesystem sandbox;
+- the **secret-read prohibition** is likewise policy — nothing stops `Read` from opening a
+  `.env*` file, only this specification does.
+
+Both are backed by **human PR review**, which is why this rule is addressed to the reviewer
+and not only to the agent: any diff from a Steward run that touches a file outside the
+allowlist is a defect in the run and must be **rejected in review**, not accepted because the
+change looked fine.
+
+The prohibitions above are unchanged in force — describing the boundary honestly does not
+relax it. **Mechanical governance protection** (a CODEOWNERS entry or a CI path check over
+`.agents/**`, `.claude/**` and the allowlist) remains a **follow-up**, and should land before
+any agent with a wider grant is introduced.
 
 ## Evidence requirements
 

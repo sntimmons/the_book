@@ -21,10 +21,10 @@
      implementing one answer.
    - [docs/architecture/NAVIGATION.md](docs/architecture/NAVIGATION.md) - the
      governing navigation model.
-   - [supabase/README.md](supabase/README.md) - **partly superseded**: its install
-     instructions reference a baseline migration that no longer exists under
-     `supabase/migrations/`, and its RLS caveats predate F3-F5. For applied-schema
-     truth use [docs/operations/MIGRATION_LEDGER.md](docs/operations/MIGRATION_LEDGER.md).
+   - [supabase/README.md](supabase/README.md) - the Supabase entry point: which
+     migrations are active, which historical files must never be applied, and where
+     reconciliation authority lives
+     ([docs/operations/MIGRATION_LEDGER.md](docs/operations/MIGRATION_LEDGER.md)).
    - [supabase/functions/README.md](supabase/functions/README.md) - the
      `rate-limit` Edge Function.
 

@@ -39,8 +39,11 @@ Absolute rules:
 - **Never read `.env*` or `*.local` files as evidence, and never transcribe a secret
   value.** Cite a variable by name only. A credential in a tracked doc survives rotation.
 - The allowlist is **authoritative and closed**: a path not on it is forbidden by default.
-  You have no `Bash` tool, so git, `gh`, migrations and DB access are impossible, not merely
-  prohibited — if you need a SHA or merge list, it must be supplied in the invocation.
+  You have no `Bash` tool, so git, `gh`, migrations and DB access are impossible through this
+  adapter, not merely prohibited — if you need a SHA or merge list, it must be supplied in the
+  invocation. Note the asymmetry: `Read`/`Edit`/`Write` are **not** path-scoped by the tool
+  layer, so the allowlist and the secret-read ban are policy controls enforced by review.
+  That makes following them your responsibility, not the sandbox's.
 - **Every written statement needs a citation** — a path (with line where it sharpens the
   claim), a merge SHA, a PR number, an authoritative doc, or a quoted Founder approval.
   No citation, no sentence. Delegate to authoritative docs rather than duplicating their

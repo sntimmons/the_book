@@ -1,98 +1,99 @@
-# The Book — Supabase Schema
+# The Book — Supabase
 
-## What this is
+**Status:** current entry point for the Supabase side of the repo. Short by design — it
+routes you to the authoritative document for each question rather than restating it.
 
-`migrations/20240101000000_baseline_schema.sql` is a **baseline capture** of the
-database schema — **not** a real migration history.
+## Where the schema actually lives
 
-The database was originally built by hand in the Supabase dashboard, so no
-migration files ever existed. This baseline was reconstructed from **code
-analysis** (every `supabase.from()` / `.select()` / `.insert()` / `.update()`
-call in the app) plus a set of **live REST probes** run during the security /
-hardening session. It is a starting point for schema version control, not an
-authoritative record of how production was built.
+The **active schema history is `supabase/migrations/`**, applied in filename order. It
+begins at the canonical baseline:
 
-## How the schema was derived (confidence levels)
+```
+supabase/migrations/20260829000000_canonical_live_baseline.sql
+```
 
-| Source | Tables | Confidence |
-|---|---|---|
-| Live REST probe (full column list observed) | `providers`, `bookings`, `clients` | **High** — columns and names confirmed |
-| Code usage (insert/select/update object keys) | all other 25 tables | **Medium** — column *names* are real (the code uses them) but *types*, defaults, nullability, and any columns the code never touches are **inferred** |
+That baseline was derived from the live database and verified to reproduce on a fresh
+non-production project (Batches F3–F5 / 6AB). Every change since is a separate timestamped
+migration. **Add a new migration for every schema change — never edit the schema in the
+Supabase dashboard, and never edit a migration that has already merged.**
 
-28 tables total (matches the tables the app queries).
+## Historical material — reference only, do not apply
 
-## How to apply it
+`supabase/migrations_history/pre_canonical/` holds the pre-canonical files, including
+`20240101000000_baseline_schema.sql`. That file was a **reconstruction from code analysis**,
+not a real migration history, and it is **not** the deployment source.
 
-### Fresh Supabase project (primary use)
-1. Create a new Supabase project.
-2. Open the SQL Editor.
-3. Paste the contents of `migrations/20240101000000_baseline_schema.sql` and run it.
-4. This creates all tables, storage buckets, count triggers, and a hardened RLS
-   baseline. You now have a working approximation of production to develop against.
-5. Point a dev `.env` / `lib/supabase.ts` at the new project and run the app.
+> **Do not paste it into the SQL Editor and do not run it.** It predates the canonical
+> baseline and the security batches, so applying it would roll schema and RLS backwards.
+> Earlier revisions of this README instructed exactly that; those instructions are
+> withdrawn.
 
-### Existing / production database — ⚠️ READ THIS FIRST
-- The **CREATE TABLE** statements all use `IF NOT EXISTS`, so they are safe no-ops
-  on tables that already exist. **They will NOT add missing columns** to an
-  existing table (Postgres skips the whole statement if the table exists).
-- The **RLS section is destructive on an existing DB.** It uses
-  `DROP POLICY IF EXISTS` + `CREATE POLICY`, which **replaces** whatever policies
-  are currently live with this file's version. If production already has correct
-  (or different) policies, running the RLS section will overwrite them.
-- **Do not run this whole file against production.** If you want to adopt the
-  hardened policies, review the section 12 (RLS) block, diff it against what's
-  actually live (`select * from pg_policies;`), and apply the parts you want
-  deliberately.
+Everything under `migrations_history/` exists so the history is readable, nothing more.
 
-## What this baseline intentionally hardens
+## Which migrations are applied where
 
-The RLS section encodes the fixes from the security audit, not necessarily what
-is live today:
-- **Community is provider-gated in RLS** (not just the UI) — a non-provider JWT
-  cannot read `community_posts` / `community_replies`.
-- **Provider privilege columns are column-`REVOKE`d** from `authenticated`
-  (`is_approved`, `is_featured`, `verification_status`, `identity_verified`,
-  `stripe_*_enabled`, `rating`, `review_count`, …) so a provider cannot
-  self-verify / self-feature / inflate stats via a direct API update.
-- **`clients` and `care_reminders` are strictly self-scoped** (`id = auth.uid()`).
-- **Messaging is participant-scoped** (`conversation` singular table).
+**[docs/operations/MIGRATION_LEDGER.md](../docs/operations/MIGRATION_LEDGER.md)** is
+authoritative for reconciliation, and for the rule that a migration is only marked applied
+after its deployed objects are compared against the file — never because a name matches.
 
-## Known gaps (do not assume this is complete)
+That ledger is **non-production only**. The repo is ahead of production: "reconciled"
+refers to the canonical baseline, and the migrations added since are recorded against the
+non-production project. The last recorded production state is **8 migrations** (Batches
+6AB / 6D). **Never assume a migration in this directory exists in production.**
 
-1. **Types are best-effort.** Money is `numeric`, ids are `uuid`, counts are
-   `integer`, timestamps are `timestamptz` — but exact precision/scale,
-   enums vs `text`, and check constraints are **not** captured.
-2. **Columns the code never touches are missing.** Only `providers`, `bookings`,
-   and `clients` have their full production column list (from live probes).
-   Every other table only has the columns the app reads or writes. Production
-   almost certainly has more (audit fields, internal flags, etc.).
-3. **RLS policies are the *intended* baseline, not a dump of production.** They
-   were never read from the live DB (the anon key cannot read `pg_policies`).
-   Treat them as recommendations to reconcile, not ground truth.
-4. **Booking write-integrity is not fully locked.** The baseline scopes bookings
-   to participants but does **not** yet stop a client from setting
-   `status='completed'` / `no_show_flag` / `payment_*`. That needs per-role
-   column grants or a trigger (audit critical #3) — still owed.
-5. **Storage bucket policies are not included** — only the bucket rows
-   (public/private). The per-bucket object RLS (who can upload/download) must be
-   configured separately, especially for the private `contract-pdfs` /
-   `contract-signatures` buckets.
-6. **No seed data.** `categories` is created empty; production seeds it. Add a
-   separate seed file if needed.
-7. **Triggers assume the count columns exist and start at 0.** If production
-   maintained counts differently, reconcile before enabling.
+## Setup and contribution
 
-## For the engineer taking this over
+- Install, run, environment configuration → **[README.md](../README.md)**
+- How to change things safely (branching, migrations, review gates) →
+  **[CONTRIBUTING.md](../CONTRIBUTING.md)**
+- What is true today across the product → **[docs/product/CURRENT_STATE.md](../docs/product/CURRENT_STATE.md)**
+- Documentation index and status legend → **[docs/README.md](../docs/README.md)**
+- Seeding a **non-production** project → `scripts/seed-nonprod.mjs` (reserved test identities;
+  refuses the production project ref)
 
-The highest-value next step is to make this baseline *true*:
-1. With **service-role** access, dump the real schema:
-   `pg_dump --schema-only` (or Supabase CLI `supabase db pull`) and diff it
-   against this file. Replace this baseline with the real dump when you have it.
-2. Dump `select * from pg_policies;` and reconcile section 12 against reality.
-3. Confirm the four storage buckets exist with the right public/private setting
-   and object-level policies.
-4. From here on, **stop editing the schema in the dashboard.** Add a new,
-   timestamped migration file for every change so history is preserved.
+## What else is in this directory
 
-This file exists so the next person is not staring at 28 undocumented tables.
-It is a floor, not a ceiling.
+| Path | What it is |
+|---|---|
+| `migrations/` | **Active** schema history — the deployment source |
+| `migrations_history/pre_canonical/` | Superseded files, reference only — never apply |
+| `functions/rate-limit/` | The `rate-limit` Edge Function — see [its README](functions/README.md) |
+| `tests/` | The B5B executable DB/security harness — see [its README](tests/README.md) |
+| `feature_interest.sql`, `feature_interest_count.sql` | Loose, **non-migration** SQL — see below |
+
+### Two loose SQL files (not part of the migration chain)
+
+`feature_interest.sql` and `feature_interest_count.sql` sit outside `migrations/` and carry
+instructions to run them in the SQL Editor. They pre-date the migration rule above.
+
+- `feature_interest.sql` is **superseded** — the `feature_interest` table is now in the
+  canonical baseline. Do not run it.
+- `feature_interest_count()` is **defined in no migration**, yet the app calls it
+  (`components/ComingSoonInterest.tsx`), and the canonical baseline notes it as absent live.
+
+Whether that function should be folded into a forward migration, retired, or kept as a
+documented exception is **an open schema question, not settled here**. Flagged so the gap is
+visible rather than implied away by "migrations/ is the deployment source".
+
+## A note on the security posture
+
+Earlier revisions of this file described RLS as "the *intended* baseline, not a dump of
+production… recommendations to reconcile, not ground truth", and listed booking
+write-integrity and storage policies as unfinished. **Those caveats are superseded**, and
+each by a specific migration you can read:
+
+| Old caveat | Closed by |
+|---|---|
+| "RLS policies are the *intended* baseline, not a dump of production" | `20260829000000_canonical_live_baseline.sql` — production-derived, 109 policies |
+| "Booking write-integrity is not fully locked" | `20260830010000_security_batch_3b_booking_write_integrity.sql` (extended by `20260902000000`, `20260904000000`) |
+| "Storage bucket policies are not included" | `20260829030000_security_batch_2a_provider_media_ownership.sql`, `20260829060000_security_batch_2b_contract_storage_scoping.sql` |
+
+Do not use the old wording to justify treating current policies as provisional — each was
+closed by a migration you can read above.
+
+Be precise about what is *regression-tested*, though: the B5B harness in `tests/` asserts the
+**review and pre-booking-messaging** boundaries against a real database, including
+`enforce_booking_write_integrity`. It does **not** cover storage policies, contract
+PDF/signature access, provider field-integrity, payments, or `reports` — see
+[tests/README.md](tests/README.md) § "Out of scope". Closed-by-migration and
+asserted-by-harness are different guarantees; only the second catches a regression.
