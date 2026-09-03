@@ -1,0 +1,134 @@
+# Migration ledger — reconciling non-production
+
+**Status:** authoritative operational note. Non-production only.
+
+## The drift
+
+Supabase tracks applied migrations in `supabase_migrations.schema_migrations`. Applying
+SQL by hand — pasting into the dashboard SQL editor, or `supabase db query --file` —
+changes the database but **writes nothing to that ledger**. The schema is then correct
+while `supabase migration list` reports the migration as unapplied.
+
+This happened on non-prod for `20260901010000`, `20260902000000` and `20260903000000`
+(and subsequently `20260904000000`, `20260905000000`). Every object existed and matched
+its migration; only the ledger was behind.
+
+Why it matters: `supabase migration up` and `db push` decide what to run from the ledger.
+With entries missing, they would attempt to re-run migrations that are already applied.
+These particular ones are `create or replace` + `drop policy if exists` and would have
+been survivable, but that is luck, not a guarantee — a future migration containing
+`create table`, `alter table ... add column`, or a data backfill would fail or double-apply.
+
+## Rule
+
+**Never mark a migration applied because an object with a matching name exists.** Compare
+the deployed definition against the migration first.
+
+For each migration, classify:
+
+| Class | Meaning | Action |
+|---|---|---|
+| A | Deployed state is semantically identical to the migration | Safe to repair the ledger |
+| B | Partially matches | **Stop.** Report the exact difference |
+| C | Does not match | **Stop.** Report the exact difference |
+| D | Should not be marked applied at all | **Stop.** Report |
+
+Only Class A may be repaired. Never edit a merged migration file to make history look
+clean, and never rewrite history to hide a mismatch — if the database genuinely diverges,
+the fix is a new forward corrective migration, proposed and reviewed on its own merits.
+
+## Verification method
+
+Compare the deployed body against the repository source, normalising whitespace and
+comments — not just checking that the name exists:
+
+```sql
+-- function bodies
+select proname, prosrc from pg_proc
+where pronamespace = 'public'::regnamespace and proname in (...);
+
+-- policies, triggers, grants
+select tablename, policyname, cmd from pg_policies where tablename in (...);
+select tgname, tgrelid::regclass from pg_trigger where not tgisinternal;
+select has_function_privilege('anon', p.oid, 'EXECUTE') from pg_proc p where ...;
+```
+
+Expect a later migration to supersede an earlier one — e.g.
+`enforce_booking_write_integrity` differs from `20260902000000` because `20260904000000`
+replaced it. That is a match against the *composite* of applied migrations, not a
+mismatch; confirm the deployed body equals the **latest** migration that defines it.
+
+### DDL is part of "semantically identical"
+
+Executable objects are not enough. Columns, column DEFAULTs, CHECK constraints and indexes
+are what a later `db push` would try to create, and a missed one is invisible to a
+function/policy comparison:
+
+```sql
+-- column DEFAULTs (a stale default can silently change behaviour)
+select a.attname, pg_get_expr(d.adbin, d.adrelid)
+from pg_attribute a
+left join pg_attrdef d on d.adrelid = a.attrelid and d.adnum = a.attnum
+where a.attrelid = 'public.<table>'::regclass and a.attnum > 0;
+
+select column_name, data_type, is_nullable from information_schema.columns where table_name = '<table>';
+select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid = 'public.<table>'::regclass;
+select indexname, indexdef from pg_indexes where tablename = '<table>';
+```
+
+`supabase db diff --linked --schema public` is the thorough check, but it builds a shadow
+database and therefore **requires Docker**; where Docker is unavailable, run the targeted
+catalog queries above for the DDL each migration actually contains and record what was
+compared.
+
+## Repair
+
+Ledger-only, runs no schema SQL:
+
+```bash
+supabase migration repair --status applied <version> --linked
+```
+
+Confirm the target is non-production first (`supabase projects list` — the linked project
+must not be the production ref; `lib/supabaseTarget.ts` holds the canonical constant).
+
+## Proof after repair
+
+1. `supabase migration list --linked` — every row shows `local == remote`.
+2. No duplicate objects or unintended overloads were created.
+3. No destructive statement ran (repair touches only the ledger table).
+4. Object definitions are unchanged — repair alters no schema behaviour.
+5. Re-run the B5B harness (`node scripts/db-security-test.mjs`) to confirm enforcement
+   still behaves as expected.
+
+## Record — 2026-09-02 reconciliation (non-prod `wcoy…jpfo`)
+
+| Version | Class | Compared | Action |
+|---|---|---|---|
+| `20260901010000` | A | `enforce_prebooking_message_rules` body normalised and byte-identical; `FOR UPDATE` lock, `clock_timestamp()` stamp, declined/provider-send/one-message branches all present | repaired |
+| `20260902000000` | A | `review_window_closed`, `review_eligible`, `provider_review_revealed`, `client_review_revealed`, all three `recompute_provider_rating*` bodies identical; 3 policies present and the superseded `provider_reviews_read_revealed` absent; `client_reviews_recompute_provider_rating` trigger present; EXECUTE grants match. `enforce_booking_write_integrity` differs — **expected**, superseded by `20260904000000`, against which it matches | repaired |
+| `20260903000000` | A | `review_opportunity` body identical; grants `authenticated`-only, `anon` revoked | repaired |
+| `20260904000000` | A | `enforce_booking_write_integrity` identical to this migration (the latest definer) | repaired |
+| `20260905000000` | A | `review_opportunities` body identical; `SECURITY INVOKER`; `anon` revoked | repaired |
+
+DDL verified alongside the objects: `conversation.booking_id` has **no** DEFAULT (the
+invariant the pre-booking request gate keys on), `request_status` / `request_opened_at`
+columns present, `conversation_request_status_check` present,
+`conversation_one_pending_prebooking` index present, `bookings.completed_at` /
+`under_review` / `no_show_flag` present, and the four `client_reviews` dimension columns
+present. A full `supabase db diff` was **not** run — Docker was unavailable — so the DDL
+check was targeted rather than exhaustive; re-run `db diff` when Docker is available.
+
+Ledger before: 9 entries, ending `20260901000000`. After: 14 entries, `local == remote`
+for every row. No merged migration file was edited. No schema statement was executed by the
+repair. Production untouched.
+
+## Prevention
+
+Apply migrations through `supabase migration up` / `db push` so the ledger records them.
+Hand-applied SQL requires a `migration repair` in the same sitting, or the drift returns.
+
+## Production
+
+Out of scope for this note. Production has never been reconciled by this process and must
+not be, without a separate, explicitly approved change.

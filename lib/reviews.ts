@@ -405,6 +405,29 @@ export async function getReviewOpportunity(
   return (data as ReviewOpportunity) ?? 'unknown'
 }
 
+// Batch form of getReviewOpportunity, for list surfaces that would otherwise do an
+// N+1 of RPC calls (or, worse, fall back to a local `status === 'completed'` guess).
+// Delegates to the SAME server predicate per booking — no separate eligibility path.
+// Bookings the caller may not review resolve to 'not_participant' like anywhere else.
+// On a read error the map is empty, and callers treat a missing entry as 'unknown'.
+export async function getReviewOpportunities(
+  bookingIds: string[],
+  direction: ReviewDirection,
+): Promise<Map<string, ReviewOpportunity>> {
+  const out = new Map<string, ReviewOpportunity>()
+  const ids = Array.from(new Set(bookingIds.filter(Boolean)))
+  if (ids.length === 0) return out
+  const { data, error } = await supabase.rpc('review_opportunities', {
+    p_booking_ids: ids,
+    p_direction: direction,
+  })
+  if (error) return out
+  for (const row of (data ?? []) as { booking_id: string; opportunity: string }[]) {
+    out.set(row.booking_id, (row.opportunity as ReviewOpportunity) ?? 'unknown')
+  }
+  return out
+}
+
 export interface ReviewOpportunityCopy {
   // true only when a review may be started now (show the actionable CTA).
   actionable: boolean
@@ -498,6 +521,39 @@ export const REVIEW_SUBMITTED_TITLE = 'Review submitted'
 export const REVIEW_SUBMITTED_BODY =
   'Your review stays private until they submit theirs or the review window closes. ' +
   'This keeps reviews fair for both sides.'
+
+// The review-ENTRY decision, in one place.
+//
+// Both the bookings list and the booking detail need the same answer: given the
+// server's opportunity and whether it has been read yet, do we offer a review action,
+// show a truthful non-actionable note, or render nothing? Keeping this inline in JSX
+// is what forced tests to re-implement it and let the list and the detail drift apart
+// (CODE-ARCH-020 / CODE-TEST-021). It takes NO booking status: presentation grouping
+// is not eligibility.
+export type ReviewEntryKind = 'action' | 'note' | 'none'
+
+export interface ReviewEntry {
+  kind: ReviewEntryKind
+  // CTA label for 'action', state label for 'note', '' for 'none'.
+  label: string
+  // Explanatory body for 'note' (surfaces where there is room for it); '' otherwise.
+  body: string
+}
+
+export function reviewEntryFor(
+  opportunity: ReviewOpportunity,
+  direction: ReviewDirection,
+  loading = false,
+): ReviewEntry {
+  // Nothing is offered or asserted until the server has answered.
+  if (loading) return { kind: 'none', label: '', body: '' }
+  const c = reviewOpportunityCopy(opportunity, direction)
+  if (c.actionable) return { kind: 'action', label: c.label, body: '' }
+  // A terminal state worth naming (already reviewed / window closed / under review).
+  // not_completed, not_participant and unknown carry no label and render nothing.
+  if (c.terminal && c.label !== '') return { kind: 'note', label: c.label, body: c.body }
+  return { kind: 'none', label: '', body: '' }
+}
 
 // Maps a failed review INSERT to a truthful terminal message, by re-reading the
 // authoritative opportunity state (all RLS WITH CHECK rejections surface as 42501,

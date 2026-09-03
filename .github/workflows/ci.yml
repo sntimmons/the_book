@@ -26,3 +26,59 @@ jobs:
         run: npm run lint:ci
       - name: Unit tests
         run: npm test -- --runInBand
+
+  # B5B: executable DB/security regression tests against a NON-PRODUCTION database.
+  #
+  # These assert real Postgres enforcement -- RLS policies, triggers, grants and
+  # SECURITY DEFINER functions, exercised as the `authenticated` role -- for the
+  # review and pre-booking-message trust boundaries. Mocked or source-text tests
+  # cannot substitute: two HIGH-severity defects (an anon EXECUTE grant and a
+  # null-auth.uid() fall-through) shipped past a fully green mocked suite and were
+  # only caught by running against a real database.
+  #
+  # Behaviour when TEST_SUPABASE_DB_URL is absent depends on the event:
+  #   push (main) -> FAILS. A green-and-empty job on main carries no information about
+  #                  whether the trust boundaries still hold, and would let coverage
+  #                  silently revert to zero if the secret were ever removed.
+  #   pull_request -> warns and skips, so forks and contributors without access to the
+  #                  secret are not blocked by a credential they cannot have.
+  # It is never `continue-on-error`: whenever the secret IS available the job runs and a
+  # failing assertion fails the build. See supabase/tests/README.md for the secret to
+  # configure. See supabase/tests/README.md for the current secret status and the exact
+  # connection-string requirements (Session pooler, port 5432).
+  db-security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: supabase/setup-cli@v1
+        with:
+          # Pinned like every other tool here: the runner parses CLI output, so an
+          # unpinned upstream change would break this job with no repo change.
+          version: 2.115.0
+      - name: Check for non-prod DB credentials
+        id: creds
+        env:
+          TEST_SUPABASE_DB_URL: ${{ secrets.TEST_SUPABASE_DB_URL }}
+        run: |
+          if [ -n "$TEST_SUPABASE_DB_URL" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            # On main, a missing secret is a FAILURE, not a skip. A green-and-empty job
+            # carries no information about whether the trust boundaries still hold, and
+            # would let coverage silently revert to zero if the secret were removed.
+            echo "::error::TEST_SUPABASE_DB_URL is not configured; B5B DB security tests cannot run on main."
+            exit 1
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::TEST_SUPABASE_DB_URL unavailable (fork PR?); B5B DB security tests skipped."
+          fi
+      - name: DB security tests (B5B, non-prod)
+        if: steps.creds.outputs.available == 'true'
+        env:
+          # Non-production only. The runner refuses the production project ref and
+          # refuses any target whose ref it cannot positively identify.
+          TEST_SUPABASE_DB_URL: ${{ secrets.TEST_SUPABASE_DB_URL }}
+        run: node scripts/db-security-test.mjs

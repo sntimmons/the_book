@@ -44,30 +44,61 @@ describe('CLIENT: no_show never enters the service-review flow (QA-JOURNEY-001)'
     expect(bookingStatus).toMatch(/const PAST = new Set\(\['completed', 'no_show'\]\)/)
   })
 
-  it('the Leave Review CTA is gated on the RAW booking status, not the Past tab', () => {
-    // The CTA must sit behind an explicit completed check.
-    expect(clientList).toMatch(
-      /bookingStatus === 'completed' &&[\s\S]{0,200}?post-booking\/satisfaction/,
-    )
+  it('the Leave Review CTA is gated on the SERVER opportunity, not any local status', () => {
+    // Expressed as the RULE, not as one identifier: ANY status-derived gate around the
+    // review route fails this, not just the specific expression that was removed.
+    const src = stripTs(clientList)
+    expect(src).toMatch(/reviewEntryFor\(/)
+    const route = src.indexOf('post-booking/satisfaction')
+    const window = src.slice(Math.max(0, route - 600), route)
+    expect(window).not.toMatch(/status\s*===\s*['"]completed['"]/)
+    expect(window).not.toMatch(/bookingStatus/)
   })
 
-  it('CardActions receives the raw booking status', () => {
-    expect(clientList).toMatch(/bookingStatus=\{booking\.status\}/)
-    expect(clientList).toMatch(/bookingStatus: string/)
+  it('the list asks the server about bookings without pre-filtering on status', () => {
+    expect(clientList).toMatch(/useReviewOpportunities\(/)
+    // every loaded booking is asked about; no status filter narrows the question
+    expect(clientList).toMatch(/bookings\.map\(\(b\) => b\.id\)/)
+  })
+
+  it('CardActions no longer receives or tests a raw booking status for reviews', () => {
+    // bookingStatusLabel / bookingStatusTone remain — they are presentation helpers.
+    // What must be gone is the `bookingStatus` prop that gated the review CTA.
+    const src = stripTs(clientList)
+    expect(src).not.toMatch(/bookingStatus=\{booking\.status\}/)
+    expect(src).not.toMatch(/bookingStatus: string/)
+    expect(src).not.toMatch(/bookingStatus === 'completed'/)
   })
 
   it('does not label the Past tab as completed-only while it contains no_show', () => {
     expect(clientList).not.toMatch(/COMPLETED APPOINTMENTS/)
   })
 
-  it('no review entry point keys off the generic past grouping', () => {
-    // A `status === 'past'` branch may exist (Book Again), but must not be the
-    // sole gate on a review route.
-    const pastBranch = clientList.slice(clientList.indexOf("if (status === 'past')"))
-    const cta = pastBranch.indexOf('post-booking/satisfaction')
-    const gate = pastBranch.indexOf("bookingStatus === 'completed'")
-    expect(gate).toBeGreaterThan(-1)
-    expect(gate).toBeLessThan(cta)
+  it('the review control is built OUTSIDE every tab branch', () => {
+    // The defect was rendering it inside `if (status === 'past')`, which dropped an
+    // earned review whose booking had drifted into another tab. It must be computed
+    // before the first branch and referenced from them.
+    const src = stripTs(clientList)
+    const built = src.indexOf('const reviewControl')
+    const firstBranch = src.indexOf("if (status === 'upcoming')")
+    expect(built).toBeGreaterThan(-1)
+    expect(built).toBeLessThan(firstBranch)
+  })
+
+  it('every CardActions branch can render the review control', () => {
+    // A branch that forgets {reviewControl} silently hides an earned review, so every
+    // return path must reference it.
+    const src = stripTs(clientList)
+    const body = src.slice(src.indexOf('const reviewControl'), src.indexOf('function ActionButton'))
+    const returns = (body.match(/return \(/g) || []).length
+    const refs = (body.match(/\{reviewControl\}/g) || []).length
+    expect(returns).toBeGreaterThan(0)
+    expect(refs).toBe(returns)
+  })
+
+  it('the CTA is withheld while the authoritative read is in flight', () => {
+    // reviewEntryFor returns kind 'none' when loading, so the loading flag must reach it.
+    expect(stripTs(clientList)).toMatch(/reviewEntryFor\([\s\S]{0,80}?reviewOppLoading/)
   })
 })
 
@@ -124,19 +155,31 @@ describe('DEFENSE-IN-DEPTH: impossible states are terminal, never a retry loop',
 })
 
 describe('PROVIDER: persistent review entry, keyed by booking_id', () => {
-  it('booking detail loads the provider→client opportunity for completed bookings', () => {
+  it('booking detail loads the provider→client opportunity WITHOUT a status pre-test', () => {
     expect(bookingDetail).toMatch(/useReviewOpportunity\(/)
     expect(bookingDetail).toMatch(/'provider_to_client'/)
-    // read only for the provider on a completed booking
-    expect(bookingDetail).toMatch(/isProvider && booking\?\.status === 'completed'/)
+    // Gating the READ on live status was the drift (SEC-AUTHZ-001): it meant a
+    // booking whose status moved off 'completed' was never asked about.
+    expect(stripTs(bookingDetail)).not.toMatch(/booking\?\.status === 'completed'/)
   })
 
   it('re-entry routes to the provider review form for THAT booking id', () => {
     expect(bookingDetail).toMatch(/post-booking\/provider-review\?id=\$\{booking\.id\}/)
   })
 
-  it('the entry is shown only for the provider on a completed booking', () => {
-    expect(bookingDetail).toMatch(/isProvider && bucket === 'completed'/)
+  it('the entry is driven by the opportunity, not by the presentation bucket', () => {
+    const src = stripTs(bookingDetail)
+    expect(src).not.toMatch(/bucket === 'completed'\s*&&/)
+    expect(src).toMatch(/reviewEntryFor\(reviewOpp, 'provider_to_client'/)
+    // built before the bucket switch, so no branch can be reached without it
+    expect(src.indexOf('const reviewEntry')).toBeLessThan(src.indexOf("bucket === 'cancelled'"))
+  })
+
+  it('an earned review stays reachable even outside the terminal bucket', () => {
+    // completed -> accepted drift must not strand the entry: reviewEntry is
+    // rendered in the accepted branch too.
+    const accepted = bookingDetail.slice(bookingDetail.indexOf("if (bucket === 'accepted')"))
+    expect(accepted).toMatch(/\{reviewEntry\}/)
   })
 })
 
@@ -412,8 +455,12 @@ describe('NAVIGATION + loading contract (CODE-ROUTE-010 / CODE-STATE-010 / CODE-
   })
 
   it('booking detail honours the hook loading contract', () => {
-    expect(bookingDetail).toMatch(/loading: reviewOppLoading/)
-    expect(bookingDetail).toMatch(/reviewOppLoading \? 'unknown' : reviewOpp/)
+    const src = stripTs(bookingDetail)
+    expect(src).toMatch(/loading: reviewOppLoading/)
+    // loading is THREADED, not collapsed into the state value — collapsing them
+    // destroys the not-read-yet vs read-failed distinction the hook exists to keep.
+    expect(src).not.toMatch(/reviewOppLoading \? 'unknown' : reviewOpp/)
+    expect(src).toMatch(/reviewOppLoading=\{reviewOppLoading\}/)
   })
 
   it('a rejected opportunity read cannot strand a screen with no exit', () => {

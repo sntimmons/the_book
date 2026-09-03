@@ -96,8 +96,15 @@ timestamp. TypeScript owns presentation only.
 directions, forged-client-id block, under_review block, window-close block, reveal
 counterpart/window/hold, no cross-provider conduct leak, completed_at authority, revealed-only
 aggregate, repeat booking, reveal-latching after a post-completion cancel, and completed_at
-stamp-once across a status round-trip). This is a **manual, non-CI** simulation — the committed
-B5B DB/security harness does not exist yet and remains a follow-up.
+stamp-once across a status round-trip). That was a **manual, non-CI** simulation.
+
+**A committed harness now exists.** `supabase/tests/` holds executable DB/security suites
+(reviews + pre-booking messaging) run by `scripts/db-security-test.mjs` against a
+**non-production** project inside an always-rolled-back transaction, wired to CI as the
+`db-security` job. It asserts real Postgres enforcement — RLS exercised as the `authenticated`
+role, triggers, grants and `SECURITY DEFINER` behaviour. See `supabase/tests/README.md` for
+scope, the execution modes, and the required `TEST_SUPABASE_DB_URL` secret (the Session
+pooler URI).
 
 ## Phase 2 structured-signal storage — recommendation (not yet implemented)
 The two tables already model structured data differently (`client_reviews` = typed booleans;
@@ -111,7 +118,7 @@ cleanly. **Decide in Phase 2**; whichever is chosen, it inherits the single reve
 
 ## Phase 1 — UX consumes the Phase 0 contract (implemented)
 Phase 1 makes the review experience accurately reflect the Phase 0 server contract (no DB
-contract change; one additive read helper). **submitted ≠ revealed:** the client confirmation
+contract change; two additive read helpers). **submitted ≠ revealed:** the client confirmation
 now says the review was **submitted and stays private** until the other side reviews or the
 window closes — never "now live/public/visible". A single server-authoritative read,
 `review_opportunity(booking_id, direction)` (migration `20260903000000`), returns one of
@@ -124,7 +131,16 @@ same predicate both INSERT policies use — so the helper can never report `elig
 booking the write boundary would reject. The `completed_at` / `under_review` branches above it
 exist only to explain **why** a booking is not eligible; they are not a second definition. When
 `review_eligible()` later gains a condition (`delivered_at`, category windows), this stays
-correct automatically instead of inviting the user into a form the DB will refuse. Consumers: a **persistent provider→client "Review client" entry** on a completed
+correct automatically instead of inviting the user into a form the DB will refuse.
+
+`review_opportunities(booking_ids[], direction)` (migration `20260905000000`) is its **batch
+form** for list surfaces, added when the client list was moved off live booking status. It is
+`SECURITY INVOKER` and delegates per id to `review_opportunity`, so it adds no eligibility
+logic, grants no privilege, and there remains exactly one implementation of review-entry state.
+**Review availability is decided by the server in every surface** — a booking whose live status
+drifts after completion keeps the review it earned, which is the client-side half of
+SEC-DATA-101. Presentation grouping (the Past tab) decides where a card sits, never whether it
+is reviewable. Consumers: a **persistent provider→client "Review client" entry** on a completed
 booking's detail (survives skipping the completion prompt; keyed by `booking_id`, so repeat
 bookings are independently reviewable); a **proactive client entry gate** (no routing into a
 guaranteed-fail form); and **truthful terminal submit messages** ("already reviewed", "the
@@ -139,10 +155,13 @@ it feeds:
 
 - **No normal 1-5 star service-quality review flow** in either direction for a `no_show` —
   neither party is asked to rate service quality, quality of work, or outcome, because the
-  service did not occur. Two independent mechanisms, at the right layers: the booking list
-  offers the review CTA only for `status='completed'` (a presentation rule), and a booking
-  that never completed has `completed_at IS NULL`, so `review_opportunity()` resolves it to
-  `not_completed` (the authoritative rule).
+  service did not occur. ONE authoritative mechanism, deliberately: a booking that never
+  completed has `completed_at IS NULL`, so `review_opportunity()` resolves it to
+  `not_completed` and no surface offers a review. The booking list previously added a
+  second, status-based presentation guard; that was **removed** (migration
+  `20260905000000`) because keying any review decision on live status is exactly what let
+  a status change suppress an earned review. Review availability now comes from the server
+  answer alone, in every tab.
 - **Eligibility is NOT gated on live status.** `review_opportunity()` deliberately contains
   no `status='no_show'` test. Testing live status there would let a provider suppress an
   already-earned client review — the exact vector Phase 0 closed as **SEC-DATA-101** — and

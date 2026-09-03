@@ -16,6 +16,8 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { getOrCreateConversation } from '@/hooks/useMessaging'
 import { bookingTab, bookingStatusLabel, bookingStatusTone } from '@/lib/bookingStatus'
+import { reviewEntryFor, ReviewOpportunity } from '@/lib/reviews'
+import { useReviewOpportunities } from '@/hooks/useReviewOpportunities'
 
 type Status = 'upcoming' | 'pending' | 'past' | 'cancelled'
 
@@ -129,6 +131,23 @@ export default function BookingsScreen() {
   const pastBookings = bookings.filter((b) => bookingTab(b.status) === 'past')
   const cancelledBookings = bookings.filter((b) => bookingTab(b.status) === 'cancelled')
 
+  // SEC-AUTHZ-001 / CODE-DUP-010: review availability is decided by the SERVER, not by
+  // live booking status. We ask about every loaded booking rather than pre-filtering on
+  // status, because the DB anchors eligibility on the immutable completed_at — a booking
+  // whose status later moved off 'completed' still has an earned review, and a local
+  // status pre-test would silently hide it. no_show/pending resolve to 'not_completed'
+  // server-side, so nothing is wrongly offered either.
+  const {
+    opportunities: reviewOpps,
+    loading: reviewOppsLoading,
+    failed: reviewOppsFailed,
+    reload: reloadReviewOpps,
+  } = useReviewOpportunities(
+    bookings.map((b) => b.id),
+    'client_to_provider',
+    bookings.length > 0,
+  )
+
   const data =
     activeStatus === 'upcoming'
       ? upcomingBookings
@@ -195,6 +214,21 @@ export default function BookingsScreen() {
               <Text style={styles.sectionLabel}>PAST APPOINTMENTS</Text>
             )}
 
+            {/* A failed opportunity read must not look like "no review available"
+                (QA-UX-004): say so and offer a way back. */}
+            {reviewOppsFailed && (
+              <TouchableOpacity
+                style={styles.reviewRetry}
+                activeOpacity={0.7}
+                onPress={reloadReviewOpps}
+              >
+                <Feather name="refresh-cw" size={13} color="#C8922A" />
+                <Text style={styles.reviewRetryText}>
+                  Couldn&apos;t load review status. Tap to retry.
+                </Text>
+              </TouchableOpacity>
+            )}
+
             {data.map((b) => (
               <BookingCard
                 key={b.id}
@@ -202,6 +236,8 @@ export default function BookingsScreen() {
                 status={activeStatus}
                 providerName={providerNames[b.provider_id]}
                 userId={user?.id ?? ''}
+                reviewOpp={reviewOpps.get(b.id) ?? 'unknown'}
+                reviewOppLoading={reviewOppsLoading}
               />
             ))}
           </View>
@@ -216,11 +252,15 @@ function BookingCard({
   status,
   providerName,
   userId,
+  reviewOpp,
+  reviewOppLoading,
 }: {
   booking: BookingRow
   status: Status
   providerName?: string
   userId: string
+  reviewOpp: ReviewOpportunity
+  reviewOppLoading: boolean
 }) {
   const dateLine = [booking.requested_date, booking.requested_time].filter(Boolean).join(' · ')
   // Houston-local today; a booking dated before it is in the past and should
@@ -262,11 +302,12 @@ function BookingCard({
       <View style={styles.actionRow}>
         <CardActions
           status={status}
-          bookingStatus={booking.status}
           isPast={isPast}
           bookingId={booking.id}
           providerId={booking.provider_id}
           userId={userId}
+          reviewOpp={reviewOpp}
+          reviewOppLoading={reviewOppLoading}
         />
       </View>
     </View>
@@ -331,22 +372,48 @@ function handleReschedule(
 
 function CardActions({
   status,
-  bookingStatus,
   isPast,
   providerId,
   bookingId,
   userId,
+  reviewOpp,
+  reviewOppLoading,
 }: {
   status: Status
-  // The RAW booking status. The Past TAB is a grouping (completed + no_show);
-  // review eligibility is NOT the same thing, so the review CTA keys off this,
-  // never off `status`. (QA-JOURNEY-001)
-  bookingStatus: string
   isPast: boolean
   bookingId: string
   providerId: string
   userId: string
+  // The SERVER's answer for this booking. The Past TAB is a presentation grouping
+  // (completed + no_show); review eligibility is a different question with a
+  // different owner, so the review action keys off this and never off any local
+  // status test (QA-JOURNEY-001, SEC-AUTHZ-001, CODE-DUP-010).
+  reviewOpp: ReviewOpportunity
+  reviewOppLoading: boolean
 }) {
+  // QA-JOURNEY-001: the review control is computed ONCE, outside every tab branch.
+  // Un-gating only the read was not enough — rendering it inside the `past` branch
+  // meant a booking that completed and then legally drifted to accepted /
+  // cancelled_by_provider / cancelled_by_client landed in another tab and lost its
+  // entry, which is precisely the provider-side suppression SEC-DATA-101 closes in
+  // the DB. The server decides; the tab is only where the card happens to sit.
+  // Nothing renders while the read is in flight, and 'unknown' / 'not_completed' /
+  // 'not_participant' render nothing at all.
+  const entry = reviewEntryFor(reviewOpp, 'client_to_provider', reviewOppLoading)
+  const reviewControl =
+    entry.kind === 'action' ? (
+      <ActionButton
+        label={entry.label}
+        onPress={() =>
+          router.push(`/post-booking/satisfaction?id=${bookingId}` as never)
+        }
+      />
+    ) : entry.kind === 'note' ? (
+      <View style={styles.pastLabel}>
+        <Text style={styles.pastLabelText}>{entry.label}</Text>
+      </View>
+    ) : null
+
   if (status === 'upcoming') {
     // Past-dated but still confirmed: no Reschedule/Cancel — just Message and a
     // quiet "Past" label so the card doesn't offer actions that no longer apply.
@@ -360,6 +427,7 @@ function CardActions({
           <View style={styles.pastLabel}>
             <Text style={styles.pastLabelText}>Past</Text>
           </View>
+          {reviewControl}
         </>
       )
     }
@@ -378,6 +446,7 @@ function CardActions({
           muted
           onPress={() => router.push('/bookings/' + bookingId)}
         />
+        {reviewControl}
       </>
     )
   }
@@ -393,23 +462,23 @@ function CardActions({
           muted
           onPress={() => router.push('/bookings/' + bookingId)}
         />
+        {reviewControl}
       </>
     )
   }
   if (status === 'past') {
-    // Past = completed OR no_show. Only a COMPLETED service has a service-quality
-    // review to leave; a no_show never enters the star/review flow (QA-JOURNEY-001).
-    // The no-show itself is still recorded on the booking and shown in the status
-    // pill — it is preserved, not hidden. Conduct/reliability reputation for
-    // no-shows is a later phase (docs/product/REVIEWS_MODEL.md).
-    // Whether the review is still OPEN (window/under_review/already submitted) stays
-    // server-authoritative and is resolved by the satisfaction entry gate.
+    // Past = completed OR no_show, but that grouping decides nothing here. The server
+    // says whether a review may be left: 'eligible' offers the action; a no_show (or
+    // anything never completed) resolves to 'not_completed' and offers none; an
+    // already-reviewed / closed-window / held booking shows a truthful non-actionable
+    // state instead of inviting an action that cannot succeed. The no-show event is
+    // still recorded and shown in the status pill — preserved, not hidden.
+    // While the read is in flight we show no review control at all rather than
+    // flashing one that may be wrong.
     return (
       <>
         <ActionButton label="Book Again" onPress={() => router.push(`/providers/${providerId}` as never)} />
-        {bookingStatus === 'completed' && (
-          <ActionButton label="Leave Review" onPress={() => router.push(`/post-booking/satisfaction?id=${bookingId}` as never)} />
-        )}
+        {reviewControl}
       </>
     )
   }
@@ -417,6 +486,7 @@ function CardActions({
     <>
       <ActionButton label="Find Similar" onPress={() => router.push('/(tabs)/search' as never)} />
       <ActionButton label="Book Again" onPress={() => router.push(`/providers/${providerId}` as never)} />
+      {reviewControl}
     </>
   )
 }
@@ -516,6 +586,24 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     textTransform: 'uppercase',
     marginBottom: 12,
+  },
+  reviewRetry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(200,146,42,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.2)',
+  },
+  reviewRetryText: {
+    flex: 1,
+    fontSize: 12,
+    color: '#C8922A',
+    fontFamily: 'Manrope_500Medium',
   },
   pendingBanner: {
     paddingVertical: 12,
