@@ -138,7 +138,7 @@ move; check the run, not this sentence.
 `main` is healthy following **Session 3** (PR #29, merge `2ae0fd0`), which added the Project
 State Steward and this durable PM document set. Several documentation and governance
 follow-ups have merged since — #31 (the Steward's `Area` enum, merged **first**, so the new
-open question's area was already declared when it arrived), then #30, #32, #33 and #34.
+open question's area was already declared when it arrived), then #30, #32, #33, #34 and #35.
 
 None of them changed application behaviour, migrations, RLS, CI, or agent tool grants. That is
 the whole of the claim; it does **not** mean none of them changed a repository fact. Some of
