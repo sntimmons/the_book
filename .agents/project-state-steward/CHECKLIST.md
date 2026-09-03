@@ -5,9 +5,22 @@ entry under `CONFLICTS / NEEDS PRODUCT DECISION`.
 
 ## A. Anchor the run
 
-- [ ] Record the `main` SHA being reconciled against, and today's date.
-- [ ] Identify what merged since the last reconciliation (the SHA recorded in
-      `CURRENT_STATE.md`), with PR numbers where available.
+- [ ] Record today's date and the `main` SHA the run inspected.
+- [ ] Decide whether that SHA advances the `Reconciled against:` anchor. **It does not
+      advance automatically.** The anchor means *the last commit at which the repository
+      facts asserted in this document were verified* — not the tip of `main`. A
+      documentation-only merge that changes no repository, product, runtime or security
+      fact **leaves the anchor where it is**. Re-stamping it on every docs PR makes the
+      anchor chase its own tail: the merge that updates it is itself unrecorded the moment
+      it lands, and the header asserts a verification that never happened.
+- [ ] Record `Last edited by: PR #NN` on every document the run edits. This is the
+      documentation-mutation record and is **independent** of the factual anchor. Use the
+      PR number: it exists before merge, whereas a merge SHA does not — so a document can
+      never truthfully cite the commit that lands it.
+- [ ] Identify what merged since the last reconciliation, with PR numbers where available.
+      `Reconciled against:` is the *factual* baseline; `Last edited by:` says how far the
+      prose has been carried. The two can legitimately diverge, and both may be needed to
+      work out what is new.
 - [ ] Confirm the working tree is clean and the branch is not `main`.
 
 **You have no `Bash` tool.** You cannot run `git`, `gh`, or anything else. The anchor SHA
@@ -54,6 +67,11 @@ intent; `main` describes reality.
 
 - [ ] Sessions are ordered and labelled by session, not by calendar date.
 - [ ] Completed sessions cite their merge SHAs.
+- [ ] A PR earns a Completed row only when it materially delivers a **product,
+      architecture, security, governance, infrastructure or operating capability**. A
+      routine reconciliation that only updates documentation to reflect already-landed
+      facts does **not** earn a row — otherwise the table fills with entries about itself.
+      `git log --merges main` remains the complete record of every merge.
 - [ ] The roadmap states plainly that ordering is an estimate from current pace, not a
       delivery commitment.
 - [ ] Nothing moved from "upcoming" to "in progress" without evidence that work started

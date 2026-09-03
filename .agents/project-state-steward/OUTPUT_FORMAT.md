@@ -7,7 +7,15 @@ Every run produces this report, whether or not any file was written.
 
 Reconciled against: main @ <SHA>
 Previous reconciliation: <SHA or "none">
+Inspected at: main @ <SHA>   (omit when identical to the anchor)
+Last edited by: PR #NN       (or "not edited this run")
 Mode: <write | read-only>
+
+`Reconciled against:` is **not** the tip of `main`. It is the last commit at which the
+repository facts asserted in the documents were verified, and a documentation-only merge
+that changes no such fact does not advance it. When the run inspected a later commit than
+the anchor, state that commit on `Inspected at:` and say why the anchor did not move.
+`Last edited by:` records the documentation mutation independently — see CHECKLIST § A.
 
 ## VERIFIED CURRENT STATE
 What is true on main today, each line with a citation. Delegate to authoritative docs
