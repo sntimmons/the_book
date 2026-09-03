@@ -1,8 +1,8 @@
 # Roadmap — session-based
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `e7ccd87f766a5b30e66a60ccc1239955d129a090` (2026-09-03)
-**Last edited by:** PR #34
+**Reconciled against:** `main` @ `395495eaa40416ccc3c59c0a6abe3424bffbbb0b` (2026-09-03)
+**Last edited by:** PR #36
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -43,6 +43,7 @@ Sessions may merge, split, or reorder. A session is "complete" only when its wor
 | └ documentation-authority reconciliation / cold-start handoff audit | [#29](https://github.com/sntimmons/the_book/pull/29) | `2ae0fd0` | **modified by** #29 (per its diff, not merely present): `supabase/README.md` (rewritten as routed entry point), `AGENTS.md`, `docs/README.md`, `docs/product/BETA_SCOPE.md`, `supabase/tests/README.md` |
 | Steward `Area` enum — `Schema / data` (governance, isolated; **merged first**) | [#31](https://github.com/sntimmons/the_book/pull/31) | `f4e8d86` (commit `19e5f71`) | one line in `.agents/project-state-steward/OUTPUT_FORMAT.md`; no tool grant, allowlist or prohibition changed |
 | Steward reconciliation contract — anchor semantics + row rule | [#33](https://github.com/sntimmons/the_book/pull/33) | `ad95855` (commit `8b35eb7`) | `.agents/project-state-steward/CHECKLIST.md` § A and § E, `OUTPUT_FORMAT.md` header — defines `Reconciled against:` as a factual verification point, adds `Last edited by:`, and ends the recursive anchor churn |
+| Steward anchor tiebreak — resolves the documentation-vs-capability overlap | [#35](https://github.com/sntimmons/the_book/pull/35) | `395495e` (commits `caa4a98`, `1e00886`) | `.agents/project-state-steward/CHECKLIST.md` § A tiebreak + § E reciprocal note — a PR earning a § E row has by definition changed a repository fact and advances this document's anchor; self-citing rows are unconstructible |
 
 **Row inclusion rule.** A PR earns a row here when it **materially delivers a product,
 architecture, security, governance, infrastructure or operating capability**. A routine
@@ -73,8 +74,9 @@ A path that existed before the work cannot prove the work happened.
 
 **Nothing in flight.** Session 3 merged (PR #29, `2ae0fd0`). Documentation and governance
 merges have followed — #31 (`f4e8d86`, the `Area` enum) landed first, then #30 (`e7ccd87`),
-#32 (`f83bea2`) and the PRs carrying this convention. Per the row inclusion rule above, only
-#31 earned a Completed row. **Session 4 has not started.**
+#32 (`f83bea2`), #33 (`ad95855`, which introduced this convention), #34 (`dbe5dd7`) and #35
+(`395495e`, the tiebreak that resolved it). Per the row inclusion rule above, #31, #33 and #35
+earned Completed rows; #30, #32 and #34 did not. **Session 4 has not started.**
 
 ---
 
