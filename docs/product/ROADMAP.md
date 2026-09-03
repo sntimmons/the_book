@@ -1,7 +1,7 @@
 # Roadmap — session-based
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `b3756d9db8651fe7347f8a1bc392651dbd755839` (2026-09-03)
+**Reconciled against:** `main` @ `2ae0fd0b1ab4f2853c663a2770aa649fb5c3d14d` (2026-09-03)
 
 > **This is an estimate based on current project pace, not a deadline commitment.**
 > Work is sequenced by **session**, not by calendar date, deliberately. Sessions vary in
@@ -29,6 +29,10 @@ Sessions may merge, split, or reorder. A session is "complete" only when its wor
 | ├ permanent B5B DB/security coverage | [#27](https://github.com/sntimmons/the_book/pull/27) | `257dd5b` | `supabase/tests/`, `scripts/db-security-test.mjs`, `db-security` job in `.github/workflows/ci.yml` |
 | └ migration-ledger reconciliation | [#27](https://github.com/sntimmons/the_book/pull/27) | `257dd5b` | `docs/operations/MIGRATION_LEDGER.md` (dated per-migration record) |
 | Repo `tmp/` hygiene | [#28](https://github.com/sntimmons/the_book/pull/28) | `b3756d9` (commit `2d69138`) | `/tmp/` rule in `.gitignore` |
+| Session 3 — Project State Steward, durable PM docs, Houston Beta Strategy | [#29](https://github.com/sntimmons/the_book/pull/29) | `2ae0fd0` | see the three rows below |
+| ├ Project State Steward (Agent 4) | [#29](https://github.com/sntimmons/the_book/pull/29) | `2ae0fd0` | `.agents/project-state-steward/`, `.claude/agents/project-state-steward.md` |
+| ├ durable PM document set | [#29](https://github.com/sntimmons/the_book/pull/29) | `2ae0fd0` | `CURRENT_STATE.md`, `ROADMAP.md`, `PRODUCT_DECISIONS.md`, `OPEN_QUESTIONS.md`, `HOUSTON_BETA_STRATEGY.md` |
+| └ documentation-authority reconciliation / cold-start handoff audit | [#29](https://github.com/sntimmons/the_book/pull/29) | `2ae0fd0` | **modified by** #29 (per its diff, not merely present): `supabase/README.md` (rewritten as routed entry point), `AGENTS.md`, `docs/README.md`, `docs/product/BETA_SCOPE.md`, `supabase/tests/README.md` |
 
 **This table lists session-level work, not every merged PR.** Smaller merges (e.g. #18, #23,
 #25) are not rows here; `git log --merges main` is the complete record.
@@ -39,23 +43,21 @@ verified against `gh pr list --state merged` and `git log --merges main` — no 
 SHA is inferred. A row that could not be tied to a specific PR would say so rather than
 guess; none currently needs that.
 
+**Existence is not evidence.** Where a row's artifact is a file that *pre-dates* its PR, the
+row says "modified by" and is evidenced by that PR's diff — not by the file being present.
+A path that existed before the work cannot prove the work happened.
+
 ---
 
 ## Current
 
-### Session 3 — Project State Steward, durable PM docs, Houston Beta Strategy
-Documentation and agent infrastructure only. No application behaviour, migrations, RLS
-or CI changes.
-
-- Project State Steward agent (`.agents/project-state-steward/`)
-- `CURRENT_STATE.md`, `ROADMAP.md`, `OPEN_QUESTIONS.md`, `PRODUCT_DECISIONS.md`
-- `HOUSTON_BETA_STRATEGY.md`
+**Nothing in flight.** Session 3 merged (PR #29, `2ae0fd0`); Session 4 has not started.
 
 ---
 
 ## Next
 
-### Session 4 — Existing barter audit (READ ONLY)
+### Session 4 — Existing barter audit (READ ONLY) — NOT STARTED
 Barter is **already partially implemented** (PD-033). This session audits it and changes
 nothing. It must establish: routes, components, data model, migrations, policies/RLS,
 messaging integration, booking integration, reviews/completion integration, architecture

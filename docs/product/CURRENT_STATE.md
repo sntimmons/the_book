@@ -1,7 +1,7 @@
 # Current State — what is true on `main` today
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `b3756d9db8651fe7347f8a1bc392651dbd755839` (2026-09-03)
+**Reconciled against:** `main` @ `2ae0fd0b1ab4f2853c663a2770aa649fb5c3d14d` (2026-09-03)
 
 This answers one question: *what is actually true about The Book today?* It is written for
 someone joining cold — a new PM or engineer should be able to read this and orient without
@@ -102,29 +102,34 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 **B5B — permanent executable DB/security regression harness.**
 
-- Asserts real Postgres enforcement — RLS, triggers, grants and `SECURITY DEFINER` behaviour, exercised as the `authenticated` role. The **count changes whenever a suite grows**, so read it from the latest CI run rather than from any document; at run 33715574325 (`b3756d9`) it was 88/88.
+- Asserts real Postgres enforcement — RLS, triggers, grants and `SECURITY DEFINER` behaviour, exercised as the `authenticated` role. The **count changes whenever a suite grows**, so read it from the latest CI run rather than from any document; at run 33723156482 (`2ae0fd0`) it was 88/88.
 - **Non-production only.** A production-ref guard refuses the production project, the Transaction pooler (port 6543), an `sslmode` that would disable TLS, and any target whose ref cannot be positively identified.
 - One transaction, **always rolled back** — zero residue follows from that rollback, not from a per-run emptiness check (the harness performs none; see its README).
 - **CI is wired to execute it** via the `db-security` job, which expects the `TEST_SUPABASE_DB_URL` secret. On `push` to `main` a missing secret **fails** the job rather than skipping — a green-and-empty required check proves nothing. On pull requests (including forks, which GitHub withholds secrets from) a missing secret **warns and skips**. Whether the secret is configured *right now* is GitHub state, not repository state — read it from the latest `db-security` run, not from this document.
-- The **Session pooler / psql path is verified on `main`**: run 33715574325 on `b3756d9` logged `via TEST_SUPABASE_DB_URL` and `88/88 passed, 0 failed`.
+- The **Session pooler / psql path is verified on `main`**: run 33723156482 on `2ae0fd0` logged `via TEST_SUPABASE_DB_URL` and `88/88 passed, 0 failed`.
 
 Docs: **[supabase/tests/README.md](../../supabase/tests/README.md)**.
 
-**Migration ledger.** Non-prod ledger reconciled to 14 entries (as of `b3756d9`), `local == remote`
-throughout, no merged migration edited. Process and the dated record:
+**Migration ledger.** The repository holds **14 migration files** at `2ae0fd0` — that part is
+repository-provable. That the *remote non-prod ledger* matches them (`local == remote`, no
+merged migration edited) was established by `supabase migration list --linked` on 2026-09-02
+and **cannot be re-proved from repository state**; a later change made outside this repo would
+not show up here. Process and the dated record:
 **[docs/operations/MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md)**.
 
 **Latest recorded gate run.** Rather than restate counts that change with ordinary PRs,
-this records *which run* to look at: CI run **33715574325** on `b3756d9` — `check` and
+this records *which run* to look at: CI run **33723156482** on `2ae0fd0` — `check` and
 `db-security` both green, with the B5B step logging `via TEST_SUPABASE_DB_URL`. The
 authoritative assertion count lives with the harness in
 [supabase/tests/README.md](../../supabase/tests/README.md), not here.
 
-At that run: Jest 22 suites, lint 0 errors within the frozen `--max-warnings` baseline in
-`package.json`, typecheck 0 errors, B5B all assertions passing. Exact counts move; check the
-run, not this sentence.
+At that run: Jest 22 suites / 251 tests, lint 0 errors within the frozen `--max-warnings`
+baseline in `package.json`, typecheck 0 errors, B5B all assertions passing. Exact counts
+move; check the run, not this sentence.
 
-`main` is healthy following Session 2.
+`main` is healthy following **Session 3** (PR #29, merge `2ae0fd0`), which added the Project
+State Steward and this durable PM document set. It changed documentation and agent
+definitions only — no application behaviour, migrations, RLS or CI.
 
 ---
 
