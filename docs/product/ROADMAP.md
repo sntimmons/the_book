@@ -2,7 +2,7 @@
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `ad95855b95bfbee8eb3e39ccf9df9fb314e1636f` (2026-09-03)
-**Last edited by:** PR #NN
+**Last edited by:** PR #36
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
