@@ -1,7 +1,7 @@
 # Open Questions
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `2ae0fd0b1ab4f2853c663a2770aa649fb5c3d14d` (2026-09-03)
+**Reconciled against:** `main` @ `e7ccd87f766a5b30e66a60ccc1239955d129a090` (2026-09-03)
 
 Everything here is genuinely unresolved. A question is **closed by a decision**, cited to
 [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) — never by someone implementing one answer, and
@@ -296,7 +296,7 @@ schema; the product rules around them do not. Each question below is separately 
 ## Schema / data
 
 ### OQ-070 — Is `feature_interest_count()` intended to exist, and if so what is its behaviour and security contract?
-- **Area:** Schema / data — **proposed, not yet a declared value.** The enum in `.agents/project-state-steward/OUTPUT_FORMAT.md` has no area covering schema/data questions. Adding one is an agent-specification change, which must not ride inside a documentation reconciliation: `.agents/**` is outside the Steward's closed allowlist precisely so that a diff touching it is rejected on sight. **A one-line follow-up PR should add `Schema / data` to that enum**; until it merges, this entry's area is disclosed as pending rather than silently non-conforming.
+- **Area:** Schema / data
 - **Why it matters:** `components/ComingSoonInterest.tsx:54` calls `supabase.rpc('feature_interest_count', { p_feature_name })`, but **no active migration defines that function**. The only mention inside the migration chain is a note at `supabase/migrations/20260829000000_canonical_live_baseline.sql:3288` recording it as absent live; a loose, non-migration SQL file sits outside the chain at `supabase/feature_interest_count.sql`, which [supabase/README.md](../../supabase/README.md) records as pre-dating the migration rule and flags as an open schema question. The call **fails soft** — the component checks `error` and leaves the count `null`, hiding the social-proof line — so the gap produces no visible defect and will not surface as a bug report. Three things are undecided: **(a)** whether the RPC is intended to exist at all; **(b)** if it is, what it should return and what its security contract should be — the component's own comment asserts a `SECURITY DEFINER` function is needed because RLS limits reads to the caller's own row, but that is a comment in application code, not a contract established by any migration; **(c)** whether the component should instead read an existing path, and the RPC be retired. **This entry records the gap only. It does not propose SQL, infer what the loose file does, or imply any of the three answers.**
 - **Blocks:** nothing yet — the surface degrades silently today.
 - **Status:** Open

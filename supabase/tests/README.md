@@ -142,7 +142,7 @@ When the secret is absent the behaviour depends on the event:
 - The workflow **expects** the secret — `.github/workflows/ci.yml` reads it and, on `push`
   to `main`, fails when it is absent.
 - The **last recorded successful run** confirms it *was* available and that the DB-URL path
-  actually executed: CI run **33723156482** on `2ae0fd0` logged
+  actually executed: CI run **33726878929** on `e7ccd87` logged
   `target: non-production project … (via TEST_SUPABASE_DB_URL)`, `88/88 passed, 0 failed` and
   `B5B passed. Transaction rolled back; no residue.`
 - **Repository files cannot prove the secret is still configured now.** Secret state lives
