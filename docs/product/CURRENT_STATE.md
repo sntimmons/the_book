@@ -102,7 +102,7 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 **B5B — permanent executable DB/security regression harness.**
 
-- Asserts real Postgres enforcement — RLS, triggers, grants and `SECURITY DEFINER` behaviour, exercised as the `authenticated` role. The assertion **count** is owned by [supabase/tests/README.md](../../supabase/tests/README.md); it is not restated here, because it changes whenever a suite grows.
+- Asserts real Postgres enforcement — RLS, triggers, grants and `SECURITY DEFINER` behaviour, exercised as the `authenticated` role. The **count changes whenever a suite grows**, so read it from the latest CI run rather than from any document; at run 33715574325 (`b3756d9`) it was 88/88.
 - **Non-production only.** A production-ref guard refuses the production project, the Transaction pooler (port 6543), an `sslmode` that would disable TLS, and any target whose ref cannot be positively identified.
 - One transaction, **always rolled back** — zero residue follows from that rollback, not from a per-run emptiness check (the harness performs none; see its README).
 - **CI executes it** via the `db-security` job using the `TEST_SUPABASE_DB_URL` secret. On `push` to `main` a missing secret **fails** the job rather than skipping — a green-and-empty required check proves nothing. On pull requests (including forks, which GitHub withholds secrets from) a missing secret **warns and skips**.
@@ -110,7 +110,7 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 Docs: **[supabase/tests/README.md](../../supabase/tests/README.md)**.
 
-**Migration ledger.** Non-prod ledger reconciled to 14 entries, `local == remote`
+**Migration ledger.** Non-prod ledger reconciled to 14 entries (as of `b3756d9`), `local == remote`
 throughout, no merged migration edited. Process and the dated record:
 **[docs/operations/MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md)**.
 

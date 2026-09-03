@@ -44,7 +44,7 @@ Distinguish three things whenever you read or write docs:
 | [operations/MIGRATION_LEDGER.md](operations/MIGRATION_LEDGER.md) | Operations | **Authoritative** - non-prod migration-ledger reconciliation: the classification rule, verification method, and the dated record. |
 | [../supabase/README.md](../supabase/README.md) | Architecture / Data | **Historical / superseded in part** - its install instructions reference `20240101000000_baseline_schema.sql`, which no longer exists under `supabase/migrations/` (it survives only in `migrations_history/pre_canonical/`), and its "RLS is intended, not ground truth" caveats predate F3-F5 and Security Batch 3B. For applied-schema truth use [operations/MIGRATION_LEDGER.md](operations/MIGRATION_LEDGER.md) and the canonical baseline migration. |
 | [../supabase/functions/README.md](../supabase/functions/README.md) | Operations / Security | **Authoritative** - the `rate-limit` Edge Function: limits, deploy, secrets. |
-| [../README.md](../README.md) | Entry point | **Authoritative** - repo overview, stack, install/run, env caveat. |
+| [../README.md](../README.md) | Entry point | **Authoritative** - repo overview, stack, install/run, environment configuration. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Process | **Authoritative** - how to make changes safely. |
 | [audits/](audits/) | Historical | **Historical** - dated audit/reconciliation snapshots (F-series, security batches). Point-in-time; never cite as current state. |
 | [history/SCREEN_STATUS_MAP.md](history/SCREEN_STATUS_MAP.md) | Historical | **Historical (~2026-06)** - pre-dates Community, Contracts, Reviews, and the `(tabs)/business` move. Stale; do not trust over code. |
@@ -69,13 +69,15 @@ written and authoritative.
 ## Open items & pending investigations
 
 Carried forward from the handoff audit. These are recorded here so they are not
-lost during foundation work. **None are fixed in this documentation batch.**
+lost during foundation work. Statuses below are current: items marked **RESOLVED** / **FIXED** are closed; the rest remain open.
 
 ### P0 - Live database truth / schema reconciliation — **RESOLVED (Batches F3–F5)**
 > **Status update:** the schema has been reconciled against production and a
 > canonical baseline migration was produced and **verified to reproduce** on a
-> fresh non-production project (Batch 6AB). The active migration chain is the 8
-> `supabase/migrations/*` files. `DATA_MODEL.md`/`SECURITY_MODEL.md` remain planned.
+> fresh non-production project (Batch 6AB). The active migration chain is the
+> `supabase/migrations/*` files (14 as of `b3756d9`); see
+> [operations/MIGRATION_LEDGER.md](operations/MIGRATION_LEDGER.md) for what is applied
+> where. `DATA_MODEL.md`/`SECURITY_MODEL.md` remain planned.
 >
 > _Original note (historical):_ The committed migrations were reconstructed from code
 > analysis and live REST probes, not from real migration history, and the RLS section
@@ -154,6 +156,7 @@ docs/
   design/            design/UX references (planned)
   security/          security model + backlog (planned, after F2)
   testing/           testing docs (planned)
-  operations/        release + environments (planned)
+  operations/        MIGRATION_LEDGER.md (authoritative); release + environments (planned)
+  audits/            dated audit/reconciliation snapshots (historical)
   history/           dated, non-authoritative snapshots
 ```

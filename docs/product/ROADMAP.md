@@ -15,18 +15,29 @@ Sessions may merge, split, or reorder. A session is "complete" only when its wor
 
 ## Completed
 
-| Session / work | Evidence |
-|---|---|
-| Messaging foundation — pre-booking request model | `20260901000000_prebooking_message_requests.sql` |
-| Messaging concurrency hardening — row lock closing the one-message race | `20260901010000_prebooking_message_concurrency.sql` |
-| Agent framework — Agents 1–3, versioned specs + adapters | `.agents/`, `.claude/agents/` |
-| Reviews Phase 0 — server-authoritative eligibility, reveal, `completed_at` | `20260902000000`, PR #24 |
-| Reviews Phase 1 — UX consumes the Phase 0 contract | `20260903000000`, `20260904000000`, PR #26 (`06bff77`) |
-| Session 2 — foundation cleanup | PR #27 (`af2429b`, `40f5764`), merged at `257dd5b` |
-| ├ review-entry authority (no live-status gating) | `20260905000000` batch RPC |
-| ├ permanent B5B DB/security coverage — 88 assertions | `supabase/tests/`, `scripts/db-security-test.mjs` |
-| └ migration-ledger reconciliation | `docs/operations/MIGRATION_LEDGER.md` |
-| Repo `tmp/` hygiene | PR #28, merged at `b3756d9` |
+| Session / work | Merged PR | Merge SHA | Verified artifact |
+|---|---|---|---|
+| Messaging foundation — pre-booking request model | [#19](https://github.com/sntimmons/the_book/pull/19) | `877089c` | `20260901000000_prebooking_message_requests.sql` |
+| Messaging concurrency hardening — row lock closing the one-message race | [#21](https://github.com/sntimmons/the_book/pull/21) | `12c9bf2` | `20260901010000_prebooking_message_concurrency.sql` |
+| Agent 1 — QA / Journey Reviewer | [#17](https://github.com/sntimmons/the_book/pull/17) | `cd341bb` | `.agents/qa-journey-reviewer/` |
+| Agent 2 — Security Reviewer | [#20](https://github.com/sntimmons/the_book/pull/20) | `50ffe3e` | `.agents/security-reviewer/` |
+| Agent 3 — Codebase Auditor | [#22](https://github.com/sntimmons/the_book/pull/22) | `714395b` | `.agents/codebase-auditor/` |
+| Reviews Phase 0 — server-authoritative eligibility, reveal, `completed_at` | [#24](https://github.com/sntimmons/the_book/pull/24) | `b0c6f92` | `20260902000000_reviews_phase0_foundation.sql` |
+| Reviews Phase 1 — UX consumes the Phase 0 contract | [#26](https://github.com/sntimmons/the_book/pull/26) | `a82b50e` (commit `06bff77`) | `20260903000000`, `20260904000000`, `components/ReviewStateScreen.tsx`, `hooks/useReviewOpportunity.ts` |
+| Session 2 — foundation cleanup | [#27](https://github.com/sntimmons/the_book/pull/27) | `257dd5b` (commits `af2429b`, `40f5764`) | see the three rows below |
+| ├ review-entry authority (no live-status gating) | [#27](https://github.com/sntimmons/the_book/pull/27) | `257dd5b` | `20260905000000_review_opportunities_batch.sql`, `hooks/useReviewOpportunities.ts` |
+| ├ permanent B5B DB/security coverage | [#27](https://github.com/sntimmons/the_book/pull/27) | `257dd5b` | `supabase/tests/`, `scripts/db-security-test.mjs`, `db-security` job in `.github/workflows/ci.yml` |
+| └ migration-ledger reconciliation | [#27](https://github.com/sntimmons/the_book/pull/27) | `257dd5b` | `docs/operations/MIGRATION_LEDGER.md` (dated per-migration record) |
+| Repo `tmp/` hygiene | [#28](https://github.com/sntimmons/the_book/pull/28) | `b3756d9` (commit `2d69138`) | `/tmp/` rule in `.gitignore` |
+
+**This table lists session-level work, not every merged PR.** Smaller merges (e.g. #18, #23,
+#25) are not rows here; `git log --merges main` is the complete record.
+
+**Evidence convention.** *Merge SHA* is the merge commit on `main`; where a single
+implementation commit is more informative it is named in parentheses. Every row above was
+verified against `gh pr list --state merged` and `git log --merges main` — no PR number or
+SHA is inferred. A row that could not be tied to a specific PR would say so rather than
+guess; none currently needs that.
 
 ---
 
