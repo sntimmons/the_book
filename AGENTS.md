@@ -9,13 +9,22 @@
    explicit review for security/RLS/payment, no new domain vocabulary).
 3. [docs/README.md](docs/README.md) - the documentation index. It labels every
    document as authoritative, awaiting verification, planned, or historical, and
-   lists the current open items (P0 schema reconciliation, the open contracts
-   save bug, dead-code cleanup candidates).
+   lists the current open items.
 4. The relevant authoritative documents for your task:
+   - [docs/product/CURRENT_STATE.md](docs/product/CURRENT_STATE.md) - **start here**
+     for what is actually true on `main` today. It links out to the owning document
+     for each area rather than restating it.
+   - [docs/product/PRODUCT_DECISIONS.md](docs/product/PRODUCT_DECISIONS.md) - locked
+     decisions (PD-NNN), and
+     [docs/product/OPEN_QUESTIONS.md](docs/product/OPEN_QUESTIONS.md) - what is
+     deliberately undecided (OQ-NNN). Do not resolve an open question by
+     implementing one answer.
    - [docs/architecture/NAVIGATION.md](docs/architecture/NAVIGATION.md) - the
      governing navigation model.
-   - [supabase/README.md](supabase/README.md) - schema baseline notes and known
-     gaps (the schema is reconstructed, not yet reconciled with production).
+   - [supabase/README.md](supabase/README.md) - the Supabase entry point: which
+     migrations are active, which historical files must never be applied, and where
+     reconciliation authority lives
+     ([docs/operations/MIGRATION_LEDGER.md](docs/operations/MIGRATION_LEDGER.md)).
    - [supabase/functions/README.md](supabase/functions/README.md) - the
      `rate-limit` Edge Function.
 

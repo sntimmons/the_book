@@ -137,9 +137,20 @@ When the secret is absent the behaviour depends on the event:
 | same-repo `pull_request` | runs; failure fails the build | warns and skips |
 | fork `pull_request` | n/a — GitHub withholds secrets from forks | warns and skips |
 
-`TEST_SUPABASE_DB_URL` **is configured** for this repository, so the job runs on pull
-requests and on `main`. If it is ever removed, `main` fails by design — restore the secret
-rather than weakening the gate.
+**What the repository can and cannot tell you about `TEST_SUPABASE_DB_URL`:**
+
+- The workflow **expects** the secret — `.github/workflows/ci.yml` reads it and, on `push`
+  to `main`, fails when it is absent.
+- The **last recorded successful run** confirms it *was* available and that the DB-URL path
+  actually executed: CI run **33715574325** on `b3756d9` logged
+  `target: non-production project … (via TEST_SUPABASE_DB_URL)` and `88/88 passed, 0 failed`.
+- **Repository files cannot prove the secret is still configured now.** Secret state lives
+  in GitHub settings, not in this repo, and can be rotated or removed at any time. To check
+  the present state, look at the latest `db-security` run: if it executed the harness the
+  secret was available; if it failed on `main` with the "not configured" error, it was not.
+
+If the secret is ever removed, `main` fails by design — restore it rather than weakening
+the gate.
 
 ### Required repository configuration
 
@@ -147,4 +158,6 @@ rather than weakening the gate.
 |---|---|
 | `TEST_SUPABASE_DB_URL` | **Session pooler** connection URI (port **5432**) for the **non-production** project: Supabase → Project Settings → Database → Connection string → *Session pooler*. Must never be a production URL — the runner refuses the production ref, refuses port `6543` (Transaction pooler), and refuses an `sslmode` that would disable TLS. |
 
-The secret is configured; a fork PR still skips, because GitHub withholds secrets from forks.
+Configure this in GitHub repository settings; the repository itself cannot report whether
+it is currently set (see the note above). A fork PR skips regardless, because GitHub
+withholds secrets from forks.

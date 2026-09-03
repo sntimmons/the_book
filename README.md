@@ -12,13 +12,22 @@ backend definitions. It is being prepared for handoff to professional engineers;
 please read [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/README.md](docs/README.md)
 before making changes.
 
-> ### Important: the schema is not yet reconciled with production
-> The committed Supabase migrations were **reconstructed from code analysis**,
-> not from real migration history, so **running them is not guaranteed to
-> reproduce the live production database.** Live-database truth / schema
-> reconciliation is the next foundation phase (Batch F2) and is tracked as a P0
-> in [docs/README.md](docs/README.md#open-items--pending-investigations). Do not
-> treat the migrations as authoritative until that work lands.
+> ### Schema: reconciled and migration-driven
+> The committed Supabase migrations **are** the schema of record. The canonical
+> baseline was reconciled against the live database and **verified to reproduce**
+> on a fresh non-production project (Batches F3–F5 / 6AB); the earlier
+> "reconstructed from code analysis" caveat is **resolved** and is retained only as
+> history in [docs/README.md](docs/README.md#open-items--pending-investigations).
+> Every schema change goes through a new timestamped migration — never the Supabase
+> dashboard.
+>
+> **The repo is ahead of production.** "Reconciled" refers to the canonical baseline
+> (`20260829000000`), which was derived from and verified against production. The
+> migrations added since — messaging and reviews — are recorded as applied to the
+> **non-production** project only; the last recorded production state is **8 migrations**
+> (Batches 6AB / 6D). Do not assume a repo migration exists in production.
+> [docs/operations/MIGRATION_LEDGER.md](docs/operations/MIGRATION_LEDGER.md) tracks what is
+> applied where and is **explicitly non-production only**.
 
 ## Stack
 
@@ -59,15 +68,20 @@ Useful scripts (see `package.json`):
 | `npm run lint` | ESLint (`--max-warnings 0`) |
 | `npm run check` | `typecheck` + `lint` - run this before every commit |
 
-## Environment configuration (current caveat)
+## Environment configuration
 
-There is **no `.env` setup today.** The Supabase project URL and anon key are
-**hardcoded** in [`lib/supabase.ts`](lib/supabase.ts) and the app points at a
-**single Supabase project** with no dev / staging / prod separation. The anon key
-is a public client key (Row Level Security is the real access boundary), and the
-service-role key is correctly kept server-side (only in the `rate-limit` Edge
-Function). Introducing environment-based configuration and separate projects is
-planned foundation work, not yet done.
+Supabase connection is **environment-driven** — nothing is hardcoded. `lib/supabase.ts`
+reads `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY` and **throws at
+module load** if either is missing; there is deliberately **no fallback to a default
+project**, so a misconfigured build cannot silently talk to the wrong backend. Copy
+[`.env.example`](.env.example) to `.env` to run locally.
+
+The anon key is public client configuration (Row Level Security is the real access
+boundary). The **service-role key must never** appear here or in any `EXPO_PUBLIC_*`
+variable — it is server-side only (the `rate-limit` Edge Function). Private tooling
+credentials live in `.env.tooling.local` (gitignored; see
+[`.env.tooling.example`](.env.tooling.example)) and target a **non-production** project
+only — the DB/security harness refuses the production project ref outright.
 
 ## Repository structure
 
@@ -83,8 +97,8 @@ hooks/          Data hooks (useProviders, useMessaging, useNotifications)
 lib/            Data layer + domain logic (supabase client, resolveUserRole,
                 bookingStatus, reviews, contracts, analytics, storage, rateLimit, ...)
 store/          Zustand stores for onboarding/booking flow state
-supabase/       migrations/ (reconstructed baseline + later migrations),
-                functions/rate-limit (Edge Function), README (schema notes)
+supabase/       migrations/ (canonical baseline + later migrations),
+                functions/rate-limit (Edge Function), tests/ (B5B DB-security harness)
 assets/         Fonts, images, video
 docs/           Project documentation (see docs/README.md for the index)
 ```
@@ -96,7 +110,10 @@ labels every document as authoritative, historical, planned, or awaiting
 verification. Key entries:
 
 - **Navigation (authoritative):** [docs/architecture/NAVIGATION.md](docs/architecture/NAVIGATION.md)
-- **Schema notes (authoritative, with caveats):** [supabase/README.md](supabase/README.md)
+- **Current state (start here):** [docs/product/CURRENT_STATE.md](docs/product/CURRENT_STATE.md)
+- **Migration ledger, non-production (authoritative):** [docs/operations/MIGRATION_LEDGER.md](docs/operations/MIGRATION_LEDGER.md)
+- **Supabase entry point (authoritative):** [supabase/README.md](supabase/README.md) -
+  active migration chain, canonical baseline, and what must never be applied.
 - **Rate-limit function (authoritative):** [supabase/functions/README.md](supabase/functions/README.md)
 - **Historical audits (not current-state):** [docs/history/](docs/history/)
 - **How to contribute safely:** [CONTRIBUTING.md](CONTRIBUTING.md)

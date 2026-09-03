@@ -43,7 +43,7 @@ create *trust*.
 | Booking request creation | **REAL** | Inserts `bookings` with `status='pending'`, `payment_status='unpaid'`. A request, not a confirmed/paid booking. |
 | Booking lifecycle | **PARTIAL** | pending → accepted → completed + cancel/no-show/rescheduled. Server write-integrity enforced (SB3b). Strict ordering + server-authoritative `payment_amount` UNDECIDED. |
 | Messaging | **REAL (beta)** | One inbox. Booking conversations are open. **Pre-booking contact is now a message REQUEST**: a client sends one initial message; the provider Accepts (→ normal two-way conversation) or Declines (soft-closed). Enforced server-side (migration `20260901000000`). |
-| Reviews | **REAL (Phase 0)** | Only from completed Book transactions; blind; two-sided; 7-day submission/reveal window, DB/server-authoritative after Phase 0. See Reviews. |
+| Reviews | **REAL (Phases 0 + 1)** | Only from completed Book transactions; blind; two-sided; 7-day submission/reveal window; DB/server-authoritative eligibility and reveal (Phase 0) with the UX consuming that contract (Phase 1) — star-only reviews, truthful terminal states, persistent provider entry. Structured signals remain **Phase 2, not started**. See Reviews. |
 | Contracts (provider create/load) | **PARTIAL** | Provider can create/load; client load errors block rather than silently skip (4A). Provider-side save symptom still to verify. |
 | Contract signature capture | **PLACEHOLDER** | "Sign" sets local state, honestly labeled "requires development build"; persisted `signature_url=null`. No artifact captured. |
 | Payments (card / Stripe) | **PLACEHOLDER / FUTURE** | No real authorization or charge anywhere. Copy truthfully says no payment is taken. |
