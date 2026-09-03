@@ -65,7 +65,7 @@ BLOCKED — a conflict prevents truthful reconciliation; nothing written.
 
 ```
 ### OQ-NNN — <question as a question>
-- **Area:** Barter | Messaging | Safety | Payments | Contracts | Houston Beta | Reviews
+- **Area:** Barter | Messaging | Safety | Payments | Contracts | Houston Beta | Reviews | Schema / data
 - **Why it matters:** <consequence of leaving it open>
 - **Blocks:** <session/work, or "nothing yet">
 - **Status:** Open | Closed by PD-NNN on <date>
