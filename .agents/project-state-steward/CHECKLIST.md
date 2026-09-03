@@ -13,6 +13,21 @@ entry under `CONFLICTS / NEEDS PRODUCT DECISION`.
       fact **leaves the anchor where it is**. Re-stamping it on every docs PR makes the
       anchor chase its own tail: the merge that updates it is itself unrecorded the moment
       it lands, and the header asserts a verification that never happened.
+- [ ] **Tiebreak — when a merge looks like both.** A `.agents/**` specification change is
+      *documentation* by file type and a *governance capability* by effect, so the
+      exemption above and the § E row rule both appear to apply. The rule is:
+      **a PR that earns a ROADMAP capability row under § E has, by definition, changed a
+      repository fact relevant to that ROADMAP, and advances the ROADMAP anchor to that
+      capability-delivering merge.** A routine documentation-only reconciliation that earns
+      no capability row advances no anchor. This stays terminal rather than recursive:
+      the PR that *writes* a row is never the PR that earned **that row** — the anchor
+      moves to the earning merge, which is already in the past when the row is written.
+      Stated per-row deliberately. A single PR may both write rows for past merges and
+      earn one of its own, to be written later; "this PR writes rows, therefore it earns
+      none" is the wrong inference. The guarantee is structural rather than conventional:
+      a self-citing row is **unconstructible**, because no commit can contain its own SHA.
+      A document's anchor moves only if that document asserts the new fact: a governance
+      merge that ROADMAP cites moves ROADMAP's anchor and not necessarily the others'.
 - [ ] Record `Last edited by: PR #NN` on every document the run edits. This is the
       documentation-mutation record and is **independent** of the factual anchor. Use the
       PR number: it exists before merge, whereas a merge SHA does not — so a document can
@@ -72,6 +87,10 @@ intent; `main` describes reality.
       routine reconciliation that only updates documentation to reflect already-landed
       facts does **not** earn a row — otherwise the table fills with entries about itself.
       `git log --merges main` remains the complete record of every merge.
+- [ ] Adding a row here has an anchor consequence: per the tiebreak in § A, a PR that earns
+      a row advances this document's `Reconciled against:` anchor to that PR's merge commit.
+      A row whose artifact post-dates the anchor is a contradiction — the header would be
+      asserting a verification at a commit where the cited artifact did not yet exist.
 - [ ] The roadmap states plainly that ordering is an estimate from current pace, not a
       delivery commitment.
 - [ ] Nothing moved from "upcoming" to "in progress" without evidence that work started
