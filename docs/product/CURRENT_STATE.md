@@ -2,6 +2,14 @@
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `e7ccd87f766a5b30e66a60ccc1239955d129a090` (2026-09-03)
+**Last edited by:** PR #NN
+
+> **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
+> repository facts asserted in this document were verified. A documentation-only merge that
+> changes no repository, product, runtime or security fact does **not** advance it — so this
+> anchor may legitimately sit behind `main`. `Last edited by:` records the documentation
+> mutation separately, as a PR number, because a PR number exists before merge and a merge
+> SHA does not: a document can never truthfully cite the commit that lands it.
 
 This answers one question: *what is actually true about The Book today?* It is written for
 someone joining cold — a new PM or engineer should be able to read this and orient without
@@ -128,13 +136,13 @@ baseline in `package.json`, typecheck 0 errors, B5B all assertions passing. Exac
 move; check the run, not this sentence.
 
 `main` is healthy following **Session 3** (PR #29, merge `2ae0fd0`), which added the Project
-State Steward and this durable PM document set, plus two documentation/governance follow-ups,
-**merged in this order**: **#31** (`f4e8d86`) added `Schema / data` to the Steward's `Area`
-enum as its own isolated one-line PR, then **#30** (`e7ccd87`) reconciled project state after
-Session 3 — the enum landed first so the new open question's area was already declared when it
-arrived. Together they
-changed documentation and one agent *schema* line only — no application behaviour,
-migrations, RLS, CI, or agent tool grants.
+State Steward and this durable PM document set. Several documentation and governance
+follow-ups have merged since — #31 (the Steward's `Area` enum, merged **first**, so the new
+open question's area was already declared when it arrived), then #30, #32 and the PRs carrying
+this convention. They changed documentation and agent *schema* lines only: no application
+behaviour, migrations, RLS, CI, or agent tool grants. Because none of them changed a
+repository fact, none advanced the `Reconciled against:` anchor above — which is why it reads
+`e7ccd87` while `main` is further ahead. That is the convention working, not staleness.
 
 ---
 

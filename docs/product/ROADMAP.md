@@ -2,6 +2,14 @@
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `e7ccd87f766a5b30e66a60ccc1239955d129a090` (2026-09-03)
+**Last edited by:** PR #NN
+
+> **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
+> repository facts asserted in this document were verified. A documentation-only merge that
+> changes no repository, product, runtime or security fact does **not** advance it — so this
+> anchor may legitimately sit behind `main`. `Last edited by:` records the documentation
+> mutation separately, as a PR number, because a PR number exists before merge and a merge
+> SHA does not: a document can never truthfully cite the commit that lands it.
 
 > **This is an estimate based on current project pace, not a deadline commitment.**
 > Work is sequenced by **session**, not by calendar date, deliberately. Sessions vary in
@@ -34,15 +42,19 @@ Sessions may merge, split, or reorder. A session is "complete" only when its wor
 | ├ durable PM document set | [#29](https://github.com/sntimmons/the_book/pull/29) | `2ae0fd0` | `CURRENT_STATE.md`, `ROADMAP.md`, `PRODUCT_DECISIONS.md`, `OPEN_QUESTIONS.md`, `HOUSTON_BETA_STRATEGY.md` |
 | └ documentation-authority reconciliation / cold-start handoff audit | [#29](https://github.com/sntimmons/the_book/pull/29) | `2ae0fd0` | **modified by** #29 (per its diff, not merely present): `supabase/README.md` (rewritten as routed entry point), `AGENTS.md`, `docs/README.md`, `docs/product/BETA_SCOPE.md`, `supabase/tests/README.md` |
 | Steward `Area` enum — `Schema / data` (governance, isolated; **merged first**) | [#31](https://github.com/sntimmons/the_book/pull/31) | `f4e8d86` (commit `19e5f71`) | one line in `.agents/project-state-steward/OUTPUT_FORMAT.md`; no tool grant, allowlist or prohibition changed |
-| Post-Session-3 state reconciliation (docs only; merged **after** #31) | [#30](https://github.com/sntimmons/the_book/pull/30) | `e7ccd87` (commit `0aab9b0`) | **modified by** #30: `CURRENT_STATE.md`, `ROADMAP.md`, `OPEN_QUESTIONS.md` (schema-normalised, OQ-070 added), `supabase/tests/README.md`, `supabase/README.md`, `CONTRIBUTING.md`, `docs/README.md` |
 
-**This table lists session-level work, not every merged PR.** Smaller merges (e.g. #18, #23,
-#25) are not rows here; `git log --merges main` is the complete record.
+**Row inclusion rule.** A PR earns a row here when it **materially delivers a product,
+architecture, security, governance, infrastructure or operating capability**. A routine
+reconciliation that only updates documentation to reflect already-landed facts does **not**
+earn a row. `git log --merges main` is the complete record of every merge; this table is the
+record of delivered capability.
 
-**Why #30 and #31 earn rows despite being small.** They change *this record itself* — the PM
-document set and the schema governing it. A merge that alters what the roadmap claims has to
-appear in the roadmap, or the table silently stops describing its own provenance. Size is not
-the test; whether the merge moves the project record is.
+So #29 (the Steward and the PM document set) and #31 (the `Area` enum, a governance
+capability) are rows, while #30 and #32 — which reconciled documentation to facts that had
+already landed — are not. Size is not the test, and neither is "did it touch this file":
+**delivered capability is the test.** An earlier draft of this section used the file-touching
+test, which made every reconciliation PR earn a row describing itself, including the PR that
+introduced the test.
 
 **Evidence convention.** *Merge SHA* is the merge commit on `main`; where a single
 implementation commit is more informative it is named in parentheses. Every row above was
@@ -58,9 +70,10 @@ A path that existed before the work cannot prove the work happened.
 
 ## Current
 
-**Nothing in flight.** Session 3 merged (PR #29, `2ae0fd0`), followed by two
-documentation/governance merges — #31 (`f4e8d86`, the `Area` enum) and #30 (`e7ccd87`, this
-reconciliation), in that order. **Session 4 has not started.**
+**Nothing in flight.** Session 3 merged (PR #29, `2ae0fd0`). Documentation and governance
+merges have followed — #31 (`f4e8d86`, the `Area` enum) landed first, then #30 (`e7ccd87`),
+#32 (`f83bea2`) and the PRs carrying this convention. Per the row inclusion rule above, only
+#31 earned a Completed row. **Session 4 has not started.**
 
 ---
 
