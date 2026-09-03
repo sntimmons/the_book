@@ -16,7 +16,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { getOrCreateConversation } from '../../hooks/useMessaging'
 import { bookingStatusLabel } from '../../lib/bookingStatus'
-import { reviewOpportunityCopy, ReviewOpportunity } from '../../lib/reviews'
+import { reviewEntryFor, ReviewOpportunity } from '../../lib/reviews'
 import { useReviewOpportunity } from '../../hooks/useReviewOpportunity'
 
 interface BookingDetail {
@@ -127,12 +127,17 @@ export default function BookingDetailScreen() {
   const [isProvider, setIsProvider] = useState(false)
   // Persistent provider→client review opportunity (QA-JOURNEY-002). Server-
   // authoritative (RPC review_opportunity); the client never computes the window.
-  // Read only for a provider on a completed booking; same hook, same loading
-  // convention as the post-booking screens (CODE-STATE-002).
+  //
+  // SEC-AUTHZ-001 / CODE-DUP-010: this deliberately does NOT pre-test
+  // `booking.status === 'completed'`. Gating the READ on live status meant a booking
+  // whose status moved off 'completed' after completion never got asked about, so an
+  // earned review (anchored in the DB on the immutable completed_at) silently lost its
+  // entry point. We ask for any booking the provider is viewing and let the server
+  // answer; a booking that never completed comes back 'not_completed'.
   const { opportunity: reviewOpp, loading: reviewOppLoading } = useReviewOpportunity(
     id as string | undefined,
     'provider_to_client',
-    isProvider && booking?.status === 'completed',
+    isProvider,
   )
 
   const fetchBookingDetail = useCallback(async () => {
@@ -276,6 +281,12 @@ export default function BookingDetailScreen() {
       ],
     )
   }
+
+  // A booking that has ever completed cannot be marked no_show — the write boundary
+  // rejects it unconditionally (migration 20260904000000). Offering the action there
+  // would be a guaranteed-failure retry loop behind a generic "please try again"
+  // (QA-JOURNEY-006), so the control is withheld instead.
+  const everCompleted = !!booking?.completed_at
 
   function handleMarkNoShow() {
     Alert.alert(
@@ -458,10 +469,12 @@ export default function BookingDetailScreen() {
           isProvider={isProvider}
           bookingId={booking.id}
           actionLoading={actionLoading}
-          reviewOpp={reviewOppLoading ? 'unknown' : reviewOpp}
+          reviewOpp={reviewOpp}
+          reviewOppLoading={reviewOppLoading}
           onCancel={handleCancel}
           onMarkCompleted={handleMarkCompleted}
           onMarkNoShow={handleMarkNoShow}
+          canMarkNoShow={!everCompleted}
           onMessage={messageOtherParty}
           onReviewClient={() =>
             router.push(`/post-booking/provider-review?id=${booking.id}` as never)
@@ -505,6 +518,8 @@ interface ActionButtonsProps {
   bookingId: string
   actionLoading: boolean
   reviewOpp: ReviewOpportunity
+  reviewOppLoading: boolean
+  canMarkNoShow: boolean
   onCancel: () => void
   onMarkCompleted: () => void
   onMarkNoShow: () => void
@@ -514,30 +529,39 @@ interface ActionButtonsProps {
 }
 
 function ActionButtons(props: ActionButtonsProps) {
-  const { bucket, isProvider, bookingId, actionLoading, reviewOpp, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onReviewClient, onBack } = props
+  const { bucket, isProvider, bookingId, actionLoading, reviewOpp, reviewOppLoading, canMarkNoShow, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onReviewClient, onBack } = props
+
+  // Persistent provider→client review entry, keyed by booking_id so each booking is
+  // independently reviewable. Driven ONLY by the server's answer — never by `bucket`
+  // (SEC-AUTHZ-001 / CODE-DUP-010): a booking whose live status drifted off
+  // 'completed' keeps the review it earned, and the server still says 'eligible'.
+  // 'unknown' (not read / read failed) and 'not_completed'/'not_participant' render
+  // nothing, so no entry is ever invented from a local guess.
+  const entry = isProvider
+    ? reviewEntryFor(reviewOpp, 'provider_to_client', reviewOppLoading)
+    : { kind: 'none' as const, label: '', body: '' }
+  const reviewEntry =
+    entry.kind === 'action' ? (
+      <Pressable style={styles.primaryBtnFull} onPress={onReviewClient}>
+        <Text style={styles.primaryBtnText}>{entry.label}</Text>
+      </Pressable>
+    ) : entry.kind === 'note' ? (
+      <View style={styles.reviewStateNote}>
+        <Text style={styles.reviewStateText}>{entry.body}</Text>
+      </View>
+    ) : null
+  const isActionable = entry.kind === 'action'
 
   // Terminal states for both sides.
   if (bucket === 'cancelled' || bucket === 'completed' || bucket === 'no_show') {
-    // Persistent provider→client review entry on a COMPLETED booking (QA-JOURNEY-002):
-    // keys off booking_id, so each completed booking is independently reviewable.
-    const showReview = isProvider && bucket === 'completed' && reviewOpp !== 'unknown'
-    const rc = showReview ? reviewOpportunityCopy(reviewOpp, 'provider_to_client') : null
     return (
       <>
-        {rc?.actionable ? (
-          <Pressable style={styles.primaryBtnFull} onPress={onReviewClient}>
-            <Text style={styles.primaryBtnText}>{rc.label}</Text>
-          </Pressable>
-        ) : rc?.terminal && rc.label !== '' ? (
-          <View style={styles.reviewStateNote}>
-            <Text style={styles.reviewStateText}>{rc.body}</Text>
-          </View>
-        ) : null}
+        {reviewEntry}
         <Pressable
-          style={rc?.actionable ? styles.secondaryBtnFull : styles.primaryBtnFull}
+          style={isActionable ? styles.secondaryBtnFull : styles.primaryBtnFull}
           onPress={onBack}
         >
-          <Text style={rc?.actionable ? styles.secondaryBtnText : styles.primaryBtnText}>
+          <Text style={isActionable ? styles.secondaryBtnText : styles.primaryBtnText}>
             Back to Bookings
           </Text>
         </Pressable>
@@ -574,18 +598,25 @@ function ActionButtons(props: ActionButtonsProps) {
 
   if (bucket === 'accepted') {
     if (isProvider) {
+      // reviewEntry is rendered here too: if this booking was completed at some point
+      // (completed_at stamped) and its status later moved back, the server still
+      // reports an earned review and the provider must still be able to reach it.
+      // For a booking that genuinely never completed, reviewEntry is null.
       // Beta flow: the only forward action is Mark Complete; No Show and Cancel
       // are the off-ramps. (Arriving / Checked In were removed.)
       return (
         <View>
+          {reviewEntry}
           <View style={styles.row}>
-            <Pressable
-              style={[styles.dangerBtnHalf, actionLoading && styles.btnDisabled]}
-              onPress={onMarkNoShow}
-              disabled={actionLoading}
-            >
-              <Text style={styles.dangerBtnText}>No Show</Text>
-            </Pressable>
+            {canMarkNoShow && (
+              <Pressable
+                style={[styles.dangerBtnHalf, actionLoading && styles.btnDisabled]}
+                onPress={onMarkNoShow}
+                disabled={actionLoading}
+              >
+                <Text style={styles.dangerBtnText}>No Show</Text>
+              </Pressable>
+            )}
             <Pressable
               style={[styles.amberBtnHalf, actionLoading && styles.btnDisabled]}
               onPress={onMarkCompleted}

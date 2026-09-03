@@ -52,8 +52,8 @@ because writing them against an unverified schema would bake in errors.**
   authoritative** (current-state); `PRODUCT.md` remains planned.
 - `architecture/` - `ARCHITECTURE.md`, `DATA_MODEL.md` (after F2)
 - `security/` - `SECURITY_MODEL.md`, `SECURITY_BACKLOG.md` (after F2)
-- `testing/` - `TESTING.md`
-- `operations/` - `RELEASE_PROCESS.md`, `ENVIRONMENTS.md`
+- `testing/` - `TESTING.md` (planned). The executable DB/security harness (B5B) is documented at `supabase/tests/README.md`.
+- `operations/` - `MIGRATION_LEDGER.md` (authoritative); `RELEASE_PROCESS.md`, `ENVIRONMENTS.md` (planned)
 - `decisions/` - Architecture Decision Records (ADR-0001+)
 - `design/` - design/UX references
 

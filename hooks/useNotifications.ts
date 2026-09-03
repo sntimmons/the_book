@@ -116,11 +116,13 @@ export function useNotifications() {
           'id, status, service_name, provider_id, payment_amount, created_at, provider_confirmed_at, cancelled_at, completed_at',
         )
         .eq('user_id', user.id)
-        .in('status', [
-          'accepted',
-          'cancelled_by_provider',
-          'completed',
-        ])
+        // Anchored on completed_at as well as status: a booking that completed and
+        // then legally moved off 'completed' must still surface its completion (and
+        // the review prompt it carries). Filtering on status alone re-introduced the
+        // same live-status pre-test one layer down (CODE-DUP-028).
+        .or(
+          'status.in.(accepted,cancelled_by_provider,completed),completed_at.not.is.null',
+        )
         .order('created_at', { ascending: false })
         .limit(20)
 
@@ -138,7 +140,12 @@ export function useNotifications() {
             providerId: b.provider_id,
           })
         }
-        if (b.status === 'cancelled_by_provider' && b.cancelled_at) {
+        // `!b.completed_at`: a booking that actually happened must never also be
+        // described as never confirmed. Anchoring the completion notice on
+        // completed_at (below) made that pair reachable for a completed booking the
+        // provider later cancelled; completion is the truthful outcome, so it wins
+        // and the decline notice is suppressed (QA-TRUTH-003).
+        if (b.status === 'cancelled_by_provider' && b.cancelled_at && !b.completed_at) {
           notifs.push({
             id: 'declined_' + b.id,
             bookingId: b.id,
@@ -150,7 +157,14 @@ export function useNotifications() {
             providerId: b.provider_id,
           })
         }
-        if (b.status === 'completed' && b.completed_at) {
+        // Anchored on completed_at alone, not live status (SEC-AUTHZ-001 /
+        // CODE-DUP-010). completed_at is server-stamped once and immutable, so it is
+        // the durable record that the appointment happened; a later status change
+        // must not retract the "Appointment Complete" notification or the review
+        // prompt it carries. The satisfaction screen it links to still resolves the
+        // authoritative opportunity, so a booking that is no longer reviewable lands
+        // on a truthful terminal state rather than a form.
+        if (b.completed_at) {
           notifs.push({
             id: 'completed_' + b.id,
             bookingId: b.id,
