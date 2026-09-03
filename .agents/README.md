@@ -12,12 +12,20 @@ never duplicates.
 | 1 | **QA / Journey Reviewer** (`qa-journey-reviewer/`) | **READ-ONLY** | **Active** |
 | 2 | **Security Reviewer** (`security-reviewer/`) | **READ-ONLY** | **Active** |
 | 3 | **Codebase Auditor** (`codebase-auditor/`) | **READ-ONLY** | **Active** |
-| 4 | Implementation Engineer | bounded writes (planned) | Planned |
+| 4 | **Project State Steward** (`project-state-steward/`) | **read + writes limited to 5 PM docs** | **Active** |
+| 5 | Implementation Engineer | bounded writes (planned) | Planned |
 
 Each agent gets its own directory with the same four files: `AGENT.md` (mission,
 responsibilities, permissions, governance), `CHECKLIST.md` (concrete checks +
 false-positive controls), `OUTPUT_FORMAT.md` (finding + review schema), `SOURCES.md`
 (deterministic context loading).
+
+The Project State Steward is the only agent with write access, and it is deliberately
+narrower than an implementation agent: an exhaustive allowlist of five project-management
+documents under `docs/product/`, no code, no SQL, no CI, and no agent definitions —
+including its own. Claude Code declares tools per agent rather than per path, so that
+allowlist is enforced by its specification and by PR review; a Steward diff touching
+anything outside it is a defect in the run, not a change to accept.
 
 ## Shared governance (applies to every agent)
 
@@ -50,3 +58,9 @@ false-positive controls), `OUTPUT_FORMAT.md` (finding + review schema), `SOURCES
 The mode is inferred from the verb + object; no knowledge of internals required. QA (Agent 1)
 owns journey/product-truth; Security (Agent 2) owns the server-side trust boundary; Codebase
 Auditor (Agent 3) owns code structure and maintainability.
+
+- **Project State Steward** — "Project State Steward: reconcile project state against main
+  and the latest merged PR." (add "read-only, report but do not write" for a dry run, or
+  "…against PR #NN" to scope it). It has no `Bash` tool, so supply the `main` SHA and the
+  merge list in the invocation.
+

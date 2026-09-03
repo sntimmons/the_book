@@ -30,30 +30,39 @@ Distinguish three things whenever you read or write docs:
 
 | Document | Category | Status |
 |---|---|---|
+| [product/CURRENT_STATE.md](product/CURRENT_STATE.md) | Product / PM | **Authoritative (current-state)** - what is actually true on `main` today. Start here. Links out rather than duplicating. |
+| [product/PRODUCT_DECISIONS.md](product/PRODUCT_DECISIONS.md) | Product / PM | **Authoritative** - the ledger of **locked** decisions (PD-NNN). Unresolved ideas do not belong here. |
+| [product/OPEN_QUESTIONS.md](product/OPEN_QUESTIONS.md) | Product / PM | **Authoritative** - what is **undecided** (OQ-NNN), by area. Closed only by a cited decision. |
+| [product/ROADMAP.md](product/ROADMAP.md) | Product / PM | **Authoritative (sequencing)** - session-based ordering. An estimate from current pace, **not** a deadline commitment. |
+| [product/HOUSTON_BETA_STRATEGY.md](product/HOUSTON_BETA_STRATEGY.md) | Product | **Authoritative** - beta thesis, what it must prove, success criteria, cohort strategy, barter principle, payments positioning. |
 | [product/BETA_SCOPE.md](product/BETA_SCOPE.md) | Product | **Authoritative (current-state)** - the product-truth ledger: what each surface is (REAL / PARTIAL / PLACEHOLDER / DEFERRED / UNDECIDED). |
 | [product/USER_JOURNEYS.md](product/USER_JOURNEYS.md) | Product | **Authoritative (acceptance intent)** - canonical journeys, expected end states, and current status. |
+| [product/REVIEWS_MODEL.md](product/REVIEWS_MODEL.md) | Product | **Authoritative** - the review model: eligibility, the 7-day window, blind reveal, `no_show`, and what is deferred to Phase 2. |
 | [architecture/NAVIGATION.md](architecture/NAVIGATION.md) | Architecture | **Authoritative** - the governing navigation model (one account, no modes, five shared tabs, RLS is the enforcement boundary). |
-| [../.agents/qa-journey-reviewer/](../.agents/qa-journey-reviewer/) | Agents | **Authoritative** - the read-only QA / Journey Reviewer agent definition. |
-| [../supabase/README.md](../supabase/README.md) | Architecture / Data | **Authoritative, with caveats** - schema baseline notes and known gaps. The baseline is reconstructed from code, not production history (see open items P0). |
+| [../.agents/](../.agents/) | Agents | **Authoritative** - agent definitions. Agents 1-3 are read-only; the **Project State Steward** (`project-state-steward/`) is the only agent with writes, limited to the five PM documents above. |
+| [../supabase/tests/README.md](../supabase/tests/README.md) | Testing / Security | **Authoritative** - the B5B executable DB/security harness: scope, execution modes, production guard, CI wiring. |
+| [operations/MIGRATION_LEDGER.md](operations/MIGRATION_LEDGER.md) | Operations | **Authoritative** - non-prod migration-ledger reconciliation: the classification rule, verification method, and the dated record. |
+| [../supabase/README.md](../supabase/README.md) | Architecture / Data | **Historical / superseded in part** - its install instructions reference `20240101000000_baseline_schema.sql`, which no longer exists under `supabase/migrations/` (it survives only in `migrations_history/pre_canonical/`), and its "RLS is intended, not ground truth" caveats predate F3-F5 and Security Batch 3B. For applied-schema truth use [operations/MIGRATION_LEDGER.md](operations/MIGRATION_LEDGER.md) and the canonical baseline migration. |
 | [../supabase/functions/README.md](../supabase/functions/README.md) | Operations / Security | **Authoritative** - the `rate-limit` Edge Function: limits, deploy, secrets. |
 | [../README.md](../README.md) | Entry point | **Authoritative** - repo overview, stack, install/run, env caveat. |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Process | **Authoritative** - how to make changes safely. |
+| [audits/](audits/) | Historical | **Historical** - dated audit/reconciliation snapshots (F-series, security batches). Point-in-time; never cite as current state. |
 | [history/SCREEN_STATUS_MAP.md](history/SCREEN_STATUS_MAP.md) | Historical | **Historical (~2026-06)** - pre-dates Community, Contracts, Reviews, and the `(tabs)/business` move. Stale; do not trust over code. |
 | [history/PASS1_BUTTON_INVENTORY.md](history/PASS1_BUTTON_INVENTORY.md) | Historical | **Historical (~2026-05)** - button/route punch list from a ~51-screen era. |
 
 ## Planned documents (approved structure, not yet written)
 
-These directories exist for upcoming foundation work. They are intentionally
-empty for now (no placeholder files). **Authoritative product and data/security
-docs are deliberately deferred until after schema reconciliation (Batch F2),
-because writing them against an unverified schema would bake in errors.**
+Directories that still hold only planned documents. Product docs are **no longer**
+deferred — schema reconciliation (F2–F5) is complete and the product/PM set above is
+written and authoritative.
 
-- `product/` - `BETA_SCOPE.md` and `USER_JOURNEYS.md` are now **written and
-  authoritative** (current-state); `PRODUCT.md` remains planned.
+- `product/` - `CURRENT_STATE.md`, `PRODUCT_DECISIONS.md`, `OPEN_QUESTIONS.md`,
+  `ROADMAP.md`, `HOUSTON_BETA_STRATEGY.md`, `BETA_SCOPE.md`, `REVIEWS_MODEL.md` and
+  `USER_JOURNEYS.md` are **written and authoritative**; `PRODUCT.md` remains planned.
 - `architecture/` - `ARCHITECTURE.md`, `DATA_MODEL.md` (after F2)
 - `security/` - `SECURITY_MODEL.md`, `SECURITY_BACKLOG.md` (after F2)
 - `testing/` - `TESTING.md` (planned). The executable DB/security harness (B5B) is documented at `supabase/tests/README.md`.
-- `operations/` - `MIGRATION_LEDGER.md` (authoritative); `RELEASE_PROCESS.md`, `ENVIRONMENTS.md` (planned)
+- `operations/` - `MIGRATION_LEDGER.md` is **authoritative** (indexed above); `RELEASE_PROCESS.md`, `ENVIRONMENTS.md` (planned)
 - `decisions/` - Architecture Decision Records (ADR-0001+)
 - `design/` - design/UX references
 
@@ -139,7 +148,7 @@ or used by build/deployment tooling.** Recorded here as candidates only:
 ```
 docs/
   README.md          this index
-  product/           product docs (planned)
+  product/           product + PM docs (authoritative; see index above)
   architecture/      NAVIGATION.md (authoritative); ARCHITECTURE/DATA_MODEL planned
   decisions/         ADRs (planned)
   design/            design/UX references (planned)
