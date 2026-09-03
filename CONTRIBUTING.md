@@ -27,8 +27,9 @@ keep changes safe and reviewable. Read [README.md](README.md) and
   migrations are not yet applied there.** The
   canonical baseline migration was reconciled against the live database and **verified
   to reproduce** on a fresh non-production project (Batch 6AB). The active chain is the
-  `supabase/migrations/*` files (14 as of `b3756d9`); which are applied where is tracked
-  in [docs/operations/MIGRATION_LEDGER.md](docs/operations/MIGRATION_LEDGER.md). Add a new
+  `supabase/migrations/*` files; the count and which are applied where are tracked
+  in [docs/operations/MIGRATION_LEDGER.md](docs/operations/MIGRATION_LEDGER.md), which is
+  the single numeric source of truth — do not restate the count here. Add a new
   timestamped migration for every schema change. The ledger is **non-production only** —
   the last recorded production state is **8 migrations** (Batches 6AB / 6D), so never assume
   a repo migration exists in production. (`DATA_MODEL.md`/`SECURITY_MODEL.md` remain planned.)

@@ -72,7 +72,8 @@ instructions to run them in the SQL Editor. They pre-date the migration rule abo
   (`components/ComingSoonInterest.tsx`), and the canonical baseline notes it as absent live.
 
 Whether that function should be folded into a forward migration, retired, or kept as a
-documented exception is **an open schema question, not settled here**. Flagged so the gap is
+documented exception is **an open schema question, not settled here** — recorded as **OQ-070**
+in [docs/product/OPEN_QUESTIONS.md](../docs/product/OPEN_QUESTIONS.md). Flagged so the gap is
 visible rather than implied away by "migrations/ is the deployment source".
 
 ## A note on the security posture

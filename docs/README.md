@@ -75,9 +75,9 @@ lost during foundation work. Statuses below are current: items marked **RESOLVED
 > **Status update:** the schema has been reconciled against production and a
 > canonical baseline migration was produced and **verified to reproduce** on a
 > fresh non-production project (Batch 6AB). The active migration chain is the
-> `supabase/migrations/*` files (14 as of `b3756d9`); see
-> [operations/MIGRATION_LEDGER.md](operations/MIGRATION_LEDGER.md) for what is applied
-> where. `DATA_MODEL.md`/`SECURITY_MODEL.md` remain planned.
+> `supabase/migrations/*` files; see
+> [operations/MIGRATION_LEDGER.md](operations/MIGRATION_LEDGER.md) for the count and what is
+> applied where — it is the single numeric source of truth. `DATA_MODEL.md`/`SECURITY_MODEL.md` remain planned.
 >
 > _Original note (historical):_ The committed migrations were reconstructed from code
 > analysis and live REST probes, not from real migration history, and the RLS section
