@@ -19,9 +19,13 @@ entry under `CONFLICTS / NEEDS PRODUCT DECISION`.
       **a PR that earns a ROADMAP capability row under § E has, by definition, changed a
       repository fact relevant to that ROADMAP, and advances the ROADMAP anchor to that
       capability-delivering merge.** A routine documentation-only reconciliation that earns
-      no capability row advances no anchor. This stays terminal rather than recursive,
-      because the PR that *writes* a row is never the PR that *earned* it — the anchor
+      no capability row advances no anchor. This stays terminal rather than recursive:
+      the PR that *writes* a row is never the PR that earned **that row** — the anchor
       moves to the earning merge, which is already in the past when the row is written.
+      Stated per-row deliberately. A single PR may both write rows for past merges and
+      earn one of its own, to be written later; "this PR writes rows, therefore it earns
+      none" is the wrong inference. The guarantee is structural rather than conventional:
+      a self-citing row is **unconstructible**, because no commit can contain its own SHA.
       A document's anchor moves only if that document asserts the new fact: a governance
       merge that ROADMAP cites moves ROADMAP's anchor and not necessarily the others'.
 - [ ] Record `Last edited by: PR #NN` on every document the run edits. This is the
