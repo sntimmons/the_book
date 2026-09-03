@@ -90,7 +90,19 @@ export default function BarterInterests() {
       load()
     } catch (err) {
       console.log('Accept interest error:', err)
-      Alert.alert('Could not accept', 'Please try again.', [{ text: 'OK' }])
+      // An offer can only ever have ONE accepted response (enforced by a partial unique
+      // index). A second accept is permanently impossible, not transiently failing, so
+      // it must not be presented as retryable.
+      const code = (err as { code?: string } | null)?.code
+      if (code === '23505') {
+        Alert.alert(
+          'Already matched',
+          'This offer has already been matched with another provider. Only one response per offer can be accepted.',
+          [{ text: 'OK' }],
+        )
+      } else {
+        Alert.alert('Could not accept', 'Please try again.', [{ text: 'OK' }])
+      }
       setActioningId(null)
     }
   }

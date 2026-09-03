@@ -44,6 +44,7 @@ const SUITES = [
   'supabase/tests/_fixtures.sql',
   'supabase/tests/reviews.test.sql',
   'supabase/tests/messaging.test.sql',
+  'supabase/tests/barter.test.sql',
   'supabase/tests/_report.sql',
 ]
 
