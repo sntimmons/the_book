@@ -2,6 +2,14 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `e7ccd87f766a5b30e66a60ccc1239955d129a090` (2026-09-03)
+**Last edited by:** PR #34
+
+> **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
+> repository facts asserted in this document were verified. A documentation-only merge that
+> changes no repository, product, runtime or security fact does **not** advance it — so this
+> anchor may legitimately sit behind `main`. `Last edited by:` records the documentation
+> mutation separately, as a PR number, because a PR number exists before merge and a merge
+> SHA does not: a document can never truthfully cite the commit that lands it.
 
 Everything here is genuinely unresolved. A question is **closed by a decision**, cited to
 [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) — never by someone implementing one answer, and
