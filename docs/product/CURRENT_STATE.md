@@ -2,7 +2,7 @@
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `e7ccd87f766a5b30e66a60ccc1239955d129a090` (2026-09-03)
-**Last edited by:** PR #34
+**Last edited by:** PR #NN
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -138,11 +138,18 @@ move; check the run, not this sentence.
 `main` is healthy following **Session 3** (PR #29, merge `2ae0fd0`), which added the Project
 State Steward and this durable PM document set. Several documentation and governance
 follow-ups have merged since — #31 (the Steward's `Area` enum, merged **first**, so the new
-open question's area was already declared when it arrived), then #30, #32 and the PRs carrying
-this convention. They changed documentation and agent *schema* lines only: no application
-behaviour, migrations, RLS, CI, or agent tool grants. Because none of them changed a
-repository fact, none advanced the `Reconciled against:` anchor above — which is why it reads
-`e7ccd87` while `main` is further ahead. That is the convention working, not staleness.
+open question's area was already declared when it arrived), then #30, #32, #33 and #34.
+
+None of them changed application behaviour, migrations, RLS, CI, or agent tool grants. That is
+the whole of the claim; it does **not** mean none of them changed a repository fact. #31 and
+#33 delivered governance capability — a declared `Area` value and the Steward's reconciliation
+contract — which is why each earns a ROADMAP row and why ROADMAP's anchor advances to the
+merge that delivered the artifact it cites.
+
+**This document's** anchor stays at `e7ccd87` because nothing it asserts changed after that
+commit: the 14 migration files, the agent grant and allowlist, the reviews and messaging
+surfaces, and every code path cited below are unchanged. An anchor is per-document — it moves
+when *that document's* asserted facts move, not whenever `main` does.
 
 ---
 
