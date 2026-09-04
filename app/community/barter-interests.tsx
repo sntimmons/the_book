@@ -120,7 +120,18 @@ export default function BarterInterests() {
     if (error) {
       console.log('Decline interest error:', error)
       setInterests(prev)
-      Alert.alert('Could not decline', 'Please try again.', [{ text: 'OK' }])
+      // Reachable from a stale list: if this response was already accepted or declined
+      // elsewhere, the transition rule refuses it permanently. Retrying cannot help, and
+      // the list needs reconciling rather than the same buttons offered again.
+      if ((error as { code?: string } | null)?.code === '23514') {
+        Alert.alert(
+          'Already answered',
+          'This response has already been accepted or declined. Pull to refresh to see its current state.',
+          [{ text: 'OK', onPress: () => load() }],
+        )
+      } else {
+        Alert.alert('Could not decline', 'Please try again.', [{ text: 'OK' }])
+      }
     }
   }
 

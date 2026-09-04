@@ -379,6 +379,69 @@ select pg_temp.chk('barter', 'non-participant cannot read a foreign response', '
   (select count(*)::text from public.barter_interests
     where id = current_setting('b5b.bt_int1')::uuid));
 
+-- ── SQLSTATEs the client branches on ────────────────────────────────────────
+-- Four user-facing messages in app/community/ distinguish "permanent" from "retry" purely by
+-- SQLSTATE. A raise that lost its `using errcode` would default to P0001, every branch would
+-- silently fall through to "Please try again", and nothing above would fail. Pin the codes.
+do $$
+declare v_code text; v_off uuid; v_int uuid;
+begin
+  perform pg_temp.act_service();
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+  values (current_setting('b5b.bt_opid')::uuid, current_setting('b5b.bt_ou')::uuid,
+          'sqlstate', 'probe') returning id into v_off;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+  values (v_off, current_setting('b5b.bt_rpid')::uuid, current_setting('b5b.bt_ru')::uuid)
+    returning id into v_int;
+
+  -- deleteOffer -> "This offer has responses" must be 23514, not P0001.
+  perform pg_temp.act(current_setting('b5b.bt_ou')::uuid);
+  begin
+    delete from public.barter_offers where id = v_off;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'delete-with-responses raises 23514 (client branches on it)',
+    '23514', v_code);
+
+  -- decline of an already-answered response -> "Already answered" must be 23514.
+  perform pg_temp.act_service();
+  update public.barter_interests set status = 'accepted' where id = v_int;
+  perform pg_temp.act(current_setting('b5b.bt_ou')::uuid);
+  begin
+    update public.barter_interests set status = 'declined' where id = v_int;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'illegal status transition raises 23514 (client branches on it)',
+    '23514', v_code);
+
+  -- second accept on one offer -> "Already matched" must be 23505.
+  perform pg_temp.act_service();
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+  values (v_off, current_setting('b5b.bt_tpid')::uuid, current_setting('b5b.bt_tu')::uuid)
+    returning id into v_int;
+  perform pg_temp.act(current_setting('b5b.bt_ou')::uuid);
+  begin
+    update public.barter_interests set status = 'accepted' where id = v_int;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'second accept raises 23505 (client branches on it)',
+    '23505', v_code);
+
+  -- duplicate response -> "Already sent" must be 23505.
+  perform pg_temp.act(current_setting('b5b.bt_ru')::uuid);
+  begin
+    insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+    values (v_off, current_setting('b5b.bt_rpid')::uuid, current_setting('b5b.bt_ru')::uuid);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'duplicate response raises 23505 (client branches on it)',
+    '23505', v_code);
+end $$;
+
 -- ── Rate limit is enforced in the write path, not by the client ─────────────
 do $$
 declare i integer; v_blocked boolean := false;
@@ -426,6 +489,19 @@ begin
   perform pg_temp.chk('barter', 'withdrawing responses actually deleted them', '0',
     (select count(*)::text from public.barter_interests
       where interested_user_id = current_setting('b5b.bt_lu')::uuid));
+  -- submitInterest -> "Daily limit reached" must be 23514.
+  declare v_code text;
+  begin
+    begin
+      insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+      values (current_setting('b5b.bt_lo1')::uuid, current_setting('b5b.bt_lpid')::uuid,
+              current_setting('b5b.bt_lu')::uuid);
+      v_code := 'NO ERROR';
+    exception when others then v_code := sqlstate;
+    end;
+    perform pg_temp.chk('barter', 'daily limit raises 23514 (client branches on it)',
+      '23514', v_code);
+  end;
   perform pg_temp.chk_blocked('barter',
     'deleting responses does NOT reset the daily limit',
     format($q$insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
