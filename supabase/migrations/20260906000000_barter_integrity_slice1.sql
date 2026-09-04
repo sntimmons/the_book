@@ -39,9 +39,15 @@
 --     precise about what it does and does not cover, because the next slice will act on this:
 --       * It IS the single edit site for the three WRITE-identity policies (offers insert,
 --         offers update, interests insert).
---       * It is NOT used by the two READ policies, which still carry the old
---         "caller is SOME provider" idiom from the canonical baseline. Gating reads is a
---         separate, deliberate decision.
+--       * It is NOT used by either READ policy, and the two are NOT alike -- do not treat
+--         them as one change:
+--           - `barter_offers_provider_read` DOES carry the old "caller is SOME provider"
+--             idiom. Gating the board on eligibility is a deliberate, separate decision.
+--           - `barter_interests_offer_owner_read` does NOT. It already pivots on offer
+--             ownership or `interested_user_id`, so it needs no identity fix -- and gating it
+--             on `is_approved` would be actively WRONG: a de-approved provider would lose
+--             sight of responses already sent to them, a second instance of the lockout
+--             described below.
 --       * It is NOT used by the delete/owner-update policies, which pivot on auth.uid() alone.
 --       * Adding `and p.is_approved` here would make caller_provider_id() NULL for a
 --         de-approved provider, which would ALSO block them from closing their own live
@@ -49,6 +55,15 @@
 --         -- likely by a separate caller_eligible_provider_id() -- rather than discovered.
 --   * updated_at / status-transition timestamps. Both presuppose a lifecycle vocabulary a
 --     later slice may change.
+--   * OFFER TEXT immutability after a response exists. A response's `message` is made
+--     permanently immutable below on the grounds that it records what was offered at a point
+--     in time -- but the offer itself is not similarly frozen: its author may still rewrite
+--     `offering_service`, `seeking_service`, `offering_value` and `notes` after providers have
+--     responded to the original terms, leaving immutable responses attached to terms nobody
+--     agreed to. No edit affordance exists in the app today, so this is reachable only by a
+--     direct API call. It is the same counterparty-integrity family as the forgery routes
+--     closed here, and it is recorded rather than closed because freezing offer terms is a
+--     product decision about the negotiation model, not an integrity fix.
 
 -- ── 0. Pre-apply integrity checks ────────────────────────────────────────────
 -- Sections 7 and 8 add unique indexes over data that was, by this migration's own account,
@@ -373,6 +388,16 @@ create trigger barter_interests_write_integrity
   for each row execute function public.enforce_barter_interest_write();
 
 -- ── 6. Offer created_at is server-authoritative too ──────────────────────────
+-- Offer write integrity. NOTE the deliberate asymmetry with barter_interests: that table uses
+-- an ALLOW-list (only `status` may change, so a future column is immutable by default); this
+-- one uses a DENY-list. An offer's content columns are legitimately author-mutable, so an
+-- allow-list here would be a long enumeration of everything the author MAY change, with the
+-- same forward-compatibility problem in reverse. The trade-off: a column added to
+-- barter_offers by a later slice IS born mutable by its author. That is acceptable while every
+-- column here is author-owned, and NOT acceptable once a column is added that a counterparty
+-- depends on (an agreement reference, say). A slice adding such a column must move this to an
+-- allow-list and add a barter_offers column-set pin to the B5B suite, matching the one that
+-- already guards barter_interests.
 create or replace function public.enforce_barter_offer_write()
 returns trigger
 language plpgsql
