@@ -1,8 +1,8 @@
 # Open Questions
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `feba568a900401e3e8dffc560ea5e214cb9be38c` (2026-09-04)
-**Last edited by:** PR #40
+**Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
+**Last edited by:** PR #NN
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -11,9 +11,12 @@
 > mutation separately, as a PR number, because a PR number exists before merge and a merge
 > SHA does not: a document can never truthfully cite the commit that lands it.
 
-Everything here is genuinely unresolved. A question is **closed by a decision**, cited to
-[PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) — never by someone implementing one answer, and
-never by deletion. Repository code that happens to behave one way does not close a question.
+Every entry marked `Open` is genuinely unresolved. A question is **closed by a decision**,
+cited either to [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) or to an authoritative contract
+document such as [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) — never by someone
+implementing one answer, and never by deletion. Repository code that happens to behave one way
+does not close a question. **Closed entries stay in place**, with what closed them cited in
+`Status`, so the record of how the product got here survives.
 
 **Entry schema.** Every entry carries the same four fields — **Area**, **Why it matters**,
 **Blocks**, **Status**. The schema and the permitted **Area** values are defined in
@@ -39,36 +42,49 @@ an entry is self-describing when quoted alone.
 - **Area:** Barter
 - **Why it matters:** Determines the data model and how discovery filters work. Provider-level is simpler; service-level is more honest (a stylist may trade a haircut but not a full colour).
 - **Blocks:** Session 5 barter decisions.
-- **Status:** Open
+- **Status:** Closed by [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 2 on 2026-09-04 — **provider-level**. Open to Trades is a provider-level opt-in, held separately from eligibility. Service-level trade flags are not part of the first beta.
 
 ### OQ-002 — What is the correct transaction model: reciprocal bookings, or a parent trade agreement?
 - **Area:** Barter
 - **Why it matters:** Two bookings that reference each other vs one agreement that spawns two obligations. Affects cancellation, completion, reviews, and what "half-done" means.
 - **Blocks:** Session 5.
-- **Status:** Open
+- **Status:** Closed by [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 4 and § 6 on 2026-09-04 — **a parent trade agreement**. An official agreement is required before a trade is real, and it creates directed obligations, each with a deliverer and a receiver. Not reciprocal bookings.
 
 ### OQ-003 — What minimum terms must a trade capture for beta?
 - **Area:** Barter
 - **Why it matters:** Too little invites disputes; too much becomes a contract engine nobody fills in.
 - **Blocks:** Session 5 — [ROADMAP.md](ROADMAP.md) sequences OQ-001 … OQ-006 there.
-- **Status:** Open
+- **Status:** Closed by [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 5 and § 6 on 2026-09-04 — service-for-service only; an existing service or a custom barter package; no required dollar equivalence; no cash hybrid; no "exposure" as consideration; and per obligation a deliverer, a receiver, a server-stamped `delivered_at` and a 7-day receiver confirmation window.
 
 ### OQ-004 — How should cancellation and no-show work for trades?
 - **Area:** Barter
 - **Why it matters:** One side may deliver before the other. A no-show on the second leg is materially different from one on a paid booking. Interacts with PD-026 and PD-027.
-- **Blocks:** Session 5 — [ROADMAP.md](ROADMAP.md) sequences OQ-001 … OQ-006 there.
+- **Blocks:** Slice 3 (agreement / obligation schema) must not encode a cancellation model
+  before this is settled.
+- **Reconciliation note (2026-09-04):** deliberately **left open**. The beta contract settles the
+  *frame* — no timeout completion, receiver-confirmed delivery, truthful Partially Fulfilled
+  outcomes, and history retention (PD-043) — but not this question's own wording. Specifically
+  undecided: whether a two-party trade may be **mutually cancelled before delivery**, and how
+  cancellation differs from a no-show on each leg. Session 5 recorded this as answered only
+  *partially*, and the Founder ruling of 2026-09-04 listed "cancellation rules" without
+  supplying them. Closing it would mean inventing the rules.
 - **Status:** Open
 
 ### OQ-005 — How should barter interact with reviews and reputation?
 - **Area:** Barter
 - **Why it matters:** Whether a trade produces the same review opportunity as a paid booking, and whether trade-derived reputation is distinguishable.
 - **Blocks:** Session 5 — [ROADMAP.md](ROADMAP.md) sequences OQ-001 … OQ-006 there.
-- **Status:** Open
+- **Status:** Closed by [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 8 on 2026-09-04 — for the first Houston closed beta, **not at all**: no barter reviews, and no barter effect on public reputation or ranking. The post-beta model (how trades might later contribute to reputation) is deferred as "Verified Trade" work and is **not** closed by this; the gaming half of it remains OQ-006.
 
 ### OQ-006 — How do we reduce collusion and reciprocal-rating gaming?
 - **Area:** Barter
 - **Why it matters:** Two providers can trade repeatedly and inflate each other's reputation. Blind reveal (PD-022) helps but does not solve repeat collusion.
-- **Blocks:** Session 5 — [ROADMAP.md](ROADMAP.md) sequences OQ-001 … OQ-006 there.
+- **Blocks:** Any work that lets barter contribute to public reputation or ranking.
+- **Reconciliation note (2026-09-04):** deliberately **left open** by Founder ruling — the final
+  anti-collusion / reputation-contribution model is intentionally deferred. Two-party scope
+  (PD-032) does not close it: two providers can still trade repeatedly. It is not blocking the
+  beta, because barter contributes nothing to reputation there
+  ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 8).
 - **Status:** Open
 
 ### OQ-007 — What in the existing barter implementation is usable, salvageable, or needs bounded rebuilding?
