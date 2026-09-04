@@ -1,8 +1,8 @@
 # Open Questions
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `e7ccd87f766a5b30e66a60ccc1239955d129a090` (2026-09-03)
-**Last edited by:** PR #34
+**Reconciled against:** `main` @ `feba568a900401e3e8dffc560ea5e214cb9be38c` (2026-09-04)
+**Last edited by:** PR #40
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -74,7 +74,28 @@ an entry is self-describing when quoted alone.
 ### OQ-007 — What in the existing barter implementation is usable, salvageable, or needs bounded rebuilding?
 - **Area:** Barter
 - **Why it matters:** `barter_offers` / `barter_interests`, `lib/barter.ts` and the community screens already exist. Redesigning without auditing them wastes working code.
-- **Blocks:** Session 5 — answered by the Session 4 read-only audit.
+- **Blocks:** Session 5. The Session 4 audit **was performed** — cited at
+  `supabase/migrations/20260906000000_barter_integrity_slice1.sql:9`, and Slice 1 acted on its
+  findings — but it committed no document to this repository, so its answer is not on `main`.
+  An audit would not close this question in any case; only a cited `PD-NNN` does.
+- **Status:** Open
+
+### OQ-008 — May an offer's terms still be edited once providers have responded to them?
+- **Area:** Barter
+- **Why it matters:** Slice 1 made a response permanently immutable — including its `message`
+  — on the grounds that it records what was offered at a point in time, but did **not** freeze
+  the offer. Its author may still rewrite `offering_service`, `seeking_service`,
+  `offering_value` and `notes` after providers have responded, leaving immutable responses
+  attached to terms nobody agreed to. The migration records this rather than closing it,
+  because freezing offer terms is "a product decision about the negotiation model, not an
+  integrity fix" (`supabase/migrations/20260906000000_barter_integrity_slice1.sql:58-66`).
+  No edit affordance exists in the app today, so it is reachable only by a direct API call —
+  which limits exposure, not the decision. Three shapes are open and none is implied here:
+  freeze terms once any response exists; allow edits but withdraw or re-pend the responses;
+  or leave it as it is and rely on the absence of an edit affordance.
+- **Blocks:** nothing yet — but a slice that adds an offer-edit affordance, or a column a
+  counterparty depends on, must settle it first. The migration's § 6 note is explicit that the
+  deny-list on `barter_offers` becomes unacceptable at that point.
 - **Status:** Open
 
 ---
