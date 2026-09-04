@@ -220,12 +220,33 @@ as locked decisions.
 - **Evidence:** Founder directive, Session 3 brief; corroborated by `BETA_SCOPE.md` (payments PLACEHOLDER/FUTURE).
 - **Status:** Locked
 
+### PD-043 — A barter offer cannot be hard-deleted once another provider has interacted with it
+- **Decided:** 2026-09-04
+- **Decision:** Once another provider has interacted with a barter offer — **including a declined response** — the offer owner **must not** hard-delete it. The owner **may** close or archive it, which removes it from the board non-destructively. Legitimate account erasure is a **separate system path and outranks this retention rule**.
+- **Rationale:** One participant must not be able to destructively erase the other's interaction and history. Retention protects the counterparty's record, not the offer.
+- **Evidence:** Founder ruling, 2026-09-04. Enforced on `main` by `supabase/migrations/20260906000000_barter_integrity_slice1.sql` (delete guard, with escapes so account erasure is not blocked). The rule was approved before that migration; this entry is the durable record, not a decision derived from the code.
+- **Status:** Locked
+
+### PD-044 — `providers.is_approved` is the barter eligibility gate for the first Houston beta
+- **Decided:** 2026-09-04
+- **Decision:** For the first Houston closed beta, `providers.is_approved = true` is the **server-owned marketplace eligibility gate** for barter. It means **marketplace-live and not suspended** for the purposes of the beta. It **must not** be described as identity verification, and it does **not** authorise inventing a mandatory manual business-approval workflow. Future identity-verification requirements may make transaction eligibility stricter.
+- **Rationale:** The beta needs one server-owned, non-forgeable eligibility signal. Reusing the existing flag avoids both an unbuilt admission step and a false claim that participants have been identity-verified.
+- **Evidence:** Founder ruling, 2026-09-04 (recorded as E-3 during Session 5). The eligibility conjunct is **not yet implemented**: `caller_provider_id()` in `20260906000000_barter_integrity_slice1.sql` deliberately provides the seam without the `is_approved` condition.
+- **Status:** Locked
+
+### PD-045 — Barter interest submissions are capped at 15 per provider per rolling 24 hours
+- **Decided:** 2026-09-04
+- **Decision:** For the Houston beta, a provider may submit a maximum of **15 new barter-interest submissions in a rolling 24-hour window**. The limit **must remain server-authoritative**. When a negotiation model is built, **counters inside an existing negotiation do not count as new interest**.
+- **Rationale:** An unbounded interest write is the cheapest way to spam the provider network. The cap is a beta working limit, not a permanent product constant.
+- **Evidence:** Founder ruling, 2026-09-04. Enforced on `main` by `enforce_barter_interest_rate_limit` in `20260906000000_barter_integrity_slice1.sql`, counting `rate_limit_log` rather than deletable content rows. The **offer-side** limit named in `BARTER_BETA_CONTRACT.md` is **not** yet enforced server-side.
+- **Status:** Locked
+
 ---
 
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:
 
-- **Paid / Trade / Hybrid** as a booking-type architecture — a working idea, **not approved**. See OQ-001.
-- Any specific barter transaction model (reciprocal bookings vs a parent trade agreement) — open. See OQ-002.
+- **Paid / Trade / Hybrid** as a booking-type architecture — a working idea, **not approved**. (OQ-001 closed 2026-09-04 on the narrower question of where the trade flag lives; this architecture remains unapproved.)
+- ~~Any specific barter transaction model (reciprocal bookings vs a parent trade agreement) — open. See OQ-002.~~ **Superseded 2026-09-04:** settled as a parent trade agreement with directed obligations. See `BARTER_BETA_CONTRACT.md` § 4 and § 6.
 - The exact first provider-category mix for the beta cohort — open. See OQ-030.

@@ -38,6 +38,7 @@ Distinguish three things whenever you read or write docs:
 | [product/BETA_SCOPE.md](product/BETA_SCOPE.md) | Product | **Authoritative (current-state)** - the product-truth ledger: what each surface is (REAL / PARTIAL / PLACEHOLDER / DEFERRED / UNDECIDED). |
 | [product/USER_JOURNEYS.md](product/USER_JOURNEYS.md) | Product | **Authoritative (acceptance intent)** - canonical journeys, expected end states, and current status. |
 | [product/REVIEWS_MODEL.md](product/REVIEWS_MODEL.md) | Product | **Authoritative** - the review model: eligibility, the 7-day window, blind reveal, `no_show`, and what is deferred to Phase 2. |
+| [product/BARTER_BETA_CONTRACT.md](product/BARTER_BETA_CONTRACT.md) | Product | **Authoritative** - the locked barter contract for the **first Houston closed beta**: eligibility, post model, agreements and directed obligations, confirmation, adjudication, beta limits, and what is deferred. |
 | [architecture/NAVIGATION.md](architecture/NAVIGATION.md) | Architecture | **Authoritative** - the governing navigation model (one account, no modes, five shared tabs, RLS is the enforcement boundary). |
 | [../.agents/](../.agents/) | Agents | **Authoritative** - agent definitions. Agents 1-3 are read-only; the **Project State Steward** (`project-state-steward/`) is the only agent with writes, limited to the five PM documents above. |
 | [../supabase/tests/README.md](../supabase/tests/README.md) | Testing / Security | **Authoritative** - the B5B executable DB/security harness: scope, execution modes, production guard, CI wiring. |
@@ -57,8 +58,9 @@ deferred — schema reconciliation (F2–F5) is complete and the product/PM set 
 written and authoritative.
 
 - `product/` - `CURRENT_STATE.md`, `PRODUCT_DECISIONS.md`, `OPEN_QUESTIONS.md`,
-  `ROADMAP.md`, `HOUSTON_BETA_STRATEGY.md`, `BETA_SCOPE.md`, `REVIEWS_MODEL.md` and
-  `USER_JOURNEYS.md` are **written and authoritative**; `PRODUCT.md` remains planned.
+  `ROADMAP.md`, `HOUSTON_BETA_STRATEGY.md`, `BETA_SCOPE.md`, `REVIEWS_MODEL.md`,
+  `BARTER_BETA_CONTRACT.md` and `USER_JOURNEYS.md` are **written and authoritative**;
+  `PRODUCT.md` remains planned.
 - `architecture/` - `ARCHITECTURE.md`, `DATA_MODEL.md` (after F2)
 - `security/` - `SECURITY_MODEL.md`, `SECURITY_BACKLOG.md` (after F2)
 - `testing/` - `TESTING.md` (planned). The executable DB/security harness (B5B) is documented at `supabase/tests/README.md`.
