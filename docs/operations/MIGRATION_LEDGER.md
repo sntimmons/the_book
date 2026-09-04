@@ -151,3 +151,24 @@ Hand-applied SQL requires a `migration repair` in the same sitting, or the drift
 
 Out of scope for this note. Production has never been reconciled by this process and must
 not be, without a separate, explicitly approved change.
+
+## Functions redefined across migrations
+
+A `create or replace function` in a later migration silently supersedes an earlier one. The
+earlier file still *looks* authoritative, so a change made there and re-applied reverts the
+later behaviour with no error. This table records every function whose current definition is
+NOT in the migration that created it.
+
+| Function | Created in | **Current definition** | Why it moved |
+|---|---|---|---|
+| `public.enforce_conversation_update` | `20260901000000_prebooking_message_requests.sql` | **`20260907000000_barter_accept_handoff.sql`** | Adds `declined -> accepted` for the barter handoff, gated on an accepted match AND a transaction-local marker set only by `accept_barter_interest`. |
+
+The superseding migration names what it replaces and why. The EARLIER file deliberately
+carries no pointer: `supabase/README.md` forbids editing a migration that has already merged,
+and that rule does not carve out an exception for comments -- so this table, not a comment at
+the old definition site, is where the fact lives. Check it before changing any trigger
+function.
+
+B5B covers the carve-out from both directions (`supabase/tests/barter.test.sql`): a reverting
+edit fails the suite rather than shipping, so this table is a discovery aid, not the
+enforcement.

@@ -14,37 +14,53 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
-import { getOrCreateConversation } from '@/hooks/useMessaging'
 import { cacheBustedPhoto } from '@/lib/image'
-import { fetchOfferInterests, BarterInterest } from '@/lib/barter'
+import {
+  fetchOfferInterests,
+  isOfferOwner,
+  declineInterest,
+  BarterInterest,
+} from '@/lib/barter'
+import { barterWriteFailure } from '@/lib/barterErrors'
 import { timeAgo, initials } from '@/lib/community'
 
 export default function BarterInterests() {
   const insets = useSafeAreaInsets()
-  const { user, providerId } = useAuth()
+  const { user } = useAuth()
+  // offeringService / ownerName are still accepted as params for the caller's convenience but
+  // are deliberately NOT read here any more: the match message is composed SERVER-side by
+  // accept_barter_interest from providers.display_name and the offer's own text. Previously
+  // it was built from navigation params, so a deep link could author a platform-looking
+  // "You matched on a barter!" message with arbitrary content.
   const params = useLocalSearchParams<{
     offerId: string
     offeringService?: string
     ownerName?: string
   }>()
   const offerId = params.offerId
-  const offeringService = params.offeringService ?? 'their service'
-  const ownerName = params.ownerName ?? 'A provider'
 
   const [interests, setInterests] = useState<BarterInterest[]>([])
   const [loading, setLoading] = useState(true)
   const [actioningId, setActioningId] = useState<string | null>(null)
+  // This is a real route and is deep-link reachable with any offerId. RLS returns a
+  // responder their OWN response row, so without a server-verified ownership check a
+  // non-owner would be shown live Accept/Decline controls on a response they cannot action.
+  const [isOwner, setIsOwner] = useState<boolean | null>(null)
 
   const load = useCallback(async () => {
     if (!offerId) {
       setLoading(false)
       return
     }
-    const all = await fetchOfferInterests(offerId)
+    const [all, owns] = await Promise.all([
+      fetchOfferInterests(offerId),
+      user ? isOfferOwner(offerId, user.id) : Promise.resolve(false),
+    ])
+    setIsOwner(owns)
     // Show pending interests as actionable; drop already-declined ones.
     setInterests(all.filter((i) => i.status !== 'declined'))
     setLoading(false)
-  }, [offerId])
+  }, [offerId, user])
 
   useFocusEffect(
     useCallback(() => {
@@ -53,85 +69,49 @@ export default function BarterInterests() {
     }, [load]),
   )
 
+  // ONE authoritative success boundary. Previously this was four sequential client writes
+  // — accept, get-or-create conversation, insert message, bump last_message_at — each able
+  // to fail after the accept had already committed, and the code navigated regardless. Slice
+  // 1 made that permanent: the accept slot could never be freed. accept_barter_interest does
+  // the whole handoff in one transaction, so either the response is accepted AND a usable
+  // conversation exists, or nothing happened at all.
   async function accept(interest: BarterInterest) {
-    if (!user || !providerId || actioningId) return
+    if (!user || actioningId || !isOwner) return
     setActioningId(interest.id)
-    try {
-      const { error } = await supabase
-        .from('barter_interests')
-        .update({ status: 'accepted' })
-        .eq('id', interest.id)
-      if (error) throw error
-
-      // Connect the two providers through the existing 1:1 messaging system.
-      // The interested provider takes the client_id slot (their auth id); the
-      // offer owner takes the provider_id slot (their providers.id).
-      const convoId = await getOrCreateConversation(
-        interest.interestedUserId,
-        providerId,
-      )
-      if (convoId) {
-        await supabase.from('messages').insert({
-          conversation_id: convoId,
-          sender_id: user.id,
-          content: `You matched on a barter! ${ownerName} is offering ${offeringService} and you offered interest. Work out the details here.`,
-          is_read: false,
-          created_at: new Date().toISOString(),
-        })
-        await supabase
-          .from('conversation')
-          .update({ last_message_at: new Date().toISOString() })
-          .eq('id', convoId)
-        router.replace(`/messages/${convoId}` as never)
-        return
-      }
-      // Status was updated but the DM could not be opened; refresh the list.
+    const { data, error } = await supabase.rpc('accept_barter_interest', {
+      p_interest_id: interest.id,
+    })
+    if (error) {
+      const f = barterWriteFailure('accept', error)
+      console.log('Accept interest error:', error)
       setActioningId(null)
-      load()
-    } catch (err) {
-      console.log('Accept interest error:', err)
-      // An offer can only ever have ONE accepted response (enforced by a partial unique
-      // index). A second accept is permanently impossible, not transiently failing, so
-      // it must not be presented as retryable.
-      const code = (err as { code?: string } | null)?.code
-      if (code === '23505') {
-        Alert.alert(
-          'Already matched',
-          'This offer has already been matched with another provider. Only one response per offer can be accepted.',
-          [{ text: 'OK' }],
-        )
-      } else {
-        Alert.alert('Could not accept', 'Please try again.', [{ text: 'OK' }])
-      }
-      setActioningId(null)
+      // A terminal outcome means our list is stale — someone else's state won. Reload so the
+      // user is not left looking at controls the server has already invalidated.
+      if (f.terminal) load()
+      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+      return
     }
+    // The RPC returns the conversation id and only returns on full success, so this is the
+    // one place navigation is warranted.
+    router.replace(`/messages/${data as string}` as never)
   }
 
   async function decline(interest: BarterInterest) {
-    if (actioningId) return
+    if (actioningId || !isOwner) return
     setActioningId(interest.id)
     const prev = interests
     setInterests((list) => list.filter((i) => i.id !== interest.id))
-    const { error } = await supabase
-      .from('barter_interests')
-      .update({ status: 'declined' })
-      .eq('id', interest.id)
+    // Uses the helper that treats a zero-row write as a failure. A plain update on a row RLS
+    // filters out raises nothing, so trusting `error` alone reported success for a decline
+    // that never happened and left the card removed from the list.
+    const { ok, error } = await declineInterest(interest.id)
     setActioningId(null)
-    if (error) {
+    if (!ok) {
       console.log('Decline interest error:', error)
       setInterests(prev)
-      // Reachable from a stale list: if this response was already accepted or declined
-      // elsewhere, the transition rule refuses it permanently. Retrying cannot help, and
-      // the list needs reconciling rather than the same buttons offered again.
-      if ((error as { code?: string } | null)?.code === '23514') {
-        Alert.alert(
-          'Already answered',
-          'This response has already been accepted or declined. Pull to refresh to see its current state.',
-          [{ text: 'OK', onPress: () => load() }],
-        )
-      } else {
-        Alert.alert('Could not decline', 'Please try again.', [{ text: 'OK' }])
-      }
+      const f = barterWriteFailure('decline', error)
+      if (f.terminal) load()
+      Alert.alert(f.title, f.body, [{ text: 'OK' }])
     }
   }
 
@@ -174,6 +154,10 @@ export default function BarterInterests() {
           renderItem={({ item }) => {
             const busy = actioningId === item.id
             const accepted = item.status === 'accepted'
+            // At most one response per offer can be accepted (partial unique index). Once one
+            // is, Accept on every other response is an action that can only fail — offering it
+            // is the same defect as offering Delete on an offer that cannot be deleted.
+            const offerMatched = interests.some((i) => i.status === 'accepted')
             return (
               <View style={styles.card}>
                 <View style={styles.cardTop}>
@@ -200,10 +184,32 @@ export default function BarterInterests() {
 
                 {item.message ? <Text style={styles.message}>{item.message}</Text> : null}
 
-                {accepted ? (
+                {!isOwner ? (
+                  <View style={styles.matchedNote}>
+                    <Text style={styles.matchedNoteText}>
+                      Only the provider who posted this offer can respond to it.
+                    </Text>
+                  </View>
+                ) : accepted ? (
                   <View style={styles.acceptedRow}>
                     <Feather name="check-circle" size={14} color="#4CAF50" />
                     <Text style={styles.acceptedText}>Accepted</Text>
+                  </View>
+                ) : offerMatched ? (
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={[styles.declineBtn, busy && styles.btnDisabled]}
+                      activeOpacity={0.8}
+                      disabled={busy}
+                      onPress={() => confirmDecline(item)}
+                    >
+                      <Text style={styles.declineText}>Decline</Text>
+                    </TouchableOpacity>
+                    <View style={styles.matchedNote}>
+                      <Text style={styles.matchedNoteText}>
+                        Already matched with another provider
+                      </Text>
+                    </View>
                   </View>
                 ) : (
                   <View style={styles.actions}>
@@ -239,6 +245,18 @@ export default function BarterInterests() {
 }
 
 const styles = StyleSheet.create({
+  matchedNote: {
+    flex: 1,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  matchedNoteText: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.4)',
+    fontFamily: 'Manrope_500Medium',
+    textAlign: 'center',
+  },
   root: { flex: 1, backgroundColor: '#080808' },
   header: {
     flexDirection: 'row',
