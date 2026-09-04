@@ -58,7 +58,11 @@ export default function BarterInterests() {
     ])
     setIsOwner(owns)
     // Show pending interests as actionable; drop already-declined ones.
-    setInterests(all.filter((i) => i.status !== 'declined'))
+    // ALLOW-list, not a deny-list. `!== 'declined'` treated every unknown future status as
+    // live and actionable; `released` would have rendered with a working Accept button that
+    // could only fail. Listing what shows means a new status is inert until handled.
+    setInterests(all.filter((i) => i.status === 'pending' || i.status === 'accepted'
+      || i.status === 'released'))
     setLoading(false)
   }, [offerId, user])
 
@@ -154,6 +158,7 @@ export default function BarterInterests() {
           renderItem={({ item }) => {
             const busy = actioningId === item.id
             const accepted = item.status === 'accepted'
+            const released = item.status === 'released'
             // At most one response per offer can be accepted (partial unique index). Once one
             // is, Accept on every other response is an action that can only fail — offering it
             // is the same defect as offering Delete on an offer that cannot be deleted.
@@ -188,6 +193,13 @@ export default function BarterInterests() {
                   <View style={styles.matchedNote}>
                     <Text style={styles.matchedNoteText}>
                       Only the provider who posted this offer can respond to it.
+                    </Text>
+                  </View>
+                ) : released ? (
+                  <View style={styles.matchedNote}>
+                    <Text style={styles.matchedNoteText}>
+                      Negotiation ended. This response is kept as history and cannot be
+                      accepted.
                     </Text>
                   </View>
                 ) : accepted ? (
