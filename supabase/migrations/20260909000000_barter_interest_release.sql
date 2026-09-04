@@ -33,8 +33,11 @@
 do $$
 declare v_n integer;
 begin
+  -- `released` is included so this file is IDEMPOTENT: re-applying it after a release has
+  -- happened must succeed. An earlier version omitted it and aborted on exactly the state the
+  -- migration creates, telling the operator to "reconcile" correct rows.
   select count(*) into v_n from public.barter_interests where status not in
-    ('pending', 'accepted', 'declined');
+    ('pending', 'accepted', 'declined', 'released');
   if v_n > 0 then
     raise exception using errcode = 'check_violation',
       message = format('REFUSING TO APPLY: %s barter_interests row(s) hold a status outside '
@@ -146,10 +149,27 @@ begin
   -- barter_interests_owner_update's RLS filter and a responder's write reaches this trigger.
   v_is_responder := (old.interested_user_id = v_uid);
 
-  -- Is THIS statement the authoritative release RPC acting on THIS row?
-  v_release := coalesce(current_setting('app.barter_release', true), '') = old.id::text;
+  -- Is THIS statement the authoritative release RPC performing THIS row's release?
+  --
+  -- Gated on the TRANSITION as well as the marker, deliberately. Gating on the marker alone
+  -- widened the allow-list for ANY update carrying it — including one that changes no status —
+  -- so an already-released row's `released_by` and `release_reason` were mutable in principle.
+  -- That is the one field pair whose whole purpose is to be a durable, non-repudiable statement
+  -- about which party walked away.
+  v_release := coalesce(current_setting('app.barter_release', true), '') = old.id::text
+               and old.status = 'accepted' and new.status = 'released';
 
   if v_release then
+    -- CLAMPED, not trusted. The trigger derives these itself rather than accepting whatever the
+    -- caller wrote, so "the owner cannot record that the responder withdrew" is an invariant of
+    -- the WRITE BOUNDARY, not of one well-behaved function. It was the latter until now: the
+    -- RPC derived them correctly, and nothing made that true of any future caller that sets the
+    -- marker. Same discard-then-derive shape as created_at on the INSERT path above.
+    new.released_at := clock_timestamp();
+    new.released_by := v_uid;
+    new.release_reason := case when v_is_responder then 'responder_withdrew'
+                               else 'owner_ended_negotiation' end;
+
     if (to_jsonb(new) - 'status' - 'released_at' - 'released_by' - 'release_reason')
        is distinct from
        (to_jsonb(old) - 'status' - 'released_at' - 'released_by' - 'release_reason') then

@@ -28,6 +28,20 @@ export interface BarterOffer {
  */
 export type BarterInterestStatus = 'pending' | 'accepted' | 'declined' | 'released'
 
+/**
+ * Which statuses appear in the owner's responses list. A TOTAL Record, which is what actually
+ * produces the compile error: `status === 'x'` comparisons do NOT fail when the union widens,
+ * because the member being compared is still in it. Adding a fifth status to
+ * BarterInterestStatus makes this object incomplete and `tsc` rejects it, forcing the decision
+ * to be made here rather than defaulting to invisible.
+ */
+export const INTEREST_STATUS_IS_LISTED: Record<BarterInterestStatus, boolean> = {
+  pending: true,
+  accepted: true,
+  declined: false, // declined responses are removed from the owner's list entirely
+  released: true, // shown as ended history, never actionable
+}
+
 export interface BarterInterest {
   id: string
   offerId: string

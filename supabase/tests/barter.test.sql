@@ -1471,3 +1471,68 @@ begin
     'after an OWNER-initiated release the owner can accept another response',
     'accepted', v_status);
 end $$;
+
+-- ── The marker does not confer the ability to FORGE attribution ────────────
+-- The guarantee "the owner cannot record that the responder withdrew" must hold at the write
+-- boundary, not merely inside the RPC. These drive the widened path directly, with the marker
+-- set, and assert the trigger CLAMPS rather than trusts.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid;
+  v_by uuid; v_reason text; v_at timestamptz; v_code text; v_before timestamptz;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Fk Owner', 'fko_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Fk Resp', 'fkr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Fk O', 'Fk S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+  v_before := clock_timestamp();
+
+  -- The OWNER drives the widened path directly and tries to attribute the exit to the
+  -- responder, with a chosen timestamp.
+  perform pg_temp.act(ou);
+  perform set_config('app.barter_release', i::text, true);
+  update public.barter_interests
+     set status = 'released', released_by = ru,
+         released_at = timestamptz '2000-01-01 00:00:00+00',
+         release_reason = 'responder_withdrew'
+   where id = i;
+  perform set_config('app.barter_release', '', true);
+
+  perform pg_temp.act_service();
+  select released_by, release_reason, released_at into v_by, v_reason, v_at
+    from public.barter_interests where id = i;
+  perform pg_temp.chk('barter',
+    'a forged released_by is CLAMPED to the acting caller', ou::text, coalesce(v_by::text,'NULL'));
+  perform pg_temp.chk('barter',
+    'a forged release_reason is CLAMPED to the actor''s own role',
+    'owner_ended_negotiation', coalesce(v_reason,'NULL'));
+  perform pg_temp.chk('barter',
+    'a client-chosen released_at is CLAMPED to server time',
+    'true', (v_at >= v_before)::text);
+
+  -- And an already-released row's attribution cannot be rewritten afterwards: with no status
+  -- change the widened path does not apply, so the ordinary allow-list refuses.
+  perform pg_temp.act(ou);
+  begin
+    perform set_config('app.barter_release', i::text, true);
+    update public.barter_interests set release_reason = 'responder_withdrew' where id = i;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform set_config('app.barter_release', '', true);
+  perform pg_temp.chk('barter',
+    'attribution on an already-released row cannot be rewritten, marker or not',
+    'true', (position('Only the status' in v_code) > 0)::text);
+
+  perform pg_temp.act_service();
+  select release_reason into v_reason from public.barter_interests where id = i;
+  perform pg_temp.chk('barter', 'the recorded reason survived the rewrite attempt',
+    'owner_ended_negotiation', v_reason);
+end $$;

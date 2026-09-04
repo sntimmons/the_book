@@ -19,6 +19,7 @@ import {
   fetchOfferInterests,
   isOfferOwner,
   declineInterest,
+  INTEREST_STATUS_IS_LISTED,
   BarterInterest,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
@@ -58,11 +59,11 @@ export default function BarterInterests() {
     ])
     setIsOwner(owns)
     // Show pending interests as actionable; drop already-declined ones.
-    // ALLOW-list, not a deny-list. `!== 'declined'` treated every unknown future status as
-    // live and actionable; `released` would have rendered with a working Accept button that
-    // could only fail. Listing what shows means a new status is inert until handled.
-    setInterests(all.filter((i) => i.status === 'pending' || i.status === 'accepted'
-      || i.status === 'released'))
+    // Driven by a TOTAL Record, not a deny-list and not inline literals. `!== 'declined'`
+    // treated every unknown future status as live and actionable, so `released` would have
+    // rendered with a working Accept button that could only fail. A total Record is also the
+    // only form that actually breaks the build when the status union widens.
+    setInterests(all.filter((i) => INTEREST_STATUS_IS_LISTED[i.status]))
     setLoading(false)
   }, [offerId, user])
 
