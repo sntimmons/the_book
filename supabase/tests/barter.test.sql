@@ -1086,18 +1086,23 @@ begin
 
   -- 13. There is no path out of released.
   perform pg_temp.act(ou);
+  -- Pinned to the TRANSITION rule's own message. A bare 'RAISED' would also be satisfied by
+  -- barter_interests_release_complete_check, which independently forbids leaving 'released'
+  -- while released_at is set -- so the transition rule could regress with the test still green.
   begin
     update public.barter_interests set status = 'pending' where id = i1;
     v_code := 'NO ERROR';
-  exception when others then v_code := 'RAISED';
+  exception when others then v_code := sqlerrm;
   end;
-  perform pg_temp.chk('barter', 'a released response cannot be re-pended', 'RAISED', v_code);
+  perform pg_temp.chk('barter', 'a released response cannot be re-pended (transition rule)',
+    'true', (position('pending to accepted or declined' in v_code) > 0)::text);
   begin
     update public.barter_interests set status = 'accepted' where id = i1;
     v_code := 'NO ERROR';
-  exception when others then v_code := 'RAISED';
+  exception when others then v_code := sqlerrm;
   end;
-  perform pg_temp.chk('barter', 'a released response cannot be re-accepted', 'RAISED', v_code);
+  perform pg_temp.chk('barter', 'a released response cannot be re-accepted (transition rule)',
+    'true', (position('pending to accepted or declined' in v_code) > 0)::text);
 
   -- 10. PD-043 is untouched: a released interest still blocks hard delete of the offer.
   perform pg_temp.act_service();
@@ -1106,10 +1111,11 @@ begin
   begin
     delete from public.barter_offers where id = o;
     v_code := 'NO ERROR';
-  exception when others then v_code := 'RAISED';
+  exception when others then v_code := sqlerrm;
   end;
   perform pg_temp.chk('barter',
-    'a released interest still prevents hard-delete of the offer (PD-043)', 'RAISED', v_code);
+    'a released interest still prevents hard-delete of the offer (PD-043)',
+    'true', (position('cannot be deleted' in v_code) > 0)::text);
 end $$;
 
 -- ── The owner ends the negotiation; reasons cannot be forged ────────────────
@@ -1287,14 +1293,181 @@ begin
        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where p.proname = 'release_barter_interest' and n.nspname = 'public'));
 
-  -- A fabricated fifth status must still be refused, so a permissive replacement of the CHECK
-  -- fails here rather than in production.
+end $$;
+
+-- ── The status vocabulary is closed, and the test can actually fail ────────
+-- Seeded against REAL rows and pinned to SQLSTATE 23514. An earlier version of this assertion
+-- inserted three random uuids into foreign-keyed columns: the CHECK fires before the FK
+-- triggers, so it passed -- but had the CHECK been dropped, the FK violation would have raised
+-- 23503 and the assertion would still have recorded 'RAISED' and still passed. It could not
+-- fail for the reason it exists.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; v_code text;
+begin
   perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Voc Owner', 'voco_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Voc Resp', 'vocr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Voc O', 'Voc S') returning id into o;
+
   begin
     insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
-      status) values (gen_random_uuid(), gen_random_uuid(), gen_random_uuid(), 'abandoned');
+      status) values (o, rpid, ru, 'abandoned');
     v_code := 'NO ERROR';
-  exception when others then v_code := 'RAISED';
+  exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('barter', 'the status vocabulary is still closed', 'RAISED', v_code);
+  perform pg_temp.chk('barter',
+    'a status outside the vocabulary is refused by the CHECK (23514, not an FK)',
+    '23514', v_code);
+end $$;
+
+-- ── The release RPC's other refusal branches ───────────────────────────────
+-- Each pinned to its own SQLSTATE. Without these, a regression in the status guard would let a
+-- responder "release" a PENDING interest -- which, because they can never open a second one on
+-- that post, would lock them out permanently.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i_pending uuid; i_declined uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Br Owner', 'bro_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Br Resp', 'brr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Br O', 'Br S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'p', 'pending') returning id into i_pending;
+
+  perform pg_temp.act(ru);
+  begin
+    perform public.release_barter_interest(i_pending);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a PENDING interest cannot be released', '23514', v_code);
+
+  perform pg_temp.act_service();
+  update public.barter_interests set status = 'declined' where id = i_pending;
+  perform pg_temp.act(ru);
+  begin
+    perform public.release_barter_interest(i_pending);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a DECLINED interest cannot be released', '23514', v_code);
+
+  begin
+    perform public.release_barter_interest(gen_random_uuid());
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'releasing a nonexistent response is refused', '23514', v_code);
+end $$;
+
+-- ── Sensitivity: the MARKER is what refuses the direct PATCH ───────────────
+-- Mirrors the app.barter_handoff sensitivity case. The refusals above are only meaningful if
+-- they fail for the intended reason: same owner, same row, same statement, marker set. It
+-- succeeds -- so the marker, not some other gate, is what refused them.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; v_status text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Mk Owner', 'mko_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Mk Resp', 'mkr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Mk O', 'Mk S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+
+  perform pg_temp.act(ou);
+  perform set_config('app.barter_release', i::text, true);   -- the ONLY difference
+  update public.barter_interests
+     set status = 'released', released_at = now(), released_by = ou,
+         release_reason = 'owner_ended_negotiation'
+   where id = i;
+  perform set_config('app.barter_release', '', true);
+
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i;
+  perform pg_temp.chk('barter',
+    'with the marker set, the SAME update succeeds (refusals above are the marker)',
+    'released', v_status);
+end $$;
+
+-- ── Release columns are immutable outside the release path ────────────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Im Owner', 'imo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Im Resp', 'imr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Im O', 'Im S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+
+  perform pg_temp.act(ou);
+  begin
+    update public.barter_interests set released_by = ou where id = i;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('barter', 'released_by is not writable outside the release path',
+    'true', (position('Only the status' in v_code) > 0)::text);
+  begin
+    update public.barter_interests set release_reason = 'mutual_end' where id = i;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('barter', 'release_reason is not writable outside the release path',
+    'true', (position('Only the status' in v_code) > 0)::text);
+end $$;
+
+-- ── After an OWNER-initiated release, the owner may select another responder ──
+do $$
+declare
+  ou uuid := gen_random_uuid(); r1 uuid := gen_random_uuid(); r2 uuid := gen_random_uuid();
+  opid uuid; p1 uuid; p2 uuid; o uuid; i1 uuid; i2 uuid; v_status text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (r1), (r2);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Oe Owner', 'oeo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (r1, 'Oe R1', 'oer1_'||substr(r1::text,1,8)) returning id into p1;
+  insert into public.providers(user_id, display_name, username)
+    values (r2, 'Oe R2', 'oer2_'||substr(r2::text,1,8)) returning id into p2;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Oe O', 'Oe S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, p1, r1, 'a', 'accepted') returning id into i1;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, p2, r2, 'b', 'pending') returning id into i2;
+
+  perform pg_temp.act(ou);
+  perform public.release_barter_interest(i1);
+  perform public.accept_barter_interest(i2);
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i2;
+  perform pg_temp.chk('barter',
+    'after an OWNER-initiated release the owner can accept another response',
+    'accepted', v_status);
 end $$;
