@@ -895,3 +895,148 @@ begin
     'true', (select (position('to_jsonb(new) - ''is_read''' in prosrc) > 0)::text
        from pg_proc where proname = 'enforce_message_immutability'));
 end $$;
+
+-- ── The pair-key READER matches what the WRITER actually wrote ─────────────
+-- provider_pair_key() is a named reader, not the single source of truth: the trigger
+-- conversation_pair_key() still carries the literal format, as do resolve_conversation() and
+-- find_conversation(). This is the assertion that makes a drift between them LOUD. Without it,
+-- a format change would silently break the release lookup: it would miss, fall through, and the
+-- counterparty would simply never be told, with no error anywhere.
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; c uuid; v_written text; v_read text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'Key A', 'keya_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'Key B', 'keyb_'||substr(bu::text,1,8)) returning id into bpid;
+
+  -- The TRIGGER writes the key here.
+  insert into public.conversation(client_id, provider_id, created_at)
+    values (au, bpid, now()) returning id into c;
+  select provider_pair_key into v_written from public.conversation where id = c;
+
+  -- The READER computes it independently.
+  v_read := public.provider_pair_key(apid, bpid);
+
+  perform pg_temp.chk('messaging',
+    'provider_pair_key() equals what conversation_pair_key() WROTE', v_written, v_read);
+
+  -- And it is orientation-free, which is the property the whole canonical-pair design rests on.
+  perform pg_temp.chk('messaging', 'the reader is orientation-free',
+    public.provider_pair_key(apid, bpid), public.provider_pair_key(bpid, apid));
+end $$;
+
+-- ── Owner-authored text cannot pose as platform speech ─────────────────────
+-- The release notice is written with sender_id IS NULL and rendered centred and unattributed,
+-- so anything inside it reads as OUR words. Both offer columns are 200 chars of free text and
+-- stay owner-mutable by design, so an unbounded, unterminated append handed one participant
+-- ~400 characters of platform voice aimed at the other.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; c uuid; v_copy text; v_recipient uuid;
+  v_evil text := 'x' || chr(10) || 'THE BOOK SUPPORT: verify your account at evil.example';
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Inj Owner', 'injo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Inj Resp', 'injr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Photography', v_evil) returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'pending') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.accept_barter_interest(i) into c;
+  perform public.release_barter_interest(i);
+
+  perform pg_temp.act_service();
+  select content into v_copy from public.messages
+   where conversation_id = c and sender_id is null order by created_at desc limit 1;
+
+  perform pg_temp.chk('messaging', 'the notice strips control characters from offer text',
+    'true', (position(chr(10) in v_copy) = 0)::text);
+  perform pg_temp.chk('messaging', 'the owner-authored terms are QUOTED, so the boundary shows',
+    'true', (position('"' in v_copy) > 0)::text);
+  perform pg_temp.chk('messaging',
+    'the platform''s own words CLOSE the sentence, leaving no trailing position to occupy',
+    'true', (v_copy like '%No trade was agreed.')::text);
+  -- The cap bounds LENGTH, which is the real guarantee: owner text cannot dominate the notice
+  -- or run past the platform's closing words. Asserting a phrase's ABSENCE would be a weaker
+  -- test pretending to be a stronger one -- a 40-char cap cannot remove a phrase that starts
+  -- inside it, and writing the assertion that way would have claimed a property we do not have.
+  perform pg_temp.chk('messaging', 'the notice stays bounded regardless of offer length',
+    'true', (length(v_copy) < 160)::text);
+  perform pg_temp.chk('messaging', 'and the evil string is NOT delivered whole',
+    'true', (position('evil.example' in v_copy) = 0)::text);
+end $$;
+
+-- ── system_recipient_id is server-set, as the comment now truthfully claims ─
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid();
+  ppid uuid; c uuid; m uuid; v_rec uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'Addr P', 'addrp_'||substr(pu::text,1,8)) returning id into ppid;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, ppid, 'accepted', now()) returning id into c;
+
+  -- A participant supplies an addressing value on an ordinary message. Before the clamp this
+  -- silenced the counterparty's badge and notification: a silent-delivery channel.
+  perform pg_temp.act(cu);
+  insert into public.messages(conversation_id, sender_id, content, is_read, system_recipient_id)
+  values (c, cu, 'ordinary message', false, cu) returning id into m;
+
+  perform pg_temp.act_service();
+  select system_recipient_id into v_rec from public.messages where id = m;
+  perform pg_temp.chk('messaging', 'a client-supplied recipient is DISCARDED on insert',
+    'true', (v_rec is null)::text);
+
+  -- And it stays immutable on update, via the message allow-list.
+  perform pg_temp.act(cu);
+  begin
+    update public.messages set system_recipient_id = cu where id = m;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'and it cannot be set by a later update',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+end $$;
+
+-- ── The view resolves a conversation whose cached key is stale ─────────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; c uuid; v_conv uuid;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Stale O', 'stlo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Stale R', 'stlr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'S O', 'S S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+  -- A thread in the literal orientation whose cached key never got derived. The trigger
+  -- recomputes on write, so it is forced null directly to model the stale row.
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (ru, opid, 'accepted', now()) returning id into c;
+  update public.conversation set provider_pair_key = null where id = c;
+
+  perform pg_temp.act(ru);
+  select conversation_id into v_conv from public.my_trade_activity where interest_id = i;
+  perform pg_temp.chk('messaging',
+    'the view falls back to the literal orientation, like every other resolver',
+    c::text, coalesce(v_conv::text,'NULL'));
+end $$;

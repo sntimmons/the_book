@@ -13,11 +13,19 @@
 -- action. The feed is DISCOVERY. An accepted negotiation is durable workflow state, and the two
 -- must not share a lifetime.
 
--- ── 1. One definition of the pair-key format ─────────────────────────────────
--- The `least:greatest` string is now written in several places across three migrations, and
--- 20260908000000 states the rule it broke: "writing the expression twice would be a second
--- source of truth for the format." A drift would be silent -- the release lookup would miss and
--- fall through, and the counterparty would simply never be told, with no error anywhere.
+-- ── 1. A NAMED READER for the pair-key format ────────────────────────────────
+-- Read this before assuming the format is centralised. It is NOT, and claiming otherwise would
+-- be worse than the duplication: `conversation_pair_key()` -- the trigger that WRITES the
+-- column -- still carries the literal, as do `resolve_conversation()` and `find_conversation()`
+-- (all live in 20260908000000). This function is therefore a named READER, not the single
+-- source of truth, and routing those three through it is deferred rather than done, because
+-- each is a wholesale `create or replace` of a shipped authorization-adjacent function and this
+-- slice is not the place to take that risk.
+--
+-- What protects against drift meanwhile is not this function -- it is the B5B case that asserts
+-- `provider_pair_key(a, b)` equals the value the TRIGGER actually wrote. A drift between reader
+-- and writer would otherwise be silent: the release lookup misses, falls through, and the
+-- counterparty is simply never told, with no error anywhere.
 create or replace function public.provider_pair_key(p_a uuid, p_b uuid)
 returns text
 language sql
@@ -56,8 +64,8 @@ comment on column public.messages.system_recipient_id is
 -- return every provider's negotiations to any authenticated caller.
 --
 -- It aggregates only state that already exists. No lifecycle truth is duplicated: `status` is
--- read straight from barter_interests, and the derived `activity_state` is a rendering label,
--- not a second source of truth.
+-- read straight from barter_interests. The section a row belongs to is derived in the client
+-- from that status (TRADE_ACTIVITY_SECTION), so this view introduces no second vocabulary.
 create or replace view public.my_trade_activity
 with (security_invoker = true) as
 select

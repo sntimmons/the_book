@@ -161,7 +161,7 @@ NOT in the migration that created it.
 
 | Function | Created in | **Current definition** | Why it moved |
 |---|---|---|---|
-| `public.release_barter_interest` | `20260909000000_barter_interest_release.sql` | **`20260911000000_message_authorship_pin.sql`** | `20260910000000` added the in-transaction counterparty signal; `20260911000000` made that signal unable to veto the release and added the provider-identity assertion. **`20260909000000`'s header instructs future slices to add the agreement guard "HERE, inside this function" — that instruction now points at a DEAD definition. Extend the current one.** |
+| `public.release_barter_interest` | `20260909000000_barter_interest_release.sql` | **`20260913000000_trade_activity_hardening.sql`** | `20260910000000` added the in-transaction counterparty signal; `20260911000000` made that signal unable to veto the release and added the provider-identity assertion. **`20260909000000`'s header instructs future slices to add the agreement guard "HERE, inside this function", and `20260911000000` repeats it saying "THIS definition, the live one". BOTH now point at DEAD definitions. Extend the current one.** `20260912000000` adds the post-context label and addresses the notice via `system_recipient_id`. |
 | `public.enforce_barter_interest_write` | `20260906000000_barter_integrity_slice1.sql` | **`20260909000000_barter_interest_release.sql`** | Adds the `accepted -> released` transition and the release-column allow-list, gated on a transaction-local marker **and** the transition itself. The trigger **derives** `released_at` / `released_by` / `release_reason` rather than trusting them, so attribution is non-forgeable independent of the caller — that clamp is the load-bearing part, not the marker. The INSERT path additionally null-clamps the three new release columns so they are never author-supplied. The pre-existing owner-only `pending -> accepted\|declined` rule and the pre-existing INSERT clamps are carried through unchanged. |
 | `public.enforce_message_immutability` (new) / policy `participants_mark_messages_read` | `20260829000000_canonical_live_baseline.sql` (policy) | **`20260911000000_message_authorship_pin.sql`** | The policy's `sender_id = sender_id` conjuncts were TAUTOLOGIES — an RLS policy cannot reference OLD — so they pinned nothing and were NULL for a null sender. The pin moved to a BEFORE UPDATE trigger, where it can compare to OLD; the policy now asserts only participation. |
 | `public.enforce_conversation_update` | `20260901000000_prebooking_message_requests.sql` | **`20260908000000_canonical_provider_pair.sql`** | Redefined twice. `20260907000000` added `declined -> accepted` for the barter handoff (gated on an accepted match AND a transaction-local marker set only by `accept_barter_interest`); `20260908000000` then widened the booking-attach predicate to accept EITHER orientation of a provider pair, because a conversation is now canonical for the pair and its orientation need not match the direction a booking was made in. |
@@ -171,6 +171,26 @@ NOT in the migration that created it.
 `20260908000000`: the guarantee now lives in the `conversation_one_per_provider_pair` index,
 not in `barter_canonical_conversation`, which today only chooses an orientation for a row that
 does not exist yet.
+
+**`public.provider_pair_key(uuid, uuid)`** (added by `20260912000000`) is a named READER of the
+pair-key format, **not** the single source of truth: `conversation_pair_key()` — the trigger
+that WRITES the column — plus `resolve_conversation()` and `find_conversation()` all still carry
+the literal (`20260908000000`). Routing them through it is deferred. What guards the drift is
+the B5B case asserting the reader equals what the trigger wrote; a divergence would otherwise be
+silent, since the release lookup would miss and the counterparty would never be told.
+
+**`public.enforce_prebooking_message_rules`** current definition is
+`20260913000000_trade_activity_hardening.sql` (created in `20260901000000`). It now clamps
+`system_recipient_id` to null for any message that HAS an author. The scoping matters:
+`SECURITY DEFINER` does not change `auth.role()`, so an unconditional clamp also fires inside
+`release_barter_interest` and wipes the addressing it just computed.
+
+**`public.my_trade_activity`** (view, `20260912000000`, recreated by `20260913000000`) is `security_invoker = true`, pinned by
+reloption in B5B. Both pre-existing views in this repo set it FALSE, so the copyable pattern is
+the wrong one here — omitting it would return every provider's negotiations to any authenticated
+caller. **`messages.system_recipient_id`** (`20260912000000`) names which participant a platform
+notice is FOR, so the actor who caused it is not badged; NULL means addressed to both, which is
+every ordinary message.
 
 The superseding migration names what it replaces and why. The EARLIER file deliberately
 carries no pointer: `supabase/README.md` forbids editing a migration that has already merged,

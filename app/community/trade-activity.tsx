@@ -14,10 +14,12 @@ import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { cacheBustedPhoto } from '@/lib/image'
 import {
+  BarterInterestStatus,
   fetchTradeActivity,
   releaseInterest,
   TRADE_ACTIVITY_SECTION,
   TradeActivityRow,
+  TradeActivitySection,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
 
@@ -32,28 +34,72 @@ import { barterWriteFailure } from '@/lib/barterErrors'
 // meant closing the post — or the post simply ageing out — removed the only route to it for
 // BOTH parties, leaving the slot consumed and the counterparty never told.
 
-type SectionKey = 'active' | 'pending' | 'ended' | 'notSelected'
-
-const SECTIONS: { key: SectionKey; title: string; caption: string }[] = [
-  {
-    key: 'active',
+// A TOTAL Record keyed by the exported section type, so adding a section breaks the build here
+// rather than silently dropping every row in it — an array would not.
+//
+// The captions take the ROLE, because the view carries `my_role` and the same status means
+// opposite things on the two sides: a pending interest is waiting on the OWNER to answer and on
+// the RESPONDER to be answered, and "not selected" is something the owner DID, not something
+// that happened to them. Role-blind copy told an owner to wait for something that would never
+// come.
+const SECTION_COPY: Record<
+  TradeActivitySection,
+  { title: string; caption: (role: 'owner' | 'responder') => string }
+> = {
+  active: {
     title: 'Active negotiations',
-    caption: 'You are working out the details of these.',
+    caption: () => 'You are working out the details of these.',
   },
-  { key: 'pending', title: 'Pending', caption: 'Sent, waiting on the other provider.' },
-  { key: 'ended', title: 'Ended', caption: 'Negotiations that ended before a trade was agreed.' },
-  { key: 'notSelected', title: 'Not selected', caption: 'The provider chose someone else.' },
-]
+  pending: {
+    title: 'Pending',
+    caption: (role) =>
+      role === 'owner'
+        ? 'Responses to your posts, waiting on you.'
+        : 'Sent, waiting on the other provider.',
+  },
+  ended: {
+    title: 'Ended',
+    caption: () => 'Negotiations that ended before a trade was agreed.',
+  },
+  notSelected: {
+    title: 'Not selected',
+    caption: (role) =>
+      role === 'owner' ? 'Responses you declined.' : 'The provider chose someone else.',
+  },
+}
+
+// TOTAL over the status vocabulary. The previous nested ternary fell through to "Waiting on
+// the other provider." for any unknown status — a confident false statement about a state the
+// code does not model. A Record makes a fifth status a compile error instead.
+const HISTORY_NOTE: Record<
+  BarterInterestStatus,
+  (role: 'owner' | 'responder') => string
+> = {
+  accepted: () => '',
+  pending: (role) =>
+    role === 'owner' ? 'Waiting on you to accept or decline.' : 'Waiting on the other provider.',
+  released: () => 'Negotiation ended. Kept as history.',
+  declined: (role) =>
+    role === 'owner' ? 'You declined this response. Kept as history.' : 'Not selected. Kept as history.',
+}
+
+function historyNote(item: TradeActivityRow): string {
+  return HISTORY_NOTE[item.status](item.myRole)
+}
+
+const SECTION_ORDER: TradeActivitySection[] = ['active', 'pending', 'ended', 'notSelected']
 
 export default function TradeActivityScreen() {
   const insets = useSafeAreaInsets()
   const [rows, setRows] = useState<TradeActivityRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [failed, setFailed] = useState(false)
   const [actioningId, setActioningId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
-    const data = await fetchTradeActivity()
+    const { rows: data, ok } = await fetchTradeActivity()
     setRows(data)
+    setFailed(!ok)
     setLoading(false)
   }, [])
 
@@ -93,10 +139,21 @@ export default function TradeActivityScreen() {
     load()
   }
 
-  const grouped = SECTIONS.map((s) => ({
-    ...s,
-    items: rows.filter((r) => TRADE_ACTIVITY_SECTION[r.status] === s.key),
-  })).filter((s) => s.items.length > 0)
+  const grouped = SECTION_ORDER.map((key) => {
+    const items = rows.filter((r) => TRADE_ACTIVITY_SECTION[r.status] === key)
+    return {
+      key,
+      title: SECTION_COPY[key].title,
+      // Role is per-row; the caption takes the majority role in the section so it is truthful
+      // for what the user is actually looking at rather than assuming they are the responder.
+      caption: SECTION_COPY[key].caption(
+        items.filter((i) => i.myRole === 'owner').length > items.length / 2
+          ? 'owner'
+          : 'responder',
+      ),
+      items,
+    }
+  }).filter((s) => s.items.length > 0)
 
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
@@ -111,6 +168,26 @@ export default function TradeActivityScreen() {
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator color="#F0E8D5" />
+        </View>
+      ) : failed ? (
+        // NOT the empty state. "No trade activity yet" on a failed read is the original
+        // stranding wearing a truthful-sounding sentence: a provider with a live negotiation is
+        // told they have none, on the one surface built to guarantee they can always find it.
+        <View style={styles.center}>
+          <Text style={styles.emptyTitle}>Could not load your trade activity</Text>
+          <Text style={styles.emptyBody}>
+            This is a connection problem, not an empty list. Your negotiations are safe.
+          </Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            activeOpacity={0.85}
+            onPress={() => {
+              setLoading(true)
+              load()
+            }}
+          >
+            <Text style={styles.retryText}>Try again</Text>
+          </TouchableOpacity>
         </View>
       ) : grouped.length === 0 ? (
         <View style={styles.center}>
@@ -155,8 +232,11 @@ export default function TradeActivityScreen() {
                       </View>
                     </View>
 
-                    {!item.offerIsActive && (
-                      // Said plainly: the post is gone from the board and this is still live.
+                    {/* Only on a LIVE negotiation. Rendered outside this branch it also fired
+                        on ended and declined rows, telling a provider "the negotiation is still
+                        open" directly above "Negotiation ended" — two sentences that cannot both
+                        be true, with the wrong one reading as the actionable one. */}
+                    {isActive && !item.offerIsActive && (
                       <Text style={styles.closedNote}>
                         This post is no longer on the board. The negotiation is still open.
                       </Text>
@@ -194,13 +274,7 @@ export default function TradeActivityScreen() {
                         </TouchableOpacity>
                       </View>
                     ) : (
-                      <Text style={styles.historyNote}>
-                        {item.status === 'released'
-                          ? 'Negotiation ended. Kept as history.'
-                          : item.status === 'declined'
-                            ? 'Not selected. Kept as history.'
-                            : 'Waiting on the other provider.'}
-                      </Text>
+                      <Text style={styles.historyNote}>{historyNote(item)}</Text>
                     )}
                   </View>
                 )
@@ -232,6 +306,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     textAlign: 'center',
   },
+  retryBtn: {
+    marginTop: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: 'rgba(240,232,213,0.1)',
+  },
+  retryText: { color: '#F0E8D5', fontSize: 13.5, fontWeight: '500' },
   section: { marginBottom: 24 },
   sectionTitle: { color: '#F0E8D5', fontSize: 15, fontWeight: '600' },
   sectionCaption: { color: 'rgba(240,232,213,0.45)', fontSize: 12.5, marginTop: 2 },

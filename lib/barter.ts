@@ -204,8 +204,8 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
  * One row of Trade Activity: a barter relationship in whatever state it is actually in.
  *
  * Read from the `my_trade_activity` view rather than assembled here, so lifecycle truth stays
- * server-side. `activityState` below is a RENDERING label derived from `status` — not a second
- * source of truth, and deliberately not a new status vocabulary.
+ * server-side. The section a row belongs to is derived from `status` by
+ * TRADE_ACTIVITY_SECTION below — a rendering label, deliberately not a new status vocabulary.
  */
 export interface TradeActivityRow {
   interestId: string
@@ -230,7 +230,10 @@ export interface TradeActivityRow {
  * discovery feed. That coupling — the feed being the only route to an accepted negotiation —
  * is exactly what stranded both parties with no way to end it.
  */
-export async function fetchTradeActivity(): Promise<TradeActivityRow[]> {
+export async function fetchTradeActivity(): Promise<{
+  rows: TradeActivityRow[]
+  ok: boolean
+}> {
   const { data, error } = await supabase
     .from('my_trade_activity')
     .select(
@@ -238,9 +241,10 @@ export async function fetchTradeActivity(): Promise<TradeActivityRow[]> {
         'seeking_service, offer_is_active, my_role, counterparty_provider_id, conversation_id',
     )
     .order('created_at', { ascending: false })
-  // No console: an empty list is the actionable signal and the screen renders its empty state.
-  // Same convention as the booking-attach branch in useMessaging.
-  if (error) return []
+  // A failure is NOT an empty list. Collapsing the two let the screen say "No trade activity
+  // yet" when the read had failed -- which, on the surface built to guarantee a negotiation is
+  // always findable, is the original stranding with a reassuring sentence attached.
+  if (error) return { rows: [], ok: false }
   // `as unknown as` because the generated Supabase types do not know this view; the shape is
   // pinned by the select list above and by the B5B column assertions on the view itself.
   const rows =
@@ -260,7 +264,9 @@ export async function fetchTradeActivity(): Promise<TradeActivityRow[]> {
         }[]
       | null) ?? []
   const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
-  return rows.map((r) => ({
+  return {
+    ok: true,
+    rows: rows.map((r) => ({
     interestId: r.interest_id,
     offerId: r.offer_id,
     status: r.status,
@@ -272,20 +278,27 @@ export async function fetchTradeActivity(): Promise<TradeActivityRow[]> {
     myRole: r.my_role,
     counterpartyProviderId: r.counterparty_provider_id,
     conversationId: r.conversation_id,
-    provider: infoMap.get(r.counterparty_provider_id) ?? {
-      name: 'Provider',
-      photo: null,
-      category: '',
-      neighborhood: null,
-    },
-  }))
+      provider: infoMap.get(r.counterparty_provider_id) ?? {
+        name: 'Provider',
+        photo: null,
+        category: '',
+        neighborhood: null,
+      },
+    })),
+  }
 }
 
-/** Which Trade Activity section a row belongs to. A label, not a status. */
-export const TRADE_ACTIVITY_SECTION: Record<
-  BarterInterestStatus,
-  'active' | 'pending' | 'ended' | 'notSelected'
-> = {
+export type TradeActivitySection = 'active' | 'pending' | 'ended' | 'notSelected'
+
+/**
+ * Which Trade Activity section a row belongs to. A label, not a status.
+ *
+ * NOTE the deliberate disagreement with INTEREST_STATUS_IS_LISTED, which excludes `declined`:
+ * the owner's RESPONSES list drops declined rows because they are noise while choosing, but
+ * Trade Activity is history and must account for every response the user sent or received. Two
+ * total Records over one vocabulary, reaching different answers on purpose.
+ */
+export const TRADE_ACTIVITY_SECTION: Record<BarterInterestStatus, TradeActivitySection> = {
   accepted: 'active',
   pending: 'pending',
   released: 'ended',

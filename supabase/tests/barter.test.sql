@@ -1622,8 +1622,8 @@ begin
     'the signal is authored by NOBODY, not by a participant',
     'true', (v_sender is null)::text);
   perform pg_temp.chk('barter', 'the signal names the role that ended it AND the post terms',
-    'true', (position('Trade negotiation ended by the responding provider:' in v_content) = 1
-             and position('Sig O for Sig S' in v_content) > 0)::text);
+    'true', (position('The responding provider ended the trade negotiation' in v_content) = 1
+             and position('"Sig O" for "Sig S"' in v_content) > 0)::text);
 
   -- 13. An idempotent retry must not duplicate the signal.
   perform pg_temp.act(ru);
@@ -1667,8 +1667,8 @@ begin
   select content into v_content from public.messages
    where conversation_id = c order by created_at desc limit 1;
   perform pg_temp.chk('barter', 'an owner-ended negotiation names the post owner AND the terms',
-    'true', (position('Trade negotiation ended by the post owner:' in v_content) = 1
-             and position('Sg2 O for Sg2 S' in v_content) > 0)::text);
+    'true', (position('The post owner ended the trade negotiation' in v_content) = 1
+             and position('"Sg2 O" for "Sg2 S"' in v_content) > 0)::text);
 
   -- A client cannot author a system message: the INSERT policy requires sender_id = auth.uid(),
   -- which null can never satisfy. This is what makes the server the only possible author.
@@ -1846,9 +1846,9 @@ begin
   perform pg_temp.chk('barter', 'both release notices were located in the shared thread',
     'true', (v_c1 is not null and v_c2 is not null)::text);
   perform pg_temp.chk('barter', 'the first notice names its own post''s terms',
-    'true', (position('Photography for Personal Training' in coalesce(v_c1,'')) > 0)::text);
+    'true', (position('"Photography" for "Personal Training"' in coalesce(v_c1,'')) > 0)::text);
   perform pg_temp.chk('barter', 'the second notice names a DIFFERENT post''s terms',
-    'true', (position('Massage for Web Design' in coalesce(v_c2,'')) > 0)::text);
+    'true', (position('"Massage" for "Web Design"' in coalesce(v_c2,'')) > 0)::text);
   perform pg_temp.chk('barter', 'the two notices are distinguishable',
     'true', (v_c1 is distinct from v_c2)::text);
 

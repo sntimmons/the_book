@@ -74,8 +74,11 @@ The reason is **derived from who ended it** — `responder_withdrew` or
 `owner_ended_negotiation` — so neither party can characterise the other's exit. This is a
 pre-agreement path only: once an agreement is formed the post is consumed and closes.
 
-> **Not yet reachable.** The server capability exists; no control in the app calls it, so no
-> user can end a negotiation today and the stranded slot is still live. See § 12 and PD-049.
+> **Reachable as of Slice 3a-0c.** Either participant can end a negotiation from **Trade
+> Activity** (`/community/trade-activity`), which is durable: it does not depend on the post
+> still being on the board or inside the discovery feed's window. The counterparty is told by a
+> server-authored notice in the pair's canonical conversation, which names the post's terms; the
+> actor is not notified of their own action.
 
 ## 4. What makes a trade real
 
