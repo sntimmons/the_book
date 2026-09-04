@@ -247,7 +247,9 @@ export function useNotifications() {
         for (const msg of (unreadMessages ?? []) as Array<{
           id: string
           conversation_id: string
-          sender_id: string
+          // Nullable: a platform notice is authored by nobody. Declaring it `string` here was
+          // the same contract lie that let the null case go unhandled in the messaging hook.
+          sender_id: string | null
           content: string
           created_at: string
         }>) {
