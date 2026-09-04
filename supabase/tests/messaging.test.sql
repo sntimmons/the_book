@@ -204,3 +204,158 @@ select pg_temp.chk_blocked('messaging', 'a validated booking_id cannot be reassi
   format('update public.conversation set booking_id = %L where id = %L',
          current_setting('b5b.b_elig'), current_setting('b5b.c_booking')),
   'reassigned');
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Slice 2B — canonical provider<->provider conversation identity
+-- ════════════════════════════════════════════════════════════════════════════
+-- `client_id` is a USER id and `provider_id` is a PROVIDERS row id, so two providers can be
+-- written either way round and conversation_unique_pair cannot tell the two rows apart. These
+-- assertions pin that one pair resolves to exactly one conversation, that the invariant is
+-- enforced by the database rather than by client discipline, and that ordinary
+-- client<->provider messaging is untouched by it.
+
+-- ── 1 & 3. Both orientations resolve to ONE conversation, idempotently ───────
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; c_ab uuid; c_ba uuid; c_again uuid; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'S2B A', 's2b_a_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'S2B B', 's2b_b_'||substr(bu::text,1,8)) returning id into bpid;
+
+  perform pg_temp.act(au);
+  select public.resolve_conversation(au, bpid) into c_ab;   -- A -> B
+  perform pg_temp.chk('messaging', 'A->B resolves to a conversation',
+    'true', (c_ab is not null)::text);
+
+  perform pg_temp.act(bu);
+  select public.resolve_conversation(bu, apid) into c_ba;   -- B -> A, opposite orientation
+  perform pg_temp.chk('messaging', 'B->A resolves to the SAME conversation as A->B',
+    c_ab::text, c_ba::text);
+
+  -- Idempotence: repeating either direction returns the same row and creates nothing.
+  perform pg_temp.act(au);
+  select public.resolve_conversation(au, bpid) into c_again;
+  perform pg_temp.chk('messaging', 'repeated resolve is idempotent', c_ab::text, c_again::text);
+
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.conversation
+   where (client_id = au and provider_id = bpid) or (client_id = bu and provider_id = apid);
+  perform pg_temp.chk('messaging', 'exactly ONE conversation exists for the pair',
+    '1', v_n::text);
+end $$;
+
+-- ── 2 & 4. The DATABASE refuses the second row, whoever asks ────────────────
+-- Requirement 2 is a concurrency property. A single-transaction harness cannot run two real
+-- sessions, so this asserts the INVARIANT that makes concurrency safe rather than staging a
+-- race: the second insert for a pair is rejected by a unique index, not by client discipline.
+-- Two racing sessions therefore cannot both succeed -- one commits and the other gets 23505,
+-- which is exactly what resolve_conversation catches and recovers from.
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; c1 uuid; v_code text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'S2B Dup A', 's2bd_a_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'S2B Dup B', 's2bd_b_'||substr(bu::text,1,8)) returning id into bpid;
+
+  perform pg_temp.act(au);
+  select public.resolve_conversation(au, bpid) into c1;
+
+  -- B now tries to create the REVERSE orientation DIRECTLY, bypassing the RPC entirely.
+  perform pg_temp.act(bu);
+  begin
+    insert into public.conversation(client_id, provider_id, created_at)
+    values (bu, apid, now());
+    v_code := 'NO ERROR';
+  exception when unique_violation then v_code := '23505';
+             when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('messaging',
+    'a direct reverse-orientation insert is REFUSED by the database', '23505', v_code);
+
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.conversation
+   where (client_id = au and provider_id = bpid) or (client_id = bu and provider_id = apid);
+  perform pg_temp.chk('messaging', 'the bypass attempt left exactly one conversation',
+    '1', v_n::text);
+end $$;
+
+-- ── The pair key is SERVER-OWNED ────────────────────────────────────────────
+-- A supplied value must be discarded, or a caller could null the key and slip past the index.
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; c1 uuid; v_key text; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'S2B Key A', 's2bk_a_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'S2B Key B', 's2bk_b_'||substr(bu::text,1,8)) returning id into bpid;
+
+  perform pg_temp.act(au);
+  -- Supply a deliberately wrong key on insert.
+  insert into public.conversation(client_id, provider_id, provider_pair_key, created_at)
+  values (au, bpid, 'forged-key', now()) returning id, provider_pair_key into c1, v_key;
+  perform pg_temp.chk('messaging', 'a supplied pair key is DISCARDED on insert',
+    least(apid,bpid)::text||':'||greatest(apid,bpid)::text, v_key);
+
+  -- And nulling it by update must not free the pair from the index.
+  update public.conversation set provider_pair_key = null where id = c1;
+  select provider_pair_key into v_key from public.conversation where id = c1;
+  perform pg_temp.chk('messaging', 'the pair key is RECOMPUTED on update, not nullable',
+    least(apid,bpid)::text||':'||greatest(apid,bpid)::text, v_key);
+
+  -- So the reverse orientation is still refused after the attempt.
+  perform pg_temp.act(bu);
+  begin
+    insert into public.conversation(client_id, provider_id, created_at) values (bu, apid, now());
+    v_code := 'NO ERROR';
+  exception when unique_violation then v_code := '23505';
+             when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('messaging',
+    'nulling the key does not free the pair from the invariant', '23505', v_code);
+end $$;
+
+-- ── 5. Ordinary client <-> provider messaging is UNCHANGED ──────────────────
+-- A non-provider client's conversation has a NULL key, so it is not in the partial index and
+-- is governed exactly as before by conversation_unique_pair. Two different clients must still
+-- each get their own thread with the same provider.
+do $$
+declare
+  c1u uuid := gen_random_uuid(); c2u uuid := gen_random_uuid(); pu uuid := gen_random_uuid();
+  ppid uuid; k1 uuid; k2 uuid; v_key text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (c1u), (c2u), (pu);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'S2B Plain P', 's2bp_'||substr(pu::text,1,8)) returning id into ppid;
+
+  perform pg_temp.act(c1u);
+  select public.resolve_conversation(c1u, ppid) into k1;
+  perform pg_temp.act(c2u);
+  select public.resolve_conversation(c2u, ppid) into k2;
+
+  perform pg_temp.chk('messaging', 'two ordinary clients get DIFFERENT threads with a provider',
+    'true', (k1 is distinct from k2)::text);
+
+  perform pg_temp.act_service();
+  select provider_pair_key into v_key from public.conversation where id = k1;
+  perform pg_temp.chk('messaging', 'an ordinary client<->provider thread has a NULL pair key',
+    'true', (v_key is null)::text);
+
+  select count(*) into v_n from public.conversation where provider_id = ppid;
+  perform pg_temp.chk('messaging', 'both client threads exist (index does not constrain them)',
+    '2', v_n::text);
+end $$;
