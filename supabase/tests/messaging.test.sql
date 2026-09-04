@@ -792,3 +792,106 @@ begin
   select count(*) into v_left from public.messages where id = m_sys;
   perform pg_temp.chk('messaging', 'the notice survives both delete attempts', '1', v_left::text);
 end $$;
+
+-- ── The pin holds on every column and every write route ────────────────────
+-- Three of the five pinned columns had no test, the UPDATE policy's USING scope was untested
+-- against a non-participant, and the UPSERT route -- the one the old tautological policy did
+-- NOT block, because ON CONFLICT DO UPDATE reaches the UPDATE path -- was untested entirely.
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid(); ou uuid := gen_random_uuid();
+  ppid uuid; opid uuid; c uuid; c2 uuid; m uuid; v_code text; v_n integer; v_content text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu), (ou);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'Pin2 P', 'pin2p_'||substr(pu::text,1,8)) returning id into ppid;
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Pin2 O', 'pin2o_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, ppid, 'accepted', now()) returning id into c;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, opid, 'accepted', now()) returning id into c2;
+  insert into public.messages(conversation_id, sender_id, content, is_read, created_at)
+    values (c, pu, 'original', false, now()) returning id into m;
+
+  perform pg_temp.act(cu);
+
+  -- conversation_id: previously a participant could MOVE a message between two threads they
+  -- belong to, because the old WITH CHECK only required the NEW thread be one of theirs.
+  begin
+    update public.messages set conversation_id = c2 where id = m;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a message cannot be moved to another thread',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  -- created_at is the enforcement boundary for the one-pending-message rule, so backdating it
+  -- would be a replay route.
+  begin
+    update public.messages set created_at = now() - interval '10 days' where id = m;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a message cannot be backdated',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  begin
+    update public.messages set id = gen_random_uuid() where id = m;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a message id cannot be reassigned',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  -- THE UPSERT ROUTE. `on conflict do update` reaches the UPDATE path, which the old
+  -- tautological policy never blocked. This is the strongest single proof the pin moved to a
+  -- layer that actually holds.
+  -- NOTE the sender_id: it must be the CALLER's, or the INSERT policy's
+  -- `sender_id = auth.uid()` refuses first and the assertion would pass without ever reaching
+  -- the trigger -- proving the wrong mechanism. With the caller as sender, the INSERT check
+  -- passes, the conflict routes to DO UPDATE, and the trigger is the thing that must refuse.
+  begin
+    insert into public.messages(id, conversation_id, sender_id, content, is_read, created_at)
+    values (m, c, cu, 'rewritten via upsert', false, now())
+    on conflict (id) do update set content = excluded.content;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'the UPSERT route cannot rewrite a message (trigger refuses)',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  perform pg_temp.act_service();
+  select content into v_content from public.messages where id = m;
+  perform pg_temp.chk('messaging', 'the message text survived every attempt',
+    'original', v_content);
+
+  -- A NON-PARTICIPANT is filtered by the policy's USING clause: zero rows, no exception.
+  perform pg_temp.act(ou);
+  update public.messages set is_read = true where id = m;
+  get diagnostics v_n = row_count;
+  perform pg_temp.chk('messaging',
+    'a non-participant''s mark-read affects zero rows (RLS filters)', '0', v_n::text);
+end $$;
+
+-- ── The pin's own posture ──────────────────────────────────────────────────
+do $$
+begin
+  perform pg_temp.chk('messaging', 'enforce_message_immutability is DEFINER, empty search_path',
+    'true', (select (p.prosecdef and p.proconfig @> array['search_path=""'])::text
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where p.proname = 'enforce_message_immutability' and n.nspname = 'public'));
+  perform pg_temp.chk('messaging', 'enforce_message_immutability is owned by postgres',
+    'postgres', (select pg_get_userbyid(p.proowner) from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+      where p.proname = 'enforce_message_immutability' and n.nspname = 'public'));
+  perform pg_temp.chk('messaging', 'anon cannot execute enforce_message_immutability',
+    'false', has_function_privilege('anon',
+      'public.enforce_message_immutability()', 'execute')::text);
+  -- The allow-list must stay an allow-list: a future column is immutable by default only if
+  -- the set difference names exactly one exclusion.
+  perform pg_temp.chk('messaging', 'the pin is an ALLOW-list over is_read only',
+    'true', (select (position('to_jsonb(new) - ''is_read''' in prosrc) > 0)::text
+       from pg_proc where proname = 'enforce_message_immutability'));
+end $$;

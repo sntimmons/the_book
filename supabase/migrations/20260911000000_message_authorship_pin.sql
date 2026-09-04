@@ -43,11 +43,12 @@ begin
   -- nobody can claim or alter it. Deliberately NO service_role escape below this point would
   -- be wrong: an operator correction path is a separate, explicit decision, and the escape
   -- above keeps it available without pretending a participant has it.
-  if new.sender_id is distinct from old.sender_id
-     or new.content is distinct from old.content
-     or new.conversation_id is distinct from old.conversation_id
-     or new.created_at is distinct from old.created_at
-     or new.id is distinct from old.id then
+  -- ALLOW-list, expressed as a set difference -- the shape used for barter_interests, and for
+  -- the same reason. Naming the five columns that exist today would hold NOW and silently stop
+  -- holding the moment `messages` gains a sixth: it would be born mutable by either participant,
+  -- with no test failing and this comment becoming false. A set difference makes a future column
+  -- immutable BY DEFAULT.
+  if (to_jsonb(new) - 'is_read') is distinct from (to_jsonb(old) - 'is_read') then
     raise exception 'Only the read state of a message may change.'
       using errcode = 'check_violation';
   end if;
@@ -124,6 +125,10 @@ begin
     raise exception 'That response no longer exists.' using errcode = 'check_violation';
   end if;
 
+  -- Lock the OFFER, not the interest: the invariant being protected is "one accepted response
+  -- per offer", so the offer is the serialisation point -- the same reasoning by which
+  -- accept_barter_interest locks it. This serialises a release against a concurrent accept of a
+  -- different response rather than racing for the freed slot.
   select o.* into v_offer from public.barter_offers o
    where o.id = v_interest.offer_id for update;
   if not found then
@@ -140,6 +145,9 @@ begin
       using errcode = 'insufficient_privilege';
   end if;
 
+  -- Idempotent where safe, and this is ALSO what stops the signal being written twice: a
+  -- repeated call returns before the update and therefore before the message insert.
+  -- Deliberately AFTER the participant check, so a non-participant learns nothing about the row.
   if v_interest.status = 'released' then
     return v_interest.release_reason;
   end if;
@@ -149,22 +157,11 @@ begin
       using errcode = 'check_violation';
   end if;
 
-  -- DEFENSE IN DEPTH, carried over from accept_barter_interest. Running as postgres, RLS is off,
-  -- so nothing else re-establishes that these provider rows belong to the users about to be
-  -- messaged. Without it, an inconsistent row would resolve a thread with an unrelated THIRD
-  -- provider and write a notice into it.
-  if not exists (
-    select 1 from public.providers p
-     where p.id = v_offer.provider_id and p.user_id = v_offer.user_id
-  ) or not exists (
-    select 1 from public.providers p
-     where p.id = v_interest.interested_provider_id
-       and p.user_id = v_interest.interested_user_id
-  ) then
-    raise exception 'Offer or response identity is inconsistent; cannot release.'
-      using errcode = 'internal_error';
-  end if;
-
+  -- A SEED, not the decision. enforce_barter_interest_write CLAMPS all three release columns,
+  -- so whatever is written here is overwritten -- an engineer who added `mutual_end` here and
+  -- nowhere else would watch it be silently rewritten to `owner_ended_negotiation`: a legal
+  -- value, no constraint violation, a green suite. The value RETURNED below is read back from
+  -- the row, so the caller is told what the boundary recorded.
   v_reason := case when v_is_responder then 'responder_withdrew'
                    else 'owner_ended_negotiation' end;
 
@@ -197,6 +194,27 @@ begin
 
   -- BOTH skip conditions, not one. A thread that is request-gated cannot accept a message, and
   -- the notice must not take the release down with it.
+  -- IDENTITY, checked HERE and not earlier. This assertion exists solely for the lookup above:
+  -- running as postgres with RLS off, nothing else re-establishes that these provider rows
+  -- belong to the users about to be messaged, and an inconsistent row would resolve a thread
+  -- with an unrelated THIRD provider. But it serves the SIGNAL, so it must not veto the
+  -- RELEASE -- placing it before the status update re-created the very shape this file's rule
+  -- forbids. A participant is never trapped in a consumed slot by a data condition they did not
+  -- cause and cannot fix.
+  if v_conv.id is not null and not exists (
+    select 1 from public.providers p
+     where p.id = v_offer.provider_id and p.user_id = v_offer.user_id
+  ) then
+    v_conv.id := null;
+  end if;
+  if v_conv.id is not null and not exists (
+    select 1 from public.providers p
+     where p.id = v_interest.interested_provider_id
+       and p.user_id = v_interest.interested_user_id
+  ) then
+    v_conv.id := null;
+  end if;
+
   if v_conv.id is not null
      and (v_conv.booking_id is not null
           or v_conv.request_status is null
@@ -209,10 +227,20 @@ begin
                 else 'This trade negotiation was ended.'
               end;
 
-    insert into public.messages (conversation_id, sender_id, content, is_read, created_at)
-    values (v_conv.id, null, v_copy, false, clock_timestamp());
+    -- BEST-EFFORT BY CONSTRUCTION. The skip predicate above mirrors
+    -- enforce_prebooking_message_rules' open-conversation test, and a mirrored predicate is a
+    -- second source of truth: if that trigger ever grows STRICTER, this would insert into a
+    -- thread it now refuses and the release would be vetoed again, with no test failing. The
+    -- handler makes the guarantee structural -- the signal can fail for ANY reason and the
+    -- release still commits.
+    begin
+      insert into public.messages (conversation_id, sender_id, content, is_read, created_at)
+      values (v_conv.id, null, v_copy, false, clock_timestamp());
 
-    update public.conversation set last_message_at = clock_timestamp() where id = v_conv.id;
+      update public.conversation set last_message_at = clock_timestamp() where id = v_conv.id;
+    exception when others then
+      null;
+    end;
   end if;
 
   return v_reason;
