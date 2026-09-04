@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { NOT_MINE_FILTER } from './useMessaging'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
@@ -238,7 +239,7 @@ export function useNotifications() {
           .select('id, conversation_id, sender_id, content, created_at')
           .in('conversation_id', convoIds)
           .eq('is_read', false)
-          .neq('sender_id', user.id)
+          .or(NOT_MINE_FILTER(user.id))
           .order('created_at', { ascending: false })
           .limit(10)
 

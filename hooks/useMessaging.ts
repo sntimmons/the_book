@@ -45,10 +45,24 @@ export interface Conversation {
   booking_service?: string
 }
 
+/**
+ * "Not authored by me" — the ONE definition, used by the unread count, the mark-read write and
+ * the notifications query. These three previously disagreed about a null sender: the JS count
+ * treated `null !== uid` as true and counted it, while the PostgREST filters compiled to
+ * `sender_id <> uid`, which is NULL for a null sender and therefore excluded the row from the
+ * update set. So a platform notice was counted unread and could never be cleared.
+ */
+export const NOT_MINE_FILTER = (userId: string) =>
+  `sender_id.is.null,sender_id.neq.${userId}`
+
+export function isNotMine(senderId: string | null, userId: string): boolean {
+  return senderId !== userId
+}
+
 export interface Message {
   id: string
   conversation_id: string
-  sender_id: string
+  sender_id: string | null
   content: string
   is_read: boolean
   created_at: string
@@ -167,14 +181,14 @@ export function useConversations() {
             conversation_id: string
             content: string
             created_at: string
-            sender_id: string
+            sender_id: string | null
             is_read: boolean
           }[]
         | null) ?? []) {
         if (!lastMessage.has(m.conversation_id)) {
           lastMessage.set(m.conversation_id, m.content ?? '')
         }
-        if (!m.is_read && m.sender_id !== user.id) {
+        if (!m.is_read && isNotMine(m.sender_id, user.id)) {
           unread.set(m.conversation_id, (unread.get(m.conversation_id) ?? 0) + 1)
         }
       }
@@ -261,7 +275,7 @@ export function useMessages(conversationId: string) {
       const rows = (data ?? []) as Array<{
         id: string
         conversation_id: string
-        sender_id: string
+        sender_id: string | null
         content: string
         is_read: boolean
         created_at: string
@@ -286,7 +300,9 @@ export function useMessages(conversationId: string) {
       .from('messages')
       .update({ is_read: true })
       .eq('conversation_id', conversationId)
-      .neq('sender_id', user.id)
+      // `.or` rather than `.neq`: a null sender is excluded by `<>` and would never be marked
+      // read, leaving a permanent unclearable badge on every platform notice.
+      .or(NOT_MINE_FILTER(user.id))
       .eq('is_read', false)
   }, [user, conversationId])
 
@@ -309,7 +325,7 @@ export function useMessages(conversationId: string) {
           const newMsg = payload.new as {
             id: string
             conversation_id: string
-            sender_id: string
+            sender_id: string | null
             content: string
             is_read: boolean
             created_at: string

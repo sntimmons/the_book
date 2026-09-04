@@ -652,3 +652,106 @@ begin
     'the OLD owner''s conversation key is re-derived, not left stale',
     'NULL', coalesce(v_key,'NULL'));
 end $$;
+
+-- ── Message authorship is pinned, and a platform notice is markable read ────
+-- The old policy's `sender_id = sender_id` was a TAUTOLOGY over the NEW row (a policy cannot
+-- reference OLD), so it pinned nothing — and it was NULL for a null sender, which made a
+-- platform notice permanently unreadable-as-read. Both halves are asserted here.
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid();
+  ppid uuid; c uuid; m_user uuid; m_sys uuid; v_code text; v_read boolean; v_sender uuid;
+  v_content text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'Pin P', 'pinp_'||substr(pu::text,1,8)) returning id into ppid;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, ppid, 'accepted', now()) returning id into c;
+  insert into public.messages(conversation_id, sender_id, content, is_read, created_at)
+    values (c, pu, 'from the provider', false, now()) returning id into m_user;
+  insert into public.messages(conversation_id, sender_id, content, is_read, created_at)
+    values (c, null, 'This trade negotiation was ended by the post owner.', false, now())
+    returning id into m_sys;
+
+  -- A participant CANNOT rewrite the text of a message.
+  perform pg_temp.act(cu);
+  begin
+    update public.messages set content = 'rewritten' where id = m_user;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a participant cannot rewrite a message''s content',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  -- A participant CANNOT re-attribute authorship — including claiming a platform notice.
+  begin
+    update public.messages set sender_id = cu where id = m_sys;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a participant cannot claim a platform notice as their own',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  begin
+    update public.messages set sender_id = cu where id = m_user;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a participant cannot re-attribute another''s message',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  -- But a participant CAN mark a platform notice read. This is what was impossible before:
+  -- the null sender made the policy's WITH CHECK evaluate to NULL, which is not TRUE.
+  update public.messages set is_read = true where id = m_sys;
+  perform pg_temp.act_service();
+  select is_read, sender_id, content into v_read, v_sender, v_content
+    from public.messages where id = m_sys;
+  perform pg_temp.chk('messaging', 'a platform notice CAN be marked read', 'true', v_read::text);
+  perform pg_temp.chk('messaging', 'marking read left the author untouched',
+    'true', (v_sender is null)::text);
+  perform pg_temp.chk('messaging', 'marking read left the text untouched',
+    'This trade negotiation was ended by the post owner.', v_content);
+
+  -- And an ordinary message is still markable read.
+  perform pg_temp.act(cu);
+  update public.messages set is_read = true where id = m_user;
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages where conversation_id = c and is_read;
+  perform pg_temp.chk('messaging', 'both messages are now read', '2', v_n::text);
+end $$;
+
+-- ── A request-gated thread cannot veto a release ───────────────────────────
+-- The signal must never take the release down with it. Reachable for a pre-Slice-2 accepted
+-- interest whose pair already held a pre-booking request.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; c uuid; v_reason text; v_status text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Gate Owner', 'gto_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Gate Resp', 'gtr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Gate O', 'Gate S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+  -- A DECLINED pre-booking thread for the same pair: no message may be written into it.
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (ru, opid, 'declined', now()) returning id into c;
+
+  perform pg_temp.act(ru);
+  select public.release_barter_interest(i) into v_reason;
+  perform pg_temp.chk('messaging', 'a request-gated thread does not block the release',
+    'responder_withdrew', v_reason);
+
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i;
+  perform pg_temp.chk('messaging', 'the release actually persisted', 'released', v_status);
+  select count(*) into v_n from public.messages where conversation_id = c;
+  perform pg_temp.chk('messaging', 'no notice was written into the gated thread', '0', v_n::text);
+end $$;

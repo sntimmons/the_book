@@ -19,8 +19,11 @@
 --   * "Participants can send messages" requires sender_id = auth.uid(), which a client cannot
 --     satisfy with null -- so a client CANNOT forge a system message. This function is
 --     SECURITY DEFINER and bypasses RLS, which is what makes the server the only author.
---   * `participants_mark_messages_read` pins `sender_id = sender_id`, so marking read does not
---     disturb it (baseline:2613).
+--   * (CORRECTED by 20260911000000: this header originally claimed
+--     `participants_mark_messages_read` "pins sender_id = sender_id". It does NOT -- an RLS
+--     policy cannot reference OLD, so that conjunct is a tautology that pinned nothing, and it
+--     was NULL for a null sender, which made a platform notice unmarkable as read. The pin now
+--     lives in a BEFORE UPDATE trigger. Do not cite the policy as evidence of immutability.)
 --   * `enforce_prebooking_message_rules` returns early for an open conversation -- booking
 --     -linked, null request_status, or 'accepted' (20260901000000:29-33). A barter thread opened
 --     by accept_barter_interest is always one of those, and `accepted -> declined` is not a
