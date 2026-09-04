@@ -360,7 +360,25 @@ export default function CommunityFeed() {
     setSendingInterest(false)
     if (error) {
       console.log('Express interest error:', error)
-      Alert.alert('Could not send', 'Please try again.', [{ text: 'OK' }])
+      // The daily response limit is enforced in the write path, so it surfaces as a
+      // database rejection rather than a checked pre-flight. It clears with time, not
+      // with a retry — "try again" would send the user into a loop for up to a day.
+      const code = (error as { code?: string } | null)?.code
+      if (code === '23514') {
+        Alert.alert(
+          'Daily limit reached',
+          'You have sent the maximum number of barter responses for today. You can send more tomorrow.',
+          [{ text: 'OK' }],
+        )
+      } else if (code === '23505') {
+        Alert.alert(
+          'Already sent',
+          'You have already responded to this offer.',
+          [{ text: 'OK' }],
+        )
+      } else {
+        Alert.alert('Could not send', 'Please try again.', [{ text: 'OK' }])
+      }
       return
     }
     // Mark this offer as interested and bump its local count.
@@ -393,26 +411,65 @@ export default function CommunityFeed() {
     if (error) {
       console.log('Delete offer error:', error)
       setOffers(prev)
-      Alert.alert('Could not delete', 'Please try again.', [{ text: 'OK' }])
+      // Two different failures reach here and they need opposite messages. Once
+      // another provider has responded the database refuses this delete PERMANENTLY
+      // (check_violation, 23514) so their response is not destroyed with the offer —
+      // telling that user to "try again" would be false. Every other failure
+      // (offline, timeout, 5xx) IS transient, and asserting "responses exist" for
+      // those would be equally false — especially here, where Delete is only offered
+      // when the client believes there are none, so transport is the likelier cause.
+      const permanent = (error as { code?: string } | null)?.code === '23514'
+      if (permanent) {
+        Alert.alert(
+          'This offer has responses',
+          'Another provider has responded, so this offer can no longer be deleted — their response would go with it. Close it instead to take it off the board.',
+          [{ text: 'OK' }],
+        )
+      } else {
+        Alert.alert('Could not delete', 'Please try again.', [{ text: 'OK' }])
+      }
     }
   }
 
   function openOfferMenu(offer: BarterOfferWithProvider) {
+    // An offer with responses cannot be deleted (server rule). Offering the action
+    // anyway would be asking for a tap that can only fail, so the menu shows closing
+    // as the only removal path once anyone has responded.
+    const hasResponses = offer.interestCount > 0
     Alert.alert('Manage offer', undefined, [
       {
-        text: 'Mark as filled',
-        onPress: () => markFilled(offer.id),
-      },
-      {
-        text: 'Delete offer',
-        style: 'destructive',
+        text: 'Close offer',
         onPress: () =>
-          Alert.alert('Delete offer', 'This cannot be undone.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Delete', style: 'destructive', onPress: () => deleteOffer(offer.id) },
-          ]),
+          // No history surface exists yet (My Trades is a later slice), so this copy
+          // must not imply one. Closing currently removes the only route back to the
+          // offer and its responses — say that plainly rather than reassure.
+          Alert.alert(
+            'Close this offer?',
+            'It comes off the board and you will not be able to open it again from here. Any responses stay on record but are no longer reachable in the app.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              { text: 'Close offer', onPress: () => markFilled(offer.id) },
+            ],
+          ),
       },
-      { text: 'Cancel', style: 'cancel' },
+      ...(hasResponses
+        ? []
+        : [
+            {
+              text: 'Delete offer',
+              style: 'destructive' as const,
+              onPress: () =>
+                Alert.alert('Delete offer', 'This cannot be undone.', [
+                  { text: 'Cancel', style: 'cancel' as const },
+                  {
+                    text: 'Delete',
+                    style: 'destructive' as const,
+                    onPress: () => deleteOffer(offer.id),
+                  },
+                ]),
+            },
+          ]),
+      { text: 'Cancel', style: 'cancel' as const },
     ])
   }
 

@@ -90,7 +90,19 @@ export default function BarterInterests() {
       load()
     } catch (err) {
       console.log('Accept interest error:', err)
-      Alert.alert('Could not accept', 'Please try again.', [{ text: 'OK' }])
+      // An offer can only ever have ONE accepted response (enforced by a partial unique
+      // index). A second accept is permanently impossible, not transiently failing, so
+      // it must not be presented as retryable.
+      const code = (err as { code?: string } | null)?.code
+      if (code === '23505') {
+        Alert.alert(
+          'Already matched',
+          'This offer has already been matched with another provider. Only one response per offer can be accepted.',
+          [{ text: 'OK' }],
+        )
+      } else {
+        Alert.alert('Could not accept', 'Please try again.', [{ text: 'OK' }])
+      }
       setActioningId(null)
     }
   }
@@ -108,7 +120,18 @@ export default function BarterInterests() {
     if (error) {
       console.log('Decline interest error:', error)
       setInterests(prev)
-      Alert.alert('Could not decline', 'Please try again.', [{ text: 'OK' }])
+      // Reachable from a stale list: if this response was already accepted or declined
+      // elsewhere, the transition rule refuses it permanently. Retrying cannot help, and
+      // the list needs reconciling rather than the same buttons offered again.
+      if ((error as { code?: string } | null)?.code === '23514') {
+        Alert.alert(
+          'Already answered',
+          'This response has already been accepted or declined. Pull to refresh to see its current state.',
+          [{ text: 'OK', onPress: () => load() }],
+        )
+      } else {
+        Alert.alert('Could not decline', 'Please try again.', [{ text: 'OK' }])
+      }
     }
   }
 

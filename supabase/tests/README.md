@@ -75,6 +75,7 @@ the command line, so the password never appears in process `argv`.
 | `_fixtures.sql` | The shared cast — client, provider, outsider, one booking per review state, one conversation per request state — plus fixture-sanity and harness-integrity checks |
 | `reviews.test.sql` | Reviews Phase 0/1 trust boundaries |
 | `messaging.test.sql` | Pre-booking message-request trust boundaries |
+| `barter.test.sql` | Barter identity binding, foreign-field immutability, state transitions, counterparty-history retention, and the write-path response limit |
 | `_report.sql` | Aggregates results into one JSON column; the runner reads it and sets the exit code |
 | `../../scripts/db-security-test.mjs` | Production guard, execution, reporting |
 | `../../scripts/b5bExec.mjs` | Pure helpers: `PG*` env derivation and report parsing |
@@ -123,7 +124,7 @@ Not every table is covered — this targets the highest-risk DB contracts rather
 attempting exhaustive coverage. Not covered today: storage bucket policies, contract
 PDF/signature access, provider onboarding and field-integrity rules, payment/Stripe
 state, categories/shifts, and the `reports` table. Those remain candidates for later
-suites; add them as separate `*.test.sql` files rather than growing the existing two.
+suites; add them as separate `*.test.sql` files rather than growing the existing ones.
 
 ## CI
 
