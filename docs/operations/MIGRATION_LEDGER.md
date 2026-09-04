@@ -161,7 +161,13 @@ NOT in the migration that created it.
 
 | Function | Created in | **Current definition** | Why it moved |
 |---|---|---|---|
-| `public.enforce_conversation_update` | `20260901000000_prebooking_message_requests.sql` | **`20260907000000_barter_accept_handoff.sql`** | Adds `declined -> accepted` for the barter handoff, gated on an accepted match AND a transaction-local marker set only by `accept_barter_interest`. |
+| `public.enforce_conversation_update` | `20260901000000_prebooking_message_requests.sql` | **`20260908000000_canonical_provider_pair.sql`** | Redefined twice. `20260907000000` added `declined -> accepted` for the barter handoff (gated on an accepted match AND a transaction-local marker set only by `accept_barter_interest`); `20260908000000` then widened the booking-attach predicate to accept EITHER orientation of a provider pair, because a conversation is now canonical for the pair and its orientation need not match the direction a booking was made in. |
+| `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |
+
+`20260907000000`'s "RECORDED, NOT RESOLVED / TWO THREADS PER PAIR" note is **resolved** by
+`20260908000000`: the guarantee now lives in the `conversation_one_per_provider_pair` index,
+not in `barter_canonical_conversation`, which today only chooses an orientation for a row that
+does not exist yet.
 
 The superseding migration names what it replaces and why. The EARLIER file deliberately
 carries no pointer: `supabase/README.md` forbids editing a migration that has already merged,

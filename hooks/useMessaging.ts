@@ -369,70 +369,60 @@ export function useMessages(conversationId: string) {
 
 // Get or create a 1:1 conversation between a client (auth.users id) and a
 // provider (providers table id). bookingId is optional context.
+//
+// Resolution is delegated to `resolve_conversation` because a provider<->provider pair has
+// TWO legal representations of the same conversation -- `client_id` is a user id while
+// `provider_id` is a providers row id, so the same two people can be written either way round
+// and `conversation_unique_pair` cannot tell that the two rows are the same pair. Resolving
+// one orientation here (as this function used to) created a SECOND thread for a pair that
+// already had one, splitting their history. The RPC resolves both orientations against the
+// server-owned canonical key and creates the row inside one statement, so a concurrent caller
+// cannot win a race that leaves two.
+//
+// Booking attach is deliberately unchanged and still happens here: this function resolves a
+// different row than it used to, and does nothing differently once it has one.
 export async function getOrCreateConversation(
   clientId: string,
   providerId: string,
   bookingId?: string | null,
 ): Promise<string | null> {
   try {
+    const { data: convId, error: resolveError } = await supabase.rpc('resolve_conversation', {
+      p_client_id: clientId,
+      p_provider_id: providerId,
+      p_booking_id: bookingId ?? null,
+    })
+    if (resolveError || !convId) {
+      console.log('Resolve convo error:', resolveError)
+      return null
+    }
+
     const { data: existing } = await supabase
       .from('conversation')
       .select('id, booking_id, request_status')
-      .eq('client_id', clientId)
-      .eq('provider_id', providerId)
+      .eq('id', convId)
       .maybeSingle()
-    if (existing) {
-      // A real booking supersedes any prior pre-booking REQUEST for this pair:
-      // attach the booking and open the conversation for two-way messaging, so a
-      // pending/declined request never blocks messaging about an actual booking.
-      // Never overwrite an existing booking_id — that stays the initial booking;
-      // later bookings for the same pair simply reuse this thread.
-      if (bookingId && !existing.booking_id) {
-        const { error: attachError } = await supabase
-          .from('conversation')
-          .update({ booking_id: bookingId, request_status: 'accepted' })
-          .eq('id', existing.id)
-        if (attachError) {
-          // Don't silently pretend the booking attached — the conversation may
-          // still be request-gated (pending/declined), so surface the failure to
-          // the caller (null) instead of returning an id it would treat as an
-          // open chat. (No console here to avoid new lint debt; the null return
-          // is the actionable signal.)
-          return null
-        }
-      }
-      return existing.id
-    }
 
-    const { data: created, error } = await supabase
-      .from('conversation')
-      .insert({
-        client_id: clientId,
-        provider_id: providerId,
-        booking_id: bookingId ?? null,
-        created_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single()
-
-    if (error) {
-      console.log('Create convo error:', error)
-      // A concurrent call (or double-tap) may have created the row between our
-      // SELECT and INSERT. With the conversation_unique_pair constraint in
-      // place this surfaces as a unique violation (23505) — recover by fetching
-      // the row that now exists instead of returning null.
-      if (error.code === '23505') {
-        const { data: existingAfter } = await supabase
-          .from('conversation')
-          .select('id')
-          .eq('client_id', clientId)
-          .eq('provider_id', providerId)
-          .maybeSingle()
-        if (existingAfter) return existingAfter.id
+    // A real booking supersedes any prior pre-booking REQUEST for this pair:
+    // attach the booking and open the conversation for two-way messaging, so a
+    // pending/declined request never blocks messaging about an actual booking.
+    // Never overwrite an existing booking_id — that stays the initial booking;
+    // later bookings for the same pair simply reuse this thread.
+    if (bookingId && existing && !existing.booking_id) {
+      const { error: attachError } = await supabase
+        .from('conversation')
+        .update({ booking_id: bookingId, request_status: 'accepted' })
+        .eq('id', existing.id)
+      if (attachError) {
+        // Don't silently pretend the booking attached — the conversation may
+        // still be request-gated (pending/declined), so surface the failure to
+        // the caller (null) instead of returning an id it would treat as an
+        // open chat. (No console here to avoid new lint debt; the null return
+        // is the actionable signal.)
+        return null
       }
-      return null
     }
-    return created.id
+    return convId as string
   } catch (err) {
     console.log('getOrCreate error:', err)
     return null
@@ -456,13 +446,19 @@ export async function findConversation(
   clientId: string,
   providerId: string,
 ): Promise<PrebookingConversation | null> {
-  const { data } = await supabase
-    .from('conversation')
-    .select('id, request_status, booking_id')
-    .eq('client_id', clientId)
-    .eq('provider_id', providerId)
-    .maybeSingle()
-  return (data as PrebookingConversation | null) ?? null
+  // Canonical, because a provider pair's thread may be stored in either orientation. Resolving
+  // only the caller's orientation reported "no thread" for a pair that has one, sent the user
+  // to a compose screen, and the insert that followed was refused by the pair index.
+  const { data, error } = await supabase.rpc('find_conversation', {
+    p_client_id: clientId,
+    p_provider_id: providerId,
+  })
+  if (error) {
+    console.log('Find conversation error:', error)
+    return null
+  }
+  const rows = (data as PrebookingConversation[] | null) ?? []
+  return rows.length > 0 ? rows[0] : null
 }
 
 // Send a pre-booking message request: create a new pending conversation with the
@@ -493,23 +489,36 @@ export async function sendPrebookingRequest(
         .from('conversation')
         .update({ request_status: 'pending', request_opened_at: nowIso })
         .eq('id', existing.id)
-      if (reErr) return { conversationId: null, created: false, error: reErr.message }
+      if (reErr) {
+        // Never surface the raw trigger text. Only the client may re-open a declined request,
+        // so for a provider<->provider pair the party in the PROVIDER slot lands here and the
+        // server correctly refuses. Whether they should be able to initiate at all is a
+        // product question (provider-initiated contact is deliberately not request-gated
+        // elsewhere) and is NOT decided here -- but they must not read a database error.
+        return {
+          conversationId: null,
+          created: false,
+          error: 'This conversation cannot be re-opened from here.',
+        }
+      }
       conversationId = existing.id
     } else {
-      const { data: created, error: cErr } = await supabase
-        .from('conversation')
-        .insert({
-          client_id: clientId,
-          provider_id: providerId,
-          booking_id: null,
-          request_status: 'pending',
-          request_opened_at: nowIso,
-          created_at: nowIso,
-        })
-        .select('id')
-        .single()
-      if (cErr || !created) return { conversationId: null, created: false, error: cErr?.message }
-      conversationId = created.id
+      // Created through the authoritative path, not a direct insert: a direct insert in the
+      // caller's orientation is refused when the pair already has a thread the other way
+      // round, and returned the raw constraint text to the user. The server clamps a
+      // client-initiated conversation to 'pending' and stamps request_opened_at itself, so the
+      // request semantics are unchanged by going through the RPC.
+      const { data: createdId, error: cErr } = await supabase.rpc('resolve_conversation', {
+        p_client_id: clientId,
+        p_provider_id: providerId,
+        p_booking_id: null,
+      })
+      // No console: the returned error is surfaced to the user, which is the actionable
+      // signal. Same convention as the booking-attach branch above.
+      if (cErr || !createdId) {
+        return { conversationId: null, created: false, error: 'Could not start this message.' }
+      }
+      conversationId = createdId as string
     }
 
     const { error: mErr } = await supabase.from('messages').insert({
