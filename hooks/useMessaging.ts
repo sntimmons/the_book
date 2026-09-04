@@ -446,13 +446,19 @@ export async function findConversation(
   clientId: string,
   providerId: string,
 ): Promise<PrebookingConversation | null> {
-  const { data } = await supabase
-    .from('conversation')
-    .select('id, request_status, booking_id')
-    .eq('client_id', clientId)
-    .eq('provider_id', providerId)
-    .maybeSingle()
-  return (data as PrebookingConversation | null) ?? null
+  // Canonical, because a provider pair's thread may be stored in either orientation. Resolving
+  // only the caller's orientation reported "no thread" for a pair that has one, sent the user
+  // to a compose screen, and the insert that followed was refused by the pair index.
+  const { data, error } = await supabase.rpc('find_conversation', {
+    p_client_id: clientId,
+    p_provider_id: providerId,
+  })
+  if (error) {
+    console.log('Find conversation error:', error)
+    return null
+  }
+  const rows = (data as PrebookingConversation[] | null) ?? []
+  return rows.length > 0 ? rows[0] : null
 }
 
 // Send a pre-booking message request: create a new pending conversation with the
@@ -486,20 +492,21 @@ export async function sendPrebookingRequest(
       if (reErr) return { conversationId: null, created: false, error: reErr.message }
       conversationId = existing.id
     } else {
-      const { data: created, error: cErr } = await supabase
-        .from('conversation')
-        .insert({
-          client_id: clientId,
-          provider_id: providerId,
-          booking_id: null,
-          request_status: 'pending',
-          request_opened_at: nowIso,
-          created_at: nowIso,
-        })
-        .select('id')
-        .single()
-      if (cErr || !created) return { conversationId: null, created: false, error: cErr?.message }
-      conversationId = created.id
+      // Created through the authoritative path, not a direct insert: a direct insert in the
+      // caller's orientation is refused when the pair already has a thread the other way
+      // round, and returned the raw constraint text to the user. The server clamps a
+      // client-initiated conversation to 'pending' and stamps request_opened_at itself, so the
+      // request semantics are unchanged by going through the RPC.
+      const { data: createdId, error: cErr } = await supabase.rpc('resolve_conversation', {
+        p_client_id: clientId,
+        p_provider_id: providerId,
+        p_booking_id: null,
+      })
+      if (cErr || !createdId) {
+        console.log('Create prebooking conversation error:', cErr)
+        return { conversationId: null, created: false, error: 'Could not start this message.' }
+      }
+      conversationId = createdId as string
     }
 
     const { error: mErr } = await supabase.from('messages').insert({
