@@ -2,8 +2,7 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `feba568a900401e3e8dffc560ea5e214cb9be38c` (2026-09-04)
-**Last edited by:** branch `chore/post-slice1-state-reconcile` — PR number not assigned at
-authoring time; replace this with `PR #NN` when the PR is opened.
+**Last edited by:** PR #40
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
