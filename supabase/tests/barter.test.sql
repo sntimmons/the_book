@@ -815,3 +815,212 @@ begin
     'declined -> accepted is refused without an accepted barter match', 'RAISED', v_code);
 end $$;
 
+
+-- ── The carve-out is reachable ONLY from the handoff RPC ────────────────────
+-- SEC-AUTHZ-001 regression. Evidence-gating alone is not enough: an accepted barter match is
+-- permanent (Slice 1 forbids reverting it), so a pair-scoped carve-out would confer the
+-- ability to reopen ANY declined request between them, forever, on the party who was
+-- declined. `decline` is the only refusal primitive this product ships -- there is no
+-- blocking -- so that must not be defeasible by the refused party. These three cases pin the
+-- narrowing: the RPC may do it, a direct UPDATE by either participant may not.
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; o uuid; i uuid; c2 uuid; v_code text; v_req text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'S2 Narrow A', 's2na_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'S2 Narrow B', 's2nb_'||substr(bu::text,1,8)) returning id into bpid;
+
+  -- A real, accepted barter match between A and B.
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (apid, au, 'Narrow O', 'Narrow S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, bpid, bu, 'narrow', 'accepted') returning id into i;
+
+  -- A SEPARATE pre-booking thread in the OTHER orientation, which B has declined. A is the
+  -- client here: A asked, B said no.
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (au, bpid, 'declined', now()) returning id into c2;
+
+  -- 1. The declined party (A, the client) cannot reopen it by asking directly.
+  perform pg_temp.act(au);
+  begin
+    update public.conversation set request_status = 'accepted' where id = c2;
+    v_code := 'NO ERROR';
+  exception when others then v_code := 'RAISED';
+  end;
+  perform pg_temp.chk('barter',
+    'a matched pair CANNOT reopen a declined request outside the RPC (client)',
+    'RAISED', v_code);
+
+  -- 2. Nor can the provider who declined, by the same route.
+  perform pg_temp.act(bu);
+  begin
+    update public.conversation set request_status = 'accepted' where id = c2;
+    v_code := 'NO ERROR';
+  exception when others then v_code := 'RAISED';
+  end;
+  perform pg_temp.chk('barter',
+    'a matched pair CANNOT reopen a declined request outside the RPC (provider)',
+    'RAISED', v_code);
+
+  perform pg_temp.act_service();
+  select request_status into v_req from public.conversation where id = c2;
+  perform pg_temp.chk('barter', 'the declined request is still declined after both attempts',
+    'declined', v_req);
+end $$;
+
+-- ── pending -> accepted stays PROVIDER-ONLY, match or no match ──────────────
+-- CODE-TEST-106. The pre-existing rule is that only the provider resolves a pending request.
+-- The carve-out must not relax that for a matched pair outside the handoff; messaging.test.sql
+-- already covers the no-match case, so this covers the case a barter match is present.
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; o uuid; c2 uuid; v_code text; v_req text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'S2 Pend A', 's2pa_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'S2 Pend B', 's2pb_'||substr(bu::text,1,8)) returning id into bpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (apid, au, 'Pend O', 'Pend S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, bpid, bu, 'pend', 'accepted');
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (au, bpid, 'pending', now()) returning id into c2;
+
+  perform pg_temp.act(au);   -- A is the CLIENT on this row, and IS barter-matched with B
+  begin
+    update public.conversation set request_status = 'accepted' where id = c2;
+    v_code := 'NO ERROR';
+  exception when others then v_code := 'RAISED';
+  end;
+  perform pg_temp.chk('barter',
+    'a matched CLIENT still cannot accept their own pending request', 'RAISED', v_code);
+
+  perform pg_temp.act_service();
+  select request_status into v_req from public.conversation where id = c2;
+  perform pg_temp.chk('barter', 'the pending request is untouched by the refused attempt',
+    'pending', v_req);
+end $$;
+
+-- ── The match evidence cannot be borrowed by a THIRD party ──────────────────
+-- The EXISTS join pins BOTH conversation slots to the two parties of the interest. A provider
+-- who is matched with one of them must gain nothing on a thread they are not part of, and
+-- nothing on their own thread with the other.
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid(); tu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; tpid uuid; o uuid; c3 uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu), (tu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'S2 Third A', 's2ta_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'S2 Third B', 's2tb_'||substr(bu::text,1,8)) returning id into bpid;
+  insert into public.providers(user_id, display_name, username)
+    values (tu, 'S2 Third T', 's2tt_'||substr(tu::text,1,8)) returning id into tpid;
+
+  -- T is matched with A. T has NO match with B.
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (apid, au, 'Third O', 'Third S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, tpid, tu, 'third', 'accepted');
+
+  -- T's own declined thread with B, on which T is the client.
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (tu, bpid, 'declined', now()) returning id into c3;
+
+  perform pg_temp.act(tu);
+  begin
+    update public.conversation set request_status = 'accepted' where id = c3;
+    v_code := 'NO ERROR';
+  exception when others then v_code := 'RAISED';
+  end;
+  perform pg_temp.chk('barter',
+    'a match with A confers nothing on a declined thread with B', 'RAISED', v_code);
+end $$;
+
+-- ── Ordinary client <-> provider messaging is untouched ─────────────────────
+-- The carve-out requires old.client_id to BE some providers.user_id in either orientation, so
+-- a conversation whose client is an ordinary (non-provider) user can never satisfy it. True
+-- by construction today; asserted so it stays true.
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid(); ou uuid := gen_random_uuid();
+  ppid uuid; opid uuid; o uuid; c uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu), (ou);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'S2 Plain P', 's2pp_'||substr(pu::text,1,8)) returning id into ppid;
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'S2 Plain O', 's2po_'||substr(ou::text,1,8)) returning id into opid;
+  -- The provider IS barter-matched, just with somebody else entirely.
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Plain O', 'Plain S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, ppid, pu, 'plain', 'accepted');
+
+  -- An ordinary client's declined request to that provider.
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, ppid, 'declined', now()) returning id into c;
+
+  perform pg_temp.act(cu);
+  begin
+    update public.conversation set request_status = 'accepted' where id = c;
+    v_code := 'NO ERROR';
+  exception when others then v_code := 'RAISED';
+  end;
+  perform pg_temp.chk('barter',
+    'an ordinary client cannot reopen their declined request (carve-out unsatisfiable)',
+    'RAISED', v_code);
+end $$;
+
+-- ── Sensitivity: the MARKER is what refuses those attempts ──────────────────
+-- The four assertions above are only meaningful if they fail for the intended reason. A test
+-- that would pass anyway (because RLS refused, or because the evidence join missed) proves
+-- nothing about the narrowing. Here the ONLY thing that changes is the marker: same pair,
+-- same match, same participant, same statement. It succeeds. So the refusals above are
+-- attributable to the marker and not to some other gate that happened to be in the way.
+--
+-- This also states the narrowing's actual threat model plainly: anyone who can set this GUC
+-- in the same transaction as their own UPDATE defeats it. PostgREST runs each request in its
+-- own transaction and exposes only API-schema functions over /rpc/, so an API client cannot.
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; o uuid; c2 uuid; v_req text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'S2 Sens A', 's2sa_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'S2 Sens B', 's2sb_'||substr(bu::text,1,8)) returning id into bpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (apid, au, 'Sens O', 'Sens S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, bpid, bu, 'sens', 'accepted');
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (au, bpid, 'declined', now()) returning id into c2;
+
+  perform pg_temp.act(au);
+  perform set_config('app.barter_handoff', c2::text, true);   -- the ONLY difference
+  update public.conversation set request_status = 'accepted' where id = c2;
+  perform set_config('app.barter_handoff', '', true);
+
+  perform pg_temp.act_service();
+  select request_status into v_req from public.conversation where id = c2;
+  perform pg_temp.chk('barter',
+    'with the marker set, the SAME update succeeds (refusals above are the marker)',
+    'accepted', v_req);
+end $$;

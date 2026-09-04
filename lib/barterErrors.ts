@@ -56,6 +56,40 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   deleteOffer: { terminal: false, title: 'Could not delete', body: 'Please try again.' },
 }
 
+// A write that affected ZERO rows. Authorization on these tables is expressed as an RLS
+// USING clause, which FILTERS rows the caller may not touch rather than rejecting the
+// statement -- so a blocked write returns no error and no rows. At least three causes produce
+// it (filtered by permission, deleted concurrently, never existed) and the client cannot tell
+// them apart, so the copy must be true under all three: it says the thing is gone, which is
+// what the user needs to know, and never asserts WHY.
+const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
+  respond: {
+    terminal: true,
+    title: 'That offer is no longer available',
+    body: 'It may have been closed or withdrawn. The board has been updated.',
+  },
+  accept: {
+    terminal: true,
+    title: 'That response is no longer available',
+    body: 'It may have been withdrawn or already answered. The list has been updated.',
+  },
+  decline: {
+    terminal: true,
+    title: 'That response is no longer available',
+    body: 'It may have been withdrawn or already answered. The list has been updated.',
+  },
+  closeOffer: {
+    terminal: true,
+    title: 'That offer is no longer available',
+    body: 'It may have already been closed or removed.',
+  },
+  deleteOffer: {
+    terminal: true,
+    title: 'That offer is no longer available',
+    body: 'It may have already been closed or removed.',
+  },
+}
+
 // Per-operation terminal outcomes. Only the codes an operation can genuinely produce are
 // listed; an unlisted code falls through to the retryable default rather than being
 // force-fitted to the nearest terminal message.
@@ -128,6 +162,11 @@ export function barterWriteFailure(
   op: BarterWriteOp,
   error: unknown,
 ): BarterWriteFailure {
+  // Client-detected conditions carry their own discriminator rather than borrowing a
+  // SQLSTATE, so a locally-observed outcome can never be reported as a specific server rule.
+  const clientCode = (error as { barterClientCode?: unknown } | null | undefined)
+    ?.barterClientCode
+  if (clientCode === 'no_rows') return NO_ROWS[op]
   const code = (error as { code?: unknown } | null | undefined)?.code
   if (typeof code === 'string') {
     const forOp = TERMINAL[op]

@@ -26,6 +26,30 @@
 -- acceptance and a usable conversation now succeed or fail together. There is no code path
 -- that can leave an accepted response without a conversation a participant can post to.
 
+-- RECORDED, NOT RESOLVED -- these are decisions, not defects, and this slice does not take
+-- them. Each was raised in review and is deliberately left open:
+--   * OFFER-TEXT MUTABILITY. A response is frozen the moment it is sent (Slice 1), but the
+--     offer it answers stays editable, so an owner can change the terms after providers have
+--     responded to the old ones. Slice 1's header already states that the DENY-list on
+--     barter_offers must become an ALLOW-list when a counterparty-dependent column is added,
+--     which Slice 3 will do -- so the enforcement seam is already required. Awaiting a ruling
+--     on freeze-on-first-response vs snapshot.
+--   * UNRELATED PENDING REQUEST. When the pair already has a pre-booking request open in the
+--     REVERSE direction (the offer owner asked the responder as a client, and it is still
+--     pending), accepting the barter response force-opens it, resolving a request the
+--     responder never acted on. Bounded and arguably intended -- they initiated barter
+--     contact -- but it is an inference this code makes, not one a document authorises.
+--   * TWO THREADS PER PAIR. `getOrCreateConversation` resolves one orientation; this RPC
+--     resolves both. A pair who barter AND book each other can legitimately hold two rows,
+--     and `conversation_unique_pair` cannot detect it because both columns differ. Slice 3's
+--     agreement has to point at ONE conversation, so this should be settled BEFORE that
+--     schema exists, not migrated afterwards.
+--   * STRANDED PRE-SLICE-2 ROWS. An interest accepted under the old four-write path that
+--     never got a conversation now raises permanently: `accepted` is terminal, the unique
+--     index holds the slot, and the idempotent branch refuses rather than repairs. Verified
+--     0 accepted interests (so 0 stranded) on non-production; production is NOT queried by
+--     this work and its count is unknown. No backfill is included.
+
 -- ── 1. Barter match supersedes a pre-booking request ─────────────────────────
 -- enforce_conversation_update already encodes exactly one supersede rule: attaching a real
 -- booking opens the thread "regardless of any prior pending/declined request state". A
@@ -35,10 +59,24 @@
 -- requires being the provider on that row, which the canonical orientation may not make the
 -- accepting party.
 --
--- The carve-out is deliberately evidence-based rather than caller-based: it opens the thread
--- only when an ACCEPTED barter interest genuinely links these two providers. A participant
--- cannot reach it by asserting anything -- the accepted row has to exist first, and Slice 1
--- makes that row writable only by the offer owner along one legal transition.
+-- The carve-out is gated TWICE, and both gates are necessary.
+--
+-- EVIDENCE, not caller: it opens the thread only when an ACCEPTED barter interest genuinely
+-- links these two providers. A participant cannot reach it by asserting anything -- the
+-- accepted row has to exist first, and Slice 1 makes that row writable only by the offer
+-- owner along one legal transition.
+--
+-- But evidence alone is too broad, because an accepted match is PERMANENT (Slice 1 forbids
+-- reverting it). A purely evidence-gated rule would therefore hand both parties the ability
+-- to reopen ANY declined request between them, forever, with a direct PostgREST PATCH --
+-- including the party who was declined. `decline` is the only refusal primitive this product
+-- ships (there is no blocking), so making it unilaterally defeasible by the refused party
+-- would quietly remove the one way a provider can say no. The second gate is a
+-- transaction-local marker published by accept_barter_interest around its own update, which
+-- confines the carve-out to the handoff itself. See section 3.
+--
+-- The two gates answer different questions: the marker asks "is this the handoff?", the
+-- evidence asks "is there really a match?". Neither is sufficient alone.
 create or replace function public.enforce_conversation_update()
 returns trigger
 language plpgsql
@@ -49,6 +87,7 @@ declare
   v_is_client boolean;
   v_is_provider boolean;
   v_barter_match boolean;
+  v_handoff boolean;
 begin
   if auth.role() = 'service_role' then
     return new;
@@ -105,20 +144,46 @@ begin
         )
     );
 
+    -- Is THIS statement the handoff RPC opening the thread it is itself creating or
+    -- reusing? The RPC publishes the conversation id as a transaction-local GUC immediately
+    -- before its update and clears it immediately after, so the marker is true only for that
+    -- one statement. PostgREST runs each request in its own transaction and exposes only
+    -- functions in the API schema over /rpc/, so a client cannot set this GUC in the same
+    -- transaction as an UPDATE of its own -- which is what makes the carve-out below
+    -- unreachable outside the RPC. This is a CONJUNCT, not a replacement: the barter-match
+    -- evidence still has to hold. The marker answers "is this the handoff?", the evidence
+    -- answers "is there really a match?", and both must be true.
+    v_handoff := coalesce(current_setting('app.barter_handoff', true), '') = old.id::text;
+
     if old.booking_id is null and new.booking_id is not null
        and new.request_status = 'accepted' then
       null; -- booking supersedes (unchanged)
-    elsif v_barter_match and new.request_status = 'accepted'
-          and old.request_status in ('pending', 'declined') then
-      -- BARTER MATCH SUPERSEDES THE REQUEST. Same shape as the booking rule above, and
-      -- gated on evidence that already exists in the database rather than on who is asking.
+    elsif old.request_status = 'pending' and new.request_status in ('accepted', 'declined') then
+      -- PRE-EXISTING RULE, kept FIRST so the barter carve-out can only ADD a transition and
+      -- never intercept one. An earlier draft placed the carve-out above this branch, which
+      -- -- because plpgsql if/elsif is first-match -- silently replaced this provider-only
+      -- check with a participant check whenever a match existed. That was an undisclosed
+      -- authorization widening on the messaging surface. The relaxation is now explicit,
+      -- scoped to exactly the case the handoff needs, and applies ONLY to 'accepted':
+      -- pending -> declined stays provider-only, unchanged.
+      if not v_is_provider then
+        if new.request_status = 'accepted' and v_is_client and v_barter_match and v_handoff then
+          -- The accepting party can legitimately occupy the CLIENT slot: the barter thread
+          -- key is canonical by uuid order, so which slot the offer owner lands in is not
+          -- theirs to choose. Requires a real accepted match, same evidence gate as below.
+          null;
+        else
+          raise exception 'Only the provider may accept or decline a request.'
+            using errcode = 'check_violation';
+        end if;
+      end if;
+    elsif v_handoff and v_barter_match and new.request_status = 'accepted'
+          and old.request_status = 'declined' then
+      -- BARTER MATCH SUPERSEDES A DECLINED REQUEST. Genuinely new: declined -> accepted was
+      -- not a legal participant transition at all. Same shape as the booking rule above and
+      -- gated on evidence in the database, not on who is asking.
       if not (v_is_client or v_is_provider) then
         raise exception 'Only a participant may open a matched barter conversation.'
-          using errcode = 'check_violation';
-      end if;
-    elsif old.request_status = 'pending' and new.request_status in ('accepted', 'declined') then
-      if not v_is_provider then
-        raise exception 'Only the provider may accept or decline a request.'
           using errcode = 'check_violation';
       end if;
     elsif old.request_status = 'declined' and new.request_status = 'pending' then
@@ -237,6 +302,25 @@ begin
       using errcode = 'insufficient_privilege';
   end if;
 
+  -- DEFENSE IN DEPTH (SEC-AUTHZ-003). Running as postgres, RLS is off, so nothing else in
+  -- this function re-establishes that these provider rows belong to the users they are about
+  -- to be matched with -- those bindings are held only by write-time policies in another
+  -- migration. If an offer ever carried a provider_id not owned by its user_id, this function
+  -- would open a conversation with an unrelated THIRD provider and write a message into it
+  -- with RLS bypassed. No authenticated path can produce such a row today; this makes that an
+  -- assertion of the function rather than an assumption inherited from elsewhere.
+  if not exists (
+    select 1 from public.providers p
+     where p.id = v_offer.provider_id and p.user_id = v_offer.user_id
+  ) or not exists (
+    select 1 from public.providers p
+     where p.id = v_interest.interested_provider_id
+       and p.user_id = v_interest.interested_user_id
+  ) then
+    raise exception 'Offer or response identity is inconsistent; cannot match.'
+      using errcode = 'internal_error';
+  end if;
+
   v_owner_provider := v_offer.provider_id;
   v_responder_user := v_interest.interested_user_id;
   v_responder_provider := v_interest.interested_provider_id;
@@ -296,14 +380,24 @@ begin
     --     touching it would be a NULL -> 'accepted' transition that no branch permits and
     --     the trigger would rightly reject.
     if v_new_status = 'pending' then
+      -- Publish the handoff marker for exactly this one statement, then clear it. It is
+      -- transaction-local (is_local = true) so it is discarded at commit or rollback
+      -- regardless; the explicit reset matters because the B5B harness runs the whole suite
+      -- in ONE transaction, where a marker left set could make a later direct-UPDATE test
+      -- pass for the wrong reason.
+      perform set_config('app.barter_handoff', v_conv_id::text, true);
       update public.conversation set request_status = 'accepted' where id = v_conv_id;
+      perform set_config('app.barter_handoff', '', true);
     end if;
   else
     v_conv_id := v_conv.id;
     if v_conv.request_status is not null and v_conv.request_status <> 'accepted' then
       -- A pending or DECLINED pre-booking request between these two. Left alone, the match
-      -- message would be rejected and the pair would have no usable thread.
+      -- message would be rejected and the pair would have no usable thread. Marker scoped to
+      -- this single statement, same reasoning as the insert branch above.
+      perform set_config('app.barter_handoff', v_conv_id::text, true);
       update public.conversation set request_status = 'accepted' where id = v_conv_id;
+      perform set_config('app.barter_handoff', '', true);
     end if;
   end if;
 

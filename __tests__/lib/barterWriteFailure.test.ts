@@ -65,4 +65,39 @@ describe('barterWriteFailure', () => {
     // closeOffer is a plain is_active update; it has no terminal server rule today.
     expect(barterWriteFailure('closeOffer', pgErr('23514')).terminal).toBe(false)
   })
+
+  // A zero-row write is detected by the CLIENT, not reported by the server. It must never be
+  // reported as a specific server rule -- an earlier draft returned SQLSTATE 42501 for it,
+  // which made the UI assert "Not your offer" for a row that had simply been deleted.
+  describe('zero-row writes', () => {
+    const noRows = { barterClientCode: 'no_rows' }
+
+    it.each([['respond'], ['accept'], ['decline'], ['closeOffer'], ['deleteOffer']] as const)(
+      'is terminal for %s (retrying cannot make a missing row reappear)',
+      (op) => {
+        expect(barterWriteFailure(op, noRows).terminal).toBe(true)
+      },
+    )
+
+    it('never asserts WHY the row was missing, because it cannot know', () => {
+      for (const op of ['respond', 'accept', 'decline', 'closeOffer', 'deleteOffer'] as const) {
+        const r = barterWriteFailure(op, noRows)
+        expect(`${r.title} ${r.body}`).not.toMatch(/permission|not your|owner|allowed/i)
+      }
+    })
+
+    it('says "offer" for offer operations and "response" for response operations', () => {
+      expect(barterWriteFailure('closeOffer', noRows).title).toMatch(/offer/i)
+      expect(barterWriteFailure('deleteOffer', noRows).title).toMatch(/offer/i)
+      expect(barterWriteFailure('decline', noRows).title).toMatch(/response/i)
+      expect(barterWriteFailure('accept', noRows).title).toMatch(/response/i)
+    })
+
+    it('does not let the discriminator collide with the server code space', () => {
+      // A real 42501 from the server still means "not yours"; the client signal does not.
+      expect(barterWriteFailure('decline', { code: '42501' }).title).not.toEqual(
+        barterWriteFailure('decline', noRows).title,
+      )
+    })
+  })
 })

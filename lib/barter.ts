@@ -193,8 +193,12 @@ export async function declineInterest(
     .select('id')
   if (error) return { ok: false, error }
   if (!data || data.length === 0) {
-    // Not an exception, but not a success either: the row was invisible to this caller.
-    return { ok: false, error: { code: '42501' } }
+    // Not an exception, but not a success either: the write matched no row. At least three
+    // causes produce this — RLS filtered the caller, the row was deleted concurrently, or the
+    // id does not exist — so it must NOT borrow a real SQLSTATE. Returning 42501 here made the
+    // UI assert "Not your offer", which is false in two of the three cases. A distinct
+    // discriminator keeps the server's code space and the client's own signals separate.
+    return { ok: false, error: { barterClientCode: 'no_rows' } }
   }
   return { ok: true, error: null }
 }
