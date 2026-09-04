@@ -101,3 +101,34 @@ describe('barterWriteFailure', () => {
     })
   })
 })
+
+// Slice 3a-0b: the release operation. Both codes the RPC raises are TERMINAL — retrying
+// cannot make a negotiation active again, and cannot make you a participant.
+describe('release', () => {
+  it('treats "no longer in negotiation" (23514) as terminal, not retryable', () => {
+    const r = barterWriteFailure('release', { code: '23514' })
+    expect(r.terminal).toBe(true)
+    expect(`${r.title} ${r.body}`).not.toMatch(/try again/i)
+  })
+
+  it('says something TRUE for a non-participant (42501) — not "not your offer"', () => {
+    const r = barterWriteFailure('release', { code: '42501' })
+    expect(r.terminal).toBe(true)
+    expect(r.title).toMatch(/negotiation/i)
+    // The nearest pre-existing copy is about offer ownership, which is false here: a responder
+    // is not "not your offer", they are simply not in this negotiation.
+    expect(`${r.title} ${r.body}`).not.toMatch(/your offer/i)
+  })
+
+  it('keeps a transient failure retryable', () => {
+    const r = barterWriteFailure('release', { message: 'network down' })
+    expect(r.terminal).toBe(false)
+    expect(r.body).toMatch(/try again/i)
+  })
+
+  it('never leaks raw database text', () => {
+    const raw = 'duplicate key value violates unique constraint "x"'
+    const r = barterWriteFailure('release', { code: '23514', message: raw })
+    expect(`${r.title} ${r.body}`).not.toContain(raw)
+  })
+})

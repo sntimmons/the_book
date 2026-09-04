@@ -53,6 +53,11 @@ export interface Message {
   is_read: boolean
   created_at: string
   is_mine: boolean
+  /**
+   * Authored by the platform, not by either participant (`sender_id IS NULL`). Without this,
+   * `is_mine === false` renders a server notice as if the counterparty had typed it.
+   */
+  is_system: boolean
 }
 
 export function useConversations() {
@@ -262,7 +267,11 @@ export function useMessages(conversationId: string) {
         created_at: string
       }>
       setMessages(
-        rows.map((m) => ({ ...m, is_mine: m.sender_id === user.id })),
+        rows.map((m) => ({
+          ...m,
+          is_mine: m.sender_id === user.id,
+          is_system: m.sender_id === null,
+        })),
       )
     } catch (err) {
       console.log('Fetch messages error:', err)
@@ -308,7 +317,14 @@ export function useMessages(conversationId: string) {
           setMessages((prev) => {
             // Guard against duplicate from our own optimistic INSERT round-trip
             if (prev.some((m) => m.id === newMsg.id)) return prev
-            return [...prev, { ...newMsg, is_mine: newMsg.sender_id === user.id }]
+            return [
+              ...prev,
+              {
+                ...newMsg,
+                is_mine: newMsg.sender_id === user.id,
+                is_system: newMsg.sender_id === null,
+              },
+            ]
           })
         },
       )

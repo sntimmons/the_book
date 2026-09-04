@@ -130,13 +130,30 @@ async function fetchInterestCounts(offerIds: string[]): Promise<Map<string, numb
 }
 
 // Which offer ids the current user has already expressed interest in.
-export async function fetchMyInterests(userId: string): Promise<Set<string>> {
-  if (!userId) return new Set()
+export interface MyInterest {
+  id: string
+  status: BarterInterestStatus
+}
+
+/**
+ * The caller's own response per offer, keyed by offer id.
+ *
+ * Returns the STATUS, not merely whether one exists. A bare set could only say "you responded",
+ * so a responder whose negotiation had ended still read "Interest sent" forever — a live-sounding
+ * claim about a state that had finished, on the only surface they have for that post.
+ */
+export async function fetchMyInterests(userId: string): Promise<Map<string, MyInterest>> {
+  const map = new Map<string, MyInterest>()
+  if (!userId) return map
   const { data } = await supabase
     .from('barter_interests')
-    .select('offer_id')
+    .select('id, offer_id, status')
     .eq('interested_user_id', userId)
-  return new Set(((data as { offer_id: string }[] | null) ?? []).map((r) => r.offer_id))
+  for (const r of (data as { id: string; offer_id: string; status: BarterInterestStatus }[]
+    | null) ?? []) {
+    map.set(r.offer_id, { id: r.id, status: r.status })
+  }
+  return map
 }
 
 // Interests on a specific offer with provider info, for the owner's review view.

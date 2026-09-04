@@ -36,6 +36,8 @@ import {
 import {
   fetchBarterFeed,
   fetchMyInterests,
+  releaseInterest,
+  MyInterest,
   BarterOfferWithProvider,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
@@ -117,7 +119,7 @@ export default function CommunityFeed() {
 
   // Barter tab state.
   const [offers, setOffers] = useState<BarterOfferWithProvider[]>([])
-  const [myInterests, setMyInterests] = useState<Set<string>>(new Set())
+  const [myInterests, setMyInterests] = useState<Map<string, MyInterest>>(new Map())
   const [barterLoading, setBarterLoading] = useState(true)
   const [barterRefreshing, setBarterRefreshing] = useState(false)
   // The offer the interest modal is open for (null = closed) and its draft note.
@@ -366,12 +368,46 @@ export default function CommunityFeed() {
       return
     }
     // Mark this offer as interested and bump its local count.
-    setMyInterests((prev) => new Set(prev).add(offer.id))
+    setMyInterests((prev) => {
+      const next = new Map(prev)
+      next.set(offer.id, { id: 'pending-local', status: 'pending' })
+      return next
+    })
     setOffers((prev) =>
       prev.map((o) => (o.id === offer.id ? { ...o, interestCount: o.interestCount + 1 } : o)),
     )
     setInterestOffer(null)
     setInterestNote('')
+  }
+
+  function confirmEndNegotiation(interestId: string) {
+    Alert.alert(
+      'End this negotiation?',
+      'The other provider will be told the negotiation ended. Your response stays on record, '
+        + 'and you will not be able to respond to this post again.',
+      [
+        { text: 'Keep negotiating', style: 'cancel' },
+        {
+          text: 'End negotiation',
+          style: 'destructive',
+          onPress: () => endNegotiation(interestId),
+        },
+      ],
+    )
+  }
+
+  async function endNegotiation(interestId: string) {
+    const { ok, error } = await releaseInterest(interestId)
+    if (!ok) {
+      console.log('End negotiation error:', error)
+      const f = barterWriteFailure('release', error)
+      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+      // A terminal refusal means this card is stale, so re-read the barter state rather than
+      // leaving a control the server has already refused.
+      if (f.terminal) loadBarter()
+      return
+    }
+    loadBarter()
   }
 
   async function markFilled(offerId: string) {
@@ -669,7 +705,8 @@ export default function CommunityFeed() {
             <BarterCard
               offer={item}
               isOwner={item.userId === currentUserId}
-              hasInterest={myInterests.has(item.id)}
+              myInterest={myInterests.get(item.id) ?? null}
+              onEndNegotiation={confirmEndNegotiation}
               onInterest={() => openInterest(item)}
               onMenu={() => openOfferMenu(item)}
               onViewInterests={() => viewInterests(item)}
@@ -821,14 +858,16 @@ function TabButton({
 function BarterCard({
   offer,
   isOwner,
-  hasInterest,
+  myInterest,
+  onEndNegotiation,
   onInterest,
   onMenu,
   onViewInterests,
 }: {
   offer: BarterOfferWithProvider
   isOwner: boolean
-  hasInterest: boolean
+  myInterest: MyInterest | null
+  onEndNegotiation?: (interestId: string) => void
   onInterest: () => void
   onMenu: () => void
   onViewInterests: () => void
@@ -902,7 +941,28 @@ function BarterCard({
               <Text style={styles.interestCountTextMuted}>{offer.interestCount}</Text>
             </View>
             <View style={{ flex: 1 }} />
-            {hasInterest ? (
+            {myInterest?.status === 'released' ? (
+              // Ended, and said so. "Interest sent" persisted here forever, which read as a
+              // live outstanding response on the responder's only surface for this post.
+              <View style={styles.interestSentBtn}>
+                <Feather name="minus-circle" size={15} color="rgba(240,232,213,0.45)" />
+                <Text style={styles.interestSentText}>Negotiation ended</Text>
+              </View>
+            ) : myInterest?.status === 'declined' ? (
+              <View style={styles.interestSentBtn}>
+                <Feather name="minus-circle" size={15} color="rgba(240,232,213,0.45)" />
+                <Text style={styles.interestSentText}>Not selected</Text>
+              </View>
+            ) : myInterest?.status === 'accepted' ? (
+              <TouchableOpacity
+                style={styles.interestSentBtn}
+                activeOpacity={0.85}
+                onPress={() => onEndNegotiation?.(myInterest.id)}
+              >
+                <Feather name="x-circle" size={15} color="rgba(240,232,213,0.6)" />
+                <Text style={styles.interestSentText}>End negotiation</Text>
+              </TouchableOpacity>
+            ) : myInterest ? (
               <View style={styles.interestSentBtn}>
                 <Feather name="check" size={15} color="rgba(240,232,213,0.6)" />
                 <Text style={styles.interestSentText}>Interest sent</Text>

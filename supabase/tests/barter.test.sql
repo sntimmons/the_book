@@ -1579,3 +1579,109 @@ begin
     'accepted', v_status);
   perform pg_temp.chk('barter', 'the counterparty''s message is unchanged', 'original', v_msg);
 end $$;
+
+-- ── The counterparty is TOLD when a negotiation ends ───────────────────────
+-- Slice 3a-0b. The release and the signal are one transaction, so they cannot diverge; the
+-- message is authored by NOBODY (sender_id IS NULL) rather than impersonating a participant.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; c uuid;
+  v_n integer; v_sender uuid; v_content text; v_reason text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Sig Owner', 'sigo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Sig Resp', 'sigr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Sig O', 'Sig S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'pending') returning id into i;
+
+  -- Accept through the real RPC so a canonical conversation exists, as it would in the product.
+  perform pg_temp.act(ou);
+  select public.accept_barter_interest(i) into c;
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages where conversation_id = c;
+  perform pg_temp.chk('barter', 'the accept handoff message exists before release',
+    '1', v_n::text);
+
+  -- The RESPONDER ends it.
+  perform pg_temp.act(ru);
+  select public.release_barter_interest(i) into v_reason;
+
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages where conversation_id = c;
+  perform pg_temp.chk('barter', 'the release appends exactly one message', '2', v_n::text);
+
+  select sender_id, content into v_sender, v_content from public.messages
+   where conversation_id = c order by created_at desc limit 1;
+  perform pg_temp.chk('barter',
+    'the signal is authored by NOBODY, not by a participant',
+    'true', (v_sender is null)::text);
+  perform pg_temp.chk('barter', 'the signal names the role that ended it',
+    'This trade negotiation was ended by the responding provider.', v_content);
+
+  -- 13. An idempotent retry must not duplicate the signal.
+  perform pg_temp.act(ru);
+  perform public.release_barter_interest(i);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages where conversation_id = c;
+  perform pg_temp.chk('barter', 'a repeated release does NOT duplicate the signal',
+    '2', v_n::text);
+
+  -- Both participants can read it: the SELECT policy is conversation-scoped, not sender-scoped.
+  perform pg_temp.act(ou);
+  select count(*) into v_n from public.messages where conversation_id = c and sender_id is null;
+  perform pg_temp.chk('barter', 'the owner can read the system message', '1', v_n::text);
+  perform pg_temp.act(ru);
+  select count(*) into v_n from public.messages where conversation_id = c and sender_id is null;
+  perform pg_temp.chk('barter', 'the responder can read the system message', '1', v_n::text);
+end $$;
+
+-- ── The owner's release names the owner, and a client cannot forge a system message ──
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; c uuid; v_content text; v_code text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Sg2 Owner', 'sg2o_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Sg2 Resp', 'sg2r_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Sg2 O', 'Sg2 S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'pending') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.accept_barter_interest(i) into c;
+  perform public.release_barter_interest(i);
+
+  perform pg_temp.act_service();
+  select content into v_content from public.messages
+   where conversation_id = c order by created_at desc limit 1;
+  perform pg_temp.chk('barter', 'an owner-ended negotiation names the post owner',
+    'This trade negotiation was ended by the post owner.', v_content);
+
+  -- A client cannot author a system message: the INSERT policy requires sender_id = auth.uid(),
+  -- which null can never satisfy. This is what makes the server the only possible author.
+  perform pg_temp.act(ou);
+  select count(*) into v_n from public.messages where conversation_id = c;
+  begin
+    insert into public.messages(conversation_id, sender_id, content, is_read, created_at)
+    values (c, null, 'forged platform notice', false, now());
+    v_code := 'NO ERROR';
+  exception when others then v_code := 'REFUSED';
+  end;
+  perform pg_temp.chk('barter',
+    'a client cannot author a system message (sender_id must equal auth.uid())',
+    'REFUSED', v_code);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('barter', 'the forged attempt added nothing',
+    v_n::text, (select count(*)::text from public.messages where conversation_id = c));
+end $$;
