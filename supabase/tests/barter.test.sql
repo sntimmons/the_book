@@ -76,9 +76,15 @@ select pg_temp.chk('barter', 'caller_provider_id is SECURITY DEFINER', 'true',
 -- prosecdef alone is not enough: a DEFINER function that lost `set search_path = ''` is the
 -- classic hijack shape and would still report true above.
 select pg_temp.chk('barter', 'caller_provider_id pins an empty search_path', 'true',
-  (select ('search_path=' = any(coalesce(p.proconfig, array[]::text[])))::text
+  (select ('search_path=""' = any(coalesce(p.proconfig, array[]::text[])))::text
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where p.proname = 'caller_provider_id' and n.nspname = 'public'));
+-- Every barter trigger function must pin it too -- a DEFINER function that lost the empty
+-- search_path is the classic hijack shape, and there are five more of them.
+select pg_temp.chk('barter', 'all barter trigger functions pin an empty search_path', 'true',
+  (select bool_and('search_path=""' = any(coalesce(p.proconfig, array[]::text[])))::text
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname like 'enforce\_barter%'));
 select pg_temp.chk('barter', 'caller_provider_id is owned by postgres', 'postgres',
   (select r.rolname from pg_proc p
      join pg_namespace n on n.oid = p.pronamespace
@@ -314,8 +320,11 @@ declare v_blocked boolean := false; v_msg text;
 begin
   perform pg_temp.act_service();
   begin
+    -- (off1, opid) is an unused pair, so the legacy (offer, provider) key cannot fire and
+    -- only the new (offer, user) key can reject this. Seeded as service_role because
+    -- section 3 makes this combination unreachable for a client.
     insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
-    values (current_setting('b5b.bt_off1')::uuid, current_setting('b5b.bt_rpid')::uuid,
+    values (current_setting('b5b.bt_off1')::uuid, current_setting('b5b.bt_opid')::uuid,
             current_setting('b5b.bt_tu')::uuid);
   exception when others then
     v_blocked := true; v_msg := sqlerrm;

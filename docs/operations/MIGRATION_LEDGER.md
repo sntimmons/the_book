@@ -123,6 +123,25 @@ Ledger before: 9 entries, ending `20260901000000`. After: 14 entries, `local == 
 for every row. No merged migration file was edited. No schema statement was executed by the
 repair. Production untouched.
 
+## 2026-09-03 — `20260906000000` applied to non-production (ordinary apply, no repair)
+
+Barter Slice 1 integrity hardening. Applied to the non-production project
+`wcoyjeklscuqsumpjpfo` via `supabase db push --linked` — an ordinary forward apply, **not** a
+repair: the ledger showed `20260906000000` as local-only with `remote` empty, so no drift
+existed and nothing was reconciled.
+
+The migration's own section-0 prechecks were run **read-only first**, before the apply, and all
+returned zero: no offer with more than one accepted response, no duplicate `(offer, user)` pair,
+and no row whose provider identity is not owned by its author. Both barter tables were empty
+(0 offers, 0 interests), so the two identity-forgery routes the migration closes were never
+exploited on this project and no data remediation was required.
+
+Ledger before: 14 entries, ending `20260905000000`. After: **15 entries**, `local == remote`
+for every row. No merged migration file was edited. Production untouched.
+
+Post-apply B5B: **138/138 passed, 0 failed**, transaction rolled back, zero residue verified by
+re-reading `barter_offers`, `barter_interests` and the barter rows of `rate_limit_log` (all 0).
+
 ## Prevention
 
 Apply migrations through `supabase migration up` / `db push` so the ledger records them.
