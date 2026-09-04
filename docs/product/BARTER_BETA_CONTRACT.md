@@ -27,10 +27,36 @@ by omission — see § 11 for what remains open, and
 - Participation is additionally opt-in at the **provider level**: a provider turns on
   **Open to Trades**. Eligibility and opt-in are separate — being eligible does not enrol you.
 
-## 3. What is posted
+## 3. What is posted, and what is authoritative
 
 - The post model is **need + offer**: what a provider is seeking, and what they are offering.
 - A provider may hold **at most 3 active posts**.
+
+### 3.1 The board post stays editable; the deal does not
+
+Locked 2026-09-04 — **PD-047**. The **public barter post remains editable while active.** It is
+not frozen by the first response.
+
+But **every proposal snapshots the barter-post terms as they were when that proposal was
+created.** Editing the public post therefore:
+
+- **affects future responders**, and
+- **must not** rewrite an existing proposal, an in-flight negotiation, or an accepted agreement.
+
+The authoritative progression is one direction only:
+
+> mutable board post → **immutable proposal snapshot** → versioned negotiated proposal/counter
+> terms → **accepted agreement version**
+
+**The final agreement is authoritative, and must not depend on reading the current mutable
+board post.** Material changes to negotiated terms create a **new** proposal/agreement version
+and invalidate acceptance of the prior version (§ 4).
+
+Once an agreement is finalised for a post, the sourcing post is **auto-closed**; it and its
+history are **preserved**, never destructively deleted.
+
+The consequence for implementation is explicit: transaction truth is modelled **independently
+of `barter_offers`**. The mutable post is a sourcing surface, not the record of the deal.
 
 ## 4. What makes a trade real
 
@@ -61,21 +87,76 @@ by omission — see § 11 for what remains open, and
 - **There is no timeout completion.** An unconfirmed obligation never becomes Completed by
   the clock running out. Silence is not consent, and elapsed time earns no credit.
 
-## 7. When a trade does not go cleanly
+## 7. Exiting, cancelling, and not showing up
 
-- An obligation that is not confirmed surfaces as **Needs Attention**, and escalates to
-  **Under Review**.
-- Adjudication in the beta is **manual**.
-- Outcomes must be **truthful**: a trade where one leg was delivered and the other was not is
-  **Partially Fulfilled**, never Completed. A false success is worse than an ugly truth.
-- **History is retained.** A participant cannot destructively erase the counterparty's record
-  of an interaction — **PD-043**. Legitimate account erasure is a separate path and outranks
-  retention.
-- **Cancellation rules apply, and their specifics are NOT settled here.** What is locked is
-  the surrounding frame: no timeout completion (§ 6), truthful outcomes and history retention
-  (this section). Whether a two-party trade may be **mutually cancelled before delivery**, and
-  how cancellation differs from a no-show on each leg, remain open — **OQ-004**. Do not infer
-  a cancellation model from this document.
+Locked 2026-09-04 — **PD-046**. The governing distinction is **before agreement**, **after
+agreement but before delivery**, and **after any delivery** — the cost of leaving rises as the
+other party's exposure rises.
+
+### 7.1 Before an official agreement
+
+Until both providers have explicitly accepted the **same current agreement version**, either
+party may withdraw a proposal, decline, or simply walk away.
+
+This is **not a cancellation.** No penalty, no review, no reliability judgment, and nothing
+that reads as a broken commitment. Negotiating and deciding not to proceed is ordinary.
+
+### 7.2 After agreement, before any delivery
+
+**Either participant may cancel, unilaterally.** The other party's permission is **not**
+required — nobody is held inside a service commitment by the counterparty's refusal to release
+them.
+
+Recorded: `cancelled_at`, the cancelling participant, and an optional reason.
+
+- Both agree → **Mutually Cancelled**
+- One participant exits → **Cancelled by Participant**
+
+For the first Houston closed beta: **no normal review, no automatic reputation penalty, no
+ranking impact.** Actor and timing are retained for a future reliability model — retained, not
+scored.
+
+### 7.3 After delivery starts
+
+Once **any** obligation is marked delivered, ordinary cancellation is **unavailable**. The
+other party has already given something up, and a unilateral exit would erase that.
+
+Unresolved disagreement routes **Needs Attention → Under Review → manual adjudication**
+(Founder-operated in the beta).
+
+### 7.4 No-show
+
+**A no-show is not a cancellation.** It is failing to perform at the agreed time *without
+having recorded a cancellation beforehand* — the difference is whether the other party was
+told.
+
+For the first beta: route to **Needs Attention** and manual adjudication. If established, the
+affected obligation is **Unfulfilled**. A failed obligation produces **no normal
+service-quality review**. The event is retained for a future conduct/reliability model, with
+**no automatic ranking or reputation effect** in the first beta.
+
+### 7.5 Terminal truth
+
+Overall agreement state:
+
+| State | Meaning |
+|---|---|
+| **Completed** | All required obligations Fulfilled |
+| **Partially Fulfilled** | At least one Fulfilled **and** at least one Unfulfilled |
+| **Cancelled** | Ended before any delivery, through the cancellation path |
+| **Not Completed** | No required obligation fulfilled, and performance failed |
+| **Under Review** | Active investigation / adjudication |
+| **Closed Without Resolution** | The platform could not establish what happened. **Terminal**, and **no reliability judgment is assigned** from the unresolved obligation |
+
+**Individual obligation truth survives independently of the overall agreement state.** An
+obligation that was genuinely fulfilled stays Fulfilled even if the agreement as a whole ends
+Partially Fulfilled or Closed Without Resolution. Rolling the legs up into one verdict would
+destroy the only record of who actually did their part.
+
+Two rules carry over unchanged: outcomes must be **truthful** — a false success is worse than
+an ugly truth — and **history is retained**; a participant cannot destructively erase the
+counterparty's record of an interaction (**PD-043**), with legitimate account erasure a
+separate path that outranks retention.
 
 ## 8. Reviews and reputation
 
@@ -83,10 +164,24 @@ by omission — see § 11 for what remains open, and
 - **Barter has no effect on public reputation or ranking** in the first beta.
 - Later "Verified Trade" reputation work is **deferred**, not rejected — § 10.
 
-## 9. Safety
+## 9. Safety and contact
 
 - **Blocking and reporting must exist before real beta transactions run.** They are a platform
   capability, not a barter feature, and barter must not be the reason they are skipped.
+
+### 9.1 Contact after a decline
+
+Locked 2026-09-04 — **PD-048**. A provider who previously **declined** another provider's
+request **may later initiate legitimate contact** with them.
+
+It **must not** be implemented by silently re-opening the other person's declined request —
+that would rewrite their record of having said no. Conceptually it is a **new
+reverse-direction contact episode on the same canonical provider-pair conversation**
+(one thread per pair is already enforced; see `20260908000000_canonical_provider_pair.sql`).
+
+This is an approved **messaging follow-up**, not Slice 3 scope: do not expand the agreement
+slice to redesign messaging unless the agreement flow itself requires it. The current
+truthful dead-end copy may remain in the interim.
 
 ## 10. Beta limits
 
@@ -110,9 +205,9 @@ offer.
 
 **Open — genuinely undecided, and not to be resolved by implementation:**
 
-- **OQ-004** — cancellation and no-show for trades (see § 7).
 - **OQ-006** — collusion and reciprocal-rating gaming. Two-party scope does not close this.
-- **OQ-008** — whether an offer's terms may still be edited once providers have responded.
+
+*(OQ-004 closed 2026-09-04 by § 7 / PD-046. OQ-008 closed 2026-09-04 by § 3.1 / PD-047.)*
 
 ## 12. Where the product does not yet match this contract
 
