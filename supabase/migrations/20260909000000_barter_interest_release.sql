@@ -26,6 +26,14 @@
 -- official agreement exists for this interest/post" — added HERE, inside this function, which
 -- is deliberately shaped as the single seam future slices extend. Do not create a second
 -- release path.
+--
+-- AND NOTE WHERE THAT GUARD HAS TO LIVE. The trigger below authorises `accepted -> released`
+-- for any statement carrying the marker; it does not know what preconditions the RPC checked.
+-- So a guard added ONLY to this function body would be a caller-level guarantee -- exactly the
+-- shape of the defect this slice had to correct one layer up, where attribution was derived
+-- correctly by the RPC and by nothing else. The agreement guard must be enforced where the
+-- transition is authorised, and proven by a test that sets the marker DIRECTLY and asserts
+-- refusal, not merely by an RPC-level test.
 
 -- ── 0. Pre-apply integrity check ─────────────────────────────────────────────
 -- The new columns are meaningless unless every accepted row can be described by them. Fail
@@ -167,8 +175,15 @@ begin
     -- marker. Same discard-then-derive shape as created_at on the INSERT path above.
     new.released_at := clock_timestamp();
     new.released_by := v_uid;
-    new.release_reason := case when v_is_responder then 'responder_withdrew'
-                               else 'owner_ended_negotiation' end;
+    -- THREE-WAY with no `else`, deliberately. An `else 'owner_ended_negotiation'` would derive
+    -- "not the responder, therefore the owner" 25 lines BEFORE the participant check below --
+    -- correct only because that check aborts the statement. With no else, a non-participant
+    -- yields NULL and barter_interests_release_complete_check rejects the row regardless of how
+    -- the branches are later reordered. Fails closed structurally rather than by arrangement.
+    new.release_reason := case
+      when v_is_responder then 'responder_withdrew'
+      when v_is_offer_owner then 'owner_ended_negotiation'
+    end;
 
     if (to_jsonb(new) - 'status' - 'released_at' - 'released_by' - 'release_reason')
        is distinct from
@@ -282,8 +297,16 @@ begin
       using errcode = 'check_violation';
   end if;
 
-  -- DERIVED, never supplied. Owner-vs-responder is decided by the two identity reads above.
-  -- (A provider cannot respond to their own offer, so both cannot be true at once.)
+  -- A SEED, not the decision. The trigger clamps all three release columns, so whatever is
+  -- written here is overwritten -- and this function must not look like the place the rule
+  -- lives, because the header points future slices at it as the seam to extend. An engineer
+  -- who added `mutual_end` here and nowhere else would watch it be silently rewritten to
+  -- `owner_ended_negotiation`: a legal value, no constraint violation, a green suite.
+  --
+  -- It is still written rather than left null, because the trigger early-returns for
+  -- service_role and barter_interests_release_complete_check would then reject the row. The
+  -- value RETURNED to the caller is read back from the row below, so it is whatever was
+  -- actually recorded, never merely what this function intended.
   v_reason := case when v_is_responder then 'responder_withdrew'
                    else 'owner_ended_negotiation' end;
 
@@ -295,9 +318,12 @@ begin
          released_at = clock_timestamp(),
          released_by = v_uid,
          release_reason = v_reason
-   where id = v_interest.id;
+   where id = v_interest.id
+  returning release_reason into v_reason;
   perform set_config('app.barter_release', '', true);
 
+  -- Read back, so the caller is told what the write boundary RECORDED, not what this function
+  -- proposed. If the two ever diverge, the caller sees the truth.
   return v_reason;
 end $$;
 

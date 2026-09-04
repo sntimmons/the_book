@@ -74,6 +74,9 @@ The reason is **derived from who ended it** — `responder_withdrew` or
 `owner_ended_negotiation` — so neither party can characterise the other's exit. This is a
 pre-agreement path only: once an agreement is formed the post is consumed and closes.
 
+> **Not yet reachable.** The server capability exists; no control in the app calls it, so no
+> user can end a negotiation today and the stranded slot is still live. See § 12 and PD-049.
+
 ## 4. What makes a trade real
 
 - Trades in this beta are **two-party** only.

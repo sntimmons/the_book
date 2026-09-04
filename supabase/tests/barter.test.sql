@@ -1536,3 +1536,46 @@ begin
   perform pg_temp.chk('barter', 'the recorded reason survived the rewrite attempt',
     'owner_ended_negotiation', v_reason);
 end $$;
+
+-- ── The widened path excludes EXACTLY three columns ────────────────────────
+-- SEC-COVERAGE-003. The message-immutability case above runs with the marker CLEARED, so it
+-- exercises the ordinary allow-list, not the widened one. This drives the widened path and
+-- proves a foreign-authored column is still refused there -- the forward-compatibility
+-- property the set-difference exists for, and the one a future edit could quietly erode by
+-- subtracting a fourth key.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; v_code text; v_status text; v_msg text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Wd Owner', 'wdo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Wd Resp', 'wdr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Wd O', 'Wd S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'original', 'accepted') returning id into i;
+
+  perform pg_temp.act(ou);
+  begin
+    perform set_config('app.barter_release', i::text, true);
+    update public.barter_interests
+       set status = 'released', message = 'rewritten'
+     where id = i;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform set_config('app.barter_release', '', true);
+  perform pg_temp.chk('barter',
+    'the widened path still refuses a foreign-authored column change',
+    'true', (position('Only the status' in v_code) > 0)::text);
+
+  perform pg_temp.act_service();
+  select status, message into v_status, v_msg from public.barter_interests where id = i;
+  perform pg_temp.chk('barter', 'the refused widened write left the response accepted',
+    'accepted', v_status);
+  perform pg_temp.chk('barter', 'the counterparty''s message is unchanged', 'original', v_msg);
+end $$;
