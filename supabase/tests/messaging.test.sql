@@ -652,3 +652,246 @@ begin
     'the OLD owner''s conversation key is re-derived, not left stale',
     'NULL', coalesce(v_key,'NULL'));
 end $$;
+
+-- ── Message authorship is pinned, and a platform notice is markable read ────
+-- The old policy's `sender_id = sender_id` was a TAUTOLOGY over the NEW row (a policy cannot
+-- reference OLD), so it pinned nothing — and it was NULL for a null sender, which made a
+-- platform notice permanently unreadable-as-read. Both halves are asserted here.
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid();
+  ppid uuid; c uuid; m_user uuid; m_sys uuid; v_code text; v_read boolean; v_sender uuid;
+  v_content text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'Pin P', 'pinp_'||substr(pu::text,1,8)) returning id into ppid;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, ppid, 'accepted', now()) returning id into c;
+  insert into public.messages(conversation_id, sender_id, content, is_read, created_at)
+    values (c, pu, 'from the provider', false, now()) returning id into m_user;
+  insert into public.messages(conversation_id, sender_id, content, is_read, created_at)
+    values (c, null, 'This trade negotiation was ended by the post owner.', false, now())
+    returning id into m_sys;
+
+  -- A participant CANNOT rewrite the text of a message.
+  perform pg_temp.act(cu);
+  begin
+    update public.messages set content = 'rewritten' where id = m_user;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a participant cannot rewrite a message''s content',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  -- A participant CANNOT re-attribute authorship — including claiming a platform notice.
+  begin
+    update public.messages set sender_id = cu where id = m_sys;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a participant cannot claim a platform notice as their own',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  begin
+    update public.messages set sender_id = cu where id = m_user;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a participant cannot re-attribute another''s message',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  -- But a participant CAN mark a platform notice read. This is what was impossible before:
+  -- the null sender made the policy's WITH CHECK evaluate to NULL, which is not TRUE.
+  update public.messages set is_read = true where id = m_sys;
+  perform pg_temp.act_service();
+  select is_read, sender_id, content into v_read, v_sender, v_content
+    from public.messages where id = m_sys;
+  perform pg_temp.chk('messaging', 'a platform notice CAN be marked read', 'true', v_read::text);
+  perform pg_temp.chk('messaging', 'marking read left the author untouched',
+    'true', (v_sender is null)::text);
+  perform pg_temp.chk('messaging', 'marking read left the text untouched',
+    'This trade negotiation was ended by the post owner.', v_content);
+
+  -- And an ordinary message is still markable read.
+  perform pg_temp.act(cu);
+  update public.messages set is_read = true where id = m_user;
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages where conversation_id = c and is_read;
+  perform pg_temp.chk('messaging', 'both messages are now read', '2', v_n::text);
+end $$;
+
+-- ── A request-gated thread cannot veto a release ───────────────────────────
+-- The signal must never take the release down with it. Reachable for a pre-Slice-2 accepted
+-- interest whose pair already held a pre-booking request.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; c uuid; v_reason text; v_status text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Gate Owner', 'gto_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Gate Resp', 'gtr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Gate O', 'Gate S') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+  -- A DECLINED pre-booking thread for the same pair: no message may be written into it.
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (ru, opid, 'declined', now()) returning id into c;
+
+  perform pg_temp.act(ru);
+  select public.release_barter_interest(i) into v_reason;
+  perform pg_temp.chk('messaging', 'a request-gated thread does not block the release',
+    'responder_withdrew', v_reason);
+
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i;
+  perform pg_temp.chk('messaging', 'the release actually persisted', 'released', v_status);
+  select count(*) into v_n from public.messages where conversation_id = c;
+  perform pg_temp.chk('messaging', 'no notice was written into the gated thread', '0', v_n::text);
+end $$;
+
+-- ── A participant cannot DESTROY a platform notice either ──────────────────
+-- The authorship trigger closes rewriting. Deletion is a different verb, and the review asked
+-- whether it is open. It is not: RLS is enabled on `messages` and there is NO delete policy, so
+-- a participant's DELETE matches zero rows -- it does NOT raise. Asserted as zero-rows, which
+-- is the only correct way to assert an RLS-filtered write.
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid();
+  ppid uuid; c uuid; m_sys uuid; v_n integer; v_left integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'Del P', 'delp_'||substr(pu::text,1,8)) returning id into ppid;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, ppid, 'accepted', now()) returning id into c;
+  insert into public.messages(conversation_id, sender_id, content, is_read, created_at)
+    values (c, null, 'This trade negotiation was ended by the post owner.', false, now())
+    returning id into m_sys;
+
+  perform pg_temp.act(cu);
+  delete from public.messages where id = m_sys;
+  get diagnostics v_n = row_count;
+  perform pg_temp.chk('messaging',
+    'a participant cannot delete a platform notice (RLS filters, zero rows)', '0', v_n::text);
+
+  perform pg_temp.act(pu);
+  delete from public.messages where id = m_sys;
+  get diagnostics v_n = row_count;
+  perform pg_temp.chk('messaging',
+    'the other participant cannot delete it either', '0', v_n::text);
+
+  perform pg_temp.act_service();
+  select count(*) into v_left from public.messages where id = m_sys;
+  perform pg_temp.chk('messaging', 'the notice survives both delete attempts', '1', v_left::text);
+end $$;
+
+-- ── The pin holds on every column and every write route ────────────────────
+-- Three of the five pinned columns had no test, the UPDATE policy's USING scope was untested
+-- against a non-participant, and the UPSERT route -- the one the old tautological policy did
+-- NOT block, because ON CONFLICT DO UPDATE reaches the UPDATE path -- was untested entirely.
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid(); ou uuid := gen_random_uuid();
+  ppid uuid; opid uuid; c uuid; c2 uuid; m uuid; v_code text; v_n integer; v_content text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu), (ou);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'Pin2 P', 'pin2p_'||substr(pu::text,1,8)) returning id into ppid;
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Pin2 O', 'pin2o_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, ppid, 'accepted', now()) returning id into c;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, opid, 'accepted', now()) returning id into c2;
+  insert into public.messages(conversation_id, sender_id, content, is_read, created_at)
+    values (c, pu, 'original', false, now()) returning id into m;
+
+  perform pg_temp.act(cu);
+
+  -- conversation_id: previously a participant could MOVE a message between two threads they
+  -- belong to, because the old WITH CHECK only required the NEW thread be one of theirs.
+  begin
+    update public.messages set conversation_id = c2 where id = m;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a message cannot be moved to another thread',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  -- created_at is the enforcement boundary for the one-pending-message rule, so backdating it
+  -- would be a replay route.
+  begin
+    update public.messages set created_at = now() - interval '10 days' where id = m;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a message cannot be backdated',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  begin
+    update public.messages set id = gen_random_uuid() where id = m;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'a message id cannot be reassigned',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  -- THE UPSERT ROUTE. `on conflict do update` reaches the UPDATE path, which the old
+  -- tautological policy never blocked. This is the strongest single proof the pin moved to a
+  -- layer that actually holds.
+  -- NOTE the sender_id: it must be the CALLER's, or the INSERT policy's
+  -- `sender_id = auth.uid()` refuses first and the assertion would pass without ever reaching
+  -- the trigger -- proving the wrong mechanism. With the caller as sender, the INSERT check
+  -- passes, the conflict routes to DO UPDATE, and the trigger is the thing that must refuse.
+  begin
+    insert into public.messages(id, conversation_id, sender_id, content, is_read, created_at)
+    values (m, c, cu, 'rewritten via upsert', false, now())
+    on conflict (id) do update set content = excluded.content;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlerrm;
+  end;
+  perform pg_temp.chk('messaging', 'the UPSERT route cannot rewrite a message (trigger refuses)',
+    'true', (position('Only the read state' in v_code) > 0)::text);
+
+  perform pg_temp.act_service();
+  select content into v_content from public.messages where id = m;
+  perform pg_temp.chk('messaging', 'the message text survived every attempt',
+    'original', v_content);
+
+  -- A NON-PARTICIPANT is filtered by the policy's USING clause: zero rows, no exception.
+  perform pg_temp.act(ou);
+  update public.messages set is_read = true where id = m;
+  get diagnostics v_n = row_count;
+  perform pg_temp.chk('messaging',
+    'a non-participant''s mark-read affects zero rows (RLS filters)', '0', v_n::text);
+end $$;
+
+-- ── The pin's own posture ──────────────────────────────────────────────────
+do $$
+begin
+  perform pg_temp.chk('messaging', 'enforce_message_immutability is DEFINER, empty search_path',
+    'true', (select (p.prosecdef and p.proconfig @> array['search_path=""'])::text
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where p.proname = 'enforce_message_immutability' and n.nspname = 'public'));
+  perform pg_temp.chk('messaging', 'enforce_message_immutability is owned by postgres',
+    'postgres', (select pg_get_userbyid(p.proowner) from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+      where p.proname = 'enforce_message_immutability' and n.nspname = 'public'));
+  perform pg_temp.chk('messaging', 'anon cannot execute enforce_message_immutability',
+    'false', has_function_privilege('anon',
+      'public.enforce_message_immutability()', 'execute')::text);
+  -- The allow-list must stay an allow-list: a future column is immutable by default only if
+  -- the set difference names exactly one exclusion.
+  perform pg_temp.chk('messaging', 'the pin is an ALLOW-list over is_read only',
+    'true', (select (position('to_jsonb(new) - ''is_read''' in prosrc) > 0)::text
+       from pg_proc where proname = 'enforce_message_immutability'));
+end $$;

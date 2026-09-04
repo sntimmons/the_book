@@ -288,6 +288,23 @@ export default function ChatScreen() {
               ]
               if (sameSenderAsPrev) wrapStyle.push({ marginTop: 0 })
 
+              // A platform notice is authored by NOBODY. Falling through to the
+              // participant branches would render it in the counterparty's bubble — the
+              // impersonation the server-side representation exists to avoid. Centred,
+              // unattributed, and visually distinct from both participants.
+              if (item.is_system) {
+                return (
+                  <View style={[styles.systemWrap, ...wrapStyle]}>
+                    <Text style={styles.systemText}>{item.content}</Text>
+                    {showTime && (
+                      <Text style={styles.systemTime}>
+                        {formatMessageTime(item.created_at)}
+                      </Text>
+                    )}
+                  </View>
+                )
+              }
+
               if (item.is_mine) {
                 return (
                   <View style={[styles.myWrap, ...wrapStyle]}>
@@ -534,6 +551,16 @@ const styles = StyleSheet.create({
   },
 
   // My (amber) bubble
+  systemWrap: { alignItems: 'center', paddingHorizontal: 24, marginVertical: 10 },
+  systemText: {
+    color: 'rgba(240,232,213,0.55)',
+    fontSize: 12.5,
+    lineHeight: 18,
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  systemTime: { color: 'rgba(240,232,213,0.3)', fontSize: 10.5, marginTop: 3 },
+
   myWrap: {
     alignItems: 'flex-end',
   },

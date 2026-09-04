@@ -25,6 +25,7 @@ export type BarterWriteOp =
   | 'respond'
   | 'accept'
   | 'decline'
+  | 'release'
   | 'closeOffer'
   | 'deleteOffer'
 
@@ -52,6 +53,7 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   respond: { terminal: false, title: 'Could not send', body: 'Please try again.' },
   accept: { terminal: false, title: 'Could not accept', body: 'Please try again.' },
   decline: { terminal: false, title: 'Could not decline', body: 'Please try again.' },
+  release: { terminal: false, title: 'Could not end the negotiation', body: 'Please try again.' },
   closeOffer: { terminal: false, title: 'Could not close', body: 'Please try again.' },
   deleteOffer: { terminal: false, title: 'Could not delete', body: 'Please try again.' },
 }
@@ -67,6 +69,11 @@ const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
     terminal: true,
     title: 'That offer is no longer available',
     body: 'It may have been closed or withdrawn. The board has been updated.',
+  },
+  release: {
+    terminal: true,
+    title: 'That negotiation is no longer active',
+    body: 'It may have already ended. The list has been updated.',
   },
   accept: {
     terminal: true,
@@ -141,6 +148,21 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       terminal: true,
       title: 'Not your offer',
       body: 'Only the provider who posted an offer can decline responses to it.',
+    },
+  },
+  release: {
+    // The RPC raises check_violation for "no longer exists" and "not in negotiation", and
+    // insufficient_privilege for a non-participant. Both are terminal: retrying cannot make a
+    // negotiation active again, and cannot make you a participant.
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That negotiation is no longer active',
+      body: 'It may have already ended. The list has been updated.',
+    },
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not your negotiation',
+      body: 'Only the two providers in a negotiation can end it.',
     },
   },
   deleteOffer: {

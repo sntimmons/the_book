@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { checkRateLimit } from '../lib/rateLimit'
 import { messageEntryAction } from '../lib/messageRequests'
+import { isNotMine, isSystemMessage, notMineFilter } from '@/lib/messageAuthorship'
 
 // Monotonic counter so each hook instance gets a unique realtime channel name.
 // Two concurrent mounts must not share a channel topic, or the second subscribe
@@ -48,11 +49,16 @@ export interface Conversation {
 export interface Message {
   id: string
   conversation_id: string
-  sender_id: string
+  sender_id: string | null
   content: string
   is_read: boolean
   created_at: string
   is_mine: boolean
+  /**
+   * Authored by the platform, not by either participant (`sender_id IS NULL`). Without this,
+   * `is_mine === false` renders a server notice as if the counterparty had typed it.
+   */
+  is_system: boolean
 }
 
 export function useConversations() {
@@ -162,14 +168,14 @@ export function useConversations() {
             conversation_id: string
             content: string
             created_at: string
-            sender_id: string
+            sender_id: string | null
             is_read: boolean
           }[]
         | null) ?? []) {
         if (!lastMessage.has(m.conversation_id)) {
           lastMessage.set(m.conversation_id, m.content ?? '')
         }
-        if (!m.is_read && m.sender_id !== user.id) {
+        if (!m.is_read && isNotMine(m.sender_id, user.id)) {
           unread.set(m.conversation_id, (unread.get(m.conversation_id) ?? 0) + 1)
         }
       }
@@ -256,13 +262,17 @@ export function useMessages(conversationId: string) {
       const rows = (data ?? []) as Array<{
         id: string
         conversation_id: string
-        sender_id: string
+        sender_id: string | null
         content: string
         is_read: boolean
         created_at: string
       }>
       setMessages(
-        rows.map((m) => ({ ...m, is_mine: m.sender_id === user.id })),
+        rows.map((m) => ({
+          ...m,
+          is_mine: m.sender_id === user.id,
+          is_system: isSystemMessage(m.sender_id),
+        })),
       )
     } catch (err) {
       console.log('Fetch messages error:', err)
@@ -277,7 +287,9 @@ export function useMessages(conversationId: string) {
       .from('messages')
       .update({ is_read: true })
       .eq('conversation_id', conversationId)
-      .neq('sender_id', user.id)
+      // `.or` rather than `.neq`: a null sender is excluded by `<>` and would never be marked
+      // read, leaving a permanent unclearable badge on every platform notice.
+      .or(notMineFilter(user.id))
       .eq('is_read', false)
   }, [user, conversationId])
 
@@ -300,7 +312,7 @@ export function useMessages(conversationId: string) {
           const newMsg = payload.new as {
             id: string
             conversation_id: string
-            sender_id: string
+            sender_id: string | null
             content: string
             is_read: boolean
             created_at: string
@@ -308,7 +320,14 @@ export function useMessages(conversationId: string) {
           setMessages((prev) => {
             // Guard against duplicate from our own optimistic INSERT round-trip
             if (prev.some((m) => m.id === newMsg.id)) return prev
-            return [...prev, { ...newMsg, is_mine: newMsg.sender_id === user.id }]
+            return [
+              ...prev,
+              {
+                ...newMsg,
+                is_mine: newMsg.sender_id === user.id,
+                is_system: isSystemMessage(newMsg.sender_id),
+              },
+            ]
           })
         },
       )

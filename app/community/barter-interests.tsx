@@ -19,6 +19,7 @@ import {
   fetchOfferInterests,
   isOfferOwner,
   declineInterest,
+  releaseInterest,
   INTEREST_STATUS_IS_LISTED,
   BarterInterest,
 } from '@/lib/barter'
@@ -80,6 +81,40 @@ export default function BarterInterests() {
   // 1 made that permanent: the accept slot could never be freed. accept_barter_interest does
   // the whole handoff in one transaction, so either the response is accepted AND a usable
   // conversation exists, or nothing happened at all.
+  function confirmRelease(item: BarterInterest) {
+    Alert.alert(
+      'End this negotiation?',
+      // States the irreversible half. "Their response stays on record" alone read as
+      // reassurance while concealing that this permanently bars that provider from the post —
+      // including the owner's own ability to change their mind. The responder's confirm
+      // discloses the same fact about themselves; the party imposing it should not be the
+      // less-informed one.
+      'This cannot be undone. The other provider will be told, and they will not be able to '
+        + 'respond to this post again — you will not be able to re-accept them. Their response '
+        + 'stays on record, and you can accept a different response if one is pending.',
+      [
+        { text: 'Keep negotiating', style: 'cancel' },
+        { text: 'End negotiation', style: 'destructive', onPress: () => release(item) },
+      ],
+    )
+  }
+
+  async function release(item: BarterInterest) {
+    if (actioningId) return
+    setActioningId(item.id)
+    const { ok, error } = await releaseInterest(item.id)
+    setActioningId(null)
+    if (!ok) {
+      const f = barterWriteFailure('release', error)
+      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+      // A terminal refusal means our view of the row is stale, so re-read rather than leaving
+      // a control the server has already refused.
+      if (f.terminal) load()
+      return
+    }
+    load()
+  }
+
   async function accept(interest: BarterInterest) {
     if (!user || actioningId || !isOwner) return
     setActioningId(interest.id)
@@ -190,23 +225,37 @@ export default function BarterInterests() {
 
                 {item.message ? <Text style={styles.message}>{item.message}</Text> : null}
 
-                {!isOwner ? (
-                  <View style={styles.matchedNote}>
-                    <Text style={styles.matchedNoteText}>
-                      Only the provider who posted this offer can respond to it.
-                    </Text>
-                  </View>
-                ) : released ? (
+                {/* STATUS BEFORE ROLE. Role-first meant a responder who deep-linked to their
+                    own released response was told about permissions and never learned the
+                    negotiation had ended — the one fact they most needed. A released row can
+                    never be actionable for anyone, so it is safe to resolve it first. */}
+                {released ? (
                   <View style={styles.matchedNote}>
                     <Text style={styles.matchedNoteText}>
                       Negotiation ended. This response is kept as history and cannot be
                       accepted.
                     </Text>
                   </View>
+                ) : !isOwner ? (
+                  <View style={styles.matchedNote}>
+                    <Text style={styles.matchedNoteText}>
+                      Only the provider who posted this offer can respond to it.
+                    </Text>
+                  </View>
                 ) : accepted ? (
                   <View style={styles.acceptedRow}>
-                    <Feather name="check-circle" size={14} color="#4CAF50" />
-                    <Text style={styles.acceptedText}>Accepted</Text>
+                    <View style={styles.acceptedRowLeft}>
+                      <Feather name="check-circle" size={14} color="#4CAF50" />
+                      <Text style={styles.acceptedText}>In negotiation</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.declineBtn, busy && styles.btnDisabled]}
+                      activeOpacity={0.8}
+                      disabled={busy}
+                      onPress={() => confirmRelease(item)}
+                    >
+                      <Text style={styles.declineText}>End negotiation</Text>
+                    </TouchableOpacity>
                   </View>
                 ) : offerMatched ? (
                   <View style={styles.actions}>
@@ -358,6 +407,13 @@ const styles = StyleSheet.create({
   },
   acceptText: { fontSize: 14, color: '#080808', fontFamily: 'Manrope_700Bold' },
   btnDisabled: { opacity: 0.5 },
-  acceptedRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 16 },
+  acceptedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    marginTop: 16,
+  },
+  acceptedRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   acceptedText: { fontSize: 13, color: '#4CAF50', fontFamily: 'Manrope_600SemiBold' },
 })
