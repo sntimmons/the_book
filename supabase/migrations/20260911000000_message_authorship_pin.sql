@@ -168,6 +168,10 @@ begin
   v_reason := case when v_is_responder then 'responder_withdrew'
                    else 'owner_ended_negotiation' end;
 
+  -- PRE-AGREEMENT ONLY. When the agreement schema lands, the "no official agreement exists for
+  -- this interest" guard goes HERE -- in THIS definition, the live one. The same instruction in
+  -- 20260909000000 and 20260910000000 now sits on superseded bodies; see MIGRATION_LEDGER.md.
+  -- It must also be enforced at the write boundary, not only in this function.
   perform set_config('app.barter_release', v_interest.id::text, true);
   update public.barter_interests
      set status = 'released',

@@ -755,3 +755,40 @@ begin
   select count(*) into v_n from public.messages where conversation_id = c;
   perform pg_temp.chk('messaging', 'no notice was written into the gated thread', '0', v_n::text);
 end $$;
+
+-- ── A participant cannot DESTROY a platform notice either ──────────────────
+-- The authorship trigger closes rewriting. Deletion is a different verb, and the review asked
+-- whether it is open. It is not: RLS is enabled on `messages` and there is NO delete policy, so
+-- a participant's DELETE matches zero rows -- it does NOT raise. Asserted as zero-rows, which
+-- is the only correct way to assert an RLS-filtered write.
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid();
+  ppid uuid; c uuid; m_sys uuid; v_n integer; v_left integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'Del P', 'delp_'||substr(pu::text,1,8)) returning id into ppid;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, ppid, 'accepted', now()) returning id into c;
+  insert into public.messages(conversation_id, sender_id, content, is_read, created_at)
+    values (c, null, 'This trade negotiation was ended by the post owner.', false, now())
+    returning id into m_sys;
+
+  perform pg_temp.act(cu);
+  delete from public.messages where id = m_sys;
+  get diagnostics v_n = row_count;
+  perform pg_temp.chk('messaging',
+    'a participant cannot delete a platform notice (RLS filters, zero rows)', '0', v_n::text);
+
+  perform pg_temp.act(pu);
+  delete from public.messages where id = m_sys;
+  get diagnostics v_n = row_count;
+  perform pg_temp.chk('messaging',
+    'the other participant cannot delete it either', '0', v_n::text);
+
+  perform pg_temp.act_service();
+  select count(*) into v_left from public.messages where id = m_sys;
+  perform pg_temp.chk('messaging', 'the notice survives both delete attempts', '1', v_left::text);
+end $$;

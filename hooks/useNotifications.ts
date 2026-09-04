@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { NOT_MINE_FILTER } from './useMessaging'
+import { isSystemMessage, notMineFilter } from '@/lib/messageAuthorship'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
@@ -239,7 +239,7 @@ export function useNotifications() {
           .select('id, conversation_id, sender_id, content, created_at')
           .in('conversation_id', convoIds)
           .eq('is_read', false)
-          .or(NOT_MINE_FILTER(user.id))
+          .or(notMineFilter(user.id))
           .order('created_at', { ascending: false })
           .limit(10)
 
@@ -289,7 +289,14 @@ export function useNotifications() {
             id: 'msg_' + msg.conversation_id,
             bookingId: msg.conversation_id,
             type: 'new_message',
-            title: `${senderName} sent you a message`,
+            // A platform notice is authored by nobody, so it must not be attributed to the
+            // counterparty. Including null senders in the query above without handling them
+            // here would have told BOTH providers that the OTHER one sent the release notice --
+            // the impersonation the sender_id IS NULL representation exists to prevent,
+            // defeated one layer above the database.
+            title: isSystemMessage(msg.sender_id)
+              ? 'Update on your trade'
+              : `${senderName} sent you a message`,
             body: preview,
             isRead: false,
             createdAt: msg.created_at,

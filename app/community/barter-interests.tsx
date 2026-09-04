@@ -84,8 +84,14 @@ export default function BarterInterests() {
   function confirmRelease(item: BarterInterest) {
     Alert.alert(
       'End this negotiation?',
-      'The other provider will be told the negotiation ended. Their response stays on record, '
-        + 'and you will be able to accept a different response.',
+      // States the irreversible half. "Their response stays on record" alone read as
+      // reassurance while concealing that this permanently bars that provider from the post —
+      // including the owner's own ability to change their mind. The responder's confirm
+      // discloses the same fact about themselves; the party imposing it should not be the
+      // less-informed one.
+      'This cannot be undone. The other provider will be told, and they will not be able to '
+        + 'respond to this post again — you will not be able to re-accept them. Their response '
+        + 'stays on record, and you can accept a different response if one is pending.',
       [
         { text: 'Keep negotiating', style: 'cancel' },
         { text: 'End negotiation', style: 'destructive', onPress: () => release(item) },

@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { checkRateLimit } from '../lib/rateLimit'
 import { messageEntryAction } from '../lib/messageRequests'
+import { isNotMine, isSystemMessage, notMineFilter } from '@/lib/messageAuthorship'
 
 // Monotonic counter so each hook instance gets a unique realtime channel name.
 // Two concurrent mounts must not share a channel topic, or the second subscribe
@@ -43,20 +44,6 @@ export interface Conversation {
   last_message_preview: string
   unread_count: number
   booking_service?: string
-}
-
-/**
- * "Not authored by me" — the ONE definition, used by the unread count, the mark-read write and
- * the notifications query. These three previously disagreed about a null sender: the JS count
- * treated `null !== uid` as true and counted it, while the PostgREST filters compiled to
- * `sender_id <> uid`, which is NULL for a null sender and therefore excluded the row from the
- * update set. So a platform notice was counted unread and could never be cleared.
- */
-export const NOT_MINE_FILTER = (userId: string) =>
-  `sender_id.is.null,sender_id.neq.${userId}`
-
-export function isNotMine(senderId: string | null, userId: string): boolean {
-  return senderId !== userId
 }
 
 export interface Message {
@@ -284,7 +271,7 @@ export function useMessages(conversationId: string) {
         rows.map((m) => ({
           ...m,
           is_mine: m.sender_id === user.id,
-          is_system: m.sender_id === null,
+          is_system: isSystemMessage(m.sender_id),
         })),
       )
     } catch (err) {
@@ -302,7 +289,7 @@ export function useMessages(conversationId: string) {
       .eq('conversation_id', conversationId)
       // `.or` rather than `.neq`: a null sender is excluded by `<>` and would never be marked
       // read, leaving a permanent unclearable badge on every platform notice.
-      .or(NOT_MINE_FILTER(user.id))
+      .or(notMineFilter(user.id))
       .eq('is_read', false)
   }, [user, conversationId])
 
@@ -338,7 +325,7 @@ export function useMessages(conversationId: string) {
               {
                 ...newMsg,
                 is_mine: newMsg.sender_id === user.id,
-                is_system: newMsg.sender_id === null,
+                is_system: isSystemMessage(newMsg.sender_id),
               },
             ]
           })
