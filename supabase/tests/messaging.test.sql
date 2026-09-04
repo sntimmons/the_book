@@ -550,3 +550,105 @@ begin
   perform pg_temp.chk('messaging', 'find_conversation creates nothing',
     v_n::text, (select count(*)::text from public.conversation));
 end $$;
+
+-- ── The booking widening is EXACTLY two orientations, nothing wider ─────────
+-- The attach predicate accepts a booking made in either direction between the same two
+-- people. These are the negatives: a booking that involves ONE of them and a third provider
+-- must still be refused, and so must a conversation whose provider slot references no
+-- providers row at all (there is no FK on conversation.provider_id).
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid(); xu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; xpid uuid; c1 uuid; bk_third uuid; c_ghost uuid; bk_a uuid;
+  v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu), (xu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'Arm A', 'arm_a_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'Arm B', 'arm_b_'||substr(bu::text,1,8)) returning id into bpid;
+  insert into public.providers(user_id, display_name, username)
+    values (xu, 'Arm X', 'arm_x_'||substr(xu::text,1,8)) returning id into xpid;
+
+  insert into public.conversation(client_id, provider_id, created_at)
+    values (au, bpid, now()) returning id into c1;
+
+  -- B (the counterparty on this thread) books a THIRD provider. Half of arm 2 is satisfied
+  -- -- b.user_id is the owner of this row's provider slot -- but the other half is not.
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status)
+    values (bu, xpid, 'Third svc', current_date, 'accepted') returning id into bk_third;
+
+  perform pg_temp.act(bu);
+  begin
+    update public.conversation set booking_id = bk_third where id = c1;
+    v_code := 'ATTACHED';
+  exception when others then v_code := 'REFUSED';
+  end;
+  perform pg_temp.chk('messaging',
+    'a booking with a THIRD provider is refused (arm 2 needs BOTH halves)',
+    'REFUSED', v_code);
+
+  -- A conversation whose provider slot points at no providers row must not attach anything.
+  perform pg_temp.act_service();
+  insert into public.conversation(client_id, provider_id, created_at)
+    values (au, gen_random_uuid(), now()) returning id into c_ghost;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status)
+    values (au, bpid, 'Ghost svc', current_date, 'accepted') returning id into bk_a;
+  perform pg_temp.act(au);
+  begin
+    update public.conversation set booking_id = bk_a where id = c_ghost;
+    v_code := 'ATTACHED';
+  exception when others then v_code := 'REFUSED';
+  end;
+  perform pg_temp.chk('messaging',
+    'a conversation with a dangling provider slot attaches nothing', 'REFUSED', v_code);
+end $$;
+
+-- ── The new functions are not reachable by anon ─────────────────────────────
+do $$
+begin
+  perform pg_temp.chk('messaging', 'anon cannot execute resolve_conversation',
+    'false', has_function_privilege('anon',
+      'public.resolve_conversation(uuid,uuid,uuid)', 'execute')::text);
+  perform pg_temp.chk('messaging', 'anon cannot execute find_conversation',
+    'false', has_function_privilege('anon',
+      'public.find_conversation(uuid,uuid)', 'execute')::text);
+  perform pg_temp.chk('messaging', 'authenticated CAN execute resolve_conversation',
+    'true', has_function_privilege('authenticated',
+      'public.resolve_conversation(uuid,uuid,uuid)', 'execute')::text);
+  perform pg_temp.chk('messaging', 'anon cannot execute the pair-key trigger function',
+    'false', has_function_privilege('anon',
+      'public.conversation_pair_key()', 'execute')::text);
+end $$;
+
+-- ── A providers reassignment leaves no stale key behind ────────────────────
+-- service_role-only today, so this is a correctness guard rather than a boundary. Re-keying
+-- only the NEW owner would leave the OLD owner's conversations carrying a key derived from a
+-- providers row they no longer own, which can later refuse the new owner's legitimate write.
+do $$
+declare
+  u1 uuid := gen_random_uuid(); u2 uuid := gen_random_uuid(); xu uuid := gen_random_uuid();
+  pid uuid; xpid uuid; c1 uuid; v_key text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (u1), (u2), (xu);
+  insert into public.providers(user_id, display_name, username)
+    values (xu, 'Reassign X', 'rx_'||substr(xu::text,1,8)) returning id into xpid;
+  insert into public.providers(user_id, display_name, username)
+    values (u1, 'Reassign P', 'rp_'||substr(u1::text,1,8)) returning id into pid;
+
+  -- U1 (a provider) holds a conversation in the client slot, so it carries a real key.
+  insert into public.conversation(client_id, provider_id, created_at)
+    values (u1, xpid, now()) returning id into c1;
+  select provider_pair_key into v_key from public.conversation where id = c1;
+  perform pg_temp.chk('messaging', 'the reassignment fixture starts with a derived key',
+    least(pid,xpid)::text||':'||greatest(pid,xpid)::text, coalesce(v_key,'NULL'));
+
+  -- Reassign the providers row to U2. U1 now owns no provider.
+  update public.providers set user_id = u2 where id = pid;
+  select provider_pair_key into v_key from public.conversation where id = c1;
+  perform pg_temp.chk('messaging',
+    'the OLD owner''s conversation key is re-derived, not left stale',
+    'NULL', coalesce(v_key,'NULL'));
+end $$;

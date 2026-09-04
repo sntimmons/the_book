@@ -489,7 +489,18 @@ export async function sendPrebookingRequest(
         .from('conversation')
         .update({ request_status: 'pending', request_opened_at: nowIso })
         .eq('id', existing.id)
-      if (reErr) return { conversationId: null, created: false, error: reErr.message }
+      if (reErr) {
+        // Never surface the raw trigger text. Only the client may re-open a declined request,
+        // so for a provider<->provider pair the party in the PROVIDER slot lands here and the
+        // server correctly refuses. Whether they should be able to initiate at all is a
+        // product question (provider-initiated contact is deliberately not request-gated
+        // elsewhere) and is NOT decided here -- but they must not read a database error.
+        return {
+          conversationId: null,
+          created: false,
+          error: 'This conversation cannot be re-opened from here.',
+        }
+      }
       conversationId = existing.id
     } else {
       // Created through the authoritative path, not a direct insert: a direct insert in the
@@ -502,8 +513,9 @@ export async function sendPrebookingRequest(
         p_provider_id: providerId,
         p_booking_id: null,
       })
+      // No console: the returned error is surfaced to the user, which is the actionable
+      // signal. Same convention as the booking-attach branch above.
       if (cErr || !createdId) {
-        console.log('Create prebooking conversation error:', cErr)
         return { conversationId: null, created: false, error: 'Could not start this message.' }
       }
       conversationId = createdId as string

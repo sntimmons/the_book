@@ -42,6 +42,23 @@
 -- maintained by a trigger instead -- and the trigger, unlike a column default, also governs
 -- UPDATE, which is what makes the column non-forgeable.
 
+-- RECORDED, NOT RESOLVED -- raised in review, deliberately not taken by this slice:
+--   * PROVIDER-INITIATED CONTACT ON A DECLINED PAIR THREAD. Because the lookup is now
+--     canonical, the party in the PROVIDER slot of a declined provider<->provider thread is
+--     routed to compose, and the re-open is then correctly refused ("only the client may
+--     re-open a declined request"). BETA_SCOPE.md says provider-initiated contact is
+--     deliberately NOT request-gated, which suggests they should be able to reach the thread.
+--     The raw trigger text no longer reaches the user, but whether they may initiate at all is
+--     a product question and is left open.
+--   * THE INSERT GATE IS STILL ORIENTATION-BOUND. enforce_conversation_insert accepts only the
+--     literal orientation for a booking-linked conversation, while the UPDATE gate now accepts
+--     both. The asymmetry is in the SAFE direction -- the insert gate is strictly stricter, so
+--     it opens no hole -- and no current call site can reach the difference. Left as-is rather
+--     than widened speculatively.
+--   * BOOKING STATUS IS NOT FILTERED by either attach arm, so a cancelled or declined booking
+--     still supersedes a declined request. Pre-existing behaviour, inherited by the new arm,
+--     not introduced here.
+
 -- ── 0. Pre-apply integrity checks ────────────────────────────────────────────
 -- If a pair already holds both orientations, the unique index below cannot be created. Fail
 -- LOUDLY and refuse to apply rather than half-applying, and do NOT merge or delete anybody's
@@ -158,6 +175,32 @@ as $$
 begin
   -- Setting the key to NULL is enough: the BEFORE trigger on `conversation` derives the real
   -- value. Writing the expression twice would be a second source of truth for the format.
+  -- BOTH sides of a reassignment. Re-keying only NEW.user_id leaves the OLD owner's
+  -- conversations carrying a key derived from a providers row they no longer own -- which can
+  -- later collide with the new owner's legitimate key and refuse their write with 23505.
+  -- Reachable only by service_role today (`user_id` is not in the column-level UPDATE grant
+  -- for authenticated, and providers_update_owner pins auth.uid() on both sides), which is why
+  -- this is a correctness guard rather than a boundary.
+  update public.conversation
+     set provider_pair_key = null
+   where provider_id is not null
+     and client_id in (new.user_id, old.user_id);
+  return new;
+end;
+$$;
+
+alter function public.conversation_rekey_for_provider() owner to postgres;
+revoke all on function public.conversation_rekey_for_provider() from public, anon;
+
+
+-- INSERT variant. Identical intent, but OLD is unbound here so it re-keys NEW only.
+create or replace function public.conversation_rekey_for_provider_ins()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
   update public.conversation
      set provider_pair_key = null
    where client_id = new.user_id
@@ -166,12 +209,19 @@ begin
 end;
 $$;
 
-alter function public.conversation_rekey_for_provider() owner to postgres;
-revoke all on function public.conversation_rekey_for_provider() from public, anon;
+alter function public.conversation_rekey_for_provider_ins() owner to postgres;
+revoke all on function public.conversation_rekey_for_provider_ins() from public, anon;
 
+-- Split, because OLD is not bound on INSERT: one statement covering both would fail at
+-- runtime the moment a provider is created.
 drop trigger if exists conversation_rekey_for_provider on public.providers;
 create trigger conversation_rekey_for_provider
-  after insert or update of user_id on public.providers
+  after insert on public.providers
+  for each row execute function public.conversation_rekey_for_provider_ins();
+
+drop trigger if exists conversation_rekey_for_provider_upd on public.providers;
+create trigger conversation_rekey_for_provider_upd
+  after update of user_id on public.providers
   for each row execute function public.conversation_rekey_for_provider();
 
 -- ── 3. Backfill ──────────────────────────────────────────────────────────────
@@ -443,7 +493,7 @@ end;
 $$;
 
 alter function public.enforce_conversation_update() owner to postgres;
-revoke all on function public.enforce_conversation_update() from anon;
+revoke all on function public.enforce_conversation_update() from public, anon;
 
 -- ── 7. Canonical LOOKUP (no create) ─────────────────────────────────────────
 -- `findConversation` decides whether "Message" opens a thread or composes a new request. It
