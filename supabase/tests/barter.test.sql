@@ -515,3 +515,248 @@ begin
     (select count(*)::text from public.rate_limit_log
       where user_id = current_setting('b5b.bt_lu')::uuid));
 end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════
+-- Slice 2 — atomic accept → conversation handoff
+-- ════════════════════════════════════════════════════════════════════════════
+
+-- Grants: the RPC is the only barter function a client may call.
+select pg_temp.chk('barter', 'anon cannot EXECUTE accept_barter_interest', 'false',
+  has_function_privilege('anon', 'public.accept_barter_interest(uuid)', 'EXECUTE')::text);
+select pg_temp.chk('barter', 'PUBLIC cannot EXECUTE accept_barter_interest', 'false',
+  has_function_privilege('public', 'public.accept_barter_interest(uuid)', 'EXECUTE')::text);
+select pg_temp.chk('barter', 'authenticated CAN EXECUTE accept_barter_interest', 'true',
+  has_function_privilege('authenticated', 'public.accept_barter_interest(uuid)', 'EXECUTE')::text);
+select pg_temp.chk('barter', 'accept_barter_interest is DEFINER with empty search_path', 'true',
+  (select (p.prosecdef and 'search_path=""' = any(coalesce(p.proconfig, array[]::text[])))::text
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname='public' and p.proname='accept_barter_interest'));
+
+-- SCHEMA TRIPWIRE for barter_offers. barter_interests already has one; this is the sibling
+-- guard, added BEFORE any agreement column lands. barter_offers uses a DENY-list, so a new
+-- column is born mutable by its author -- acceptable while every column is author-owned, and
+-- NOT acceptable for a column a counterparty depends on. This assertion makes that moment
+-- loud instead of silent.
+select pg_temp.chk('barter', 'barter_offers column set is unchanged',
+  'created_at,id,is_active,notes,offering_service,offering_value,provider_id,seeking_service,user_id',
+  (select string_agg(attname, ',' order by attname) from pg_attribute
+    where attrelid = 'public.barter_offers'::regclass and attnum > 0 and not attisdropped));
+
+-- ── Happy path: one accepted response AND a usable conversation ─────────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; off uuid; int1 uuid; v_conv uuid; v_conv2 uuid;
+  v_status text; v_req text; v_msgs integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'S2 Owner', 's2o_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'S2 Responder', 's2r_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'photography', 'training') returning id into off;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+    values (off, rpid, ru) returning id into int1;
+
+  perform pg_temp.act(ou);
+  v_conv := public.accept_barter_interest(int1);
+
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = int1;
+  perform pg_temp.chk('barter', 'RPC accepts the response', 'accepted', v_status);
+  perform pg_temp.chk('barter', 'RPC returns a conversation id', 'true',
+    (v_conv is not null)::text);
+  select request_status into v_req from public.conversation where id = v_conv;
+  perform pg_temp.chk('barter', 'the conversation is USABLE (request_status accepted)',
+    'accepted', v_req);
+  select count(*) into v_msgs from public.messages where conversation_id = v_conv;
+  perform pg_temp.chk('barter', 'a match message was actually delivered', '1', v_msgs::text);
+  perform pg_temp.chk('barter', 'exactly one accepted response on the offer', '1',
+    (select count(*)::text from public.barter_interests
+      where offer_id = off and status = 'accepted'));
+
+  -- IDEMPOTENCE: the same accept again returns the SAME conversation and adds no message.
+  perform pg_temp.act(ou);
+  v_conv2 := public.accept_barter_interest(int1);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('barter', 'repeated accept is idempotent (same conversation)',
+    v_conv::text, v_conv2::text);
+  select count(*) into v_msgs from public.messages where conversation_id = v_conv;
+  perform pg_temp.chk('barter', 'repeated accept does not duplicate the match message',
+    '1', v_msgs::text);
+
+  perform set_config('b5b.s2_off', off::text, true);
+  perform set_config('b5b.s2_ou', ou::text, true);
+  perform set_config('b5b.s2_opid', opid::text, true);
+end $$;
+
+-- ── One winner: a second response on a matched offer cannot be accepted ─────
+do $$
+declare tu uuid := gen_random_uuid(); tpid uuid; int2 uuid; v_code text; v_status text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (tu);
+  insert into public.providers(user_id, display_name, username)
+    values (tu, 'S2 Third', 's2t_'||substr(tu::text,1,8)) returning id into tpid;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+    values (current_setting('b5b.s2_off')::uuid, tpid, tu) returning id into int2;
+
+  perform pg_temp.act(current_setting('b5b.s2_ou')::uuid);
+  begin
+    perform public.accept_barter_interest(int2);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a second accept on a matched offer is refused',
+    '23505', v_code);
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = int2;
+  perform pg_temp.chk('barter', 'the refused response stays pending', 'pending', v_status);
+end $$;
+
+-- ── Only the offer owner may accept ─────────────────────────────────────────
+do $$
+declare
+  xu uuid := gen_random_uuid(); xpid uuid; off2 uuid; i2 uuid; v_code text; v_status text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (xu);
+  insert into public.providers(user_id, display_name, username)
+    values (xu, 'S2 Outsider', 's2x_'||substr(xu::text,1,8)) returning id into xpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (current_setting('b5b.s2_opid')::uuid, current_setting('b5b.s2_ou')::uuid,
+            'second', 'offer') returning id into off2;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+    values (off2, xpid, xu) returning id into i2;
+
+  perform pg_temp.act(xu);   -- the RESPONDER, not the owner
+  begin
+    perform public.accept_barter_interest(i2);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a non-owner cannot accept', '23514', v_code);
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i2;
+  perform pg_temp.chk('barter', 'a non-owner attempt leaves the response pending',
+    'pending', v_status);
+  perform set_config('b5b.s2_off2', off2::text, true);
+  perform set_config('b5b.s2_i2', i2::text, true);
+  perform set_config('b5b.s2_xu', xu::text, true);
+  perform set_config('b5b.s2_xpid', xpid::text, true);
+end $$;
+
+-- ── ATOMICITY, proven by fault injection ────────────────────────────────────
+-- The requirement is "if conversation setup cannot succeed, acceptance must not commit".
+-- Nothing in the normal path fails on demand, so a CHECK is added for the duration of this
+-- assertion to make the match-message insert fail. The whole harness runs in one rolled-back
+-- transaction, so the constraint never outlives the test. This proves the property
+-- end-to-end rather than arguing it from the function body.
+do $$
+declare v_code text; v_status text; v_convs integer;
+begin
+  perform pg_temp.act_service();
+  alter table public.messages
+    add constraint b5b_force_message_failure check (content not like '%FORCEFAIL%');
+
+  perform pg_temp.act(current_setting('b5b.s2_ou')::uuid);
+  begin
+    -- The offer's text is interpolated into the match message, so this trips the constraint
+    -- AFTER the accept and the conversation work have already happened inside the function.
+    perform pg_temp.act_service();
+    update public.barter_offers set offering_service = 'FORCEFAIL service'
+     where id = current_setting('b5b.s2_off2')::uuid;
+    perform pg_temp.act(current_setting('b5b.s2_ou')::uuid);
+    perform public.accept_barter_interest(current_setting('b5b.s2_i2')::uuid);
+    v_code := 'NO ERROR';
+  exception when others then v_code := 'RAISED';
+  end;
+
+  perform pg_temp.act_service();
+  alter table public.messages drop constraint b5b_force_message_failure;
+
+  perform pg_temp.chk('barter', 'message-setup failure raises rather than half-succeeding',
+    'RAISED', v_code);
+  select status into v_status from public.barter_interests
+   where id = current_setting('b5b.s2_i2')::uuid;
+  perform pg_temp.chk('barter',
+    'NO acceptance persists when conversation setup fails', 'pending', v_status);
+  -- Scoped to the pair whose accept failed, in both orientations. A broader count would
+  -- also catch the legitimate thread created by the happy-path accept above and report a
+  -- leak that is not one.
+  select count(*) into v_convs from public.conversation
+   where (client_id = current_setting('b5b.s2_xu')::uuid
+          and provider_id = current_setting('b5b.s2_opid')::uuid)
+      or (client_id = current_setting('b5b.s2_ou')::uuid
+          and provider_id = current_setting('b5b.s2_xpid')::uuid);
+  perform pg_temp.chk('barter',
+    'no orphan conversation is left behind by the failed accept', '0', v_convs::text);
+end $$;
+
+-- ── A previously DECLINED pre-booking conversation becomes usable ───────────
+-- The variant that silently stranded matches before Slice 2: the pair already had a declined
+-- request, the message insert was rejected by the messaging trigger, and the old code
+-- navigated anyway. The accept must now either produce a usable thread or fail atomically.
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; off uuid; i uuid; c uuid; v_conv uuid; v_req text; v_msgs integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'S2 DeclOwner', 's2do_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'S2 DeclResp', 's2dr_'||substr(bu::text,1,8)) returning id into bpid;
+  -- B previously messaged A as a client and was DECLINED.
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (bu, apid, 'declined', now()) returning id into c;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (apid, au, 'declined-path', 'probe') returning id into off;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+    values (off, bpid, bu) returning id into i;
+
+  perform pg_temp.act(au);
+  v_conv := public.accept_barter_interest(i);
+
+  perform pg_temp.act_service();
+  perform pg_temp.chk('barter', 'declined pre-booking thread is REUSED, not duplicated',
+    c::text, v_conv::text);
+  select request_status into v_req from public.conversation where id = v_conv;
+  perform pg_temp.chk('barter', 'the declined thread is opened by the barter match',
+    'accepted', v_req);
+  select count(*) into v_msgs from public.messages where conversation_id = v_conv;
+  perform pg_temp.chk('barter', 'the match message is delivered on the reused thread',
+    '1', v_msgs::text);
+  perform pg_temp.chk('barter', 'no duplicate conversation was created for the pair', '1',
+    (select count(*)::text from public.conversation
+      where (client_id = bu and provider_id = apid) or (client_id = au and provider_id = bpid)));
+end $$;
+
+-- ── The carve-out is EVIDENCE-gated, not caller-gated ───────────────────────
+-- Opening a declined request must require a real accepted barter match. A participant must
+-- not be able to reach it by simply asking.
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid();
+  ppid uuid; c uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu);
+  insert into public.providers(user_id, display_name, username)
+    values (pu, 'S2 NoMatch', 's2nm_'||substr(pu::text,1,8)) returning id into ppid;
+  insert into public.conversation(client_id, provider_id, request_status, created_at)
+    values (cu, ppid, 'declined', now()) returning id into c;
+
+  perform pg_temp.act(pu);   -- the provider on the row, with NO barter match
+  begin
+    update public.conversation set request_status = 'accepted' where id = c;
+    v_code := 'NO ERROR';
+  exception when others then v_code := 'RAISED';
+  end;
+  perform pg_temp.chk('barter',
+    'declined -> accepted is refused without an accepted barter match', 'RAISED', v_code);
+end $$;
+
