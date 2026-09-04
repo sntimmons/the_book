@@ -58,6 +58,25 @@ history are **preserved**, never destructively deleted.
 The consequence for implementation is explicit: transaction truth is modelled **independently
 of `barter_offers`**. The mutable post is a sourcing surface, not the record of the deal.
 
+### 3.2 One active negotiation per post
+
+Locked 2026-09-04 — **PD-049**. A post may receive many interests; **only one may be accepted
+(selected for negotiation) at a time**.
+
+> post → many pending interests → **ONE accepted interest** → **ONE active negotiation**
+
+If the negotiation ends **before** an official agreement, the interest moves to **`released`**:
+history preserved, slot freed, and the owner may accept another pending interest. A released
+interest is never deleted and never re-pended, and the released responder may not open a second
+interest on that post in the first beta.
+
+The reason is **derived from who ended it** — `responder_withdrew` or
+`owner_ended_negotiation` — so neither party can characterise the other's exit. This is a
+pre-agreement path only: once an agreement is formed the post is consumed and closes.
+
+> **Not yet reachable.** The server capability exists; no control in the app calls it, so no
+> user can end a negotiation today and the stranded slot is still live. See § 12 and PD-049.
+
 ## 4. What makes a trade real
 
 - Trades in this beta are **two-party** only.

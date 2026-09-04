@@ -18,13 +18,37 @@ export interface BarterOffer {
   createdAt: string
 }
 
+/**
+ * The complete response vocabulary. Exported and used everywhere so a value added by a later
+ * slice is a COMPILE error at each site rather than an unhandled member at runtime: these rows
+ * arrive as `data as {...}[]` from Supabase, so an inline union is a declared shape over
+ * untyped data and TypeScript cannot catch a new value on its own.
+ *
+ * `released` — the pre-agreement negotiation ended (either party). History, never actionable.
+ */
+export type BarterInterestStatus = 'pending' | 'accepted' | 'declined' | 'released'
+
+/**
+ * Which statuses appear in the owner's responses list. A TOTAL Record, which is what actually
+ * produces the compile error: `status === 'x'` comparisons do NOT fail when the union widens,
+ * because the member being compared is still in it. Adding a fifth status to
+ * BarterInterestStatus makes this object incomplete and `tsc` rejects it, forcing the decision
+ * to be made here rather than defaulting to invisible.
+ */
+export const INTEREST_STATUS_IS_LISTED: Record<BarterInterestStatus, boolean> = {
+  pending: true,
+  accepted: true,
+  declined: false, // declined responses are removed from the owner's list entirely
+  released: true, // shown as ended history, never actionable
+}
+
 export interface BarterInterest {
   id: string
   offerId: string
   interestedProviderId: string
   interestedUserId: string
   message: string | null
-  status: 'pending' | 'accepted' | 'declined'
+  status: BarterInterestStatus
   createdAt: string
   provider: CommunityProviderInfo
 }
@@ -136,7 +160,7 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
           interested_provider_id: string
           interested_user_id: string
           message: string | null
-          status: 'pending' | 'accepted' | 'declined'
+          status: BarterInterestStatus
           created_at: string
         }[]
       | null) ?? []
@@ -174,6 +198,23 @@ export async function isOfferOwner(offerId: string, userId: string): Promise<boo
     .maybeSingle<{ user_id: string }>()
   if (error) return false
   return data?.user_id === userId
+}
+
+/**
+ * End a pre-agreement negotiation and free the offer's negotiation slot.
+ *
+ * The reason is NOT a parameter: the server derives it from who is calling, so the owner
+ * cannot record "the responder withdrew" and the responder cannot record "the owner ended it".
+ * Returns the reason the server recorded.
+ */
+export async function releaseInterest(
+  interestId: string,
+): Promise<{ ok: boolean; reason: string | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('release_barter_interest', {
+    p_interest_id: interestId,
+  })
+  if (error) return { ok: false, reason: null, error }
+  return { ok: true, reason: (data as string | null) ?? null, error: null }
 }
 
 /**

@@ -19,6 +19,7 @@ import {
   fetchOfferInterests,
   isOfferOwner,
   declineInterest,
+  INTEREST_STATUS_IS_LISTED,
   BarterInterest,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
@@ -58,7 +59,11 @@ export default function BarterInterests() {
     ])
     setIsOwner(owns)
     // Show pending interests as actionable; drop already-declined ones.
-    setInterests(all.filter((i) => i.status !== 'declined'))
+    // Driven by a TOTAL Record, not a deny-list and not inline literals. `!== 'declined'`
+    // treated every unknown future status as live and actionable, so `released` would have
+    // rendered with a working Accept button that could only fail. A total Record is also the
+    // only form that actually breaks the build when the status union widens.
+    setInterests(all.filter((i) => INTEREST_STATUS_IS_LISTED[i.status]))
     setLoading(false)
   }, [offerId, user])
 
@@ -154,6 +159,7 @@ export default function BarterInterests() {
           renderItem={({ item }) => {
             const busy = actioningId === item.id
             const accepted = item.status === 'accepted'
+            const released = item.status === 'released'
             // At most one response per offer can be accepted (partial unique index). Once one
             // is, Accept on every other response is an action that can only fail — offering it
             // is the same defect as offering Delete on an offer that cannot be deleted.
@@ -188,6 +194,13 @@ export default function BarterInterests() {
                   <View style={styles.matchedNote}>
                     <Text style={styles.matchedNoteText}>
                       Only the provider who posted this offer can respond to it.
+                    </Text>
+                  </View>
+                ) : released ? (
+                  <View style={styles.matchedNote}>
+                    <Text style={styles.matchedNoteText}>
+                      Negotiation ended. This response is kept as history and cannot be
+                      accepted.
                     </Text>
                   </View>
                 ) : accepted ? (
