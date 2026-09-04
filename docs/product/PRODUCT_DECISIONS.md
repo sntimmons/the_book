@@ -241,6 +241,27 @@ as locked decisions.
 - **Evidence:** Founder ruling, 2026-09-04. Enforced on `main` by `enforce_barter_interest_rate_limit` in `20260906000000_barter_integrity_slice1.sql`, counting `rate_limit_log` rather than deletable content rows. The **offer-side** limit named in `BARTER_BETA_CONTRACT.md` is **not** yet enforced server-side.
 - **Status:** Locked
 
+### PD-046 — Cancellation and no-show for trades
+- **Decided:** 2026-09-04
+- **Decision:** Three regimes, by the counterparty's exposure. **Before an official agreement** (both providers accepting the same current agreement version): withdrawal, decline and walking away are permitted, are **not** cancellations, and carry no penalty, review or reliability judgment. **After agreement, before any delivery:** either participant may cancel **unilaterally** — the other party's permission is **not** required — recording `cancelled_at`, the cancelling participant and an optional reason; both agreeing is **Mutually Cancelled**, one exiting is **Cancelled by Participant**. **After any obligation is marked delivered:** ordinary cancellation is unavailable and disagreement routes Needs Attention → Under Review → manual adjudication. **No-show is not cancellation** — it is failing to perform at the agreed time without having recorded a cancellation first; it routes to Needs Attention, and if established the obligation is **Unfulfilled**. For the first Houston beta none of these produce a normal review, an automatic reputation penalty, or a ranking effect; actor and timing are retained for a future reliability model. Terminal overall states: Completed, Partially Fulfilled, Cancelled, Not Completed, Under Review, and **Closed Without Resolution** (terminal, with **no** reliability judgment assigned). **Individual obligation truth survives independently of the overall agreement state.**
+- **Rationale:** Nobody should be held inside a service commitment by a counterparty who will not release them, but the cost of leaving must rise once the other side has actually given something up. Keeping obligation truth separate from the rolled-up verdict preserves the only record of who did their part.
+- **Evidence:** Founder ruling, 2026-09-04. Closes OQ-004. Stated in `BARTER_BETA_CONTRACT.md` § 7. **Not yet implemented** — no agreement or obligation schema exists.
+- **Status:** Locked
+
+### PD-047 — The barter post stays editable; the proposal snapshots it
+- **Decided:** 2026-09-04
+- **Decision:** The public barter post **remains editable while active** and is **not** frozen by the first response. Every proposal **must snapshot the relevant barter-post terms as they were when that proposal was created**. An edit to the public post affects **future responders only** and **must not** rewrite an existing proposal, an in-flight negotiation, or an accepted agreement. Authoritative progression: mutable board post → immutable proposal snapshot → versioned negotiated proposal/counter terms → accepted agreement version. **The final agreement is authoritative and must not depend on reading the current mutable post.** Material changes to negotiated terms create a new proposal/agreement version and invalidate acceptance of the prior one. Once an agreement is finalised for a post the sourcing post is auto-closed, and it and its history are preserved — never destructively deleted.
+- **Rationale:** Freezing the whole board post after one response would punish ordinary editing (typos, availability) for the life of the post. Snapshotting moves immutability to where consent actually attaches — the proposal — so the deal cannot be rewritten under either party.
+- **Evidence:** Founder ruling, 2026-09-04. Closes OQ-008. Stated in `BARTER_BETA_CONTRACT.md` § 3.1. Directs Slice 3 to model transaction truth **independently of `barter_offers`**.
+- **Status:** Locked
+
+### PD-048 — A provider who declined a request may still initiate contact later
+- **Decided:** 2026-09-04
+- **Decision:** A provider who previously declined another provider's request **may later initiate legitimate contact** with them. This **must not** be implemented by silently re-opening the declined request; conceptually it is a **new reverse-direction contact episode on the same canonical provider-pair conversation**. Recorded as an approved messaging follow-up — Slice 3 must **not** be expanded to redesign messaging unless the agreement flow requires it, and the current truthful dead-end copy may remain in the interim.
+- **Rationale:** A decline records that someone said no at a point in time; silently flipping it back would rewrite their record. A fresh contact episode is honest about what happened without trapping either party.
+- **Evidence:** Founder ruling, 2026-09-04, resolving the journey dead end raised by the Slice 2B security re-review (SEC-DATA-006). One canonical thread per provider pair is already enforced by `20260908000000_canonical_provider_pair.sql`. **Not yet implemented.**
+- **Status:** Locked
+
 ---
 
 ## Not decisions

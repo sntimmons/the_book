@@ -68,7 +68,7 @@ an entry is self-describing when quoted alone.
   cancellation differs from a no-show on each leg. Session 5 recorded this as answered only
   *partially*, and the Founder ruling of 2026-09-04 listed "cancellation rules" without
   supplying them. Closing it would mean inventing the rules.
-- **Status:** Open
+- **Status:** Closed by **PD-046** on 2026-09-04 — see [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7. Pre-agreement exit is not a cancellation; after agreement and before any delivery either participant may cancel **unilaterally**; after any delivery ordinary cancellation is unavailable and disagreement is adjudicated. No-show is distinct from cancellation and yields an **Unfulfilled** obligation. No review, reputation or ranking effect in the first beta; actor and timing retained for a future reliability model.
 
 ### OQ-005 — How should barter interact with reviews and reputation?
 - **Area:** Barter
@@ -112,7 +112,7 @@ an entry is self-describing when quoted alone.
 - **Blocks:** nothing yet — but a slice that adds an offer-edit affordance, or a column a
   counterparty depends on, must settle it first. The migration's § 6 note is explicit that the
   deny-list on `barter_offers` becomes unacceptable at that point.
-- **Status:** Open
+- **Status:** Closed by **PD-047** on 2026-09-04 — see [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1. The post stays editable; **every proposal snapshots the post terms at creation**, so an edit reaches future responders only and can never rewrite an existing proposal, negotiation or accepted agreement.
 
 ---
 

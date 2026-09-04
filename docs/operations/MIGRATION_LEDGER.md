@@ -178,3 +178,23 @@ function.
 B5B covers the carve-out from both directions (`supabase/tests/barter.test.sql`): a reverting
 edit fails the suite rather than shipping, so this table is a discovery aid, not the
 enforcement.
+
+## Production application policy
+
+Locked by Founder ruling, 2026-09-04. **No production reconciliation or migration work is
+authorized. Production remains untouched**, and has never been reconciled by this process.
+
+Before any eventual production application, in this order:
+
+1. Run the required **READ-ONLY** integrity / preflight queries.
+2. Return the results to Founder/PM.
+3. Obtain **explicit** authorization for any remediation.
+4. Obtain **explicit and separate** authorization for the production apply itself.
+
+**No automatic remediation. No production writes.** Authorization for one step is not
+authorization for the next, and authorization for one apply is not standing authorization.
+
+This matters concretely for `20260908000000_canonical_provider_pair.sql`, whose section-0
+precheck **refuses to apply** if any provider pair already holds two conversation rows. Zero
+such pairs exist on non-production; the production count is **unknown and has not been
+queried**. Establishing it is a step 1 read-only query, not a fix.
