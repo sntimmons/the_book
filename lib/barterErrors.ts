@@ -40,6 +40,13 @@ export interface BarterWriteFailure {
 // support.
 const CHECK_VIOLATION = '23514'
 const UNIQUE_VIOLATION = '23505'
+// Raised by accept_barter_interest when the caller does not own the offer. A distinct code
+// exists precisely so this cannot be reported as "already answered", which would be a false
+// statement about the counterparty's response.
+const INSUFFICIENT_PRIVILEGE = '42501'
+// Raised when an accepted response has no conversation — only reachable for a row accepted
+// before the atomic handoff existed. Retrying cannot fix it, so it must not say "try again".
+const INTERNAL_ERROR = 'XX000'
 
 const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   respond: { terminal: false, title: 'Could not send', body: 'Please try again.' },
@@ -74,14 +81,32 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
     [CHECK_VIOLATION]: {
       terminal: true,
       title: 'Already answered',
-      body: 'This response has already been accepted or declined. Refresh to see its current state.',
+      // Does NOT tell the user to refresh: the screen reloads itself on a terminal outcome,
+      // and there is no pull-to-refresh control on that list, so the instruction would name
+      // an action the UI does not offer.
+      body: 'This response has already been accepted or declined. The list has been updated.',
+    },
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not your offer',
+      body: 'Only the provider who posted an offer can accept responses to it.',
+    },
+    [INTERNAL_ERROR]: {
+      terminal: true,
+      title: 'This match needs attention',
+      body: 'This response was accepted but its conversation is missing. Please contact support so it can be reconnected.',
     },
   },
   decline: {
     [CHECK_VIOLATION]: {
       terminal: true,
       title: 'Already answered',
-      body: 'This response has already been accepted or declined. Refresh to see its current state.',
+      body: 'This response has already been accepted or declined. The list has been updated.',
+    },
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not your offer',
+      body: 'Only the provider who posted an offer can decline responses to it.',
     },
   },
   deleteOffer: {

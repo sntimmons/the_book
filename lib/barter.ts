@@ -157,3 +157,44 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
     },
   }))
 }
+
+/**
+ * Does the signed-in user own this offer?
+ *
+ * Server truth, not a navigation param: the interests screen is a real expo-router route and
+ * is reachable by deep link with any offerId, so ownership must be resolved from the database
+ * rather than from anything the caller can supply.
+ */
+export async function isOfferOwner(offerId: string, userId: string): Promise<boolean> {
+  if (!offerId || !userId) return false
+  const { data, error } = await supabase
+    .from('barter_offers')
+    .select('user_id')
+    .eq('id', offerId)
+    .maybeSingle<{ user_id: string }>()
+  if (error) return false
+  return data?.user_id === userId
+}
+
+/**
+ * Decline a response, reporting whether the write actually landed.
+ *
+ * `update` on a row RLS filters out affects ZERO rows and raises NOTHING, so checking only
+ * `error` reports success for a write that never happened. `.select()` returns the affected
+ * rows, which is the only reliable signal here.
+ */
+export async function declineInterest(
+  interestId: string,
+): Promise<{ ok: boolean; error: unknown }> {
+  const { data, error } = await supabase
+    .from('barter_interests')
+    .update({ status: 'declined' })
+    .eq('id', interestId)
+    .select('id')
+  if (error) return { ok: false, error }
+  if (!data || data.length === 0) {
+    // Not an exception, but not a success either: the row was invisible to this caller.
+    return { ok: false, error: { code: '42501' } }
+  }
+  return { ok: true, error: null }
+}

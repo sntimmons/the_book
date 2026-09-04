@@ -208,6 +208,7 @@ declare
   v_conv public.conversation%rowtype;
   v_client uuid;
   v_provider uuid;
+  v_new_status text;
   v_owner_name text;
 begin
   if v_uid is null then
@@ -228,8 +229,12 @@ begin
   end if;
 
   if v_offer.user_id <> v_uid then
+    -- DISTINCT errcode. `check_violation` is this migration's general refusal code, and the
+    -- client maps it for `accept` to "already answered" -- which would be a FALSE statement
+    -- about the counterparty's response here. insufficient_privilege says what actually
+    -- happened and lets the client say something true.
     raise exception 'Only the offer owner can accept a response.'
-      using errcode = 'check_violation';
+      using errcode = 'insufficient_privilege';
   end if;
 
   v_owner_provider := v_offer.provider_id;
@@ -237,9 +242,14 @@ begin
   v_responder_provider := v_interest.interested_provider_id;
 
   -- Resolve the thread for this pair, in EITHER orientation, before deciding anything.
+  -- Both orientations, DETERMINISTICALLY ordered. Two providers who have also booked each
+  -- other legitimately hold BOTH rows, and an unordered `limit 1` would let the match message
+  -- land in one thread while a retry returned the other -- so a double tap could navigate to
+  -- a thread with no match message in it. Ordering by id makes every call agree.
   select c.* into v_conv from public.conversation c
    where (c.client_id = v_responder_user and c.provider_id = v_owner_provider)
       or (c.client_id = v_offer.user_id and c.provider_id = v_responder_provider)
+   order by c.id
    limit 1;
 
   -- IDEMPOTENCE. Already accepted by this owner: return the existing thread unchanged.
@@ -276,10 +286,18 @@ begin
              v_responder_user, v_responder_provider) cc;
     insert into public.conversation (client_id, provider_id, created_at)
     values (v_client, v_provider, clock_timestamp())
-    returning id into v_conv_id;
-    -- enforce_conversation_insert clamps a client-initiated non-booking row to 'pending'.
-    -- Open it: the match is already recorded, and section 1 authorises exactly this.
-    update public.conversation set request_status = 'accepted' where id = v_conv_id;
+    returning id, request_status into v_conv_id, v_new_status;
+    -- enforce_conversation_insert clamps to 'pending' ONLY when the caller occupies the
+    -- client slot. Under canonical ordering that depends on which of the two uuids is lower,
+    -- so BOTH outcomes are reachable for the same code path:
+    --   * clamped to 'pending' -> open it, which section 1 authorises;
+    --   * left NULL -> that ALREADY means an open conversation
+    --     (enforce_prebooking_message_rules treats a null request_status as open), so
+    --     touching it would be a NULL -> 'accepted' transition that no branch permits and
+    --     the trigger would rightly reject.
+    if v_new_status = 'pending' then
+      update public.conversation set request_status = 'accepted' where id = v_conv_id;
+    end if;
   else
     v_conv_id := v_conv.id;
     if v_conv.request_status is not null and v_conv.request_status <> 'accepted' then

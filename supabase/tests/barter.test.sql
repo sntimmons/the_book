@@ -569,8 +569,13 @@ begin
   perform pg_temp.chk('barter', 'RPC returns a conversation id', 'true',
     (v_conv is not null)::text);
   select request_status into v_req from public.conversation where id = v_conv;
-  perform pg_temp.chk('barter', 'the conversation is USABLE (request_status accepted)',
-    'accepted', v_req);
+  -- "Usable" is null OR 'accepted', not 'accepted' specifically. enforce_prebooking_message_rules
+  -- treats a NULL request_status as an open conversation, and whether the new row is clamped to
+  -- 'pending' (then opened) or left NULL depends on which party the canonical uuid ordering puts
+  -- in the client slot. Asserting the literal 'accepted' made this test pass or fail on the roll
+  -- of a random uuid -- which is worse than not asserting it, because it looks deterministic.
+  perform pg_temp.chk('barter', 'the conversation is USABLE (open for messaging)',
+    'true', (v_req is null or v_req = 'accepted')::text);
   select count(*) into v_msgs from public.messages where conversation_id = v_conv;
   perform pg_temp.chk('barter', 'a match message was actually delivered', '1', v_msgs::text);
   perform pg_temp.chk('barter', 'exactly one accepted response on the offer', '1',
@@ -590,6 +595,54 @@ begin
   perform set_config('b5b.s2_off', off::text, true);
   perform set_config('b5b.s2_ou', ou::text, true);
   perform set_config('b5b.s2_opid', opid::text, true);
+end $$;
+
+-- ── Both canonical orientations ─────────────────────────────────────────────
+-- The client slot is chosen by uuid order, and which party lands there decides whether
+-- enforce_conversation_insert clamps the new row to 'pending' or leaves it NULL. Those are
+-- different code paths, and random uuids exercise only one per run. This drives BOTH
+-- deliberately, so the pass is not a coin flip.
+do $$
+declare
+  lo uuid; hi uuid; lpid uuid; hpid uuid; off uuid; i uuid; c uuid; v_req text; v_msgs integer;
+  ord text;
+begin
+  for ord in select unnest(array['owner_lower','owner_higher']) loop
+    perform pg_temp.act_service();
+    -- Force the ordering rather than hoping for it.
+    lo := ('00000000-0000-4000-8000-' || lpad(md5(ord||'a'), 12, '0'))::uuid;
+    hi := ('ffffffff-0000-4000-8000-' || lpad(md5(ord||'b'), 12, '0'))::uuid;
+    insert into auth.users(id) values (lo), (hi);
+    insert into public.providers(user_id, display_name, username)
+      values (lo, 'Ord Lo', 'ordlo_'||ord) returning id into lpid;
+    insert into public.providers(user_id, display_name, username)
+      values (hi, 'Ord Hi', 'ordhi_'||ord) returning id into hpid;
+
+    if ord = 'owner_lower' then
+      insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+        values (lpid, lo, 'ord', 'probe') returning id into off;
+      insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+        values (off, hpid, hi) returning id into i;
+      perform pg_temp.act(lo);
+    else
+      insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+        values (hpid, hi, 'ord', 'probe') returning id into off;
+      insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id)
+        values (off, lpid, lo) returning id into i;
+      perform pg_temp.act(hi);
+    end if;
+
+    c := public.accept_barter_interest(i);
+    perform pg_temp.act_service();
+    select request_status into v_req from public.conversation where id = c;
+    select count(*) into v_msgs from public.messages where conversation_id = c;
+    perform pg_temp.chk('barter', 'accept works when ' || ord || ' (thread usable)',
+      'true', (v_req is null or v_req = 'accepted')::text);
+    perform pg_temp.chk('barter', 'accept works when ' || ord || ' (message delivered)',
+      '1', v_msgs::text);
+    perform pg_temp.chk('barter', 'accept works when ' || ord || ' (canonical client slot)',
+      lo::text, (select client_id::text from public.conversation where id = c));
+  end loop;
 end $$;
 
 -- ── One winner: a second response on a matched offer cannot be accepted ─────
@@ -637,7 +690,9 @@ begin
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('barter', 'a non-owner cannot accept', '23514', v_code);
+  -- 42501, not the generic 23514: a distinct code exists so the client can say "not your
+  -- offer" instead of asserting something false about the response's status.
+  perform pg_temp.chk('barter', 'a non-owner cannot accept', '42501', v_code);
   perform pg_temp.act_service();
   select status into v_status from public.barter_interests where id = i2;
   perform pg_temp.chk('barter', 'a non-owner attempt leaves the response pending',

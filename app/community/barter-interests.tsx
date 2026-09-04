@@ -15,7 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { cacheBustedPhoto } from '@/lib/image'
-import { fetchOfferInterests, BarterInterest } from '@/lib/barter'
+import {
+  fetchOfferInterests,
+  isOfferOwner,
+  declineInterest,
+  BarterInterest,
+} from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
 import { timeAgo, initials } from '@/lib/community'
 
@@ -37,17 +42,25 @@ export default function BarterInterests() {
   const [interests, setInterests] = useState<BarterInterest[]>([])
   const [loading, setLoading] = useState(true)
   const [actioningId, setActioningId] = useState<string | null>(null)
+  // This is a real route and is deep-link reachable with any offerId. RLS returns a
+  // responder their OWN response row, so without a server-verified ownership check a
+  // non-owner would be shown live Accept/Decline controls on a response they cannot action.
+  const [isOwner, setIsOwner] = useState<boolean | null>(null)
 
   const load = useCallback(async () => {
     if (!offerId) {
       setLoading(false)
       return
     }
-    const all = await fetchOfferInterests(offerId)
+    const [all, owns] = await Promise.all([
+      fetchOfferInterests(offerId),
+      user ? isOfferOwner(offerId, user.id) : Promise.resolve(false),
+    ])
+    setIsOwner(owns)
     // Show pending interests as actionable; drop already-declined ones.
     setInterests(all.filter((i) => i.status !== 'declined'))
     setLoading(false)
-  }, [offerId])
+  }, [offerId, user])
 
   useFocusEffect(
     useCallback(() => {
@@ -63,7 +76,7 @@ export default function BarterInterests() {
   // the whole handoff in one transaction, so either the response is accepted AND a usable
   // conversation exists, or nothing happened at all.
   async function accept(interest: BarterInterest) {
-    if (!user || actioningId) return
+    if (!user || actioningId || !isOwner) return
     setActioningId(interest.id)
     const { data, error } = await supabase.rpc('accept_barter_interest', {
       p_interest_id: interest.id,
@@ -84,16 +97,16 @@ export default function BarterInterests() {
   }
 
   async function decline(interest: BarterInterest) {
-    if (actioningId) return
+    if (actioningId || !isOwner) return
     setActioningId(interest.id)
     const prev = interests
     setInterests((list) => list.filter((i) => i.id !== interest.id))
-    const { error } = await supabase
-      .from('barter_interests')
-      .update({ status: 'declined' })
-      .eq('id', interest.id)
+    // Uses the helper that treats a zero-row write as a failure. A plain update on a row RLS
+    // filters out raises nothing, so trusting `error` alone reported success for a decline
+    // that never happened and left the card removed from the list.
+    const { ok, error } = await declineInterest(interest.id)
     setActioningId(null)
-    if (error) {
+    if (!ok) {
       console.log('Decline interest error:', error)
       setInterests(prev)
       const f = barterWriteFailure('decline', error)
@@ -171,7 +184,13 @@ export default function BarterInterests() {
 
                 {item.message ? <Text style={styles.message}>{item.message}</Text> : null}
 
-                {accepted ? (
+                {!isOwner ? (
+                  <View style={styles.matchedNote}>
+                    <Text style={styles.matchedNoteText}>
+                      Only the provider who posted this offer can respond to it.
+                    </Text>
+                  </View>
+                ) : accepted ? (
                   <View style={styles.acceptedRow}>
                     <Feather name="check-circle" size={14} color="#4CAF50" />
                     <Text style={styles.acceptedText}>Accepted</Text>
