@@ -1,8 +1,9 @@
 # Current State — what is true on `main` today
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `e7ccd87f766a5b30e66a60ccc1239955d129a090` (2026-09-03)
-**Last edited by:** PR #37
+**Reconciled against:** `main` @ `feba568a900401e3e8dffc560ea5e214cb9be38c` (2026-09-04)
+**Last edited by:** branch `chore/post-slice1-state-reconcile` — PR number not assigned at
+authoring time; replace this with `PR #NN` when the PR is opened.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -118,74 +119,125 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 Docs: **[supabase/tests/README.md](../../supabase/tests/README.md)**.
 
-**Migration ledger.** The repository holds **14 migration files** at `e7ccd87` — that part is
-repository-provable. That the *remote non-prod ledger* matches them (`local == remote`, no
-merged migration edited) was established by `supabase migration list --linked` on 2026-09-02
-and **cannot be re-proved from repository state**; a later change made outside this repo would
-not show up here. Process and the dated record:
+**Migration ledger.** The repository holds **15 migration files** at `feba568` — counted from
+`supabase/migrations/*.sql`, and that part is repository-provable. That the *remote non-prod
+ledger* matches them (`local == remote`, no merged migration edited) was established by
+`supabase migration list --linked` — 14 entries on 2026-09-02, and 15 after
+`20260906000000` was applied to non-production on 2026-09-03 by an ordinary forward
+`db push` (no repair; no drift existed). Neither **can be re-proved from repository state**;
+a later change made outside this repo would not show up here. Process and the dated record:
 **[docs/operations/MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md)**.
 
-**Latest recorded gate run.** Rather than restate counts that change with ordinary PRs,
-this records *which run* to look at: CI run **33726878929** on `e7ccd87` — `check` and
-`db-security` both green, with the B5B step logging `via TEST_SUPABASE_DB_URL`. The
-authoritative assertion count lives with the harness in
-[supabase/tests/README.md](../../supabase/tests/README.md), not here.
+**Latest recorded runs.** Rather than restate counts that change with ordinary PRs, this
+records *which runs* to look at. Two different things are recorded, and they are not
+interchangeable:
 
-At that run: Jest 22 suites / 251 tests, lint 0 errors within the frozen `--max-warnings`
-baseline in `package.json`, typecheck 0 errors, B5B all assertions passing. Exact counts
-move; check the run, not this sentence.
+- **The last CI run this reconciliation could cite** is **33726878929** on `e7ccd87` —
+  `check` and `db-security` both green, the B5B step logging `via TEST_SUPABASE_DB_URL`,
+  88/88. At that run: Jest 22 suites / 251 tests, lint 0 errors within the frozen
+  `--max-warnings` baseline in `package.json`, typecheck 0 errors. **No CI run for
+  `feba568` is cited here**, because CI status is GitHub state and this reconciliation had
+  no way to query it. Read the latest `check` and `db-security` runs directly.
+- **The last recorded B5B execution** is the post-apply run logged against
+  `20260906000000` in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md): **138/138 passed, 0 failed**,
+  transaction rolled back. That was a local non-prod run, not a CI run.
 
-`main` is healthy following **Session 3** (PR #29, merge `2ae0fd0`), which added the Project
-State Steward and this durable PM document set. Several documentation and governance
-follow-ups have merged since — #31 (the Steward's `Area` enum, merged **first**, so the new
-open question's area was already declared when it arrived), then #30, #32, #33, #34 and #35.
+The suite grew between them — `supabase/tests/barter.test.sql` was added by Slice 1 — which
+is exactly why the count is read from a run rather than from this document. The
+authoritative description of the harness lives in
+[supabase/tests/README.md](../../supabase/tests/README.md).
 
-None of them changed application behaviour, migrations, RLS, CI, or agent tool grants —
-**verified at `4ff72ddf8ecbcbe28c36da1e790d106fffcbbb54`**, which post-dates this document's
-anchor. That local verification note scopes this one negative claim to the commit where it was
-actually checked; it does **not** advance the whole-document anchor, which stays at `e7ccd87`
-for the reason given below. A claim about commits later than the anchor has to say where it
-was checked, or the header would be promising a verification that never happened.
+**Why this document's anchor is now `feba568`.** The previous anchor was `e7ccd87`, and it
+held while the merges after it (#32 … #37) changed nothing *this document* asserts. Slice 1
+(PR #38, merge `feba568`) did: it added the fifteenth migration, replaced six barter write
+policies, added five triggers and two indexes, added a B5B suite, and changed two community
+screens. Those are facts asserted above, so the anchor moves to the commit at which they
+were verified.
 
-That is the whole of the claim; it does **not** mean none of them changed a repository fact.
-Some of them did, and [ROADMAP.md](ROADMAP.md) is authoritative for which — it carries a
-Completed row per delivered capability, each row citing the merge that delivered it, under its
-own anchor. This document deliberately does not restate that; a second copy would drift.
+[ROADMAP.md](ROADMAP.md) remains authoritative for **which** merge delivered **which**
+capability — it carries a Completed row per delivered capability, each citing its merge,
+under its own anchor. This document deliberately does not restate that; a second copy would
+drift. An anchor is per-document: it moves when that document's own asserted facts move, not
+whenever `main` does, which is why this file and `ROADMAP.md` can carry different anchors.
 
-**This document's** anchor stays at `e7ccd87` because nothing *it* asserts changed after that
-commit: the 14 migration files, the agent grant and allowlist, the reviews and messaging
-surfaces, and every code path cited below are unchanged. An anchor is per-document — it moves
-when that document's own asserted facts move, not whenever `main` does, which is why this file
-and `ROADMAP.md` can truthfully carry different anchors.
+**Two sessions preceding Slice 1 left no artifact in this repository.** The Slice 1 migration
+header cites a "Session 4 audit" and a "Session 5 agent review" (line 9) and a plan clause
+"E-3" (line 36), and the defect IDs it closes (`SEC-AUTHZ-001`, `SEC-DATA-009`, …) appear
+nowhere else on `main`. Session 4 was a read-only audit and Session 5 produced a product
+contract and implementation plan; **neither is committed here**, so the only in-repo record of
+either is the migration comment that cites them. That is recorded as a fact about the
+repository, not as a criticism of the work — but it means a cold reader cannot reconstruct
+why each defect was ranked as it was, and `ROADMAP.md` carries no Completed row for either
+session, because a row needs an artifact on `main`.
 
 ---
 
-## Barter — already partially implemented
+## Barter — existing surface, integrity-hardened (Slice 1)
 
 **Barter is not a blank slate.** [BETA_SCOPE.md](BETA_SCOPE.md) classifies the community /
 barter *surface* as **REAL (beta)** — offers, interests and the community screens work. What
 is **not** established is the barter *product model*: how a trade binds to bookings,
-messaging, reviews and completion. That gap is why it must be **audited read-only before any
-redesign** (PD-033), not a claim that the surface is broken.
+messaging, reviews and completion. That gap is why it had to be **audited read-only before any
+redesign** (PD-033), not a claim that the surface was broken.
 
 What is present on `main`:
 
 | Surface | Evidence |
 |---|---|
 | Data model | `barter_offers`, `barter_interests` tables |
-| RLS | `barter_offers_provider_read/insert`, `barter_offers_owner_update/delete`, `barter_interests_offer_owner_read`, `barter_interests_provider_insert`, `barter_interests_owner_update`, `barter_interests_own_delete` |
-| Constraints | `barter_offers_offering_service_check`, `_seeking_service_check`, `_notes_check`; `barter_interests_status_check`, `_message_check`; unique `(offer_id, interested_provider_id)` |
+| RLS — reads | `barter_offers_provider_read`, `barter_interests_offer_owner_read`. Both are **unchanged by Slice 1**, deliberately: the migration header (lines 40–48) records that gating the board on provider eligibility is a separate decision, and that gating the responses read on it would be actively wrong — a de-approved provider would lose sight of responses already sent to them. |
+| RLS — writes | Replaced by Slice 1: `barter_offers_provider_insert`, `barter_offers_owner_update`, `barter_offers_owner_delete`, `barter_interests_provider_insert`, `barter_interests_owner_update`, `barter_interests_own_delete` |
+| Constraints (baseline) | `barter_offers_offering_service_check`, `_seeking_service_check`, `_notes_check`; `barter_interests_status_check`, `_message_check`; unique `(offer_id, interested_provider_id)` |
 | Client library | `lib/barter.ts` — `BarterOffer`, `BarterInterest`, `BarterOfferWithProvider`, `fetchBarterFeed()`, `fetchMyInterests()`, `fetchOfferInterests()` |
 | Screens | `app/community/barter-compose.tsx`, `app/community/barter-interests.tsx`, referenced from `app/community/index.tsx` |
 | Origin | `supabase/migrations/20260829000000_canonical_live_baseline.sql` |
 
-**Not yet established** (this is what the Session 4 audit must determine, not assume):
-how offers relate to bookings, whether barter touches messaging or reviews/completion at
-all, what architecture assumptions it encodes, its security and anti-gaming posture, what
-is usable as-is, what should be salvaged, what needs bounded rebuilding, and the minimum
-change needed for the Houston beta.
+**Slice 1 — integrity hardening of that existing surface** (PR #38, merge `feba568`).
+Migration `supabase/migrations/20260906000000_barter_integrity_slice1.sql` is authoritative
+for exactly what it does and, in its own header, for what it deliberately did not do; this
+is an orientation summary, not a second copy of it. Enforced **server-side**:
 
-Open barter questions: OQ-001 … OQ-007 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+- **Write identity is bound to the caller.** One named predicate, `caller_provider_id()`,
+  takes no argument and derives the provider from `auth.uid()`, so nothing client-supplied
+  enters the comparison. It backs the three write-identity policies — offers insert, offers
+  update, interests insert (§§ 1–3).
+- **An offer owner may change exactly one column on a counterparty's response:** `status`.
+  Enforced by a trigger with an **allow-list**, so a column added later is immutable by
+  default (§ 5). Legal transitions are `pending → accepted | declined` only.
+- **Counterparty history survives one participant.** Deleting an offer that has responses is
+  refused; the owner closes it instead (`is_active = false`, `app/community/index.tsx:398`).
+  An accepted or declined response cannot be erased by either side (§ 4).
+- **`created_at` is server-stamped** on both tables, and **at most one accepted response per
+  offer** is enforced by a partial unique index rather than a read-then-write check (§§ 5–7).
+- **Interest writes are rate-limited in the write path** (15 per 24h, § 9), counted from
+  `rate_limit_log` so delete-and-resend cannot reset the window.
+- **`anon` holds nothing** on either barter table (§ 10).
+
+Regression coverage: `supabase/tests/barter.test.sql`, registered in the B5B runner at
+`scripts/db-security-test.mjs:47`.
+
+**Still true after Slice 1**, and recorded so it is not mistaken for closed:
+
+- **Offer creation is still limited only by the client-invoked edge function**, which fails
+  open (`lib/rateLimit.ts:50-65`, called at `app/community/barter-compose.tsx:55`). A caller
+  that omits the call is unlimited on offers. The migration header records this as a
+  partial closure, not a closure.
+- **Accept is a client-orchestrated sequence, not one atomic step.**
+  `app/community/barter-interests.tsx:56-108` updates the response status, then calls
+  `getOrCreateConversation` and inserts a seed message; if the conversation cannot be
+  opened, the status change has already committed and the screen reloads the list.
+- **Offer terms stay editable by their author after responses exist** — recorded as OQ-008.
+- Slice 1 created **no** agreement or obligation schema and touched neither `bookings` nor
+  the reviews surface.
+
+**Slice 2 is not on `main`.** An atomic accept → conversation handoff is in flight on branch
+`feature/barter-slice2-handoff` (PR #39) and no part of it has merged: `main` holds fifteen
+migrations, the newest being `20260906000000`. Everything above describes `main` as it stands
+at `feba568`, not what Slice 2 would change.
+
+Open barter questions: OQ-001 … OQ-008 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). None of
+them is closed by Slice 1: a migration is an implementation, not an approval.
 
 ---
 
