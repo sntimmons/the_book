@@ -199,6 +199,99 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
   }))
 }
 
+
+/**
+ * One row of Trade Activity: a barter relationship in whatever state it is actually in.
+ *
+ * Read from the `my_trade_activity` view rather than assembled here, so lifecycle truth stays
+ * server-side. `activityState` below is a RENDERING label derived from `status` — not a second
+ * source of truth, and deliberately not a new status vocabulary.
+ */
+export interface TradeActivityRow {
+  interestId: string
+  offerId: string
+  status: BarterInterestStatus
+  createdAt: string
+  releasedAt: string | null
+  offeringService: string
+  seekingService: string
+  offerIsActive: boolean
+  myRole: 'owner' | 'responder'
+  counterpartyProviderId: string
+  conversationId: string | null
+  provider: CommunityProviderInfo
+}
+
+/**
+ * Every barter relationship the caller is part of, in either role.
+ *
+ * DURABLE BY CONSTRUCTION: it selects nothing on `is_active` and takes no feed window, so an
+ * accepted negotiation stays reachable after its post is closed or falls out of the newest-50
+ * discovery feed. That coupling — the feed being the only route to an accepted negotiation —
+ * is exactly what stranded both parties with no way to end it.
+ */
+export async function fetchTradeActivity(): Promise<TradeActivityRow[]> {
+  const { data, error } = await supabase
+    .from('my_trade_activity')
+    .select(
+      'interest_id, offer_id, status, created_at, released_at, offering_service, ' +
+        'seeking_service, offer_is_active, my_role, counterparty_provider_id, conversation_id',
+    )
+    .order('created_at', { ascending: false })
+  // No console: an empty list is the actionable signal and the screen renders its empty state.
+  // Same convention as the booking-attach branch in useMessaging.
+  if (error) return []
+  // `as unknown as` because the generated Supabase types do not know this view; the shape is
+  // pinned by the select list above and by the B5B column assertions on the view itself.
+  const rows =
+    (data as unknown as
+      | {
+          interest_id: string
+          offer_id: string
+          status: BarterInterestStatus
+          created_at: string
+          released_at: string | null
+          offering_service: string
+          seeking_service: string
+          offer_is_active: boolean
+          my_role: 'owner' | 'responder'
+          counterparty_provider_id: string
+          conversation_id: string | null
+        }[]
+      | null) ?? []
+  const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
+  return rows.map((r) => ({
+    interestId: r.interest_id,
+    offerId: r.offer_id,
+    status: r.status,
+    createdAt: r.created_at,
+    releasedAt: r.released_at,
+    offeringService: r.offering_service,
+    seekingService: r.seeking_service,
+    offerIsActive: r.offer_is_active,
+    myRole: r.my_role,
+    counterpartyProviderId: r.counterparty_provider_id,
+    conversationId: r.conversation_id,
+    provider: infoMap.get(r.counterparty_provider_id) ?? {
+      name: 'Provider',
+      photo: null,
+      category: '',
+      neighborhood: null,
+    },
+  }))
+}
+
+/** Which Trade Activity section a row belongs to. A label, not a status. */
+export const TRADE_ACTIVITY_SECTION: Record<
+  BarterInterestStatus,
+  'active' | 'pending' | 'ended' | 'notSelected'
+> = {
+  accepted: 'active',
+  pending: 'pending',
+  released: 'ended',
+  declined: 'notSelected',
+}
+
 /**
  * Does the signed-in user own this offer?
  *

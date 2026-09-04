@@ -1,4 +1,10 @@
-import { isNotMine, isSystemMessage, notMineFilter } from '@/lib/messageAuthorship'
+import {
+  addressedToMeFilter,
+  countsAsUnread,
+  isNotMine,
+  isSystemMessage,
+  notMineFilter,
+} from '@/lib/messageAuthorship'
 
 // These pin the agreement between the JS form and the PostgREST form. Their DISAGREEMENT about
 // a null sender was the defect: the count treated a platform notice as unread, while the
@@ -41,5 +47,37 @@ describe('message authorship', () => {
     expect(isNotMine(UID, UID)).toBe(false)
     // other: JS true, filter includes via neq
     expect(isNotMine(OTHER, UID)).toBe(true)
+  })
+})
+
+// Ruling: the actor who ended a negotiation must not be badged for their own action. The
+// counterparty is. `system_recipient_id` names who a platform notice is FOR; NULL means both,
+// which is every ordinary message, so their behaviour is unchanged.
+describe('addressed platform notices', () => {
+  const ACTOR = '11111111-1111-4111-8111-111111111111'
+  const COUNTERPARTY = '22222222-2222-4222-8222-222222222222'
+
+  it('does not count a notice addressed to the counterparty as unread for the actor', () => {
+    expect(countsAsUnread(null, COUNTERPARTY, ACTOR)).toBe(false)
+  })
+
+  it('counts it as unread for the counterparty it is addressed to', () => {
+    expect(countsAsUnread(null, COUNTERPARTY, COUNTERPARTY)).toBe(true)
+  })
+
+  it('leaves ordinary messages unchanged — NULL recipient means addressed to both', () => {
+    expect(countsAsUnread(COUNTERPARTY, null, ACTOR)).toBe(true)
+    expect(countsAsUnread(ACTOR, null, ACTOR)).toBe(false)
+  })
+
+  it('never counts my own message, however it is addressed', () => {
+    expect(countsAsUnread(ACTOR, ACTOR, ACTOR)).toBe(false)
+    expect(countsAsUnread(ACTOR, null, ACTOR)).toBe(false)
+  })
+
+  it('the PostgREST addressing filter admits both NULL and me', () => {
+    const f = addressedToMeFilter(ACTOR)
+    expect(f).toContain('system_recipient_id.is.null')
+    expect(f).toContain(`system_recipient_id.eq.${ACTOR}`)
   })
 })

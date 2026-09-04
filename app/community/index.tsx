@@ -538,6 +538,20 @@ export default function CommunityFeed() {
       <View style={styles.tabBar}>
         <TabButton label="Posts" active={tab === 'posts'} onPress={() => setTab('posts')} />
         <TabButton label="Barter" active={tab === 'barter'} onPress={() => setTab('barter')} />
+        {tab === 'barter' && (
+          // Durable entry to Trade Activity. Deliberately on the TAB header, not on a feed
+          // card: the feed is discovery and filters `is_active = true` with a 50-row window, so
+          // anything reachable only from a card disappears when the post is closed or ages out
+          // -- which is what left both parties unable to end an accepted negotiation.
+          <TouchableOpacity
+            style={styles.activityBtn}
+            activeOpacity={0.8}
+            onPress={() => router.push('/community/trade-activity' as never)}
+          >
+            <Feather name="repeat" size={13} color="rgba(240,232,213,0.75)" />
+            <Text style={styles.activityBtnText}>Activity</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {tab === 'posts' ? (
@@ -1267,6 +1281,18 @@ const styles = StyleSheet.create({
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionText: { fontSize: 13, color: 'rgba(240,232,213,0.5)', fontFamily: 'Manrope_500Medium' },
   actionTextActive: { color: '#C8922A' },
+  activityBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginLeft: 'auto',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(240,232,213,0.08)',
+  },
+  activityBtnText: { color: 'rgba(240,232,213,0.75)', fontSize: 12, fontWeight: '500' },
+
   fab: {
     position: 'absolute',
     right: 20,
