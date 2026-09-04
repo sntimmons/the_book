@@ -2,7 +2,7 @@
 
 **Status:** Authoritative for the **first Houston closed beta**. Owner: Founder (Stephen).
 **Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** PR #NN
+**Last edited by:** PR #41
 
 > **Purpose.** This document makes already-approved barter decisions **durable**. It is not a
 > design session and introduces nothing new: every clause below was approved by the Founder,
