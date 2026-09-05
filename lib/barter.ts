@@ -131,6 +131,7 @@ async function fetchInterestCounts(offerIds: string[]): Promise<Map<string, numb
 export interface MyInterest {
   id: string
   status: BarterInterestStatus
+  agreementId: string | null
 }
 
 /**
@@ -144,12 +145,23 @@ export async function fetchMyInterests(userId: string): Promise<Map<string, MyIn
   const map = new Map<string, MyInterest>()
   if (!userId) return map
   const { data } = await supabase
-    .from('barter_interests')
-    .select('id, offer_id, status')
-    .eq('interested_user_id', userId)
-  for (const r of (data as { id: string; offer_id: string; status: BarterInterestStatus }[]
-    | null) ?? []) {
-    map.set(r.offer_id, { id: r.id, status: r.status })
+    .from('my_trade_activity')
+    .select('interest_id, offer_id, status, my_role, agreement_id')
+    .eq('my_role', 'responder')
+  const rows =
+    (data as unknown as {
+      interest_id: string
+      offer_id: string
+      status: BarterInterestStatus
+      my_role: 'owner' | 'responder'
+      agreement_id: string | null
+    }[] | null) ?? []
+  for (const r of rows) {
+    map.set(r.offer_id, {
+      id: r.interest_id,
+      status: r.status,
+      agreementId: r.agreement_id,
+    })
   }
   return map
 }
@@ -187,13 +199,23 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
   // rather than guessed from status: a confirmed trade's interest is still 'accepted', and
   // without this fact the screen would offer End negotiation on a trade the server refuses to
   // release.
-  const [infoMap, agreementRes] = await Promise.all([
+  const [infoMap, activityRes] = await Promise.all([
     fetchProviderInfoMap(rows.map((r) => r.interested_provider_id)),
-    supabase.from('barter_agreements').select('interest_id, id').eq('offer_id', offerId),
+    supabase
+      .from('my_trade_activity')
+      .select('interest_id, agreement_id')
+      .eq('offer_id', offerId),
   ])
+  if (activityRes.error) {
+    console.log('Offer interest agreement state error:', activityRes.error)
+    return []
+  }
   const agreementByInterest = new Map<string, string>()
-  for (const a of (agreementRes.data as unknown as { interest_id: string; id: string }[] | null) ?? []) {
-    agreementByInterest.set(a.interest_id, a.id)
+  for (const a of (activityRes.data as unknown as {
+    interest_id: string
+    agreement_id: string | null
+  }[] | null) ?? []) {
+    if (a.agreement_id) agreementByInterest.set(a.interest_id, a.agreement_id)
   }
   return rows.map((r) => ({
     id: r.id,

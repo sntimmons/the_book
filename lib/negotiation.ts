@@ -7,8 +7,8 @@ import { draftPayload } from './negotiationState'
 // that matter — who may propose, which terms are current, who accepted — are decided from
 // auth.uid() on the server and must not be re-derived here.
 //
-// There is no agreement, obligation or fulfilment model. `bothAccepted` is a recorded FACT, not
-// a finalised trade.
+// Agreement finalization is separate from obligation and fulfilment. `bothAccepted` is a
+// ready-to-confirm fact; `agreementId` is the official agreement once finalization succeeds.
 
 export interface NegotiationRow {
   proposalId: string

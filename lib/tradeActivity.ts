@@ -199,7 +199,7 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
             // Says WHY it cannot be answered, and names BOTH refusals: PD-052 withdraws
             // decline as well as accept, so copy mentioning only accept explains half the rule
             // and makes the missing Decline control read as a bug.
-            note: 'You closed this post, so this response can no longer be accepted or '
+            note: 'This post is closed, so this response can no longer be accepted or '
               + 'declined. Kept as history.',
           }
     }
@@ -342,4 +342,23 @@ export const RESPONDER_FEED_STATE: Record<BarterInterestStatus, ResponderFeedSta
   accepted: { label: 'End negotiation', action: 'end', icon: 'x-circle' },
   declined: { label: 'Not selected', action: 'none', icon: 'minus-circle' },
   released: { label: 'Negotiation ended', action: 'none', icon: 'minus-circle' },
+}
+
+export function responderFeedState(
+  status: BarterInterestStatus,
+  agreementId: string | null,
+): ResponderFeedState {
+  if (agreementId !== null && status === 'accepted') {
+    const row = tradeRowState({
+      status,
+      myRole: 'responder',
+      offerIsActive: true,
+      releasedAt: null,
+      releaseReason: null,
+      offerHasAcceptedResponse: true,
+      agreementId,
+    })
+    return { label: row.note, action: row.action === 'end' ? 'end' : 'none', icon: 'check' }
+  }
+  return RESPONDER_FEED_STATE[status]
 }

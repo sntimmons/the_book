@@ -1,5 +1,6 @@
 import {
   acceptedAnEarlierVersion,
+  CONFIRM_TRADE_COPY,
   draftPayload,
   MAX_DESCRIPTION,
   negotiationView,
@@ -145,6 +146,16 @@ describe('ready to confirm is not confirmed', () => {
       for (const word of ['booked', 'complete', 'fulfilled', 'delivered', 'guaranteed']) {
         expect(text).not.toContain(word)
       }
+    }
+  })
+
+  it('the confirm dialog discloses the current post-agreement beta limit', () => {
+    const text = `${CONFIRM_TRADE_COPY.title} ${CONFIRM_TRADE_COPY.body}`.toLowerCase()
+    expect(text).toMatch(/official/i)
+    expect(text).toMatch(/can no longer be changed/i)
+    expect(text).toMatch(/does not yet include an in-app way to cancel or end/i)
+    for (const word of ['booked', 'complete', 'fulfilled', 'delivered', 'guaranteed']) {
+      expect(text).not.toContain(word)
     }
   })
 })

@@ -31,9 +31,8 @@ import {
 
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
-// Deliberately NOT called "My Trades". No agreement schema exists yet, so calling a
-// pre-agreement negotiation a trade would be false product language. This becomes My Trades
-// when the agreement lifecycle lands.
+// Deliberately named for the durable activity surface rather than the future full lifecycle.
+// The agreement row exists, but obligations, fulfilment and post-agreement cancellation do not.
 //
 // The feed is discovery: it filters `is_active = true` and shows the newest 50. An accepted
 // negotiation is durable workflow state. Hanging the End-negotiation control off a feed card

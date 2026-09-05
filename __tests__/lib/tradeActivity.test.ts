@@ -6,6 +6,7 @@ import {
   DestructiveAction,
   formatTradeDate,
   RESPONDER_FEED_STATE,
+  responderFeedState,
   SECTION_COPY,
   SECTION_ORDER,
   TRADE_ACTIVITY_SECTION,
@@ -114,10 +115,11 @@ describe('pending responses', () => {
     expect(s.note).toBe('Waiting on you to accept or decline.')
   })
 
-  it('does not let the owner answer once the post is closed, and says why', () => {
+  it('does not let the owner answer once the post is closed, and says why without actor attribution', () => {
     const s = tradeRowState(facts({ status: 'pending', myRole: 'owner', offerIsActive: false }))
     expect(s.action).toBe('none')
-    expect(s.note).toMatch(/closed this post/i)
+    expect(s.note).toMatch(/this post is closed/i)
+    expect(s.note).not.toMatch(/you closed/i)
     // PD-052 withdraws BOTH. Copy naming only accept explains half the rule and makes the
     // missing Decline control read as a bug.
     expect(s.note).toMatch(/declined/i)
@@ -282,6 +284,13 @@ describe('the responder feed accounts for every status', () => {
     for (const status of STATUSES) {
       expect(RESPONDER_FEED_STATE[status].action === 'end').toBe(status === 'accepted')
     }
+  })
+
+  it('withdraws the end control from an accepted response that is already confirmed', () => {
+    const state = responderFeedState('accepted', 'ag')
+    expect(state.action).toBe('none')
+    expect(state.label).toMatch(/confirmed/i)
+    expect(state.label).not.toMatch(/end negotiation/i)
   })
 
   it('carries its own icon, so none is chosen by a ternary beside it', () => {

@@ -129,13 +129,10 @@ on `main` and each has a Completed row above. What is on `main` is authoritative
 [CURRENT_STATE.md](CURRENT_STATE.md) § Barter. Both providers accepting the same current version
 is **recorded, not finalised** (PD-054): no agreement row, no post closure, no obligation model.
 
-**In flight, NOT merged:** branch `feature/barter-agreement-finalization` is checked out
-(`.git/HEAD`) and its ref is `7713b56` — identical to `main`, so nothing is committed on it.
-The working tree, however, held an **uncommitted**
-`supabase/migrations/20260927000000_barter_agreement_finalization.sql` by the end of this
-reconciliation (it was absent from the run's opening inventory). That is evidence that work on
-the next slice has begun; it is not on `main`, earns no row, and moves no anchor. No PR number
-exists for it yet.
+**In flight, NOT merged:** PR #50 on branch `feature/barter-agreement-finalization` adds
+agreement finalization: `barter_agreements`, `finalize_barter_agreement(uuid)`, permanent
+sourcing-post closure, post-agreement write guards, and client states/copy for confirmed
+trades. It remains branch state until PR #50 merges; it does not move the `main` anchor.
 
 The branch `chore/pre-proposal-closeout`, which the previous reconciliation recorded as in
 flight at `871eb2a`, now points at `ca84100` (`.git/refs/heads/chore/pre-proposal-closeout`).
@@ -187,16 +184,14 @@ sourcing post is not closed when both providers accept
 ([CURRENT_STATE.md](CURRENT_STATE.md) § Barter; [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md)
 § 12).
 
-The next slice turns that recorded fact into an **official agreement**. The constraints it must
+PR #50 turns that recorded fact into an **official agreement**. The constraints it must
 satisfy are already locked and are not restated here: an agreement exists only when both
 providers have explicitly accepted the **same current version** (**PD-053**); the accepted
 version is authoritative and must not depend on reading the current mutable post (**PD-047**);
 and once an agreement is formed the sourcing post is **consumed and closes permanently**
 (**PD-049**, **PD-047**). PD-054 names this seam and calls finalising it "a separate, later
-slice" — this is that slice. The invoking session describes the target shape as one
-`barter_agreements` row carrying an immutable reference to the accepted version, with
-permanent sourcing-post closure; that is a working description of scope recorded for
-sequencing, not a decision this document makes.
+slice" — PR #50 is that slice. The implemented shape is one `barter_agreements` row carrying
+an immutable reference to the accepted version, with permanent sourcing-post closure.
 
 **Still not in this slice:** obligations, delivery, receiver confirmation and its window,
 no-show, cancellation after agreement, and adjudication — the contract's § 6 / § 7 and

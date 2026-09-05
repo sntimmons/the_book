@@ -41,7 +41,7 @@ import {
   BarterOfferWithProvider,
 } from '@/lib/barter'
 import { barterWriteFailure, interpretWrite } from '@/lib/barterErrors'
-import { confirmCopy, RESPONDER_FEED_STATE } from '@/lib/tradeActivity'
+import { confirmCopy, responderFeedState } from '@/lib/tradeActivity'
 
 type FeedPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
 
@@ -371,7 +371,7 @@ export default function CommunityFeed() {
     // Mark this offer as interested and bump its local count.
     setMyInterests((prev) => {
       const next = new Map(prev)
-      next.set(offer.id, { id: 'pending-local', status: 'pending' })
+      next.set(offer.id, { id: 'pending-local', status: 'pending', agreementId: null })
       return next
     })
     setOffers((prev) =>
@@ -884,6 +884,10 @@ function BarterCard({
   onMenu: () => void
   onViewInterests: () => void
 }) {
+  const feedState = myInterest
+    ? responderFeedState(myInterest.status, myInterest.agreementId)
+    : null
+
   return (
     <View style={styles.card}>
       <View style={styles.cardTop}>
@@ -959,30 +963,28 @@ function BarterCard({
               // response on the responder's only surface for this post -- a live-sounding
               // claim about a finished state. `status === 'x'` comparisons do not fail when
               // the union widens; an incomplete Record does.
-              RESPONDER_FEED_STATE[myInterest.status].action === 'end' ? (
+              feedState?.action === 'end' ? (
                 <TouchableOpacity
                   style={styles.interestSentBtn}
                   activeOpacity={0.85}
                   onPress={() => onEndNegotiation?.(myInterest.id)}
                 >
                   <Feather
-                    name={RESPONDER_FEED_STATE[myInterest.status].icon}
+                    name={feedState.icon}
                     size={15}
                     color="rgba(240,232,213,0.6)"
                   />
-                  <Text style={styles.interestSentText}>
-                    {RESPONDER_FEED_STATE[myInterest.status].label}
-                  </Text>
+                  <Text style={styles.interestSentText}>{feedState.label}</Text>
                 </TouchableOpacity>
               ) : (
                 <View style={styles.interestSentBtn}>
                   <Feather
-                    name={RESPONDER_FEED_STATE[myInterest.status].icon}
+                    name={feedState?.icon ?? 'check'}
                     size={15}
                     color="rgba(240,232,213,0.5)"
                   />
                   <Text style={styles.interestSentText}>
-                    {RESPONDER_FEED_STATE[myInterest.status].label}
+                    {feedState?.label ?? 'Interest sent'}
                   </Text>
                 </View>
               )

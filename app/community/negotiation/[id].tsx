@@ -29,6 +29,7 @@ import {
 import { barterWriteFailure } from '@/lib/barterErrors'
 import {
   acceptedAnEarlierVersion,
+  CONFIRM_TRADE_COPY,
   MAX_DESCRIPTION,
   negotiationView,
   ProposalDraft,
@@ -47,9 +48,9 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // happen; this is where the terms live, and the two are deliberately separate: a provider pair
 // may trade more than once over time while keeping one conversation.
 //
-// Nothing here finalises a trade. Both providers accepting the same terms is recorded and
-// shown; there is no agreement, obligation or fulfilment model yet, so no copy on this screen
-// may say a trade is booked, owed or complete.
+// Finalization records an official agreement and freezes the accepted terms. There is still no
+// obligation, fulfilment, delivery, cancellation-after-agreement or adjudication model, so no
+// copy on this screen may say a trade is booked, owed, complete or safely cancelable.
 
 const EMPTY_DRAFT: ProposalDraft = { ownerGives: '', responderGives: '' }
 
@@ -214,12 +215,11 @@ export default function NegotiationScreen() {
   function confirmTrade() {
     if (!row) return
     Alert.alert(
-      'Confirm this trade?',
-      'This makes the terms you both accepted official. They can no longer be changed, and the'
-        + ' post comes off the board for good.',
+      CONFIRM_TRADE_COPY.title,
+      CONFIRM_TRADE_COPY.body,
       [
-        { text: 'Not yet', style: 'cancel' },
-        { text: 'Confirm trade', onPress: onConfirm },
+        { text: CONFIRM_TRADE_COPY.cancelLabel, style: 'cancel' },
+        { text: CONFIRM_TRADE_COPY.confirmLabel, onPress: onConfirm },
       ],
     )
   }

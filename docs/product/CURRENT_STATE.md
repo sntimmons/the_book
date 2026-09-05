@@ -198,16 +198,16 @@ that model is now locked in **[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md)
 authoritative for it; the decisions behind it are **PD-030 … PD-054** in
 [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md). Neither is restated here.
 
-This section records only **what is built on `main`** and **what is not**.
+This section records **what is built in the current audited branch state** and **what is not**.
 
-### What is on `main`
+### What is built
 
-Verified against the migration chain at `7713b56` — **35 migrations**, newest
-`supabase/migrations/20260926000000_negotiation_stale_comment.sql`.
+Verified against the migration chain on PR #50 — **39 migrations**, newest
+`supabase/migrations/20260930000000_confirmed_trade_sqlstate.sql`.
 
 | Capability | What is actually enforced | Where |
 |---|---|---|
-| Data model | **Six tables.** `barter_offers` and `barter_interests` (the post and its responses), plus — since Slice 3a — `barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms` and `barter_version_acceptances` (the negotiated terms). **No agreement, obligation or fulfilment table exists**: no migration in the chain creates one, and `barter_agreements` appears in no file under `supabase/migrations/` at `7713b56`. | Origin: `20260829000000_canonical_live_baseline.sql`; `20260917000000_barter_proposal_versions.sql` §§ 1–4, narrowed by `20260925000000_negotiation_directed_terms.sql` § 1 |
+| Data model | **Seven barter tables.** `barter_offers` and `barter_interests` (the post and its responses), Slice 3a's `barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms` and `barter_version_acceptances` (the negotiated terms), plus PR #50's `barter_agreements` for the finalized trade. **No obligation, fulfilment, delivery, cancellation-after-agreement or adjudication table exists.** | Origin: `20260829000000_canonical_live_baseline.sql`; proposal tables in `20260917000000_barter_proposal_versions.sql` §§ 1–4, narrowed by `20260925000000_negotiation_directed_terms.sql` § 1; agreement table in `20260927000000_barter_agreement_finalization.sql` |
 | Response vocabulary | `pending → accepted \| declined \| released`, with `released_at`, `released_by` and `release_reason` required together and null together. | `20260909000000_barter_interest_release.sql` (status + completeness check constraints) |
 | Write identity | `caller_provider_id()` derives the provider from `auth.uid()`; nothing client-supplied enters the comparison. Foreign-field writes are governed by an **allow-list** trigger, `created_at` is server-stamped, delete guards preserve counterparty history (PD-043), and `anon` holds nothing on either table. | `20260906000000_barter_integrity_slice1.sql` §§ 1–7, 10 |
 | Interest rate limit | 15 new interests per provider per rolling 24h, counted from `rate_limit_log` so delete-and-resend cannot reset the window (PD-045). | `20260906000000` § 9 (`enforce_barter_interest_rate_limit`) |
@@ -221,7 +221,7 @@ Verified against the migration chain at `7713b56` — **35 migrations**, newest
 | Versioned terms | Every proposal or counter is a **new immutable version** (`barter_proposal_versions`, unique `(proposal_id, version_no)`). Versions, terms and acceptances are **append-only by trigger** (`enforce_barter_negotiation_append_only`); the only mutable field on a proposal is `current_version_no`, which may only advance (`enforce_barter_proposal_immutable`). Each version carries a `post_snapshot` of the public post as it stood when authored — historical context, never authority for the terms (PD-047). Counters are capped at **20 versions per participant, per negotiation, per rolling 24 h** (SQLSTATE `54000`); the cap is not applied to the opening proposal, which is bounded by the one-per-interest constraint instead. | `20260917000000` §§ 2, 5, 7; `20260920000000_negotiation_budget_code.sql`; `submit_barter_counter(uuid, text, text)` in `20260925000000` § 4 |
 | Exactly two directed terms | A version holds **exactly two terms, one per fixed side** — `offer_owner` and `responder` — enforced by a unique index on `(version_id, provided_by)` plus a statement-level guard (`enforce_barter_terms_written_once`) that refuses any count other than two, a missing side, or a second write to a version. **Participant identity is server-derived**: the client submits only the two descriptions; `write_barter_proposal_terms(uuid, text, text)` derives each side's `provider_id` / `provider_user_id` from the accepted interest, and the guard asserts they match the offer and interest rows. **No value field** — `estimated_value` was dropped. Terms can be written only from inside a negotiation RPC (a transaction-local marker checked by `enforce_barter_terms_write`), and the helper's EXECUTE is revoked from `authenticated`. PD-053. | `20260925000000` §§ 1–3; `20260921000000_negotiation_write_boundary.sql`; `20260924000000_negotiation_written_once.sql`; `20260926000000` (comment-only refresh of the marker guard) |
 | Version acceptance | `accept_barter_version(uuid)` records **one acceptance per participant per version** (`unique (version_id, participant_user_id)`, so a repeat is idempotent). It refuses a non-participant (`42501`), a dead negotiation (`55000`) and — checked under the proposal row lock — a version that is no longer current (`40001`, "these terms have been replaced"). Advancing to a new version does **not** delete earlier acceptances; they stop counting. **Authoring is not acceptance; countering is not acceptance** (PD-053). | `20260917000000` §§ 4, 10; `20260919000000_negotiation_stale_terms_code.sql`; current body is `20260921000000`'s per the ledger's redefinition table |
-| Both accepted — recorded, not finalised | `my_barter_proposals.both_accepted` is **derived** in the view from acceptance rows on the *current* version and stored nowhere. It is a fact, not an agreement: **no agreement row is written, the sourcing post is not closed**, and no obligation, fulfilment, delivery, confirmation-window, cancellation-after-agreement or adjudication schema exists. PD-054. | `20260917000000` § 11 (view, `security_invoker`, `select` to `authenticated` only, revoked from `anon`) |
+| Both accepted — ready to confirm | `my_barter_proposals.both_accepted` is **derived** in the view from acceptance rows on the *current* version and stored nowhere. It is a readiness fact. `finalize_barter_agreement(uuid)` turns that fact into one immutable `barter_agreements` row, makes the accepted version authoritative, and closes the sourcing post permanently. No obligation, fulfilment, delivery, confirmation-window, cancellation-after-agreement or adjudication schema exists. PD-054. | `20260917000000` § 11; `20260927000000_barter_agreement_finalization.sql`; SQLSTATE correction in `20260930000000_confirmed_trade_sqlstate.sql` |
 
 **The RLS policies on `barter_offers` and `barter_interests` are still the Slice 1 set.**
 `barter_offers_provider_read` and `barter_interests_offer_owner_read` on reads;
@@ -267,13 +267,12 @@ The last recorded execution of the whole B5B suite is **500/500 passed, 0 failed
 **[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 is the authoritative gap list** and is
 not copied here. Two gaps matter most to anyone reading this document cold:
 
-- **There is no agreement, obligation or fulfilment schema.** Slice 3a built the proposal
-  machinery — versioned terms and per-version acceptance — and deliberately stops at a derived
-  `both_accepted` flag (PD-054). PD-046 (cancellation / no-show) and § 4, § 6 and § 7 of the
-  contract describe an agreement-and-obligation model that has **no tables behind it**: no
-  agreement row, no obligations, no delivery or receiver confirmation, no adjudication, and the
-  sourcing post is **not** closed when both accept. Everything above is still the
-  *pre-agreement* negotiation surface.
+- **There is agreement finalization, but no obligation or fulfilment schema.** PR #50 adds
+  `finalize_barter_agreement(uuid)`, an immutable `barter_agreements` row, and permanent
+  sourcing-post closure once both participants have accepted the same current version. PD-046
+  (cancellation / no-show) and § 6 and § 7 of the contract still describe later work with
+  **no tables behind it**: no obligations, no delivery or receiver confirmation, no
+  adjudication, and no cancellation-after-agreement path in this beta slice.
 - **Offer creation is not server-limited.** The interest cap is server-authoritative; the
   offers-per-day cap is client-side only and its check fails open
   ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 10, `lib/rateLimit.ts`).
@@ -325,14 +324,6 @@ device, whether the app currently builds for release, live production state (exp
 of scope), or anything about real user behaviour. Where a claim needed a run to confirm, it
 cites the recorded run rather than asserting it fresh.
 
-**One caveat about how this revision was verified.** The reconciliation that produced it had
-no shell. It read `main`'s SHA from `.git/refs/heads/main` and `.git/refs/remotes/origin/main`
-(both `7713b56`) and the checked-out branch from `.git/HEAD`
-(`feature/barter-agreement-finalization`, whose ref is also `7713b56`, so nothing is committed
-on it beyond `main`). It could **not** confirm the working tree was clean — and observed it
-change during the run: `supabase/migrations/20260927000000_barter_agreement_finalization.sql`
-was absent from the run's opening inventory (35 files) and present by its end. That file is
-**not on `main`**, is uncommitted on every branch ref, and nothing in this document is derived
-from it. Every server-side claim above cites a migration at or before `20260926000000`, which
-is `main`'s chain. Client-side citations name a **file and symbol rather than a line number**,
-because uncommitted work can move lines this document does not own.
+**One caveat about how this revision was verified.** Earlier reconciliations of this document
+were anchored to `main` at `7713b56`. The barter finalization claims above are PR #50 branch
+state, not production or merged-`main` state; production remains out of scope.

@@ -372,7 +372,7 @@ lock order is "interest → offer → proposal in every RPC". `20260921000000` c
 offer → interest → proposal and B5B pins it; the file comment is wrong and was not reachable by
 the comment-refresh migrations, which only touch function bodies.
 
-## 2026-09-05 — `20260927000000`, `20260928000000` applied to non-production (Agreement Finalization)
+## 2026-09-05 — `20260927000000` through `20260930000000` applied to non-production (Agreement Finalization)
 
 `20260927000000` creates `barter_agreements` (one per proposal / accepted version / offer /
 interest, immutable, participant-read RLS, SELECT-only grants), the finalization RPC
@@ -389,17 +389,27 @@ The migration's grants were self-audited BEFORE apply — every function revoked
 `new.version_id` in a CASE branch for a different table, which PL/pgSQL rejects for the other
 table's rows at evaluation time. It blocked every version insert. B5B found it on the first run.
 
+`20260929000000` closes the final regression findings: the post-agreement guard now fails
+closed with `internal_error` if it cannot resolve a proposal id, `barter_agreements` ownership
+is re-pinned to `postgres`, and authenticated `INSERT` / `UPDATE` / `DELETE` privileges are
+explicitly revoked from the three agreement-facing read models.
+
+`20260930000000` separates the confirmed-trade refusal from ordinary dead-negotiation
+refusals: post-agreement accept / counter / release now raise SQLSTATE `PT409`, leaving
+`55000` for pending / declined / released / closed-post prerequisite failures so client copy
+can distinguish "already confirmed" from "ended".
+
 **Ledger count, corrected.** The running counts in the entries above had drifted by one (the
 `20260924000000` apply was recorded inside the `20260921`–`20260923` entry without incrementing
-the total). Verified 2026-09-05 by `supabase migration list --linked`: **37 entries**,
-`local == remote` for every row, equal to the 37 files in `supabase/migrations/`.
+the total). Verified 2026-09-05 by `supabase migration list --linked`: **39 entries**,
+`local == remote` for every row, equal to the 39 files in `supabase/migrations/`.
 
 Production untouched, and never queried.
 
-Post-apply B5B: **554/554 passed, 0 failed**, zero residue (agreements, proposals, versions,
-terms, acceptances, offers, interests all 0; conversations unchanged at 43). Concurrency proof
-**29/29** — three new scenarios (finalize × finalize, finalize vs counter, finalize vs release),
-each with session overlap proven from the winner's own timestamp.
+Post-apply B5B: **574/574 passed, 0 failed**, zero residue. Concurrency proof **30/30** —
+three agreement scenarios (finalize × finalize, finalize vs counter, finalize vs release) now
+capture per-session start/end timestamps immediately around the RPC call and prove interval
+intersection before claiming genuine overlap.
 
 ## Prevention
 

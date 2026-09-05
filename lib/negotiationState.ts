@@ -44,9 +44,10 @@ export interface ProposalDraft {
 /**
  * The negotiation as the viewer experiences it.
  *
- * `bothAccepted` is the SEAM to the next slice: it records that both providers accepted the
- * same terms. It does not mean an agreement exists — no agreement, obligation or fulfilment
- * model is built yet — so no copy here may call a trade final, booked, or owed.
+ * `bothAccepted` records that both providers accepted the same current terms. It does not
+ * itself mean an agreement exists: finalization creates `agreementId`, while obligation and
+ * fulfilment remain later slices. Copy may call a trade confirmed only when `agreementId`
+ * exists, and must still not call it booked, complete or fulfilled.
  */
 export interface NegotiationFacts {
   /** From the underlying interest: 'accepted' is live, anything else has ended. */
@@ -89,6 +90,23 @@ export interface NegotiationView {
   canAccept: boolean
   /** May the viewer make the agreement official? Only when both accepted the current terms. */
   canConfirm: boolean
+}
+
+export interface ConfirmTradeCopy {
+  title: string
+  body: string
+  confirmLabel: string
+  cancelLabel: string
+}
+
+export const CONFIRM_TRADE_COPY: ConfirmTradeCopy = {
+  title: 'Confirm this trade?',
+  body:
+    'This makes the terms you both accepted official. They can no longer be changed, and the'
+    + ' post comes off the board for good. The current beta does not yet include an in-app'
+    + ' way to cancel or end a trade after this step.',
+  confirmLabel: 'Confirm trade',
+  cancelLabel: 'Not yet',
 }
 
 /**

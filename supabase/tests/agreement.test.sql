@@ -102,6 +102,7 @@ do $$
 declare
   ou uuid := current_setting('b5b.ag_ou')::uuid;
   ru uuid := current_setting('b5b.ag_ru')::uuid;
+  xu uuid := current_setting('b5b.ag_xu')::uuid;
   pid uuid := current_setting('b5b.ag_pid')::uuid;
   off1 uuid := current_setting('b5b.ag_off1')::uuid;
   int1 uuid := current_setting('b5b.ag_int1')::uuid;
@@ -135,7 +136,22 @@ begin
   select count(*) into v_n from public.barter_agreements where proposal_id = pid;
   perform pg_temp.chk('agreement', 'and creates no duplicate', '1', v_n::text);
 
+  -- Idempotence is participant-scoped: a stranger must not be able to discover the existing
+  -- agreement id by calling finalize after the participants have confirmed it.
+  perform pg_temp.act(xu);
+  begin
+    perform public.finalize_barter_agreement(pid);
+    v_code := 'NO ERROR';
+  exception when others then
+    v_code := sqlstate;
+    perform pg_temp.chk('agreement', 'stranger-after-agreement error does not leak the id',
+      'false', (position(v_ag::text in sqlerrm) > 0)::text);
+  end;
+  perform pg_temp.chk('agreement', 'a stranger still cannot finalize after agreement exists',
+    '42501', v_code);
+
   -- ONE AGREEMENT PER POST / PER PROPOSAL: a second insert collides on the constraints.
+  perform pg_temp.act_service();
   begin
     insert into public.barter_agreements(proposal_id, accepted_version_id, offer_id, interest_id,
       owner_provider_id, owner_user_id, responder_provider_id, responder_user_id)
@@ -174,21 +190,49 @@ begin
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('agreement', 'a counter after agreement is refused', '55000', v_code);
+  perform pg_temp.chk('agreement', 'a counter after agreement is refused', 'PT409', v_code);
 
   perform pg_temp.act_service();
   select id into v2 from public.barter_proposal_versions where proposal_id = pid and version_no = 2;
+  perform pg_temp.act(ru);
+  begin
+    perform public.accept_barter_version(v2);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement', 'a new acceptance after agreement is refused', 'PT409', v_code);
+
   perform pg_temp.act(ru);
   begin
     perform public.release_barter_interest(int1);
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('agreement', 'release is unavailable after agreement', '55000', v_code);
+  perform pg_temp.chk('agreement', 'release is unavailable after agreement', 'PT409', v_code);
 
   perform pg_temp.act_service();
   select status into v_status from public.barter_interests where id = int1;
   perform pg_temp.chk('agreement', 'and the interest is still accepted', 'accepted', v_status);
+
+  -- Direct-marker proof: even the internal pre-agreement release marker cannot release a
+  -- confirmed trade. This proves the trigger owns the rule, not only the RPC wrapper.
+  perform pg_temp.act(ou);
+  perform set_config('app.barter_release', int1::text, true);
+  begin
+    update public.barter_interests
+       set status = 'released', released_at = now(), released_by = ou,
+           release_reason = 'owner_ended_negotiation'
+     where id = int1;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform set_config('app.barter_release', '', true);
+  perform pg_temp.chk('agreement', 'direct marker release is refused after agreement',
+    'PT409', v_code);
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = int1;
+  perform pg_temp.chk('agreement', 'and direct marker release leaves it accepted',
+    'accepted', v_status);
 
   -- The accepted-version reference is immutable, even with grants bypassed.
   perform set_config('role', 'none', true);
@@ -287,6 +331,10 @@ begin
     '0', v_n::text);
 
   -- Table: authenticated may SELECT and nothing else; anon nothing; RLS on; no write policy.
+  perform pg_temp.chk('agreement', 'barter_agreements is owned by postgres', 'postgres',
+    (select pg_get_userbyid(c.relowner) from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+     where c.relname = 'barter_agreements' and n.nspname = 'public'));
   perform pg_temp.chk('agreement', 'authenticated may only read barter_agreements', 'true',
     (has_table_privilege('authenticated', 'public.barter_agreements', 'select')
      and not has_table_privilege('authenticated', 'public.barter_agreements', 'insert')
@@ -306,17 +354,34 @@ begin
        where c.relname = t and n.nspname = 'public'));
     perform pg_temp.chk('agreement', 'anon cannot read ' || t, 'false',
       has_table_privilege('anon', 'public.' || t, 'select')::text);
+    perform pg_temp.chk('agreement', 'authenticated cannot insert ' || t, 'false',
+      has_table_privilege('authenticated', 'public.' || t, 'insert')::text);
+    perform pg_temp.chk('agreement', 'authenticated cannot update ' || t, 'false',
+      has_table_privilege('authenticated', 'public.' || t, 'update')::text);
+    perform pg_temp.chk('agreement', 'authenticated cannot delete ' || t, 'false',
+      has_table_privilege('authenticated', 'public.' || t, 'delete')::text);
   end loop;
+
+  -- Source pin, comment-stripped like the other concurrency/lock pins: idempotence must stay
+  -- AFTER participant validation, or a stranger could use finalize as an agreement-id oracle.
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into t
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'finalize_barter_agreement' and n.nspname = 'public';
+  perform pg_temp.chk('agreement', 'finalize idempotence lookup stays after participant validation',
+    'true', (position('barter_negotiation_role' in t) > 0
+             and position('select a.id into v_existing' in t)
+                 > position('barter_negotiation_role' in t))::text);
 end $$;
 
 -- ── Direct writes and read isolation ───────────────────────────────────────
 do $$
 declare
   ou uuid := current_setting('b5b.ag_ou')::uuid;
+  ru uuid := current_setting('b5b.ag_ru')::uuid;
   xu uuid := current_setting('b5b.ag_xu')::uuid;
   pid uuid := current_setting('b5b.ag_pid')::uuid;
   v_ag uuid := current_setting('b5b.ag_id')::uuid;
-  v_code text; v_n integer;
+  v_code text; v_n integer; v_version uuid; v_offer uuid; v_interest uuid;
 begin
   perform pg_temp.act(ou);
   begin
@@ -328,6 +393,55 @@ begin
   exception when others then v_code := sqlstate;
   end;
   perform pg_temp.chk('agreement', 'a direct agreement insert is refused', '42501', v_code);
+
+  begin
+    update public.barter_agreements set officialized_at = clock_timestamp() where id = v_ag;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement', 'authenticated UPDATE on barter_agreements is refused',
+    '42501', v_code);
+
+  begin
+    delete from public.barter_agreements where id = v_ag;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement', 'authenticated DELETE on barter_agreements is refused',
+    '42501', v_code);
+
+  -- Bypass ordinary table grants, but not triggers. A future privileged writer still cannot
+  -- insert an agreement whose references disagree with the proposal.
+  perform pg_temp.act_service();
+  select accepted_version_id, offer_id, interest_id
+    into v_version, v_offer, v_interest
+    from public.barter_agreements where id = v_ag;
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ou::text, 'role', 'authenticated')::text, true);
+  begin
+    insert into public.barter_agreements(proposal_id, accepted_version_id, offer_id, interest_id,
+      owner_provider_id, owner_user_id, responder_provider_id, responder_user_id)
+    select pid, v_version, v_offer, v_interest,
+           owner_provider_id, xu, responder_provider_id, ru
+      from public.barter_agreements where id = v_ag;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement', 'inconsistent privileged agreement insert is rejected',
+    '42501', v_code);
+
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ou::text, 'role', 'authenticated')::text, true);
+  begin
+    insert into public.barter_version_acceptances(version_id, participant_user_id)
+    values (gen_random_uuid(), ou);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement', 'unresolvable agreement guard dispatch fails closed',
+    'XX000', v_code);
 
   -- Participants read it; a stranger sees nothing, through the table or the view.
   select count(*) into v_n from public.my_barter_agreements where agreement_id = v_ag;

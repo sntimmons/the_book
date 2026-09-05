@@ -19,6 +19,7 @@ const ALL_OPS: BarterWriteOp[] = [
   'deleteOffer',
   'proposeTerms',
   'acceptTerms',
+  'confirmTrade',
 ]
 
 const pgErr = (code: string) => ({ code, message: 'raw db text', details: '', hint: '' })
@@ -267,5 +268,33 @@ describe('negotiation refusals advise the right next action', () => {
       expect(f.terminal).toBe(true)
       expect(f.title).toMatch(/not your/i)
     }
+  })
+})
+
+describe('post-agreement refusals are terminal and specific', () => {
+  it.each([
+    'release',
+    'proposeTerms',
+    'acceptTerms',
+  ] as const)('%s maps PT409 to confirmed-trade copy, not retry copy', (op) => {
+    const f = barterWriteFailure(op, pgErr('PT409'))
+    expect(f.terminal).toBe(true)
+    expect(f.title).toMatch(/confirmed/i)
+    expect(f.body).not.toMatch(/try again/i)
+    expect(`${f.title} ${f.body}`).not.toMatch(/negotiation has ended/i)
+  })
+
+  it('keeps 55000 available for ordinary ended negotiations', () => {
+    expect(barterWriteFailure('proposeTerms', pgErr('55000')).title).toMatch(/ended/i)
+    expect(barterWriteFailure('acceptTerms', pgErr('55000')).title).toMatch(/ended/i)
+    expect(barterWriteFailure('release', pgErr('55000')).terminal).toBe(false)
+  })
+
+  it('confirmTrade maps unrecoverable internal errors to support, not retry', () => {
+    const f = barterWriteFailure('confirmTrade', pgErr('XX000'))
+    expect(f.terminal).toBe(true)
+    expect(f.title).toMatch(/support/i)
+    expect(f.body).toMatch(/contact support/i)
+    expect(f.body).not.toMatch(/try again/i)
   })
 })

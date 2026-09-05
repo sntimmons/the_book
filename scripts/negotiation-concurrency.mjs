@@ -60,6 +60,50 @@ async function runSql(sql) {
   }
 }
 
+async function runTimedUser(uid, rpcStatement) {
+  const r = await runSql(`
+create temp table _rpc_timing(started_at timestamptz, ended_at timestamptz, code text) on commit drop;
+do $$
+declare
+  v_started timestamptz;
+  v_ended timestamptz;
+  v_code text := '00000';
+begin
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', '${uid}', 'role', 'authenticated')::text, true);
+  perform pg_sleep(2);
+  v_started := clock_timestamp();
+  begin
+    ${rpcStatement}
+  exception when others then
+    v_code := sqlstate;
+  end;
+  v_ended := clock_timestamp();
+  insert into _rpc_timing values (v_started, v_ended, v_code);
+end $$;
+select json_build_object(
+  'started_at', started_at,
+  'ended_at', ended_at,
+  'code', code
+) as timing from _rpc_timing;`)
+  const timing = parseTiming(r.out)
+  return { ...r, timing, opOk: r.ok && timing?.code === '00000' }
+}
+
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+async function blockOfferForInterest(interest) {
+  return runSql(`
+begin;
+select o.id
+  from public.barter_offers o
+  join public.barter_interests i on i.offer_id = o.id
+ where i.id = '${interest}'
+ for update;
+select pg_sleep(5);
+commit;`)
+}
+
 // Run as a real authenticated user: the JWT claim gives the definer RPCs a true auth.uid()
 // without assuming the `authenticated` database role, which these tables' RLS would otherwise
 // apply to the fixture reads.
@@ -84,6 +128,25 @@ const chk = (name, expected, actual) => {
 function scalar(out, key) {
   const m = out.match(new RegExp(`"${key}":\\s*"?([^",\\n}]+)"?`))
   return m ? m[1].trim() : null
+}
+
+function parseTiming(out) {
+  const started = scalar(out, 'started_at')
+  const ended = scalar(out, 'ended_at')
+  const code = scalar(out, 'code')
+  if (!started || !ended || !code) return null
+  return {
+    startedAt: Date.parse(started),
+    endedAt: Date.parse(ended),
+    code,
+  }
+}
+
+function intervalsOverlap(a, b) {
+  if (!a || !b) return false
+  if (!Number.isFinite(a.startedAt) || !Number.isFinite(a.endedAt)) return false
+  if (!Number.isFinite(b.startedAt) || !Number.isFinite(b.endedAt)) return false
+  return a.startedAt <= b.endedAt && b.startedAt <= a.endedAt
 }
 
 const tag = randomUUID().slice(0, 8)
@@ -288,16 +351,18 @@ const proposalOf = (interest) =>
 // ── 4. Both participants finalize at once ───────────────────────────────────
 async function raceFinalizeFinalize() {
   await readyToConfirm(ids.interest4)
-  const fin = (uid) => asUser(uid, `
-  perform pg_sleep(2);
-  perform public.finalize_barter_agreement(${proposalOf(ids.interest4)});`)
-  const [a, b] = await Promise.all([runSql(fin(ids.ou)), runSql(fin(ids.ru))])
-  chk('both simultaneous finalizations succeed (second returns the first)', 'true', String(a.ok && b.ok))
+  const fin = `perform public.finalize_barter_agreement(${proposalOf(ids.interest4)});`
+  const blocker = blockOfferForInterest(ids.interest4)
+  await delay(1000)
+  const [a, b] = await Promise.all([runTimedUser(ids.ou, fin), runTimedUser(ids.ru, fin)])
+  await blocker
+  chk('both simultaneous finalizations succeed (second returns the first)', 'true', String(a.opOk && b.opOk))
+  chk('the two finalization RPC intervals genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
   const q = await runSql(`
-select count(*) as n, (extract(epoch from (clock_timestamp() - min(officialized_at))) < 8) as overlapped
+select count(*) as n
   from public.barter_agreements where interest_id = '${ids.interest4}';`)
   chk('exactly ONE agreement exists', '1', scalar(q.out, 'n'))
-  chk('the two finalizations genuinely overlapped', 'true', String(/true/i.test(scalar(q.out, 'overlapped') ?? '')))
   const p = await runSql(`select is_active as a from public.barter_offers where id = '${ids.offer4}';`)
   chk('and the post is closed', 'false', scalar(p.out, 'a'))
 }
@@ -308,14 +373,16 @@ select count(*) as n, (extract(epoch from (clock_timestamp() - min(officialized_
 // What must NEVER happen: an agreement referencing a version that is no longer current.
 async function raceFinalizeCounter() {
   await readyToConfirm(ids.interest5)
-  const fin = asUser(ids.ou, `
-  perform pg_sleep(2);
-  perform public.finalize_barter_agreement(${proposalOf(ids.interest5)});`)
-  const cnt = asUser(ids.ru, `
-  perform pg_sleep(2);
-  perform public.submit_barter_counter(${proposalOf(ids.interest5)}, ${TERMS('late own', 'late theirs')});`)
-  const [f, c] = await Promise.all([runSql(fin), runSql(cnt)])
-  chk('exactly one of finalize / counter wins', 'true', String(f.ok !== c.ok))
+  const fin = `perform public.finalize_barter_agreement(${proposalOf(ids.interest5)});`
+  const cnt =
+    `perform public.submit_barter_counter(${proposalOf(ids.interest5)}, ${TERMS('late own', 'late theirs')});`
+  const blocker = blockOfferForInterest(ids.interest5)
+  await delay(1000)
+  const [f, c] = await Promise.all([runTimedUser(ids.ou, fin), runTimedUser(ids.ru, cnt)])
+  await blocker
+  chk('finalize and counter RPC intervals genuinely overlapped',
+    'true', String(intervalsOverlap(f.timing, c.timing)))
+  chk('exactly one of finalize / counter wins', 'true', String(f.opOk !== c.opOk))
   const q = await runSql(`
 select coalesce((select count(*) from public.barter_agreements ag
   join public.barter_proposal_versions v on v.id = ag.accepted_version_id
@@ -324,31 +391,21 @@ select coalesce((select count(*) from public.barter_agreements ag
  (select count(*) from public.barter_proposal_versions v join public.barter_proposals p on p.id = v.proposal_id
    where p.interest_id = '${ids.interest5}') as versions;`)
   chk('no agreement references a version that is no longer current', '0', scalar(q.out, 'stale'))
-  // Overlap evidence from the WINNER's own timestamp. Measuring from v1 was wrong: v1 was
-  // written during setup, well before the race, so that window was always exceeded and the
-  // check reported no overlap whatever happened.
-  const w = await runSql(`
-select (extract(epoch from (clock_timestamp() - greatest(
-  coalesce((select officialized_at from public.barter_agreements where interest_id = '${ids.interest5}'), '-infinity'),
-  coalesce((select max(v.created_at) from public.barter_proposal_versions v
-             join public.barter_proposals p on p.id = v.proposal_id
-            where p.interest_id = '${ids.interest5}' and v.version_no > 1), '-infinity')
-))) < 8) as overlapped;`)
-  chk('finalize and counter genuinely overlapped', 'true', String(/true/i.test(scalar(w.out, 'overlapped') ?? '')))
 }
 
 // ── 6. Finalize races a release ─────────────────────────────────────────────
 // What must NEVER happen: an agreement on a released interest, or a release of a confirmed one.
 async function raceFinalizeRelease() {
   await readyToConfirm(ids.interest6)
-  const fin = asUser(ids.ou, `
-  perform pg_sleep(2);
-  perform public.finalize_barter_agreement(${proposalOf(ids.interest6)});`)
-  const rel = asUser(ids.ru, `
-  perform pg_sleep(2);
-  perform public.release_barter_interest('${ids.interest6}');`)
-  const [f, r] = await Promise.all([runSql(fin), runSql(rel)])
-  chk('exactly one of finalize / release wins', 'true', String(f.ok !== r.ok))
+  const fin = `perform public.finalize_barter_agreement(${proposalOf(ids.interest6)});`
+  const rel = `perform public.release_barter_interest('${ids.interest6}');`
+  const blocker = blockOfferForInterest(ids.interest6)
+  await delay(1000)
+  const [f, r] = await Promise.all([runTimedUser(ids.ou, fin), runTimedUser(ids.ru, rel)])
+  await blocker
+  chk('finalize and release RPC intervals genuinely overlapped',
+    'true', String(intervalsOverlap(f.timing, r.timing)))
+  chk('exactly one of finalize / release wins', 'true', String(f.opOk !== r.opOk))
   const q = await runSql(`
 select (select count(*) from public.barter_agreements where interest_id = '${ids.interest6}') as agreements,
        (select status from public.barter_interests where id = '${ids.interest6}') as status;`)
