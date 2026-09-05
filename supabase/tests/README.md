@@ -76,6 +76,8 @@ the command line, so the password never appears in process `argv`.
 | `reviews.test.sql` | Reviews Phase 0/1 trust boundaries |
 | `messaging.test.sql` | Pre-booking message-request trust boundaries |
 | `barter.test.sql` | Barter identity binding, foreign-field immutability, state transitions, counterparty-history retention, and the write-path response limit |
+| `negotiation.test.sql` | Proposal / versioning foundation (Slice 3a): RPC authorization, two directed terms, server-owned identity, write boundary, immutability, budget, source pins. |
+| `agreement.test.sql` | Agreement finalization: acceptance requirements, idempotence, atomic post closure, post-agreement freeze, release unavailable, security posture of every new object. |
 | `_report.sql` | Aggregates results into one JSON column; the runner reads it and sets the exit code |
 | `../../scripts/db-security-test.mjs` | Production guard, execution, reporting |
 | `../../scripts/b5bExec.mjs` | Pure helpers: `PG*` env derivation and report parsing |

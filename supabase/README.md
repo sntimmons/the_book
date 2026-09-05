@@ -41,6 +41,14 @@ refers to the canonical baseline, and the migrations added since are recorded ag
 non-production project. The last recorded production state is **8 migrations** (Batches
 6AB / 6D). **Never assume a migration in this directory exists in production.**
 
+## Barter trigger ordering
+
+PostgreSQL fires `BEFORE` triggers in name order. The barter write triggers use that ordering
+deliberately: `write_integrity` owns transition validity and must sort first; later `zx`, `zy`
+and `zz` triggers add narrower lifecycle/rate-limit rules whose names carry semantic meaning.
+For example, "confirmed trade" must beat a more general closed-post refusal, while an illegal
+transition still belongs to write integrity. `supabase/tests/barter.test.sql` pins the order.
+
 ## Setup and contribution
 
 - Install, run, environment configuration → **[README.md](../README.md)**

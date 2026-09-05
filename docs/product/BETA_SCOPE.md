@@ -54,7 +54,7 @@ create *trust*.
 | Analytics | **REAL (dev-data caveat)** | Client-side metrics; revenue = completed only (4A). |
 | Reels / content | **REAL** | Content feed + posts/reels. |
 | Follows | **REAL** | `provider_follows` / `saved_providers`. |
-| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, and the **pre-agreement negotiation lifecycle** below. No agreement, obligation or fulfilment model exists yet. See Community / barter. |
+| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, proposal/version negotiation, and PR #50 agreement finalization. No obligation, fulfilment, delivery, cancellation-after-agreement or adjudication model exists yet. See Community / barter. |
 | Care / reminders | **REAL (beta)** | Care reminders. |
 | Payments revenue / platform fee | **UNDECIDED — BUSINESS MODEL RESEARCH** | See Revenue model. |
 | Discovery ranking | **UNDECIDED — RESEARCH** | Fair-opportunity direction; weights undefined. |
@@ -96,10 +96,10 @@ detail lives in [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) and PD-043 �
   withdraws any acceptance of the previous one. Both providers must explicitly accept the
   **same current version** (**PD-053**). No value field: barter requires no dollar equivalence.
 
-**What is NOT built:** there is no agreement, obligation or fulfilment schema. Both providers
-accepting the same terms is **recorded, not finalised** (**PD-054**) — no agreement row exists,
-the sourcing post is not closed, and nothing above makes a trade *official*. Barter reviews,
-reputation and adjudication are also not built. See
+**Agreement finalization (PR #50) is built:** once both providers accept the same current
+version, a participant can finalize the trade, creating an immutable `barter_agreements` row
+and permanently closing the sourcing post. **What is NOT built:** obligation, fulfilment,
+delivery, cancellation-after-agreement, adjudication, barter reviews and reputation. See
 [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 for the authoritative gap list.
 
 ---

@@ -44,9 +44,10 @@ export interface ProposalDraft {
 /**
  * The negotiation as the viewer experiences it.
  *
- * `bothAccepted` is the SEAM to the next slice: it records that both providers accepted the
- * same terms. It does not mean an agreement exists — no agreement, obligation or fulfilment
- * model is built yet — so no copy here may call a trade final, booked, or owed.
+ * `bothAccepted` records that both providers accepted the same current terms. It does not
+ * itself mean an agreement exists: finalization creates `agreementId`, while obligation and
+ * fulfilment remain later slices. Copy may call a trade confirmed only when `agreementId`
+ * exists, and must still not call it booked, complete or fulfilled.
  */
 export interface NegotiationFacts {
   /** From the underlying interest: 'accepted' is live, anything else has ended. */
@@ -63,10 +64,17 @@ export interface NegotiationFacts {
    * one that is wrong.
    */
   everBothAccepted: boolean
+  /**
+   * An official agreement exists for this negotiation. DISTINCT from `bothAccepted`: both
+   * accepting the same current terms is "ready to confirm"; this is "confirmed". No copy may
+   * treat the first as the second.
+   */
+  agreementId: string | null
 }
 
 export type NegotiationState =
   | 'ended'
+  | 'confirmed'
   | 'agreed'
   | 'awaitingThem'
   | 'awaitingYou'
@@ -80,6 +88,25 @@ export interface NegotiationView {
   canPropose: boolean
   /** May the viewer accept the terms currently on the table? */
   canAccept: boolean
+  /** May the viewer make the agreement official? Only when both accepted the current terms. */
+  canConfirm: boolean
+}
+
+export interface ConfirmTradeCopy {
+  title: string
+  body: string
+  confirmLabel: string
+  cancelLabel: string
+}
+
+export const CONFIRM_TRADE_COPY: ConfirmTradeCopy = {
+  title: 'Confirm this trade?',
+  body:
+    'This makes the terms you both accepted official. They can no longer be changed, and the'
+    + ' post comes off the board for good. The current beta does not yet include an in-app'
+    + ' way to cancel or end a trade after this step.',
+  confirmLabel: 'Confirm trade',
+  cancelLabel: 'Not yet',
 }
 
 /**
@@ -94,15 +121,24 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
     // you ever accepted the same terms.
     detail: '',
   },
+  confirmed: {
+    headline: 'Trade confirmed',
+    // Beta-safe: confirmed, not booked / complete / fulfilled / delivered / guaranteed. No
+    // obligation, delivery or completion model exists; this records that the agreement is
+    // official and that its terms can no longer change.
+    detail:
+      'These terms are now the agreed trade and can no longer be changed. Arrange the details'
+      + ' in your conversation.',
+  },
   agreed: {
-    headline: 'You both accepted these terms',
+    headline: 'Ready to confirm trade',
     detail:
       // Deliberately NOT "your trade is booked" or "agreement complete". Both providers
       // accepting is recorded; turning that into an official agreement is not built yet, and
       // saying otherwise would promise something the app cannot do.
-      'Neither of you has anything to confirm here yet. Work out the details in your'
-      + ' conversation — the trade itself is arranged between you. Either of you can still send'
-      + ' different terms or end this, which withdraws what you have both accepted.',
+      'You both accepted these terms. Either of you can confirm to make the trade official —'
+      + ' until then, either of you can still send different terms or end this, which withdraws'
+      + ' what you have both accepted.',
   },
   awaitingThem: {
     headline: 'Waiting on the other provider',
@@ -120,9 +156,12 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
 
 export function negotiationView(f: NegotiationFacts): NegotiationView {
   const live = f.interestStatus === 'accepted'
+  const confirmed = f.agreementId !== null
   const state: NegotiationState = !live
     ? 'ended'
-    : f.bothAccepted
+    : confirmed
+      ? 'confirmed'
+      : f.bothAccepted
       ? 'agreed'
       : f.iAcceptedCurrent
         ? 'awaitingThem'
@@ -144,8 +183,10 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
     detail,
     // A dead negotiation accepts nothing. The server refuses both independently; this only
     // decides whether to render a control that would otherwise be refused.
-    canPropose: live,
-    canAccept: live && !f.iAcceptedCurrent,
+    // A confirmed trade's terms are frozen; the server refuses a counter or acceptance too.
+    canPropose: live && !confirmed,
+    canAccept: live && !confirmed && !f.iAcceptedCurrent,
+    canConfirm: live && !confirmed && f.bothAccepted,
   }
 }
 

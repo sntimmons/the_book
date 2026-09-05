@@ -58,6 +58,7 @@ export type BarterWriteOp =
   | 'deleteOffer'
   | 'proposeTerms'
   | 'acceptTerms'
+  | 'confirmTrade'
 
 export interface BarterWriteFailure {
   /** Terminal means retrying cannot succeed; the UI must not offer a retry. */
@@ -106,6 +107,9 @@ const MALFORMED_TERMS = '22023'
 // to reopen one. A distinct code exists because check_violation maps, for accept and decline, to
 // "already answered" -- which blames the responder for something the owner did.
 const NOT_IN_PREREQUISITE_STATE = '55000'
+// Raised only by the post-agreement barter guards. Distinct from 55000, which still means a
+// pre-agreement negotiation is not in the required state.
+const CONFIRMED_TRADE = 'PT409'
 
 const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   respond: { terminal: false, title: 'Could not send', body: 'Please try again.' },
@@ -115,6 +119,7 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   closeOffer: { terminal: false, title: 'Could not close', body: 'Please try again.' },
   proposeTerms: { terminal: false, title: 'Could not send these terms', body: 'Please try again.' },
   acceptTerms: { terminal: false, title: 'Could not accept', body: 'Please try again.' },
+  confirmTrade: { terminal: false, title: 'Could not confirm', body: 'Please try again.' },
   deleteOffer: { terminal: false, title: 'Could not delete', body: 'Please try again.' },
 }
 
@@ -164,6 +169,11 @@ const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
     terminal: true,
     title: 'Those terms are no longer available',
     body: 'They may have been replaced. The details have been updated.',
+  },
+  confirmTrade: {
+    terminal: true,
+    title: 'That negotiation is no longer available',
+    body: 'It may have ended. The details have been updated.',
   },
 }
 
@@ -246,6 +256,11 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       title: 'Not your negotiation',
       body: 'Only the two providers in a negotiation can end it.',
     },
+    [CONFIRMED_TRADE]: {
+      terminal: true,
+      title: 'This trade is already confirmed',
+      body: 'Confirmed trade terms can no longer be ended from this negotiation screen. The details have been updated.',
+    },
   },
   closeOffer: {
     // PD-051: closing is one-way. No reopen control exists today, so this is latent -- but a
@@ -267,6 +282,11 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       terminal: true,
       title: 'This negotiation has ended',
       body: 'Terms can no longer be proposed. What was proposed stays on record.',
+    },
+    [CONFIRMED_TRADE]: {
+      terminal: true,
+      title: 'This trade is already confirmed',
+      body: 'Confirmed trade terms can no longer be changed. The details have been updated.',
     },
     [VERSION_BUDGET]: {
       terminal: true,
@@ -308,6 +328,11 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       title: 'This negotiation has ended',
       body: 'These terms can no longer be accepted. What was proposed stays on record.',
     },
+    [CONFIRMED_TRADE]: {
+      terminal: true,
+      title: 'This trade is already confirmed',
+      body: 'Confirmed trade terms can no longer be changed. The details have been updated.',
+    },
     [STALE_TERMS]: {
       // NOT terminal, and deliberately so: the other provider changed the terms, and reading
       // the new ones and accepting again is the correct next action. Calling this permanent
@@ -316,6 +341,35 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       stale: true,
       title: 'The terms changed',
       body: 'The other provider sent new terms while you were reading. Take a look and accept again if you agree.',
+    },
+  },
+  confirmTrade: {
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not your negotiation',
+      body: 'Only the two providers in a trade can confirm it.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      terminal: true,
+      title: 'This negotiation has ended',
+      body: 'It can no longer be confirmed. What was proposed stays on record.',
+    },
+    [STALE_TERMS]: {
+      // Not terminal: the acceptances or the terms moved under the button. Re-read.
+      terminal: false,
+      stale: true,
+      title: 'The terms changed',
+      body: 'Both providers need to accept the current terms before the trade can be confirmed. Take a look at what is on the table now.',
+    },
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That negotiation is no longer available',
+      body: 'It may have been removed. The details have been updated.',
+    },
+    [INTERNAL_ERROR]: {
+      terminal: true,
+      title: 'This trade needs support',
+      body: 'The app could not safely confirm this trade. Please contact support so the record can be checked.',
     },
   },
   deleteOffer: {

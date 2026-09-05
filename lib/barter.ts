@@ -46,6 +46,8 @@ export interface BarterInterest {
   createdAt: string
   releasedAt: string | null
   releaseReason: BarterReleaseReason | null
+  /** Set when this response has become a confirmed trade. */
+  agreementId: string | null
   provider: CommunityProviderInfo
 }
 
@@ -129,6 +131,7 @@ async function fetchInterestCounts(offerIds: string[]): Promise<Map<string, numb
 export interface MyInterest {
   id: string
   status: BarterInterestStatus
+  agreementId: string | null
 }
 
 /**
@@ -142,12 +145,23 @@ export async function fetchMyInterests(userId: string): Promise<Map<string, MyIn
   const map = new Map<string, MyInterest>()
   if (!userId) return map
   const { data } = await supabase
-    .from('barter_interests')
-    .select('id, offer_id, status')
-    .eq('interested_user_id', userId)
-  for (const r of (data as { id: string; offer_id: string; status: BarterInterestStatus }[]
-    | null) ?? []) {
-    map.set(r.offer_id, { id: r.id, status: r.status })
+    .from('my_trade_activity')
+    .select('interest_id, offer_id, status, my_role, agreement_id')
+    .eq('my_role', 'responder')
+  const rows =
+    (data as unknown as {
+      interest_id: string
+      offer_id: string
+      status: BarterInterestStatus
+      my_role: 'owner' | 'responder'
+      agreement_id: string | null
+    }[] | null) ?? []
+  for (const r of rows) {
+    map.set(r.offer_id, {
+      id: r.interest_id,
+      status: r.status,
+      agreementId: r.agreement_id,
+    })
   }
   return map
 }
@@ -181,7 +195,28 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
           release_reason: BarterReleaseReason | null
         }[]
       | null) ?? []
-  const infoMap = await fetchProviderInfoMap(rows.map((r) => r.interested_provider_id))
+  // The agreement, if one exists. Read from barter_agreements (RLS lets the owner see it)
+  // rather than guessed from status: a confirmed trade's interest is still 'accepted', and
+  // without this fact the screen would offer End negotiation on a trade the server refuses to
+  // release.
+  const [infoMap, activityRes] = await Promise.all([
+    fetchProviderInfoMap(rows.map((r) => r.interested_provider_id)),
+    supabase
+      .from('my_trade_activity')
+      .select('interest_id, agreement_id')
+      .eq('offer_id', offerId),
+  ])
+  if (activityRes.error) {
+    console.log('Offer interest agreement state error:', activityRes.error)
+    return []
+  }
+  const agreementByInterest = new Map<string, string>()
+  for (const a of (activityRes.data as unknown as {
+    interest_id: string
+    agreement_id: string | null
+  }[] | null) ?? []) {
+    if (a.agreement_id) agreementByInterest.set(a.interest_id, a.agreement_id)
+  }
   return rows.map((r) => ({
     id: r.id,
     offerId: r.offer_id,
@@ -195,6 +230,7 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
     // "You ended this negotiation. <date>." on the other.
     releasedAt: r.released_at,
     releaseReason: r.release_reason,
+    agreementId: agreementByInterest.get(r.id) ?? null,
     provider: infoMap.get(r.interested_provider_id) ?? {
       name: 'Provider',
       photo: null,
@@ -225,6 +261,8 @@ export interface TradeActivityRow {
   myRole: 'owner' | 'responder'
   counterpartyProviderId: string
   conversationId: string | null
+  /** An official agreement exists: this row is a confirmed trade, not a live negotiation. */
+  agreementId: string | null
   provider: CommunityProviderInfo
 }
 
@@ -245,7 +283,7 @@ export async function fetchTradeActivity(): Promise<{
     .select(
       'interest_id, offer_id, status, created_at, released_at, release_reason, ' +
         'offering_service, seeking_service, offer_is_active, my_role, ' +
-        'counterparty_provider_id, conversation_id',
+        'counterparty_provider_id, conversation_id, agreement_id',
     )
     .order('created_at', { ascending: false })
   // A failure is NOT an empty list. Collapsing the two let the screen say "No trade activity
@@ -269,6 +307,7 @@ export async function fetchTradeActivity(): Promise<{
           my_role: 'owner' | 'responder'
           counterparty_provider_id: string
           conversation_id: string | null
+          agreement_id: string | null
         }[]
       | null) ?? []
   const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
@@ -287,6 +326,7 @@ export async function fetchTradeActivity(): Promise<{
     myRole: r.my_role,
     counterpartyProviderId: r.counterparty_provider_id,
     conversationId: r.conversation_id,
+    agreementId: r.agreement_id,
       provider: infoMap.get(r.counterparty_provider_id) ?? {
         name: 'Provider',
         photo: null,

@@ -15,7 +15,7 @@
  */
 export type BarterInterestStatus = 'pending' | 'accepted' | 'declined' | 'released'
 
-export type TradeActivitySection = 'active' | 'pending' | 'ended' | 'notSelected'
+export type TradeActivitySection = 'confirmed' | 'active' | 'pending' | 'ended' | 'notSelected'
 
 /**
  * Which Trade Activity section a row belongs to. A label, not a status.
@@ -25,6 +25,17 @@ export type TradeActivitySection = 'active' | 'pending' | 'ended' | 'notSelected
  * Trade Activity is history and must account for every response the user sent or received. Two
  * total Records over one vocabulary, reaching different answers on purpose.
  */
+/**
+ * Section for a row. A confirmed trade's interest is still `accepted`, so the status alone
+ * cannot place it; the agreement fact is what distinguishes negotiating from confirmed.
+ */
+export function tradeActivitySection(
+  status: BarterInterestStatus,
+  agreementId: string | null,
+): TradeActivitySection {
+  return agreementId !== null && status === 'accepted' ? 'confirmed' : TRADE_ACTIVITY_SECTION[status]
+}
+
 export const TRADE_ACTIVITY_SECTION: Record<BarterInterestStatus, TradeActivitySection> = {
   accepted: 'active',
   pending: 'pending',
@@ -65,6 +76,8 @@ export interface TradeRowFacts {
    * the caller's own rows (the owner sees every response to their post), not from a new query.
    */
   offerHasAcceptedResponse: boolean
+  /** An official agreement exists. The negotiation is a confirmed trade, not a live one. */
+  agreementId: string | null
 }
 
 export interface TradeRowState {
@@ -86,25 +99,30 @@ export const SECTION_COPY: Record<
   TradeActivitySection,
   { title: string; caption: string; rank: number }
 > = {
+  confirmed: {
+    title: 'Confirmed trades',
+    caption: 'Terms both of you agreed to and confirmed.',
+    rank: 0,
+  },
   active: {
     title: 'Active negotiations',
     caption: 'You are working out the details of these.',
-    rank: 0,
+    rank: 1,
   },
   pending: {
     title: 'Pending',
     caption: 'Responses that have not been answered yet.',
-    rank: 1,
+    rank: 2,
   },
   ended: {
     title: 'Ended',
     caption: 'Negotiations that ended before a trade was agreed.',
-    rank: 2,
+    rank: 3,
   },
   notSelected: {
     title: 'Not selected',
     caption: 'Responses that were not taken forward.',
-    rank: 3,
+    rank: 4,
   },
 }
 
@@ -151,12 +169,17 @@ export function formatTradeDate(iso: string | null): string {
  */
 const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowState> = {
   // The negotiation outlives its post by design (PD-049), so a closed post does not end it.
-  accepted: (f) => ({
-    action: 'end',
-    note: f.offerIsActive
-      ? ''
-      : 'This post is no longer on the board. The negotiation is still open.',
-  }),
+  // Once CONFIRMED, release is no longer available (the server refuses it): what ends a
+  // confirmed trade is a later slice.
+  accepted: (f) =>
+    f.agreementId !== null
+      ? { action: 'none', note: 'Trade confirmed. The agreed terms can no longer change.' }
+      : {
+          action: 'end',
+          note: f.offerIsActive
+            ? ''
+            : 'This post is no longer on the board. The negotiation is still open.',
+        },
 
   pending: (f) => {
     if (f.myRole === 'owner') {
@@ -176,7 +199,7 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
             // Says WHY it cannot be answered, and names BOTH refusals: PD-052 withdraws
             // decline as well as accept, so copy mentioning only accept explains half the rule
             // and makes the missing Decline control read as a bug.
-            note: 'You closed this post, so this response can no longer be accepted or '
+            note: 'This post is closed, so this response can no longer be accepted or '
               + 'declined. Kept as history.',
           }
     }
@@ -319,4 +342,23 @@ export const RESPONDER_FEED_STATE: Record<BarterInterestStatus, ResponderFeedSta
   accepted: { label: 'End negotiation', action: 'end', icon: 'x-circle' },
   declined: { label: 'Not selected', action: 'none', icon: 'minus-circle' },
   released: { label: 'Negotiation ended', action: 'none', icon: 'minus-circle' },
+}
+
+export function responderFeedState(
+  status: BarterInterestStatus,
+  agreementId: string | null,
+): ResponderFeedState {
+  if (agreementId !== null && status === 'accepted') {
+    const row = tradeRowState({
+      status,
+      myRole: 'responder',
+      offerIsActive: true,
+      releasedAt: null,
+      releaseReason: null,
+      offerHasAcceptedResponse: true,
+      agreementId,
+    })
+    return { label: row.note, action: row.action === 'end' ? 'end' : 'none', icon: 'check' }
+  }
+  return RESPONDER_FEED_STATE[status]
 }

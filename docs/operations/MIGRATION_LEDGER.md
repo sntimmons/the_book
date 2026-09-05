@@ -372,6 +372,45 @@ lock order is "interest → offer → proposal in every RPC". `20260921000000` c
 offer → interest → proposal and B5B pins it; the file comment is wrong and was not reachable by
 the comment-refresh migrations, which only touch function bodies.
 
+## 2026-09-05 — `20260927000000` through `20260930000000` applied to non-production (Agreement Finalization)
+
+`20260927000000` creates `barter_agreements` (one per proposal / accepted version / offer /
+interest, immutable, participant-read RLS, SELECT-only grants), the finalization RPC
+`finalize_barter_agreement(uuid)`, three additive post-agreement guards (no new version, no new
+acceptance, no release once an agreement exists — triggers, not rewrites of the three RPCs they
+constrain), and extends `my_barter_proposals` / `my_trade_activity` with `agreement_id` plus a
+new `my_barter_agreements` view. Finalization closes the sourcing post in the same transaction.
+
+The migration's grants were self-audited BEFORE apply — every function revoked from
+`authenticated` except the one public RPC, every view `security_invoker`, the table SELECT-only
+— the lesson of the Slice 3a BLOCKER applied as a gate rather than a review finding.
+
+`20260928000000` fixes a runtime defect the audit could not see: the post-agreement guard read
+`new.version_id` in a CASE branch for a different table, which PL/pgSQL rejects for the other
+table's rows at evaluation time. It blocked every version insert. B5B found it on the first run.
+
+`20260929000000` closes the final regression findings: the post-agreement guard now fails
+closed with `internal_error` if it cannot resolve a proposal id, `barter_agreements` ownership
+is re-pinned to `postgres`, and authenticated `INSERT` / `UPDATE` / `DELETE` privileges are
+explicitly revoked from the three agreement-facing read models.
+
+`20260930000000` separates the confirmed-trade refusal from ordinary dead-negotiation
+refusals: post-agreement accept / counter / release now raise SQLSTATE `PT409`, leaving
+`55000` for pending / declined / released / closed-post prerequisite failures so client copy
+can distinguish "already confirmed" from "ended".
+
+**Ledger count, corrected.** The running counts in the entries above had drifted by one (the
+`20260924000000` apply was recorded inside the `20260921`–`20260923` entry without incrementing
+the total). Verified 2026-09-05 by `supabase migration list --linked`: **39 entries**,
+`local == remote` for every row, equal to the 39 files in `supabase/migrations/`.
+
+Production untouched, and never queried.
+
+Post-apply B5B: **574/574 passed, 0 failed**, zero residue. Concurrency proof **30/30** —
+three agreement scenarios (finalize × finalize, finalize vs counter, finalize vs release) now
+capture per-session start/end timestamps immediately around the RPC call and prove interval
+intersection before claiming genuine overlap.
+
 ## Prevention
 
 **Do not apply a slice to non-production before its security review and Founder rulings have
@@ -411,6 +450,7 @@ NOT in the migration that created it.
 | `public.write_barter_proposal_terms` (signature changed) | `20260917000000` as `(uuid, jsonb)` | **`20260925000000_negotiation_directed_terms.sql`** as `(uuid, text, text)`; the old signature is DROPPED | Takes content for the two sides and derives each side's provider/user from the accepted interest in one place. Nothing is passed in that a caller could get wrong, and there is no parameter a caller could forge. |
 | `public.enforce_barter_terms_written_once` | `20260924000000` | **`20260925000000_negotiation_directed_terms.sql`** | Now also asserts exactly two terms, one per side, and that each side's stored identity matches the offer/interest — a backstop against a future writer that derives them wrongly or is handed them. |
 | `public.create_barter_proposal` / `public.submit_barter_counter` (signatures changed) | `20260917000000` as `(uuid, jsonb)` | **`20260925000000`** as `(uuid, text, text)`; old signatures DROPPED | Only the signature and the helper call changed — verified by diff, 4 lines each. |
+| `public.enforce_no_change_after_agreement` | `20260927000000_barter_agreement_finalization.sql` | **`20260928000000_agreement_guard_field_ref.sql`** | Referenced `new.version_id` inside a CASE branch meant for `barter_version_acceptances`; PL/pgSQL resolves NEW's fields regardless of branch, so on a `barter_proposal_versions` row it raised 42703 and blocked EVERY version insert. Caught by B5B on the first run after apply. Now reads the row through `to_jsonb(new)`. |
 | `public.enforce_barter_terms_write` | `20260921000000_negotiation_write_boundary.sql` | **`20260926000000_negotiation_stale_comment.sql`** | `20260923000000` removed a per-row write-once count that tripped on the second row of the RPC's own insert; the trigger keeps only the marker check. Write-once now rests on the statement-level `enforce_barter_terms_written_once` (`20260924000000`), and `20260926000000` refreshed a body comment that still cited a since-dropped index. |
 | `public.enforce_barter_offer_active_one_way` | `20260915000000_barter_closed_post_terminal.sql` | **`20260916000000_barter_guard_admin_escape.sql`** | Makes `is_active` one-way for authenticated writers (PD-051). `20260915000000` exempted only `auth.role() = 'service_role'`, which covers the PostgREST service path but NOT a psql / SQL-console / migration session, where there is no JWT and `auth.role()` is NULL — so it silently excluded the sessions an operator actually recovers from, and would abort any future migration touching `is_active`. `20260916000000` adds `or (select auth.uid()) is null`, matching `enforce_barter_offer_delete`. |
 | `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |

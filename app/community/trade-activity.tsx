@@ -18,17 +18,21 @@ import {
   declineInterest,
   fetchTradeActivity,
   releaseInterest,
-  TRADE_ACTIVITY_SECTION,
   TradeActivityRow,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
-import { confirmCopy, SECTION_COPY, SECTION_ORDER, tradeRowState } from '@/lib/tradeActivity'
+import {
+  confirmCopy,
+  SECTION_COPY,
+  SECTION_ORDER,
+  tradeActivitySection,
+  tradeRowState,
+} from '@/lib/tradeActivity'
 
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
-// Deliberately NOT called "My Trades". No agreement schema exists yet, so calling a
-// pre-agreement negotiation a trade would be false product language. This becomes My Trades
-// when the agreement lifecycle lands.
+// Deliberately named for the durable activity surface rather than the future full lifecycle.
+// The agreement row exists, but obligations, fulfilment and post-agreement cancellation do not.
 //
 // The feed is discovery: it filters `is_active = true` and shows the newest 50. An accepted
 // negotiation is durable workflow state. Hanging the End-negotiation control off a feed card
@@ -147,7 +151,7 @@ export default function TradeActivityScreen() {
   )
 
   const grouped = SECTION_ORDER.map((key) => {
-    const items = rows.filter((r) => TRADE_ACTIVITY_SECTION[r.status] === key)
+    const items = rows.filter((r) => tradeActivitySection(r.status, r.agreementId) === key)
     return {
       key,
       title: SECTION_COPY[key].title,
@@ -215,6 +219,7 @@ export default function TradeActivityScreen() {
                 const state = tradeRowState({
                   ...item,
                   offerHasAcceptedResponse: matchedOfferIds.has(item.offerId),
+                  agreementId: item.agreementId,
                 })
                 // The terms route counts as an action. It was nested inside a strip that also
                 // required a conversation, so a released row whose accept predates the atomic
@@ -224,6 +229,7 @@ export default function TradeActivityScreen() {
                   state.action !== 'none'
                   || item.conversationId !== null
                   || item.status === 'released'
+                  || item.agreementId !== null
                 return (
                   <View key={item.interestId} style={styles.card}>
                     <View style={styles.cardTop}>
@@ -286,7 +292,9 @@ export default function TradeActivityScreen() {
                             and three separate strings promise the terms "stay on record", but
                             gating this on a live negotiation made that record unreachable at
                             exactly the moment a disagreement would need it. */}
-                        {state.action === 'end' || item.status === 'released' ? (
+                        {state.action === 'end'
+                        || item.status === 'released'
+                        || item.agreementId !== null ? (
                           <TouchableOpacity
                             style={styles.secondaryBtn}
                             activeOpacity={0.8}

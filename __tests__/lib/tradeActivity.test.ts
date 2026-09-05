@@ -1,10 +1,12 @@
 import {
+  tradeActivitySection,
   BarterInterestStatus,
   BarterReleaseReason,
   confirmCopy,
   DestructiveAction,
   formatTradeDate,
   RESPONDER_FEED_STATE,
+  responderFeedState,
   SECTION_COPY,
   SECTION_ORDER,
   TRADE_ACTIVITY_SECTION,
@@ -35,6 +37,7 @@ function facts(over: Partial<TradeRowFacts> = {}): TradeRowFacts {
     releasedAt: null,
     releaseReason: null,
     offerHasAcceptedResponse: false,
+    agreementId: null,
     ...over,
   }
 }
@@ -112,10 +115,11 @@ describe('pending responses', () => {
     expect(s.note).toBe('Waiting on you to accept or decline.')
   })
 
-  it('does not let the owner answer once the post is closed, and says why', () => {
+  it('does not let the owner answer once the post is closed, and says why without actor attribution', () => {
     const s = tradeRowState(facts({ status: 'pending', myRole: 'owner', offerIsActive: false }))
     expect(s.action).toBe('none')
-    expect(s.note).toMatch(/closed this post/i)
+    expect(s.note).toMatch(/this post is closed/i)
+    expect(s.note).not.toMatch(/you closed/i)
     // PD-052 withdraws BOTH. Copy naming only accept explains half the rule and makes the
     // missing Decline control read as a bug.
     expect(s.note).toMatch(/declined/i)
@@ -280,6 +284,13 @@ describe('the responder feed accounts for every status', () => {
     for (const status of STATUSES) {
       expect(RESPONDER_FEED_STATE[status].action === 'end').toBe(status === 'accepted')
     }
+  })
+
+  it('withdraws the end control from an accepted response that is already confirmed', () => {
+    const state = responderFeedState('accepted', 'ag')
+    expect(state.action).toBe('none')
+    expect(state.label).toMatch(/confirmed/i)
+    expect(state.label).not.toMatch(/end negotiation/i)
   })
 
   it('carries its own icon, so none is chosen by a ternary beside it', () => {
@@ -462,5 +473,30 @@ describe('an ending is described to the party being asked', () => {
 
   it('gives the two roles genuinely different bodies', () => {
     expect(owner).not.toEqual(responder)
+  })
+})
+
+describe('a confirmed trade is its own section and cannot be released from the app', () => {
+  it('places an accepted interest with an agreement under confirmed', () => {
+    expect(tradeActivitySection('accepted', 'ag')).toBe('confirmed')
+    expect(tradeActivitySection('accepted', null)).toBe('active')
+  })
+
+  it('never places a non-accepted status under confirmed, agreement or not', () => {
+    for (const status of STATUSES.filter((s) => s !== 'accepted')) {
+      expect(tradeActivitySection(status, 'ag')).not.toBe('confirmed')
+    }
+  })
+
+  it('withdraws the end control once confirmed, and says why', () => {
+    const s = tradeRowState(facts({ status: 'accepted', agreementId: 'ag' }))
+    expect(s.action).toBe('none')
+    expect(s.note).toMatch(/confirmed/i)
+    expect(s.note).not.toMatch(/booked|complete|fulfilled|delivered/i)
+  })
+
+  it('renders every section that has copy, including the new one', () => {
+    expect([...SECTION_ORDER].sort()).toEqual([...SECTIONS].sort())
+    expect(SECTION_ORDER[0]).toBe('confirmed')
   })
 })

@@ -241,6 +241,7 @@ export default function BarterInterests() {
               releasedAt: item.releasedAt,
               releaseReason: item.releaseReason,
               offerHasAcceptedResponse: hasAccepted,
+              agreementId: item.agreementId,
             })
             // `isOwner` is `boolean | null` -- null means the ownership read has not landed.
             // Controls require a POSITIVE answer, so an unresolved read shows none.

@@ -1,8 +1,8 @@
 # Roadmap — session-based
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `76f5632c4db112c9b4482b6c93800c2caa166c79` (2026-09-04)
-**Last edited by:** this reconciliation — PR number not supplied to the run (previous: PR #40)
+**Reconciled against:** `main` @ `7713b56c0f0d213ecae4a2d10ab3d08be0920b3e` (2026-09-05)
+**Last edited by:** this reconciliation — PR number not supplied to the run (the previous edit's was not supplied either; last recorded: PR #40)
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -52,6 +52,7 @@ Sessions may merge, split, or reorder. A session is "complete" only when its wor
 | Barter beta contract + the barter decision ledger (PD-043 … PD-048) | not established | not supplied to this run | `docs/product/BARTER_BETA_CONTRACT.md` (locked beta contract, § 12 gap list); PD-043 … PD-048 in `docs/product/PRODUCT_DECISIONS.md` |
 | Barter **Slice 3a-0c** — Trade Activity, durable negotiation access (PD-050) | [#46](https://github.com/sntimmons/the_book/pull/46) | `27756bb` | `supabase/migrations/20260912000000_trade_activity.sql` (view `my_trade_activity`, `security_invoker`, `anon` revoked), `20260913000000_trade_activity_hardening.sql`, `20260914000000_trade_activity_corrections.sql`; route `app/community/trade-activity.tsx`; pure rules in `lib/tradeActivity.ts` with `__tests__/lib/tradeActivity.test.ts` |
 | Closed-post terminal cleanup (PD-051, PD-052) | [#47](https://github.com/sntimmons/the_book/pull/47) | `76f5632` | `supabase/migrations/20260915000000_barter_closed_post_terminal.sql` (`enforce_barter_offer_active_one_way`, `enforce_barter_answer_open_offer`, both SQLSTATE `55000`; accept-handoff sanitiser), `20260916000000_barter_guard_admin_escape.sql` (null-caller escape restored on both guards) |
+| Barter **Slice 3a** — proposal / versioning foundation (PD-053, PD-054) | [#49](https://github.com/sntimmons/the_book/pull/49) (attested; see below) | `7713b56` (squash merge) | `supabase/migrations/20260917000000_barter_proposal_versions.sql` … `20260926000000_negotiation_stale_comment.sql` — ten files: four tables (`barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms`, `barter_version_acceptances`), three RPCs (`create_barter_proposal`, `submit_barter_counter`, `accept_barter_version`, current signatures `(uuid, text, text)` / `(uuid, text, text)` / `(uuid)`), view `my_barter_proposals` with **derived** `both_accepted`; the nine forward corrections are itemised in `MIGRATION_LEDGER.md`. `supabase/tests/negotiation.test.sql` registered at `scripts/db-security-test.mjs:48`; `scripts/negotiation-concurrency.mjs`; `lib/negotiation.ts`, `lib/negotiationState.ts` with `__tests__/lib/negotiationState.test.ts`; route `app/community/negotiation/[id].tsx`, reached from `app/community/trade-activity.tsx`. **No agreement, obligation or fulfilment schema** — that is the seam, not an omission (PD-054). |
 
 **Row inclusion rule.** A PR earns a row here when it **materially delivers a product,
 architecture, security, governance, infrastructure or operating capability**. A routine
@@ -88,6 +89,15 @@ the information was simply not available to the run. `git log --merges main` clo
 one command, and a later reconciliation should fill these cells in rather than leave them. Slice 2's PR number, #39, is
 carried forward from this document's own earlier text, so it is attested, not proven.
 
+The **Slice 3a** row is evidenced the same way as Slice 1: its merge SHA `7713b56` was read from
+`.git/refs/heads/main` and `.git/refs/remotes/origin/main` and every artifact it names was
+verified in the working tree, but its **PR number, #49, was supplied by the invocation** and
+could not be confirmed by `gh`. It is, however, corroborated by two authoritative documents
+that name PR #49 independently — `BETA_SCOPE.md` § Community / barter ("Slice 3a, PR #49") and
+`MIGRATION_LEDGER.md` ("a security review of PR #49") — which is more than the earlier attested
+rows have, and still short of proof. The reconciliation that wrote the row again had no shell,
+so the five "not established" cells above remain unfilled.
+
 **Existence is not evidence.** Where a row's artifact is a file that *pre-dates* its PR, the
 row says "modified by" and is evidenced by that PR's diff — not by the file being present.
 A path that existed before the work cannot prove the work happened.
@@ -112,26 +122,32 @@ change — not something a reconciliation can do.
 
 ## Current
 
-**The barter pre-agreement negotiation surface is complete and merged.** `main` @ `76f5632`
-holds twenty-five migrations, the newest being `20260916000000_barter_guard_admin_escape.sql`.
-Slices 2, 2B, 3a-0, 3a-0b and 3a-0c, and the closed-post terminal cleanup, are all on `main`
-and each has a Completed row above. What is on `main` is authoritative in
-[CURRENT_STATE.md](CURRENT_STATE.md) § Barter.
+**The barter proposal / versioning foundation is complete and merged.** `main` @ `7713b56`
+holds thirty-five migrations, the newest being `20260926000000_negotiation_stale_comment.sql`.
+Slices 2, 2B, 3a-0, 3a-0b and 3a-0c, the closed-post terminal cleanup, and **Slice 3a** are all
+on `main` and each has a Completed row above. What is on `main` is authoritative in
+[CURRENT_STATE.md](CURRENT_STATE.md) § Barter. Both providers accepting the same current version
+is **recorded, not finalised** (PD-054): no agreement row, no post closure, no obligation model.
 
-**In flight, NOT merged:** branch `chore/pre-proposal-closeout`, one commit `871eb2a`
-("chore(barter): owner-only responses screen; one zero-row write rule"), sitting directly on
-`76f5632` — read from `.git/logs/HEAD`, because the reconciliation had no shell. Nothing from
-it is on `main`, it earns no row, and it moves no anchor. Its PR number and review state were
-not available to the run.
+**In flight, NOT merged:** PR #50 on branch `feature/barter-agreement-finalization` adds
+agreement finalization: `barter_agreements`, `finalize_barter_agreement(uuid)`, permanent
+sourcing-post closure, post-agreement write guards, and client states/copy for confirmed
+trades. It remains branch state until PR #50 merges; it does not move the `main` anchor.
+
+The branch `chore/pre-proposal-closeout`, which the previous reconciliation recorded as in
+flight at `871eb2a`, now points at `ca84100` (`.git/refs/heads/chore/pre-proposal-closeout`).
+Whether its work reached `main` through PR #49 could not be determined without a shell
+(`git branch --contains` answers it), so the previous note's "nothing from it is on `main`" is
+**not carried forward as current** — it is history, and the cell is open.
 
 Preceding this: Session 3 merged (PR #29, `2ae0fd0`), then documentation and governance
 merges — #31 (`f4e8d86`, the `Area` enum) first, then #30 (`e7ccd87`), #32 (`f83bea2`),
 #33 (`ad95855`, which introduced this convention), #34 (`dbe5dd7`), #35 (`395495e`, the
 tiebreak that resolved it), #36 and #37. Per the row inclusion rule above, #31,
 #33 and #35 earned Completed rows; #30, #32, #34, #36 and #37 did not. Then the barter work:
-Session 4 (no in-repo artifact — see the note above), Slice 1 (**PR #38**, `feba568`), and the
-slices and contract listed in the Completed table, ending at **PR #47** (`76f5632`), which is
-where this document's anchor now sits.
+Session 4 (no in-repo artifact — see the note above), Slice 1 (**PR #38**, `feba568`), the
+slices and contract listed in the Completed table through **PR #47** (`76f5632`), and then
+**Slice 3a** (**PR #49**, `7713b56`), which is where this document's anchor now sits.
 
 ### What Sessions 4 and 5 left outstanding — mostly discharged
 
@@ -155,31 +171,39 @@ approval.**
 
 ## Next
 
-### Barter **Slice 3a — Proposal / Versioning Foundation** (next)
-*Sequencing only. This entry records that Slice 3a is the next area of work; it is not itself
-an authorization, and it locks none of the design questions below.*
+### Barter — **Agreement Finalization** (next)
+*Sequencing only. This entry records that agreement finalization is the next area of work; it
+is not itself an authorization, and it locks no design question the decision ledger has not
+already locked.*
 
-Everything merged so far is the **pre-agreement** surface: a post, responses, one selected
-negotiation, and the ways that negotiation can end. **No proposal, agreement or obligation
-schema exists** — no migration in the chain creates one, which
-[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 lists among the gaps between the
-contract and the product.
+Slice 3a (PR #49, `7713b56`) built the proposal machinery — versioned terms, exactly two
+directed terms per version, per-version acceptance — and deliberately stopped at a **derived
+fact**, `my_barter_proposals.both_accepted` (PD-054). Everything on `main` is therefore still
+the **pre-agreement** surface: **no agreement, obligation or fulfilment schema exists**, and the
+sourcing post is not closed when both providers accept
+([CURRENT_STATE.md](CURRENT_STATE.md) § Barter; [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md)
+§ 12).
 
-Slice 3a is where that schema begins. The contract and the ledger already constrain its shape
-and must be read before it is designed: **PD-047** (the board post stays mutable; every
-proposal snapshots the post terms at creation; the accepted agreement must not depend on
-reading the current post), **PD-049** (one negotiation per post), **PD-046** (the cancellation
-and no-show regimes the obligation model has to be able to express), and § 4, § 6 and § 7 of
-the contract. Transaction truth is to be modelled **independently of `barter_offers`**
-(PD-047).
+PR #50 turns that recorded fact into an **official agreement**. The constraints it must
+satisfy are already locked and are not restated here: an agreement exists only when both
+providers have explicitly accepted the **same current version** (**PD-053**); the accepted
+version is authoritative and must not depend on reading the current mutable post (**PD-047**);
+and once an agreement is formed the sourcing post is **consumed and closes permanently**
+(**PD-049**, **PD-047**). PD-054 names this seam and calls finalising it "a separate, later
+slice" — PR #50 is that slice. The implemented shape is one `barter_agreements` row carrying
+an immutable reference to the accepted version, with permanent sourcing-post closure.
 
-Not in this slice, and not to be resolved by implementing one answer: **OQ-006**
-(collusion / reciprocal-rating gaming) and **OQ-007**.
+**Still not in this slice:** obligations, delivery, receiver confirmation and its window,
+no-show, cancellation after agreement, and adjudication — the contract's § 6 / § 7 and
+**PD-046** model — which follow finalization as their own work. Nor, as before, **OQ-006**
+(collusion / reciprocal-rating gaming) and **OQ-007**, which are not to be resolved by
+implementing one answer.
 
 ### Later barter work — beta readiness
-Provider-eligibility gating of the barter surface (**PD-044**'s `is_approved` conjunct, whose
-seam is prepared but empty), the **Open to Trades** opt-in, the 3-post and 5-offers/day limits
-as server rules, the post-decline reverse-contact episode (**PD-048**), and blocking and
+The obligation / fulfilment model that finalization makes possible (**PD-046**, contract §§ 6–7);
+provider-eligibility gating of the barter surface (**PD-044**'s `is_approved` conjunct, whose
+seam is prepared but empty); the **Open to Trades** opt-in; the 3-post and 5-offers/day limits
+as server rules; the post-decline reverse-contact episode (**PD-048**); and blocking and
 reporting (contract § 9). Barter completion, trade history, notifications and reputation are
 recorded in the Slice 1 migration header as Session 6 scope.
 

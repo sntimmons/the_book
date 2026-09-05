@@ -7,8 +7,8 @@ import { draftPayload } from './negotiationState'
 // that matter — who may propose, which terms are current, who accepted — are decided from
 // auth.uid() on the server and must not be re-derived here.
 //
-// There is no agreement, obligation or fulfilment model. `bothAccepted` is a recorded FACT, not
-// a finalised trade.
+// Agreement finalization is separate from obligation and fulfilment. `bothAccepted` is a
+// ready-to-confirm fact; `agreementId` is the official agreement once finalization succeeds.
 
 export interface NegotiationRow {
   proposalId: string
@@ -25,6 +25,9 @@ export interface NegotiationRow {
   iAcceptedCurrent: boolean
   theyAcceptedCurrent: boolean
   bothAccepted: boolean
+  /** Set once the agreement is official. Distinct from bothAccepted, which is "ready". */
+  agreementId: string | null
+  officializedAt: string | null
 }
 
 export interface ProposalTerm {
@@ -46,7 +49,7 @@ export interface ProposalVersion {
 }
 
 const ROW_COLUMNS =
-  'proposal_id, interest_id, offer_id, current_version_no, current_version_id, current_version_author_id, current_version_at, interest_status, offer_is_active, my_role, counterparty_user_id, i_accepted_current, they_accepted_current, both_accepted'
+  'proposal_id, interest_id, offer_id, current_version_no, current_version_id, current_version_author_id, current_version_at, interest_status, offer_is_active, my_role, counterparty_user_id, i_accepted_current, they_accepted_current, both_accepted, agreement_id, officialized_at'
 
 interface RawRow {
   proposal_id: string
@@ -63,6 +66,8 @@ interface RawRow {
   i_accepted_current: boolean
   they_accepted_current: boolean
   both_accepted: boolean
+  agreement_id: string | null
+  officialized_at: string | null
 }
 
 function mapRow(r: RawRow): NegotiationRow {
@@ -81,6 +86,8 @@ function mapRow(r: RawRow): NegotiationRow {
     iAcceptedCurrent: r.i_accepted_current,
     theyAcceptedCurrent: r.they_accepted_current,
     bothAccepted: r.both_accepted,
+    agreementId: r.agreement_id,
+    officializedAt: r.officialized_at,
   }
 }
 
@@ -266,6 +273,23 @@ export async function acceptVersion(
 // modules must import from './negotiationState' directly — coming through here pulls in the
 // Supabase client and needs live configuration to run.
 export type { ProposalDraft, ProposalSide, TradeSide } from './negotiationState'
+
+/**
+ * Make the agreement official. Returns the agreement id — the EXISTING one if this negotiation
+ * was already confirmed, so a double tap or a second device cannot create a duplicate.
+ *
+ * Only the negotiation is named. The server derives and re-verifies the caller, the current
+ * version, both acceptances and the post, and closes the post in the same transaction.
+ */
+export async function finalizeAgreement(
+  proposalId: string,
+): Promise<{ ok: boolean; agreementId: string | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('finalize_barter_agreement', {
+    p_proposal_id: proposalId,
+  })
+  if (error) return { ok: false, agreementId: null, error }
+  return { ok: true, agreementId: (data as string | null) ?? null, error: null }
+}
 
 // No `interpretWrite` here, deliberately. That helper exists for a PostgREST write FILTERED to
 // zero rows by an RLS USING clause; every negotiation write is an RPC returning a scalar, and
