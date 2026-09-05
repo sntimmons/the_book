@@ -58,6 +58,7 @@ export type BarterWriteOp =
   | 'deleteOffer'
   | 'proposeTerms'
   | 'acceptTerms'
+  | 'confirmTrade'
 
 export interface BarterWriteFailure {
   /** Terminal means retrying cannot succeed; the UI must not offer a retry. */
@@ -115,6 +116,7 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   closeOffer: { terminal: false, title: 'Could not close', body: 'Please try again.' },
   proposeTerms: { terminal: false, title: 'Could not send these terms', body: 'Please try again.' },
   acceptTerms: { terminal: false, title: 'Could not accept', body: 'Please try again.' },
+  confirmTrade: { terminal: false, title: 'Could not confirm', body: 'Please try again.' },
   deleteOffer: { terminal: false, title: 'Could not delete', body: 'Please try again.' },
 }
 
@@ -164,6 +166,11 @@ const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
     terminal: true,
     title: 'Those terms are no longer available',
     body: 'They may have been replaced. The details have been updated.',
+  },
+  confirmTrade: {
+    terminal: true,
+    title: 'That negotiation is no longer available',
+    body: 'It may have ended. The details have been updated.',
   },
 }
 
@@ -316,6 +323,30 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       stale: true,
       title: 'The terms changed',
       body: 'The other provider sent new terms while you were reading. Take a look and accept again if you agree.',
+    },
+  },
+  confirmTrade: {
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not your negotiation',
+      body: 'Only the two providers in a trade can confirm it.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      terminal: true,
+      title: 'This negotiation has ended',
+      body: 'It can no longer be confirmed. What was proposed stays on record.',
+    },
+    [STALE_TERMS]: {
+      // Not terminal: the acceptances or the terms moved under the button. Re-read.
+      terminal: false,
+      stale: true,
+      title: 'The terms changed',
+      body: 'Both providers need to accept the current terms before the trade can be confirmed. Take a look at what is on the table now.',
+    },
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That negotiation is no longer available',
+      body: 'It may have been removed. The details have been updated.',
     },
   },
   deleteOffer: {

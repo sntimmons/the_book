@@ -19,6 +19,7 @@ import {
   acceptVersion,
   createProposal,
   fetchInterestContext,
+  finalizeAgreement,
   fetchNegotiation,
   fetchNegotiationForInterest,
   NegotiationRow,
@@ -143,6 +144,7 @@ export default function NegotiationScreen() {
         theyAcceptedCurrent: row.theyAcceptedCurrent,
         bothAccepted: row.bothAccepted,
         everBothAccepted: versions.some((v) => v.acceptedBy.length >= 2),
+        agreementId: row.agreementId,
       })
     : null
 
@@ -190,6 +192,36 @@ export default function NegotiationScreen() {
     setDraft(EMPTY_DRAFT)
     setLoading(true)
     load()
+  }
+
+  async function onConfirm() {
+    if (!row || busy) return
+    setBusy(true)
+    const { ok, error } = await finalizeAgreement(row.proposalId)
+    setBusy(false)
+    if (!ok) {
+      const f = barterWriteFailure('confirmTrade', error)
+      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+      // Re-read on any refusal: whatever moved, the screen is now stale.
+      setLoading(true)
+      load()
+      return
+    }
+    setLoading(true)
+    load()
+  }
+
+  function confirmTrade() {
+    if (!row) return
+    Alert.alert(
+      'Confirm this trade?',
+      'This makes the terms you both accepted official. They can no longer be changed, and the'
+        + ' post comes off the board for good.',
+      [
+        { text: 'Not yet', style: 'cancel' },
+        { text: 'Confirm trade', onPress: onConfirm },
+      ],
+    )
   }
 
   async function onSend() {
@@ -360,7 +392,11 @@ export default function NegotiationScreen() {
 
             <View style={styles.card}>
               <Text style={styles.cardTitle}>
-                {view.state === 'ended' ? 'The last terms proposed' : 'On the table now'}
+                {view.state === 'ended'
+                  ? 'The last terms proposed'
+                  : view.state === 'confirmed'
+                    ? 'The agreed terms'
+                    : 'On the table now'}
               </Text>
               <Text style={styles.cardMeta}>
                 {row.currentVersionAuthorId === user?.id ? 'You proposed these' : 'They proposed these'}
@@ -408,6 +444,19 @@ export default function NegotiationScreen() {
                       <ActivityIndicator color="#080808" size="small" />
                     ) : (
                       <Text style={styles.primaryText}>Accept these terms</Text>
+                    )}
+                  </TouchableOpacity>
+                ) : null}
+                {view.canConfirm ? (
+                  <TouchableOpacity
+                    style={[styles.primaryBtn, busy && styles.btnDisabled]}
+                    onPress={confirmTrade}
+                    disabled={busy}
+                  >
+                    {busy ? (
+                      <ActivityIndicator color="#080808" size="small" />
+                    ) : (
+                      <Text style={styles.primaryText}>Confirm trade</Text>
                     )}
                   </TouchableOpacity>
                 ) : null}

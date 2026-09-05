@@ -1,4 +1,5 @@
 import {
+  tradeActivitySection,
   BarterInterestStatus,
   BarterReleaseReason,
   confirmCopy,
@@ -35,6 +36,7 @@ function facts(over: Partial<TradeRowFacts> = {}): TradeRowFacts {
     releasedAt: null,
     releaseReason: null,
     offerHasAcceptedResponse: false,
+    agreementId: null,
     ...over,
   }
 }
@@ -462,5 +464,30 @@ describe('an ending is described to the party being asked', () => {
 
   it('gives the two roles genuinely different bodies', () => {
     expect(owner).not.toEqual(responder)
+  })
+})
+
+describe('a confirmed trade is its own section and cannot be released from the app', () => {
+  it('places an accepted interest with an agreement under confirmed', () => {
+    expect(tradeActivitySection('accepted', 'ag')).toBe('confirmed')
+    expect(tradeActivitySection('accepted', null)).toBe('active')
+  })
+
+  it('never places a non-accepted status under confirmed, agreement or not', () => {
+    for (const status of STATUSES.filter((s) => s !== 'accepted')) {
+      expect(tradeActivitySection(status, 'ag')).not.toBe('confirmed')
+    }
+  })
+
+  it('withdraws the end control once confirmed, and says why', () => {
+    const s = tradeRowState(facts({ status: 'accepted', agreementId: 'ag' }))
+    expect(s.action).toBe('none')
+    expect(s.note).toMatch(/confirmed/i)
+    expect(s.note).not.toMatch(/booked|complete|fulfilled|delivered/i)
+  })
+
+  it('renders every section that has copy, including the new one', () => {
+    expect([...SECTION_ORDER].sort()).toEqual([...SECTIONS].sort())
+    expect(SECTION_ORDER[0]).toBe('confirmed')
   })
 })

@@ -31,6 +31,7 @@ function facts(over: Partial<NegotiationFacts> = {}): NegotiationFacts {
     theyAcceptedCurrent: false,
     bothAccepted: false,
     everBothAccepted: false,
+    agreementId: null,
     ...over,
   }
 }
@@ -55,7 +56,8 @@ describe('totality', () => {
       }
     }
     // Every state is reachable, so the assertions below are not vacuous.
-    expect(seen.size).toBe(5)
+    seen.add(negotiationView(facts({ agreementId: 'ag' })).state)
+    expect(seen.size).toBe(6)
   })
 })
 
@@ -108,19 +110,61 @@ describe('accepting is once, and only what is on the table', () => {
   })
 })
 
+describe('ready to confirm is not confirmed', () => {
+  // Both accepting the same current terms makes the trade READY; only finalization makes it
+  // official. The two states must never be described the same way.
+  const ready = negotiationView(facts({ bothAccepted: true, iAcceptedCurrent: true, theyAcceptedCurrent: true }))
+  const confirmed = negotiationView(
+    facts({ bothAccepted: true, iAcceptedCurrent: true, theyAcceptedCurrent: true, agreementId: 'ag' }),
+  )
+
+  it('offers confirm only when both accepted and nothing is official yet', () => {
+    expect(ready.state).toBe('agreed')
+    expect(ready.canConfirm).toBe(true)
+    expect(ready.headline).toMatch(/ready to confirm/i)
+    for (const f of [
+      facts({ iAcceptedCurrent: true }),
+      facts({ theyAcceptedCurrent: true }),
+      facts({ interestStatus: 'released', bothAccepted: true }),
+    ]) {
+      expect(negotiationView(f).canConfirm).toBe(false)
+    }
+  })
+
+  it('freezes everything once confirmed', () => {
+    expect(confirmed.state).toBe('confirmed')
+    expect(confirmed.headline).toMatch(/trade confirmed/i)
+    expect(confirmed.canPropose).toBe(false)
+    expect(confirmed.canAccept).toBe(false)
+    expect(confirmed.canConfirm).toBe(false)
+  })
+
+  it('uses beta-safe language in both states', () => {
+    for (const v of [ready, confirmed]) {
+      const text = `${v.headline} ${v.detail}`.toLowerCase()
+      for (const word of ['booked', 'complete', 'fulfilled', 'delivered', 'guaranteed']) {
+        expect(text).not.toContain(word)
+      }
+    }
+  })
+})
+
 describe('agreement copy promises nothing the app cannot do', () => {
   // No agreement, obligation or fulfilment model exists. Copy that called a trade booked, owed
   // or complete would be a promise with no schema behind it.
   const v = negotiationView(facts({ bothAccepted: true, iAcceptedCurrent: true, theyAcceptedCurrent: true }))
 
-  it('reports that both accepted', () => {
+  it('reports that both accepted, and names the next step', () => {
     expect(v.state).toBe('agreed')
-    expect(v.headline).toMatch(/both accepted/i)
+    expect(v.detail).toMatch(/both accepted/i)
+    expect(v.headline).toMatch(/ready to confirm/i)
   })
 
-  it('does not claim the trade is booked, owed, confirmed or complete', () => {
+  it('does not claim the trade is booked, owed, complete or already official', () => {
+    // "Confirm" may appear as the ACTION on offer; "confirmed" as a state may not, and neither
+    // may anything implying fulfilment.
     const text = `${v.headline} ${v.detail}`.toLowerCase()
-    for (const word of ['booked', 'owed', 'confirmed', 'complete', 'guaranteed', 'official']) {
+    for (const word of ['booked', 'owed', 'confirmed', 'complete', 'guaranteed', 'is official']) {
       expect(text).not.toContain(word)
     }
   })

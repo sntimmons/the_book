@@ -118,9 +118,12 @@ pre-agreement path only: once an agreement is formed the post is consumed and cl
 > snapshots the public post as it stood when authored, so editing the post cannot rewrite what
 > was proposed.
 >
-> **Both accepting does NOT yet make a trade official (PD-054).** It is recorded and shown; no
-> agreement, obligation or fulfilment schema exists, and the sourcing post is not closed. That
-> is the next slice. Nothing in the app may call such a trade booked, owed or complete.
+> **Both accepting makes a trade READY to confirm, not official (PD-054).** Either participant
+> may then **confirm**, which creates one official agreement referencing the accepted version
+> and closes the sourcing post in the same transaction (**PD-055**). After that the terms are
+> frozen and pre-agreement release is unavailable. Still no obligation, delivery, confirmation
+> window or adjudication model: the app says "Trade confirmed", never booked, complete,
+> fulfilled, delivered or guaranteed.
 
 ## 5. What may be traded
 

@@ -46,6 +46,8 @@ export interface BarterInterest {
   createdAt: string
   releasedAt: string | null
   releaseReason: BarterReleaseReason | null
+  /** Set when this response has become a confirmed trade. */
+  agreementId: string | null
   provider: CommunityProviderInfo
 }
 
@@ -181,7 +183,18 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
           release_reason: BarterReleaseReason | null
         }[]
       | null) ?? []
-  const infoMap = await fetchProviderInfoMap(rows.map((r) => r.interested_provider_id))
+  // The agreement, if one exists. Read from barter_agreements (RLS lets the owner see it)
+  // rather than guessed from status: a confirmed trade's interest is still 'accepted', and
+  // without this fact the screen would offer End negotiation on a trade the server refuses to
+  // release.
+  const [infoMap, agreementRes] = await Promise.all([
+    fetchProviderInfoMap(rows.map((r) => r.interested_provider_id)),
+    supabase.from('barter_agreements').select('interest_id, id').eq('offer_id', offerId),
+  ])
+  const agreementByInterest = new Map<string, string>()
+  for (const a of (agreementRes.data as unknown as { interest_id: string; id: string }[] | null) ?? []) {
+    agreementByInterest.set(a.interest_id, a.id)
+  }
   return rows.map((r) => ({
     id: r.id,
     offerId: r.offer_id,
@@ -195,6 +208,7 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
     // "You ended this negotiation. <date>." on the other.
     releasedAt: r.released_at,
     releaseReason: r.release_reason,
+    agreementId: agreementByInterest.get(r.id) ?? null,
     provider: infoMap.get(r.interested_provider_id) ?? {
       name: 'Provider',
       photo: null,
@@ -225,6 +239,8 @@ export interface TradeActivityRow {
   myRole: 'owner' | 'responder'
   counterpartyProviderId: string
   conversationId: string | null
+  /** An official agreement exists: this row is a confirmed trade, not a live negotiation. */
+  agreementId: string | null
   provider: CommunityProviderInfo
 }
 
@@ -245,7 +261,7 @@ export async function fetchTradeActivity(): Promise<{
     .select(
       'interest_id, offer_id, status, created_at, released_at, release_reason, ' +
         'offering_service, seeking_service, offer_is_active, my_role, ' +
-        'counterparty_provider_id, conversation_id',
+        'counterparty_provider_id, conversation_id, agreement_id',
     )
     .order('created_at', { ascending: false })
   // A failure is NOT an empty list. Collapsing the two let the screen say "No trade activity
@@ -269,6 +285,7 @@ export async function fetchTradeActivity(): Promise<{
           my_role: 'owner' | 'responder'
           counterparty_provider_id: string
           conversation_id: string | null
+          agreement_id: string | null
         }[]
       | null) ?? []
   const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
@@ -287,6 +304,7 @@ export async function fetchTradeActivity(): Promise<{
     myRole: r.my_role,
     counterpartyProviderId: r.counterparty_provider_id,
     conversationId: r.conversation_id,
+    agreementId: r.agreement_id,
       provider: infoMap.get(r.counterparty_provider_id) ?? {
         name: 'Provider',
         photo: null,

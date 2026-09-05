@@ -2304,8 +2304,11 @@ begin
      -- the ordering that decides which SQLSTATE a write returns is the INSERT/UPDATE chain.
      and (t.tgtype & 2) <> 0 and (t.tgtype & 20) <> 0;
   perform pg_temp.chk('barter', 'barter_interests BEFORE write triggers fire in the intended order',
-    'barter_interests_write_integrity,barter_interests_zy_answer_open_offer,'
-      || 'barter_interests_zz_rate_limit', v_order);
+    -- zx (no release after agreement) sorts between write_integrity and the zy post guard, so
+    -- an illegal transition is still refused by the rule that owns it first, and "this trade
+    -- is confirmed" is said before "this post is closed" -- the more specific fact wins.
+    'barter_interests_write_integrity,barter_interests_zx_no_release_after_agreement,'
+      || 'barter_interests_zy_answer_open_offer,barter_interests_zz_rate_limit', v_order);
 
   select string_agg(t.tgname, ',' order by t.tgname) into v_order
     from pg_trigger t
