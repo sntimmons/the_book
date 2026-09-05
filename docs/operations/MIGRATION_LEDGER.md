@@ -218,6 +218,52 @@ firing order on `barter_interests` and `barter_offers` — the ordering decides 
 provider's write returns, and it had been governed only by a naming convention documented in
 three migration headers and asserted nowhere.
 
+## 2026-09-05 — `20260917000000`…`20260920000000` applied to non-production
+
+Slice 3a, the proposal / versioning foundation. Four files, applied in order via
+`supabase db push --linked`. New objects only — no existing function was redefined except the
+two this slice itself created.
+
+- `20260917000000_barter_proposal_versions.sql` — four tables (`barter_proposals`,
+  `barter_proposal_versions`, `barter_proposal_terms`, `barter_version_acceptances`), the
+  append-only and proposal-immutability triggers, RLS, grants, three RPCs
+  (`create_barter_proposal`, `submit_barter_counter`, `accept_barter_version`) and the
+  `my_barter_proposals` view.
+- `20260918000000_negotiation_grant_tighten.sql` — the four tables shipped with `authenticated`
+  still holding INSERT/UPDATE/DELETE. `20260917000000` revoked from `public, anon` but not from
+  `authenticated`, and Supabase's `ALTER DEFAULT PRIVILEGES` grants ALL to that role too. Not a
+  hole (no write policy exists, so a direct write was filtered to zero rows) but the design
+  intends grants and RLS as two independent refusals and only one was there.
+- `20260919000000_negotiation_stale_terms_code.sql` — `accept_barter_version` raised `55000`
+  for both "this negotiation ended" and "these terms were replaced". Those need opposite
+  advice: one is terminal, the other means read the new terms and accept again. The second is
+  now `40001`.
+- `20260920000000_negotiation_budget_code.sql` — `assert_barter_version_budget` raised `23514`,
+  the same code as a malformed proposal, and both are reachable from one button. The cap is now
+  `54000`.
+
+**PROCESS NOTE, recorded because it cost three extra files.** `20260917000000` was applied
+before its ERROR CONTRACT was settled. Everything after it is a forward correction to a
+migration that could no longer be edited. The schema was right; what was not yet worked out was
+which refusals a client must be able to tell apart — which is a design question, not an
+implementation detail, and is cheapest to answer before the first apply.
+
+Ledger after: **29 entries**, `local == remote` for every row. Production untouched, and never
+queried.
+
+Post-apply B5B: **450/450 passed, 0 failed**, transaction rolled back, zero residue verified
+(`barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms`,
+`barter_version_acceptances`, `barter_offers`, `barter_interests` all 0).
+
+**Non-B5B concurrency proof: `scripts/negotiation-concurrency.mjs`, 17/17.** B5B runs the whole
+suite in ONE transaction and therefore cannot race anything; calling a sequential case a
+concurrency proof would misstate what was tested. That script opens genuinely parallel sessions
+and proves: two simultaneous counters both succeed with distinct consecutive version numbers
+(without the `for update` lock they collide on the unique index); two simultaneous opens on one
+accepted response leave exactly one negotiation; and an acceptance racing a counter either lands
+while its version is current or is refused `40001`, never counting as agreement to replaced
+terms. Everything it writes is deleted and residue re-asserted at zero.
+
 ## Prevention
 
 Apply migrations through `supabase migration up` / `db push` so the ledger records them, **and

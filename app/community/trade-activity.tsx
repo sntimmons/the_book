@@ -270,6 +270,24 @@ export default function TradeActivityScreen() {
                           </TouchableOpacity>
                         ) : null}
 
+                        {/* Terms live on their own surface. The conversation stays the
+                            logistics anchor; a pair may trade more than once over time while
+                            keeping one thread, so the negotiation needs its own identity. */}
+                        {state.action === 'end' ? (
+                          <TouchableOpacity
+                            style={styles.secondaryBtn}
+                            activeOpacity={0.8}
+                            onPress={() =>
+                              router.push(
+                                `/community/negotiation/${item.interestId}?role=${item.myRole}` as never,
+                              )
+                            }
+                          >
+                            <Feather name="file-text" size={14} color="rgba(240,232,213,0.75)" />
+                            <Text style={styles.secondaryText}>Trade terms</Text>
+                          </TouchableOpacity>
+                        ) : null}
+
                         {state.action === 'end' ? (
                           <TouchableOpacity
                             style={[styles.endBtn, busy && styles.btnDisabled]}

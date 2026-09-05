@@ -56,6 +56,8 @@ export type BarterWriteOp =
   | 'release'
   | 'closeOffer'
   | 'deleteOffer'
+  | 'proposeTerms'
+  | 'acceptTerms'
 
 export interface BarterWriteFailure {
   /** Terminal means retrying cannot succeed; the UI must not offer a retry. */
@@ -76,6 +78,13 @@ const INSUFFICIENT_PRIVILEGE = '42501'
 // Raised when an accepted response has no conversation — only reachable for a row accepted
 // before the atomic handoff existed. Retrying cannot fix it, so it must not say "try again".
 const INTERNAL_ERROR = 'XX000'
+// Raised by accept_barter_version when the named terms are no longer the ones on the table --
+// an acceptance that lost a race with a counter. NOT terminal: reading the new terms and
+// accepting again is exactly the right thing to do, which is what this class already means.
+const STALE_TERMS = '40001'
+// Raised by assert_barter_version_budget. Distinct from check_violation because a spent daily
+// budget and a malformed proposal are reachable from the same button and need opposite advice.
+const VERSION_BUDGET = '54000'
 // Raised by barter_interests_zy_answer_open_offer when the owner tries to ACCEPT OR DECLINE a
 // response to a post they have closed, and by barter_offers_zy_active_one_way when anyone tries
 // to reopen one. A distinct code exists because check_violation maps, for accept and decline, to
@@ -88,6 +97,8 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   decline: { terminal: false, title: 'Could not decline', body: 'Please try again.' },
   release: { terminal: false, title: 'Could not end the negotiation', body: 'Please try again.' },
   closeOffer: { terminal: false, title: 'Could not close', body: 'Please try again.' },
+  proposeTerms: { terminal: false, title: 'Could not send these terms', body: 'Please try again.' },
+  acceptTerms: { terminal: false, title: 'Could not accept', body: 'Please try again.' },
   deleteOffer: { terminal: false, title: 'Could not delete', body: 'Please try again.' },
 }
 
@@ -127,6 +138,16 @@ const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
     terminal: true,
     title: 'That offer is no longer available',
     body: 'It may have already been closed or removed.',
+  },
+  proposeTerms: {
+    terminal: true,
+    title: 'That negotiation is no longer available',
+    body: 'It may have ended. The details have been updated.',
+  },
+  acceptTerms: {
+    terminal: true,
+    title: 'Those terms are no longer available',
+    body: 'They may have been replaced. The details have been updated.',
   },
 }
 
@@ -218,6 +239,50 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       terminal: true,
       title: 'That post is closed for good',
       body: 'A closed post cannot be reopened. Post a new offer to trade this again.',
+    },
+  },
+  proposeTerms: {
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not your negotiation',
+      body: 'Only the two providers in a trade can propose terms for it.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      terminal: true,
+      title: 'This negotiation has ended',
+      body: 'Terms can no longer be proposed. What was proposed stays on record.',
+    },
+    [VERSION_BUDGET]: {
+      terminal: true,
+      title: 'Daily limit reached',
+      // Terminal for TODAY, and says so, rather than "try again" -- which would send someone
+      // into a loop for a day.
+      body: 'You have sent the maximum number of proposals for this trade today. You can send more tomorrow.',
+    },
+    [CHECK_VIOLATION]: {
+      terminal: false,
+      title: 'Check these terms',
+      body: 'A proposal needs at least one thing from each provider, and each item must be under 200 characters.',
+    },
+  },
+  acceptTerms: {
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not your negotiation',
+      body: 'Only the two providers in a trade can accept its terms.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      terminal: true,
+      title: 'This negotiation has ended',
+      body: 'These terms can no longer be accepted. What was proposed stays on record.',
+    },
+    [STALE_TERMS]: {
+      // NOT terminal, and deliberately so: the other provider changed the terms, and reading
+      // the new ones and accepting again is the correct next action. Calling this permanent
+      // would strand someone on a live negotiation.
+      terminal: false,
+      title: 'The terms changed',
+      body: 'The other provider sent new terms while you were reading. Take a look and accept again if you agree.',
     },
   },
   deleteOffer: {
