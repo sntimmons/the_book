@@ -54,12 +54,45 @@ create *trust*.
 | Analytics | **REAL (dev-data caveat)** | Client-side metrics; revenue = completed only (4A). |
 | Reels / content | **REAL** | Content feed + posts/reels. |
 | Follows | **REAL** | `provider_follows` / `saved_providers`. |
-| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests. |
+| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, and the **pre-agreement negotiation lifecycle** below. No agreement, obligation or fulfilment model exists yet. See Community / barter. |
 | Care / reminders | **REAL (beta)** | Care reminders. |
 | Payments revenue / platform fee | **UNDECIDED — BUSINESS MODEL RESEARCH** | See Revenue model. |
 | Discovery ranking | **UNDECIDED — RESEARCH** | Fair-opportunity direction; weights undefined. |
 | Home/house-call safety controls | **RESEARCH / PRODUCT DESIGN REQUIRED** | No mechanism chosen. |
 | Safety incident escalation | **UNDECIDED — RESEARCH** | No operational model built. |
+
+---
+
+## Community / barter — the pre-agreement negotiation lifecycle
+
+Bounded update, 2026-09-04, bringing this section level with what has shipped. Authoritative
+detail lives in [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) and PD-043 … PD-052 in
+[PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md); this records only the scope classification.
+
+**What is REAL (beta):**
+
+- **Trade Activity** (`/community/trade-activity`) is durable, two-sided access to a provider's
+  barter negotiations and history. It is the supported surface for **both** participants, and it
+  does not depend on the post still being on the discovery board or inside the feed's window.
+- **`released`** is a terminal state of an accepted interest: a negotiation that ended **before**
+  any agreement. It is never deleted and never re-pended. The reason is derived from who ended
+  it, so neither party can characterise the other's exit.
+- **Releasing frees the slot.** A post supports one active negotiation at a time; when a
+  negotiation is released the owner may accept another pending response **while the post is
+  still active**.
+- **An active negotiation survives its post leaving the board.** Closing a post does not end a
+  negotiation already accepted on it, and either participant may still end that negotiation.
+- **A manually closed post is terminal.** It cannot be reopened by any normal user, and its
+  pending responses become **historical and non-actionable** — they can be neither accepted nor
+  declined, and they stay `pending`. Both parties are told which case they are in.
+- **`/community/barter-interests` is owner response management** — a post owner reviewing and
+  answering responses to their own post. It is not a responder surface; a responder manages
+  their negotiations in Trade Activity.
+
+**What is NOT built:** there is no proposal, agreement, obligation or fulfilment schema. Nothing
+above makes a trade *official*; it is the negotiation surface that precedes one. Barter reviews,
+reputation and adjudication are also not built. See
+[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 for the authoritative gap list.
 
 ---
 
