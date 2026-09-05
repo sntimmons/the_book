@@ -441,3 +441,26 @@ describe('closing a post discloses that it is permanent', () => {
     expect(c.body).toMatch(/not ended by closing/i)
   })
 })
+
+describe('an ending is described to the party being asked', () => {
+  // The invariant confirmCopy exists to hold, asserted rather than assumed: a call site that
+  // hardcodes a role hands one participant the other's consequences. That happened once — the
+  // responses screen passed 'owner' after its End control was un-gated for responders.
+  const owner = confirmCopy('endNegotiation', 'owner', 'Alex').body
+  const responder = confirmCopy('endNegotiation', 'responder', 'Alex').body
+
+  it('never tells a responder about capabilities only an owner has', () => {
+    expect(responder).not.toMatch(/re-accept/i)
+    expect(responder).not.toMatch(/your post/i)
+    expect(responder).not.toMatch(/accept another response/i)
+  })
+
+  it('tells each side the consequence that actually lands on them', () => {
+    expect(responder).toMatch(/you will not be able to respond/i)
+    expect(owner).toMatch(/they will not be able to respond/i)
+  })
+
+  it('gives the two roles genuinely different bodies', () => {
+    expect(owner).not.toEqual(responder)
+  })
+})

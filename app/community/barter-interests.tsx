@@ -100,9 +100,14 @@ export default function BarterInterests() {
   function confirmRelease(item: BarterInterest) {
     // Shared copy, so the owner's disclosure does not depend on which screen they ended it
     // from. The two routes previously differed on whether another response could be accepted.
-    // Owner-only: this screen's End control sits behind the ownership gate. The ternary that
-    // was here read as though a responder path existed, which it does not.
-    const c = confirmCopy('endNegotiation', 'owner', item.provider.name)
+    // Role comes from the VIEWER. An earlier pass removed this ternary as dead -- correctly,
+    // at the time, because the End control sat behind the ownership gate. Un-gating it (so a
+    // responder can end their own negotiation, which the server has always permitted) made the
+    // responder path live again in the same commit, and the hardcoded 'owner' then handed them
+    // a disclosure about losing capabilities they never had while omitting the one consequence
+    // that applies to them.
+    const c = confirmCopy('endNegotiation', isOwner === true ? 'owner' : 'responder',
+      item.provider.name)
     Alert.alert(c.title, c.body, [
       { text: c.cancelLabel, style: 'cancel' },
       { text: c.confirmLabel, style: 'destructive', onPress: () => release(item) },
@@ -313,14 +318,21 @@ export default function BarterInterests() {
                       <Text style={styles.declineText}>End negotiation</Text>
                     </TouchableOpacity>
                   </View>
-                ) : isOwner === false ? (
-                  // Only when ownership is RESOLVED as false. `isOwner === null` means the read
-                  // has not landed, and asserting non-ownership then told a post's real owner
-                  // they did not own it -- the same false-claim-on-a-failed-read defect that
-                  // `ok` was added to fetchOfferAccess to prevent, one line away.
+                ) : offerReadOk && isOwner === false && item.status === 'pending' ? (
+                  // Gated on `offerReadOk`, NOT on an `isOwner === null` sentinel: a failed
+                  // read returns isOwner FALSE (fetchOfferAccess fails closed on both axes),
+                  // so guarding on null was dead code and a transient failure still told a
+                  // post's real owner they did not own it.
+                  //
+                  // Only on `pending`, because that is the only row where a control is
+                  // withheld from this viewer. On a released or declined row nobody gets a
+                  // control, so the sentence answered a question the reader had not asked.
+                  // It also names the actual capability: a responder plainly DID respond to
+                  // the offer; what they cannot do is answer the responses.
                   <View style={styles.matchedNote}>
                     <Text style={styles.matchedNoteText}>
-                      Only the provider who posted this offer can respond to it.
+                      Only the provider who posted this offer can accept or decline responses
+                      to it.
                     </Text>
                   </View>
                 ) : !canAct ? null : state.action === 'answer' ? (

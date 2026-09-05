@@ -425,7 +425,7 @@ export default function CommunityFeed() {
       .select('id')
     const failure = error ?? (!data || data.length === 0 ? { barterClientCode: 'no_rows' } : null)
     if (failure) {
-      console.log('Mark filled error:', failure)
+      console.log('Close offer error:', failure)
       setOffers(prev)
       const f = barterWriteFailure('closeOffer', failure)
       Alert.alert(f.title, f.body, [{ text: 'OK' }])
