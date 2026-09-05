@@ -9,7 +9,6 @@ import type { BarterInterestStatus, BarterReleaseReason } from './tradeActivity'
 // Re-exported so a SCREEN can take the row type and its vocabulary from one import. Tests and
 // pure modules must import them from './tradeActivity' directly: coming through here pulls in
 // the Supabase client and needs live configuration to run.
-export type { BarterInterestStatus, TradeActivitySection } from './tradeActivity'
 export { TRADE_ACTIVITY_SECTION } from './tradeActivity'
 
 // Barter data layer. Providers trade services without cash: an owner posts an
@@ -300,17 +299,22 @@ export async function fetchTradeActivity(): Promise<{
 export async function fetchOfferAccess(
   offerId: string,
   userId: string,
-): Promise<{ isOwner: boolean; isActive: boolean }> {
+): Promise<{ isOwner: boolean; isActive: boolean; ok: boolean }> {
   // Fails CLOSED on both axes: a read error must not present a non-owner as an owner, and must
   // not present a closed post as open, since `isActive` gates the accept control.
-  if (!offerId || !userId) return { isOwner: false, isActive: false }
+  //
+  // `ok` is separate BECAUSE of that. Failing closed is right for the CONTROL and wrong for the
+  // COPY: without it a transient read failure told the real owner of an open post "This post is
+  // closed", which is a confident false statement about their own post. The caller withholds
+  // the control on `!isActive` and withholds the explanation on `!ok`.
+  if (!offerId || !userId) return { isOwner: false, isActive: false, ok: false }
   const { data, error } = await supabase
     .from('barter_offers')
     .select('user_id, is_active')
     .eq('id', offerId)
     .maybeSingle<{ user_id: string; is_active: boolean }>()
-  if (error || !data) return { isOwner: false, isActive: false }
-  return { isOwner: data.user_id === userId, isActive: data.is_active }
+  if (error || !data) return { isOwner: false, isActive: false, ok: false }
+  return { isOwner: data.user_id === userId, isActive: data.is_active, ok: true }
 }
 
 /**

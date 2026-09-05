@@ -30,15 +30,14 @@ import { timeAgo, initials } from '@/lib/community'
 export default function BarterInterests() {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
-  // offeringService / ownerName are still accepted as params for the caller's convenience but
-  // are deliberately NOT read here any more: the match message is composed SERVER-side by
-  // accept_barter_interest from providers.display_name and the offer's own text. Previously
-  // it was built from navigation params, so a deep link could author a platform-looking
-  // "You matched on a barter!" message with arbitrary content.
+  // ONLY offerId. This route once also carried offeringService and ownerName, and the match
+  // message was built from them -- so a deep link could author a platform-looking "You matched
+  // on a barter!" message with arbitrary content. The message is composed SERVER-side now, by
+  // accept_barter_interest from providers.display_name and the offer's own text, and the params
+  // are gone rather than merely unread: leaving them kept the SHAPE of that vector alive for
+  // the next contributor to wire back into copy.
   const params = useLocalSearchParams<{
     offerId: string
-    offeringService?: string
-    ownerName?: string
   }>()
   const offerId = params.offerId
 
@@ -52,6 +51,9 @@ export default function BarterInterests() {
   // PD-050: a closed post's pending responses are history, not actionable. Starts false so a
   // slow or failed read cannot render an Accept the server would refuse.
   const [offerIsActive, setOfferIsActive] = useState(false)
+  // Whether the offer read actually landed. A failure must withhold the CONTROL without
+  // asserting the post is closed -- that would be a false claim to its own owner.
+  const [offerReadOk, setOfferReadOk] = useState(true)
 
   const load = useCallback(async () => {
     if (!offerId) {
@@ -62,10 +64,11 @@ export default function BarterInterests() {
       fetchOfferInterests(offerId),
       user
         ? fetchOfferAccess(offerId, user.id)
-        : Promise.resolve({ isOwner: false, isActive: false }),
+        : Promise.resolve({ isOwner: false, isActive: false, ok: false }),
     ])
     setIsOwner(access.isOwner)
     setOfferIsActive(access.isActive)
+    setOfferReadOk(access.ok)
     // Show pending interests as actionable; drop already-declined ones.
     // Driven by a TOTAL Record, not a deny-list and not inline literals. `!== 'declined'`
     // treated every unknown future status as live and actionable, so `released` would have
@@ -277,23 +280,21 @@ export default function BarterInterests() {
                     </TouchableOpacity>
                   </View>
                 ) : !offerIsActive ? (
-                  // PD-050. Reachable by deep link or by a close performed elsewhere while
-                  // this screen is open. Decline stays available: it is a legal transition and
-                  // is how an owner tidies a post they have finished with.
-                  <View style={styles.actions}>
-                    <TouchableOpacity
-                      style={[styles.declineBtn, busy && styles.btnDisabled]}
-                      activeOpacity={0.8}
-                      disabled={busy}
-                      onPress={() => confirmDecline(item)}
-                    >
-                      <Text style={styles.declineText}>Decline</Text>
-                    </TouchableOpacity>
-                    <View style={styles.matchedNote}>
-                      <Text style={styles.matchedNoteText}>
-                        This post is closed, so this response can no longer be accepted.
-                      </Text>
-                    </View>
+                  // PD-050: a closed post's pending responses are HISTORY, and history is
+                  // non-actionable. An earlier draft of this branch kept Decline, which
+                  // contradicted tradeRowState (which returns 'none' for the identical row)
+                  // and would have let the owner silently rewrite what the responder is told:
+                  // "This post has been closed without your response being accepted" becomes
+                  // "Your response was not selected", collapsing the very distinction PD-050
+                  // requires both parties be shown.
+                  <View style={styles.matchedNote}>
+                    <Text style={styles.matchedNoteText}>
+                      {offerReadOk
+                        ? 'This post is closed. Responses to it are kept as history and can no '
+                          + 'longer be accepted.'
+                        : 'Could not load this post just now, so its responses cannot be '
+                          + 'answered here. Open it again to retry.'}
+                    </Text>
                   </View>
                 ) : offerMatched ? (
                   <View style={styles.actions}>

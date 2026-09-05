@@ -501,8 +501,6 @@ export default function CommunityFeed() {
       pathname: '/community/barter-interests',
       params: {
         offerId: offer.id,
-        offeringService: offer.offeringService,
-        ownerName: offer.provider.name,
       },
     } as never)
   }
@@ -971,7 +969,11 @@ function BarterCard({
                   activeOpacity={0.85}
                   onPress={() => onEndNegotiation?.(myInterest.id)}
                 >
-                  <Feather name="x-circle" size={15} color="rgba(240,232,213,0.6)" />
+                  <Feather
+                    name={RESPONDER_FEED_STATE[myInterest.status].icon}
+                    size={15}
+                    color="rgba(240,232,213,0.6)"
+                  />
                   <Text style={styles.interestSentText}>
                     {RESPONDER_FEED_STATE[myInterest.status].label}
                   </Text>
@@ -979,7 +981,7 @@ function BarterCard({
               ) : (
                 <View style={styles.interestSentBtn}>
                   <Feather
-                    name={myInterest.status === 'pending' ? 'check' : 'minus-circle'}
+                    name={RESPONDER_FEED_STATE[myInterest.status].icon}
                     size={15}
                     color="rgba(240,232,213,0.5)"
                   />

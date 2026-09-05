@@ -285,14 +285,23 @@ export default function TradeActivityScreen() {
                           </TouchableOpacity>
                         ) : null}
 
+                        {/* Styled as the row's primary action, not as `secondaryBtn`. In the
+                            `answer` layout Decline is secondary because Accept sits beside it;
+                            here it is the only control, and sharing a style with "Open
+                            conversation" put an irreversible action and a benign navigation
+                            side by side looking identical. */}
                         {state.action === 'declineOnly' ? (
                           <TouchableOpacity
-                            style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+                            style={[styles.endBtn, busy && styles.btnDisabled]}
                             activeOpacity={0.8}
                             disabled={busy}
                             onPress={() => confirmDecline(item)}
                           >
-                            <Text style={styles.secondaryText}>Decline</Text>
+                            {busy ? (
+                              <ActivityIndicator color="#F0E8D5" size="small" />
+                            ) : (
+                              <Text style={styles.endText}>Decline</Text>
+                            )}
                           </TouchableOpacity>
                         ) : null}
 

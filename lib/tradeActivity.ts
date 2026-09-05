@@ -244,7 +244,8 @@ const CONFIRM_COPY: Record<
       role === 'owner'
         ? 'This cannot be undone. The other provider will be told, and they will not be able '
           + 'to respond to this post again — you will not be able to re-accept them. Their '
-          + 'response stays on record.'
+          + 'response stays on record. If your post is still on the board, you can accept '
+          + 'another response.'
         : 'This cannot be undone. The other provider will be told, and you will not be able to '
           + 'respond to this post again. Your response stays on record.',
     confirmLabel: 'End negotiation',
@@ -289,11 +290,17 @@ export interface ResponderFeedState {
   label: string
   /** `end` renders the End-negotiation control; `none` is a static label. */
   action: 'none' | 'end'
+  /**
+   * Feather icon name. IN the Record, not chosen by a ternary beside it: an icon picked by
+   * `status === 'pending' ? 'check' : 'minus-circle'` silently gives every future status a
+   * finished-looking glyph, which is the same defect class the Record exists to prevent.
+   */
+  icon: 'check' | 'minus-circle' | 'x-circle'
 }
 
 export const RESPONDER_FEED_STATE: Record<BarterInterestStatus, ResponderFeedState> = {
-  pending: { label: 'Interest sent', action: 'none' },
-  accepted: { label: 'End negotiation', action: 'end' },
-  declined: { label: 'Not selected', action: 'none' },
-  released: { label: 'Negotiation ended', action: 'none' },
+  pending: { label: 'Interest sent', action: 'none', icon: 'check' },
+  accepted: { label: 'End negotiation', action: 'end', icon: 'x-circle' },
+  declined: { label: 'Not selected', action: 'none', icon: 'minus-circle' },
+  released: { label: 'Negotiation ended', action: 'none', icon: 'minus-circle' },
 }

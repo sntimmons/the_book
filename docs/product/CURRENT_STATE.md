@@ -180,7 +180,9 @@ is **not** established is the barter *product model*: how a trade binds to booki
 messaging, reviews and completion. That gap is why it had to be **audited read-only before any
 redesign** (PD-033), not a claim that the surface was broken.
 
-What is present on `main`:
+**Slice 1 snapshot (`feba568`), NOT current truth.** The table and notes below record barter as
+it stood after Slice 1. Four slices have merged since — see the index further down for what each
+changed and which document owns it. Read this section as history:
 
 | Surface | Evidence |
 |---|---|

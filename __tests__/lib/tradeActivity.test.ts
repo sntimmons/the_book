@@ -279,6 +279,14 @@ describe('the responder feed accounts for every status', () => {
       expect(RESPONDER_FEED_STATE[status].action === 'end').toBe(status === 'accepted')
     }
   })
+
+  it('carries its own icon, so none is chosen by a ternary beside it', () => {
+    for (const status of STATUSES) {
+      expect(RESPONDER_FEED_STATE[status].icon.length).toBeGreaterThan(0)
+    }
+    // A finished-looking glyph must not be the silent default for a future status.
+    expect(RESPONDER_FEED_STATE.pending.icon).toBe('check')
+  })
 })
 
 describe('destructive confirmations disclose irreversibility', () => {
@@ -297,6 +305,16 @@ describe('destructive confirmations disclose irreversibility', () => {
   it('names the counterparty where the action is about one person', () => {
     expect(confirmCopy('decline', 'owner', 'Alex').body).toContain('Alex')
     expect(confirmCopy('accept', 'owner', 'Alex').body).toContain('Alex')
+  })
+
+  it('does not imply a post spends its only acceptance', () => {
+    // PD-049 frees the slot when a negotiation ends before an agreement, so the owner may
+    // accept another pending response while the post is active. No confirmation may suggest
+    // otherwise — close-and-repost, discarding every responder, is the workaround PD-049
+    // exists to remove.
+    expect(confirmCopy('endNegotiation', 'owner', 'Alex').body).toMatch(
+      /you can accept another response/i,
+    )
   })
 
   it('tells each side of an ending what it means for them', () => {
