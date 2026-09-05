@@ -1,4 +1,4 @@
-import { barterWriteFailure, BarterWriteOp } from '../../lib/barterErrors'
+import { barterWriteFailure, BarterWriteOp, interpretWrite } from '../../lib/barterErrors'
 
 // The classifier exists because SQLSTATE alone is ambiguous: 23514 is the class code for
 // many distinct barter rules. These tests pin the property that actually matters — that the
@@ -160,5 +160,48 @@ describe('a closed post is not the responder\'s doing', () => {
     const f = barterWriteFailure('closeOffer', { code: '55000' })
     expect(f.terminal).toBe(true)
     expect(f.body).not.toMatch(/try again/i)
+  })
+})
+
+describe('interpretWrite — a filtered write is not a success', () => {
+  // RLS USING clauses FILTER rather than reject, so a blocked write returns no error and no
+  // rows. This rule was hand-written at three call sites; a fourth barter write added without
+  // it would look like every other Supabase call in the app and would report success for a
+  // write that never happened.
+  it('treats zero rows as a failure, not a success', () => {
+    const r = interpretWrite(null, [])
+    expect(r.ok).toBe(false)
+    expect(r.error).toEqual({ barterClientCode: 'no_rows' })
+  })
+
+  it('treats a null payload as a failure too', () => {
+    expect(interpretWrite(null, null).ok).toBe(false)
+  })
+
+  it('passes a real server error through untouched, so SQLSTATE survives', () => {
+    const err = pgErr('23514')
+    const r = interpretWrite(err, null)
+    expect(r.ok).toBe(false)
+    expect(r.error).toBe(err)
+  })
+
+  it('prefers the server error over the zero-row discriminator', () => {
+    // Both conditions can hold at once; the server's reason is the more specific one, and it
+    // is what barterWriteFailure keys on.
+    const err = pgErr('42501')
+    expect(interpretWrite(err, []).error).toBe(err)
+  })
+
+  it('reports success when rows came back', () => {
+    expect(interpretWrite(null, [{ id: 'x' }])).toEqual({ ok: true, error: null })
+  })
+
+  it('feeds barterWriteFailure a zero-row outcome it can classify', () => {
+    // The discriminator must not borrow a server SQLSTATE: reporting no_rows as 42501 made the
+    // UI assert "Not your offer", which is false in two of the three causes.
+    const { error } = interpretWrite(null, [])
+    const f = barterWriteFailure('decline', error)
+    expect(f.terminal).toBe(true)
+    expect(f.title).not.toMatch(/not your/i)
   })
 })

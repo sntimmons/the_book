@@ -21,6 +21,34 @@
 // Kept pure and out of the screens so it is testable without rendering anything — the seam
 // where the previous copy defects lived.
 
+/**
+ * The one interpretation of a PostgREST mutation outcome.
+ *
+ * Authorization on these tables is an RLS `USING` clause, which FILTERS the rows a caller may
+ * not touch rather than rejecting the statement — so a blocked write returns **no error and no
+ * rows**. Checking `error` alone reports success for a write that never happened, which has
+ * shipped here once already.
+ *
+ * The rule was correct but hand-written at three call sites, which is how a fourth barter write
+ * gets added without it: it would look like every other Supabase call in the app. Pure and
+ * testable, in the module that already owns what a refusal MEANS.
+ *
+ * Zero rows does NOT borrow a server SQLSTATE. At least three causes produce it — RLS filtered
+ * the caller, the row was deleted concurrently, it never existed — and the client cannot tell
+ * them apart, so it carries its own discriminator and the copy stays true under all three.
+ */
+export interface BarterWriteResult {
+  ok: boolean
+  /** null on success; the server's error, or the zero-row discriminator, on failure. */
+  error: unknown
+}
+
+export function interpretWrite(error: unknown, rows: unknown[] | null): BarterWriteResult {
+  if (error) return { ok: false, error }
+  if (!rows || rows.length === 0) return { ok: false, error: { barterClientCode: 'no_rows' } }
+  return { ok: true, error: null }
+}
+
 export type BarterWriteOp =
   | 'respond'
   | 'accept'

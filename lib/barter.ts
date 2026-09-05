@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { fetchProviderInfoMap, CommunityProviderInfo } from './community'
+import { interpretWrite } from './barterErrors'
 import type { BarterInterestStatus, BarterReleaseReason } from './tradeActivity'
 
 // The status vocabulary and the Trade Activity section mapping live in lib/tradeActivity.ts --
@@ -382,14 +383,5 @@ export async function declineInterest(
     .update({ status: 'declined' })
     .eq('id', interestId)
     .select('id')
-  if (error) return { ok: false, error }
-  if (!data || data.length === 0) {
-    // Not an exception, but not a success either: the write matched no row. At least three
-    // causes produce this — RLS filtered the caller, the row was deleted concurrently, or the
-    // id does not exist — so it must NOT borrow a real SQLSTATE. Returning 42501 here made the
-    // UI assert "Not your offer", which is false in two of the three cases. A distinct
-    // discriminator keeps the server's code space and the client's own signals separate.
-    return { ok: false, error: { barterClientCode: 'no_rows' } }
-  }
-  return { ok: true, error: null }
+  return interpretWrite(error, data)
 }

@@ -40,7 +40,7 @@ import {
   MyInterest,
   BarterOfferWithProvider,
 } from '@/lib/barter'
-import { barterWriteFailure } from '@/lib/barterErrors'
+import { barterWriteFailure, interpretWrite } from '@/lib/barterErrors'
 import { confirmCopy, RESPONDER_FEED_STATE } from '@/lib/tradeActivity'
 
 type FeedPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
@@ -423,8 +423,8 @@ export default function CommunityFeed() {
       .update({ is_active: false })
       .eq('id', offerId)
       .select('id')
-    const failure = error ?? (!data || data.length === 0 ? { barterClientCode: 'no_rows' } : null)
-    if (failure) {
+    const { ok, error: failure } = interpretWrite(error, data)
+    if (!ok) {
       console.log('Close offer error:', failure)
       setOffers(prev)
       const f = barterWriteFailure('closeOffer', failure)
@@ -442,8 +442,8 @@ export default function CommunityFeed() {
       .delete()
       .eq('id', offerId)
       .select('id')
-    const failure = error ?? (!data || data.length === 0 ? { barterClientCode: 'no_rows' } : null)
-    if (failure) {
+    const { ok, error: failure } = interpretWrite(error, data)
+    if (!ok) {
       console.log('Delete offer error:', failure)
       setOffers(prev)
       const f = barterWriteFailure('deleteOffer', failure)
