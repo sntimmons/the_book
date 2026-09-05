@@ -186,7 +186,7 @@ two `or=` parameters and ANDed by PostgREST — a claim `hooks/useMessaging.ts` 
 `hooks/useNotifications.ts` both now depend on. Every row it wrote was deleted and the residue
 re-asserted at zero.
 
-## 2026-09-05 — `20260915000000` applied to non-production (ordinary apply, no repair)
+## 2026-09-04 — `20260915000000` applied to non-production (ordinary apply, no repair)
 
 Closed barter posts made terminal (PD-051, PD-052), plus the accept-handoff sanitiser fix.
 Applied to `wcoyjeklscuqsumpjpfo` via `supabase db push --linked` — an ordinary forward apply.
@@ -204,7 +204,7 @@ Post-apply B5B: **356/356 passed, 0 failed**, transaction rolled back, zero resi
 (`barter_offers` 0, `barter_interests` 0, null-sender `messages` 0, `conversation` unchanged at
 its pre-existing 43).
 
-## 2026-09-05 — `20260916000000` applied to non-production (ordinary apply, no repair)
+## 2026-09-04 — `20260916000000` applied to non-production (ordinary apply, no repair)
 
 Restores the null-`auth.uid()` escape on the two guards added by `20260915000000`, matching the
 sibling convention on the same tables. Forward-only, because `20260915000000` was already
@@ -212,7 +212,7 @@ applied. Each body carries exactly one changed clause.
 
 Ledger after: **25 entries**, `local == remote` for every row. Production untouched.
 
-Post-apply B5B: **367/367 passed, 0 failed**, transaction rolled back, zero residue verified.
+Post-apply B5B: **368/368 passed, 0 failed**, transaction rolled back, zero residue verified.
 The suite now also PINS both guards by `prosrc` and asserts the BEFORE INSERT/UPDATE trigger
 firing order on `barter_interests` and `barter_offers` — the ordering decides which SQLSTATE a
 provider's write returns, and it had been governed only by a naming convention documented in
