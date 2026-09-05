@@ -76,10 +76,15 @@ released responder may not open a second interest on that post in the first beta
 - A post that is **active but has aged out** of the discovery feed's newest-50 window is fully
   answerable. Accept and decline are reachable from Trade Activity for exactly this case: the
   feed is discovery, and falling out of it is not a product event.
-- A post the owner **manually closed** is finished. Its pending responses become history and
-  **no further response may be accepted** — accepting one would silently return a post to the
-  board that the owner deliberately took off it. Enforced in the database by
-  `barter_interests_zy_accept_open_offer`, not by hiding a button.
+- A post the owner **manually closed** is finished, and finished is **terminal**. Closing is
+  one-way (**PD-051**): a closed post cannot be reopened by any authenticated write, so a
+  provider who wants to offer again creates a new post. Its pending responses become history
+  and may be **neither accepted nor declined** (**PD-052**) — they stay `pending`. Accepting
+  would silently return a post to the board the owner took off it; declining would silently
+  rewrite what the responder is told, from "the post was closed" to "you were not selected".
+  Enforced in the database by `barter_offers_zy_active_one_way` and
+  `barter_interests_zy_answer_open_offer`, not by hiding a button. **Ending** an accepted
+  negotiation stays permitted on a closed post: a negotiation outlives its post.
 - Both parties are told which case they are in. The owner's closed-post rows say the post was
   closed; the responder's say so too, rather than reading as an open wait forever.
 

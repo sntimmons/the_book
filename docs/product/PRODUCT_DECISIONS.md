@@ -280,6 +280,24 @@ as locked decisions.
 
 ---
 
+### PD-051 — Closing a barter post is one-way
+- **Decided:** 2026-09-05
+- **Decision:** `barter_offers.is_active` is a **one-way** transition for the first Houston beta: `active → closed` is permitted, `closed → active` is not. Once an owner manually closes a barter post it cannot be reopened by any authenticated write. A provider who wants to offer the same trade again creates a **new post**. `service_role` retains the reopen path for support and recovery, matching the exemption every sibling trigger on these tables already grants.
+- **Rationale:** PD-050 defines a manually closed post as non-actionable history, and pending responders are shown exactly that. A statement the app makes to one party about another party's post has to be durable, or it is not a statement — and reopening was reachable without ever contradicting PD-050's letter, because PD-050 governs *accepting*, while a separate `is_active` write did the reopening. `barter_offers_owner_update`'s USING clause is `user_id = auth.uid()` and `enforce_barter_offer_write` pins only `id` and `created_at`, so nothing stopped an owner from flipping the column back, accepting, and closing again. Reopening also creates lifecycle ambiguity for no product gain: a reopened post's responses have an unclear relationship to the closure the responder was told about.
+- **Evidence:** Founder ruling, 2026-09-04. Implemented by `supabase/migrations/20260915000000_barter_closed_post_terminal.sql` § 1 (`enforce_barter_offer_active_one_way`, trigger `barter_offers_zy_active_one_way`, SQLSTATE `55000`), added as a NEW trigger rather than a redefinition of `enforce_barter_offer_write`. Asserted in `supabase/tests/barter.test.sql`: the owner may close, cannot reopen, the post is still closed after the refusal, and `service_role` retains the path.
+- **Status:** Locked
+
+---
+
+### PD-052 — A closed post's responses cannot be answered at all
+- **Decided:** 2026-09-05
+- **Decision:** PD-050's "non-actionable history" includes **decline**, not only accept. Once the parent post is closed, a `pending` interest may transition to neither `accepted` nor `declined`; it remains **pending historical state**. The responder is told the post is closed; the owner is shown no Accept and no Decline. Enforced server-side so a direct API mutation cannot perform `pending → declined` on a closed post. **`released` is deliberately still permitted**: a negotiation outlives its post (PD-049), so either party may still end an accepted one after the post closes.
+- **Rationale:** Declining on a closed post silently rewrote what the *responder* is told. Their row goes from "This post has been closed without your response being accepted" to "Your response was not selected" — collapsing precisely the distinction PD-050 requires both parties be shown, and doing it through an action the responder cannot see or contest. It was also the one question on which the two client surfaces had already drifted: Trade Activity offered nothing, the responses screen offered Decline, and the server permitted both, so nothing forced a resolution.
+- **Evidence:** Founder ruling, 2026-09-04. Implemented by `supabase/migrations/20260915000000_barter_closed_post_terminal.sql` § 2 (`enforce_barter_answer_open_offer`, trigger `barter_interests_zy_answer_open_offer`, SQLSTATE `55000`), which **replaces** `enforce_barter_accept_open_offer` from `20260914000000` — renamed because a function whose name understates what it refuses is how the next author reasons wrongly about it. Client truth comes from `tradeRowState` in `lib/tradeActivity.ts`, which **both** barter surfaces now use. Asserted in `supabase/tests/barter.test.sql` (accept refused, decline refused, both responses survive as `pending`, release still permitted, active posts unaffected) and `__tests__/lib/tradeActivity.test.ts` (no row on a closed post yields an accept-capable action, in either role).
+- **Status:** Locked
+
+---
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

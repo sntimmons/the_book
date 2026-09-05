@@ -24,7 +24,7 @@ import {
   BarterInterest,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
-import { confirmCopy } from '@/lib/tradeActivity'
+import { confirmCopy, tradeRowState } from '@/lib/tradeActivity'
 import { timeAgo, initials } from '@/lib/community'
 
 export default function BarterInterests() {
@@ -215,12 +215,31 @@ export default function BarterInterests() {
           }
           renderItem={({ item }) => {
             const busy = actioningId === item.id
-            const accepted = item.status === 'accepted'
-            const released = item.status === 'released'
             // At most one response per offer can be accepted (partial unique index). Once one
-            // is, Accept on every other response is an action that can only fail — offering it
-            // is the same defect as offering Delete on an offer that cannot be deleted.
+            // is, Accept on every other response is an action that can only fail.
             const offerMatched = interests.some((i) => i.status === 'accepted')
+            // ONE interpreter. This screen used to re-derive capability from its own ternary
+            // chain over `released` / `isOwner` / `accepted` / `offerIsActive` / `offerMatched`.
+            // That chain was NOT total -- a status added later matched no branch and fell
+            // through to the final else, which renders a live Accept, on the screen where
+            // Accept is the primary action. It had also already drifted from tradeRowState on
+            // whether a closed post's response may be declined. Capability now comes from the
+            // same pure, total, unit-tested function Trade Activity uses.
+            //
+            // Role here is the VIEWER's: RLS returns a row only to the offer owner or the
+            // responder themselves, so a non-owner reading this screen is necessarily the
+            // responder.
+            const state = tradeRowState({
+              status: item.status,
+              myRole: isOwner ? 'owner' : 'responder',
+              offerIsActive,
+              releasedAt: item.releasedAt,
+              releaseReason: item.releaseReason,
+              offerHasAcceptedResponse: offerMatched,
+            })
+            // `isOwner` is `boolean | null` -- null means the ownership read has not landed.
+            // Controls require a POSITIVE answer, so an unresolved read shows none.
+            const canAct = isOwner === true
             return (
               <View style={styles.card}>
                 <View style={styles.cardTop}>
@@ -247,24 +266,27 @@ export default function BarterInterests() {
 
                 {item.message ? <Text style={styles.message}>{item.message}</Text> : null}
 
-                {/* STATUS BEFORE ROLE. Role-first meant a responder who deep-linked to their
-                    own released response was told about permissions and never learned the
-                    negotiation had ended — the one fact they most needed. A released row can
-                    never be actionable for anyone, so it is safe to resolve it first. */}
-                {released ? (
+                {/* STATUS BEFORE ROLE, preserved: the row's own state is stated first, so a
+                    responder who deep-links to their released response learns the negotiation
+                    ended rather than being told only about permissions. */}
+                {state.note || !offerReadOk ? (
                   <View style={styles.matchedNote}>
                     <Text style={styles.matchedNoteText}>
-                      Negotiation ended. This response is kept as history and cannot be
-                      accepted.
+                      {offerReadOk
+                        ? state.note
+                        : 'Could not load this post just now, so its responses cannot be '
+                          + 'answered here. Open it again to retry.'}
                     </Text>
                   </View>
-                ) : !isOwner ? (
+                ) : null}
+
+                {!canAct ? (
                   <View style={styles.matchedNote}>
                     <Text style={styles.matchedNoteText}>
                       Only the provider who posted this offer can respond to it.
                     </Text>
                   </View>
-                ) : accepted ? (
+                ) : state.action === 'end' ? (
                   <View style={styles.acceptedRow}>
                     <View style={styles.acceptedRowLeft}>
                       <Feather name="check-circle" size={14} color="#4CAF50" />
@@ -279,40 +301,7 @@ export default function BarterInterests() {
                       <Text style={styles.declineText}>End negotiation</Text>
                     </TouchableOpacity>
                   </View>
-                ) : !offerIsActive ? (
-                  // PD-050: a closed post's pending responses are HISTORY, and history is
-                  // non-actionable. An earlier draft of this branch kept Decline, which
-                  // contradicted tradeRowState (which returns 'none' for the identical row)
-                  // and would have let the owner silently rewrite what the responder is told:
-                  // "This post has been closed without your response being accepted" becomes
-                  // "Your response was not selected", collapsing the very distinction PD-050
-                  // requires both parties be shown.
-                  <View style={styles.matchedNote}>
-                    <Text style={styles.matchedNoteText}>
-                      {offerReadOk
-                        ? 'This post is closed. Responses to it are kept as history and can no '
-                          + 'longer be accepted.'
-                        : 'Could not load this post just now, so its responses cannot be '
-                          + 'answered here. Open it again to retry.'}
-                    </Text>
-                  </View>
-                ) : offerMatched ? (
-                  <View style={styles.actions}>
-                    <TouchableOpacity
-                      style={[styles.declineBtn, busy && styles.btnDisabled]}
-                      activeOpacity={0.8}
-                      disabled={busy}
-                      onPress={() => confirmDecline(item)}
-                    >
-                      <Text style={styles.declineText}>Decline</Text>
-                    </TouchableOpacity>
-                    <View style={styles.matchedNote}>
-                      <Text style={styles.matchedNoteText}>
-                        Already matched with another provider
-                      </Text>
-                    </View>
-                  </View>
-                ) : (
+                ) : state.action === 'answer' ? (
                   <View style={styles.actions}>
                     <TouchableOpacity
                       style={[styles.declineBtn, busy && styles.btnDisabled]}
@@ -335,7 +324,18 @@ export default function BarterInterests() {
                       )}
                     </TouchableOpacity>
                   </View>
-                )}
+                ) : state.action === 'declineOnly' ? (
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={[styles.declineBtn, busy && styles.btnDisabled]}
+                      activeOpacity={0.8}
+                      disabled={busy}
+                      onPress={() => confirmDecline(item)}
+                    >
+                      <Text style={styles.declineText}>Decline</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
               </View>
             )
           }}

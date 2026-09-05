@@ -43,6 +43,8 @@ export interface BarterInterest {
   message: string | null
   status: BarterInterestStatus
   createdAt: string
+  releasedAt: string | null
+  releaseReason: BarterReleaseReason | null
   provider: CommunityProviderInfo
 }
 
@@ -155,7 +157,9 @@ export async function fetchMyInterests(userId: string): Promise<Map<string, MyIn
 export async function fetchOfferInterests(offerId: string): Promise<BarterInterest[]> {
   const { data, error } = await supabase
     .from('barter_interests')
-    .select('id, offer_id, interested_provider_id, interested_user_id, message, status, created_at')
+    // One literal, not a concatenation: supabase-js infers the row type FROM the select
+    // string, and a computed string degrades it to GenericStringError.
+    .select('id, offer_id, interested_provider_id, interested_user_id, message, status, created_at, released_at, release_reason')
     .eq('offer_id', offerId)
     .order('created_at', { ascending: false })
   if (error) {
@@ -172,6 +176,8 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
           message: string | null
           status: BarterInterestStatus
           created_at: string
+          released_at: string | null
+          release_reason: BarterReleaseReason | null
         }[]
       | null) ?? []
   const infoMap = await fetchProviderInfoMap(rows.map((r) => r.interested_provider_id))
@@ -183,6 +189,11 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
     message: r.message,
     status: r.status,
     createdAt: r.created_at,
+    // Selected so this screen can attribute a release the same way Trade Activity does.
+    // Without them the same row showed an unattributed "Negotiation ended." on one route and
+    // "You ended this negotiation. <date>." on the other.
+    releasedAt: r.released_at,
+    releaseReason: r.release_reason,
     provider: infoMap.get(r.interested_provider_id) ?? {
       name: 'Provider',
       photo: null,

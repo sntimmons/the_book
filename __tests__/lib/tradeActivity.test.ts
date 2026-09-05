@@ -324,3 +324,93 @@ describe('destructive confirmations disclose irreversibility', () => {
     )
   })
 })
+
+describe('a closed post is terminal for BOTH parties (PD-050, PD-052)', () => {
+  // The responses screen now derives its capability from this same function, so these
+  // assertions cover both surfaces. Previously that screen had its own JSX ternary chain and
+  // the two had already drifted on exactly this question.
+  it('offers the owner no action at all on a closed post, whatever the slot state', () => {
+    for (const offerHasAcceptedResponse of [true, false]) {
+      const s = tradeRowState(
+        facts({
+          status: 'pending',
+          myRole: 'owner',
+          offerIsActive: false,
+          offerHasAcceptedResponse,
+        }),
+      )
+      expect(s.action).toBe('none')
+    }
+  })
+
+  it('tells the responder the post is closed rather than that they were not selected', () => {
+    const s = tradeRowState(
+      facts({ status: 'pending', myRole: 'responder', offerIsActive: false }),
+    )
+    expect(s.note).toMatch(/closed/i)
+    expect(s.note).not.toMatch(/not selected/i)
+  })
+
+  it('never yields an accept-capable action for ANY row on a closed post', () => {
+    // The invariant the server now also holds (barter_interests_zy_answer_open_offer): a
+    // closed post's responses cannot be answered. If this ever yields 'answer', a screen
+    // renders an Accept the database will refuse.
+    for (const status of STATUSES) {
+      for (const myRole of ROLES) {
+        for (const offerHasAcceptedResponse of [true, false]) {
+          const s = tradeRowState(
+            facts({ status, myRole, offerIsActive: false, offerHasAcceptedResponse }),
+          )
+          expect(s.action).not.toBe('answer')
+        }
+      }
+    }
+  })
+})
+
+describe('accept is reachable ONLY through the answer action', () => {
+  // Guards the defect the responses screen shipped with: a non-total chain whose final else
+  // rendered a live Accept, so an unknown future status fell through to it. Capability is a
+  // closed set now — every status resolves to one of four actions, and only one permits accept.
+  it('resolves every status to a known action, on active and closed posts', () => {
+    const seen = new Set<string>()
+    for (const status of STATUSES) {
+      for (const myRole of ROLES) {
+        for (const offerIsActive of [true, false]) {
+          for (const offerHasAcceptedResponse of [true, false]) {
+            seen.add(
+              tradeRowState(
+                facts({ status, myRole, offerIsActive, offerHasAcceptedResponse }),
+              ).action,
+            )
+          }
+        }
+      }
+    }
+    for (const action of seen) {
+      expect(['none', 'end', 'answer', 'declineOnly']).toContain(action)
+    }
+    // And 'answer' is genuinely reachable, so the assertion above is not vacuous.
+    expect(seen.has('answer')).toBe(true)
+  })
+
+  it('grants answer only to an owner, on an active post, with a free slot', () => {
+    for (const status of STATUSES) {
+      for (const myRole of ROLES) {
+        for (const offerIsActive of [true, false]) {
+          for (const offerHasAcceptedResponse of [true, false]) {
+            const s = tradeRowState(
+              facts({ status, myRole, offerIsActive, offerHasAcceptedResponse }),
+            )
+            if (s.action === 'answer') {
+              expect(status).toBe('pending')
+              expect(myRole).toBe('owner')
+              expect(offerIsActive).toBe(true)
+              expect(offerHasAcceptedResponse).toBe(false)
+            }
+          }
+        }
+      }
+    }
+  })
+})

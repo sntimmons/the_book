@@ -153,6 +153,13 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       title: 'Already answered',
       body: 'This response has already been accepted or declined. The list has been updated.',
     },
+    // PD-052: a closed post's responses cannot be answered at all, decline included. Must not
+    // reuse "Already answered", which blames the responder for the owner's own closure.
+    [NOT_IN_PREREQUISITE_STATE]: {
+      terminal: true,
+      title: 'This post is closed',
+      body: 'Its responses are kept as history and can no longer be answered. The list has been updated.',
+    },
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,
       title: 'Not your offer',

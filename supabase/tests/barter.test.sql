@@ -2057,3 +2057,145 @@ begin
   perform pg_temp.chk('barter', 'and re-accepting returns the same conversation',
     v_conv1::text, coalesce(v_conv2::text, 'NULL'));
 end $$;
+
+-- ── A closed post is TERMINAL (PD-051, PD-052) ─────────────────────────────
+-- Closing is one-way, and a closed post's pending responses cannot be answered at ALL --
+-- neither accepted nor declined. They stay pending history.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid(); r2 uuid := gen_random_uuid();
+  opid uuid; rpid uuid; r2pid uuid; o_live uuid; o_shut uuid;
+  i_live uuid; i_shut uuid; i_shut2 uuid;
+  v_code text; v_status text; v_active boolean;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru), (r2);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Term Owner', 'trmo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Term Resp', 'trmr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.providers(user_id, display_name, username)
+    values (r2, 'Term Resp2', 'trm2_'||substr(r2::text,1,8)) returning id into r2pid;
+
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'term offering', 'term seeking') returning id into o_live;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'shut offering', 'shut seeking') returning id into o_shut;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_live, rpid, ru, 'x', 'pending') returning id into i_live;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_shut, rpid, ru, 'x', 'pending') returning id into i_shut;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_shut, r2pid, r2, 'x', 'pending') returning id into i_shut2;
+
+  perform pg_temp.act(ou);
+
+  -- 1. The owner may CLOSE an active post.
+  update public.barter_offers set is_active = false where id = o_shut;
+  perform pg_temp.act_service();
+  select is_active into v_active from public.barter_offers where id = o_shut;
+  perform pg_temp.chk('barter', 'the owner may close an active post', 'false', v_active::text);
+
+  -- 2/3. And cannot reopen it, by any authenticated write.
+  perform pg_temp.act(ou);
+  begin
+    update public.barter_offers set is_active = true where id = o_shut;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a closed post cannot be reopened by its owner',
+    '55000', v_code);
+
+  perform pg_temp.act_service();
+  select is_active into v_active from public.barter_offers where id = o_shut;
+  perform pg_temp.chk('barter', 'and it is still closed after the refusal',
+    'false', v_active::text);
+
+  -- 4. A pending response on a closed post cannot be ACCEPTED.
+  perform pg_temp.act(ou);
+  begin
+    perform public.accept_barter_interest(i_shut);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a closed post refuses accept', '55000', v_code);
+
+  -- 5. Nor DECLINED. This is the PD-052 half: declining silently rewrote what the responder
+  -- is told, from "the post was closed" to "you were not selected".
+  begin
+    update public.barter_interests set status = 'declined' where id = i_shut;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a closed post refuses decline too', '55000', v_code);
+
+  -- 6. The row remains durable PENDING history after both refusals.
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i_shut;
+  perform pg_temp.chk('barter', 'the pending response survives as history', 'pending', v_status);
+  select status into v_status from public.barter_interests where id = i_shut2;
+  perform pg_temp.chk('barter', 'and so does every other response to that post',
+    'pending', v_status);
+
+  -- 9. An ACTIVE post is completely unaffected: normal accept and decline still work.
+  perform pg_temp.act(ou);
+  update public.barter_interests set status = 'declined' where id = i_live;
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i_live;
+  perform pg_temp.chk('barter', 'an active post still permits a normal decline',
+    'declined', v_status);
+
+  -- The release path is deliberately NOT blocked: a negotiation outlives its post (PD-049),
+  -- so either party may still end one after the post closes.
+  perform pg_temp.act_service();
+  update public.barter_interests set status = 'accepted' where id = i_shut2;
+  perform pg_temp.act(r2);
+  begin
+    perform public.release_barter_interest(i_shut2);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a negotiation can still be ENDED on a closed post',
+    'NO ERROR', v_code);
+
+  -- service_role keeps the admin/recovery path, matching every sibling trigger on these
+  -- tables. Founder ruling: do not block admin recovery.
+  perform pg_temp.act_service();
+  update public.barter_offers set is_active = true where id = o_shut;
+  select is_active into v_active from public.barter_offers where id = o_shut;
+  perform pg_temp.chk('barter', 'service_role retains the reopen path', 'true', v_active::text);
+end $$;
+
+-- ── The accept-handoff message is sanitised like the release notice ────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; c uuid; v_copy text;
+  v_evil text := 'x" -- THE BOOK SUPPORT: verify at evil.example' || chr(10) || 'more';
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, v_evil, 'sano_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'San Resp', 'sanr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, v_evil, 'san seeking') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'pending') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.accept_barter_interest(i) into c;
+
+  perform pg_temp.act_service();
+  select content into v_copy from public.messages
+   where conversation_id = c and sender_id is not null order by created_at desc limit 1;
+
+  -- Exactly the two quotes the server composed; any third is the owner's.
+  perform pg_temp.chk('barter', 'the accept message keeps only its own two quote characters',
+    '2', (length(v_copy) - length(replace(v_copy, '"', '')))::text);
+  perform pg_temp.chk('barter', 'and strips control characters from participant text',
+    'true', (position(chr(10) in v_copy) = 0)::text);
+  perform pg_temp.chk('barter', 'and stays bounded regardless of participant text length',
+    'true', (length(v_copy) < 160)::text);
+end $$;
