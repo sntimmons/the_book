@@ -7,8 +7,16 @@
 // version pointer. A provider is negotiating a trade, not operating a database: terms were
 // "changed", an offer is "waiting on you", history is "what was proposed before".
 
-/** The viewer's role in a negotiation, as the server reports it. */
-export type TradeSide = 'owner' | 'responder'
+import type { TradeRole } from './tradeActivity'
+
+/**
+ * The viewer's role in a negotiation, as the server reports it. The SAME union as Trade
+ * Activity's — one declaration, re-exported here so a screen takes it from either module and a
+ * third role value cannot be added to one copy and not the other.
+ */
+export type { TradeRole } from './tradeActivity'
+/** @deprecated Use TradeRole. Kept as an alias so no call site is broken by the rename. */
+export type TradeSide = TradeRole
 
 /**
  * Which side of the trade a term belongs to. A FIXED label the server assigns — the client

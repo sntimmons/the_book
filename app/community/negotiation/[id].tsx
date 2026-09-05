@@ -15,7 +15,6 @@ import { Feather } from '@expo/vector-icons'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
-import type { NegotiationRow as NegotiationRowType } from '@/lib/negotiation'
 import {
   acceptVersion,
   createProposal,
@@ -32,6 +31,7 @@ import {
   MAX_DESCRIPTION,
   negotiationView,
   ProposalDraft,
+  ProposalSide,
   shouldShowTermsChangedNote,
   sideLabel,
   TERMS_CHANGED_NOTE,
@@ -72,7 +72,7 @@ export default function NegotiationScreen() {
   // The interest's own state, used only when no negotiation exists yet. Without it this screen
   // cannot tell "nobody has proposed yet" from "this ended before anyone proposed".
   const [context, setContext] = useState<{
-    status: NegotiationRowType['interestStatus'] | null
+    status: NegotiationRow['interestStatus'] | null
     myRole: TradeSide | null
   }>({ status: null, myRole: null })
 
@@ -228,7 +228,7 @@ export default function NegotiationScreen() {
   // place a wrong-box entry would be typed and sent. Nothing here decides which participant a
   // side belongs to; the server derives that, and the client sends content only.
   function renderComposer(title: string, onSubmit: () => void) {
-    const ordered: { key: keyof ProposalDraft; side: 'offer_owner' | 'responder' }[] = [
+    const ordered: { key: keyof ProposalDraft; side: ProposalSide }[] = [
       { key: 'ownerGives', side: 'offer_owner' },
       { key: 'responderGives', side: 'responder' },
     ]

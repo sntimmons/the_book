@@ -1010,6 +1010,17 @@ begin
   perform pg_temp.chk('negotiation', 'accept_barter_version re-reads the pointer UNDER LOCK',
     'true', (lower(v_src) ~ 'from\s+public\.barter_proposals[^;]*for update')::text);
 
+  -- create_barter_proposal's OWN locks. The interest lock is what makes "creation races with
+  -- release" decidable, and the lock-ORDER pin below matches the statements' `from` text, so it
+  -- would still pass with both locks removed. The agreement slice will redefine this function.
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'create_barter_proposal' and n.nspname = 'public';
+  perform pg_temp.chk('negotiation', 'create_barter_proposal LOCKS the offer row',
+    'true', (lower(v_src) ~ 'from\s+public\.barter_offers o[^;]*for update')::text);
+  perform pg_temp.chk('negotiation', 'and LOCKS the interest row',
+    'true', (lower(v_src) ~ 'from\s+public\.barter_interests i[^;]*for update')::text);
+
   -- Lock ORDER: every RPC takes the offer before the interest, matching the pre-existing
   -- release/accept RPCs. Taking them in opposite orders is what deadlocks.
   --

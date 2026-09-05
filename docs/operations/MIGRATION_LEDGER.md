@@ -366,7 +366,18 @@ Comment-only refresh of `enforce_barter_terms_write`, whose live body cited an i
 no `(uuid, jsonb)` overload of the three changed functions exists — a re-apply of a superseded
 file would resurrect a granted one silently. Ledger after: **34 entries**.
 
+**Stale comment, recorded here because it is outside `prosrc`:** `20260917000000:266-267`, above
+`barter_negotiation_role` (never redefined, so that file IS its current source), still says the
+lock order is "interest → offer → proposal in every RPC". `20260921000000` corrected the order to
+offer → interest → proposal and B5B pins it; the file comment is wrong and was not reachable by
+the comment-refresh migrations, which only touch function bodies.
+
 ## Prevention
+
+**Do not apply a slice to non-production before its security review and Founder rulings have
+landed.** Slice 3a took ten migration files for one feature: `20260917000000` was applied with
+its schema right but its error contract, write boundary and term shape all still open, and every
+one of those was then a forward correction to a file that could no longer be edited.
 
 Apply migrations through `supabase migration up` / `db push` so the ledger records them, **and
 write the apply record in the same sitting** — the seven-migration gap above is what happens
