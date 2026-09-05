@@ -190,6 +190,15 @@ async function raceCreation() {
 
   const [a, b] = await Promise.all([runSql(body(ids.ou)), runSql(body(ids.ru))])
 
+  // OVERLAP EVIDENCE, as in scenario 1. `a.ok !== b.ok` also holds if the second open simply
+  // arrived later and hit the constraint, so without this the scenario passes on a sequential
+  // run and proves nothing about the race.
+  const w2 = await runSql(`
+select (extract(epoch from (clock_timestamp() - min(created_at))) < 8) as overlapped
+  from public.barter_proposals where interest_id = '${ids.interest2}';`)
+  chk('the two opens genuinely overlapped', 'true',
+    String(/true/i.test(scalar(w2.out, 'overlapped') ?? '')))
+
   chk('exactly one of two simultaneous opens succeeds', 'true', String(a.ok !== b.ok))
   const q = await runSql(`
 select count(*) as n from public.barter_proposals where interest_id = '${ids.interest2}';`)
@@ -220,6 +229,16 @@ async function raceAcceptVsCounter() {
 
   // Either ordering is legitimate. What must NEVER happen is an acceptance counted as
   // agreement to terms that were already replaced.
+  // Both sessions sleep the same 2s before acting, so a version and an acceptance written far
+  // apart means they did not overlap and this scenario proves nothing either way.
+  const w3 = await runSql(`
+select (extract(epoch from (clock_timestamp() - min(v.created_at))) < 8) as overlapped
+  from public.barter_proposal_versions v
+  join public.barter_proposals p on p.id = v.proposal_id
+ where p.interest_id = '${ids.interest3}' and v.version_no > 1;`)
+  chk('the acceptance and the counter genuinely overlapped', 'true',
+    String(/true/i.test(scalar(w3.out, 'overlapped') ?? '')))
+
   chk('the counter always lands', 'true', String(cnt.ok))
   const staleRefusal = !acc.ok && /40001|replaced by a newer version/.test(acc.out)
   chk('the acceptance either lands or is refused as stale',

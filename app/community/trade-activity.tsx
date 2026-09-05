@@ -216,7 +216,14 @@ export default function TradeActivityScreen() {
                   ...item,
                   offerHasAcceptedResponse: matchedOfferIds.has(item.offerId),
                 })
-                const showActions = state.action !== 'none' || item.conversationId !== null
+                // The terms route counts as an action. It was nested inside a strip that also
+                // required a conversation, so a released row whose accept predates the atomic
+                // handoff -- exactly the rows most likely to need support -- kept no route to
+                // its terms at all.
+                const showActions =
+                  state.action !== 'none'
+                  || item.conversationId !== null
+                  || item.status === 'released'
                 return (
                   <View key={item.interestId} style={styles.card}>
                     <View style={styles.cardTop}>

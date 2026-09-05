@@ -30,8 +30,6 @@ export interface NegotiationFacts {
   iAcceptedCurrent: boolean
   theyAcceptedCurrent: boolean
   bothAccepted: boolean
-  /** True when the newest terms are the viewer's own. */
-  iAuthoredCurrent: boolean
   /**
    * Did BOTH providers ever accept the same version, at any point in this negotiation?
    *
@@ -137,6 +135,21 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
  * whenever the other provider had accepted the new terms, which is exactly the person whose
  * acceptance actually did lapse.
  */
+/**
+ * Did this viewer accept a version that is no longer the current one?
+ *
+ * Extracted from the screen so it can be tested: the whole lapsed-acceptance rule rests on it,
+ * and while it lived inline in JSX nothing could assert it.
+ */
+export function acceptedAnEarlierVersion(
+  versions: { id: string; acceptedBy: string[] }[],
+  currentVersionId: string | null,
+  userId: string | null,
+): boolean {
+  if (!userId) return false
+  return versions.some((v) => v.id !== currentVersionId && v.acceptedBy.includes(userId))
+}
+
 export function shouldShowTermsChangedNote(f: {
   interestStatus: NegotiationFacts['interestStatus']
   iAcceptedAnEarlierVersion: boolean

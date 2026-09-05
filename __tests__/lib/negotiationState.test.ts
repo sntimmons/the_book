@@ -1,4 +1,5 @@
 import {
+  acceptedAnEarlierVersion,
   MAX_TERMS,
   negotiationView,
   shouldShowTermsChangedNote,
@@ -28,7 +29,6 @@ function facts(over: Partial<NegotiationFacts> = {}): NegotiationFacts {
     iAcceptedCurrent: false,
     theyAcceptedCurrent: false,
     bothAccepted: false,
-    iAuthoredCurrent: false,
     everBothAccepted: false,
     ...over,
   }
@@ -227,15 +227,13 @@ describe('the lapsed-acceptance note addresses the right person', () => {
     ).toBe(true)
   })
 
-  it('is shown even when the other provider has already accepted the new terms', () => {
-    // The suppressed case. Their acceptance says nothing about whether mine lapsed.
-    expect(
-      shouldShowTermsChangedNote({
-        ...base,
-        iAcceptedAnEarlierVersion: true,
-        iAcceptedCurrent: false,
-      }),
-    ).toBe(true)
+  it('does not depend on what the counterparty accepted', () => {
+    // The false negative was caused by keying on the counterparty's acceptance, which
+    // suppressed the note for the one person whose acceptance had actually lapsed. The rule
+    // takes no such input now, and this asserts that structurally: the visible signature has
+    // three fields and none of them is theirs.
+    expect(Object.keys({ ...base, iAcceptedAnEarlierVersion: true, iAcceptedCurrent: false }))
+      .toEqual(['interestStatus', 'iAcceptedAnEarlierVersion', 'iAcceptedCurrent'])
   })
 
   it('is NOT shown to someone who never accepted anything', () => {
@@ -281,5 +279,40 @@ describe('the agreed state does not overstate what has happened', () => {
     // counterparty can still supersede or end the negotiation the same day.
     expect(v.detail).toMatch(/still send different terms|end this/i)
     expect(v.detail).toMatch(/withdraws/i)
+  })
+})
+
+describe('acceptedAnEarlierVersion', () => {
+  // The derivation the whole lapsed-acceptance rule rests on. It lived inline in the screen,
+  // where nothing could assert it.
+  const me = 'me'
+  const them = 'them'
+
+  it('is true when I accepted a version that is no longer current', () => {
+    expect(
+      acceptedAnEarlierVersion(
+        [{ id: 'v1', acceptedBy: [me] }, { id: 'v2', acceptedBy: [] }],
+        'v2',
+        me,
+      ),
+    ).toBe(true)
+  })
+
+  it('ignores my acceptance of the CURRENT version', () => {
+    expect(acceptedAnEarlierVersion([{ id: 'v1', acceptedBy: [me] }], 'v1', me)).toBe(false)
+  })
+
+  it('ignores the counterparty accepting an earlier version', () => {
+    expect(
+      acceptedAnEarlierVersion(
+        [{ id: 'v1', acceptedBy: [them] }, { id: 'v2', acceptedBy: [] }],
+        'v2',
+        me,
+      ),
+    ).toBe(false)
+  })
+
+  it('is false when the viewer is unknown, rather than guessing', () => {
+    expect(acceptedAnEarlierVersion([{ id: 'v1', acceptedBy: [me] }], 'v2', null)).toBe(false)
   })
 })

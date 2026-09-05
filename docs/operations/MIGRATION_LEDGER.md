@@ -290,10 +290,20 @@ every `enforce_*` trigger function in the repo, including pre-existing ones outs
 those are trigger functions and not usefully callable over PostgREST, but the pattern is wrong
 and is flagged for a follow-up sweep.
 
-Closed two independent ways, so neither is load-bearing alone: the grant is removed, and a write
-guard on `barter_proposal_terms` requires a transaction-local marker that only the negotiation
-RPCs publish (the `app.barter_handoff` shape from `20260907000000`), carrying the version id so a
-marker for one version cannot write terms onto another. `supabase/tests/negotiation.test.sql`
+Closed by three layers for the reachable attacker: the EXECUTE grant is removed, the table has
+no INSERT grant and no INSERT policy, and a write guard requires a transaction-local marker that
+only the negotiation RPCs publish (the `app.barter_handoff` shape from `20260907000000`),
+carrying the version id so a marker for one version cannot write terms onto another.
+
+**CORRECTED CLAIM.** An earlier version of this entry, and `20260921000000`'s header, said the
+grant and the guard were two independent boundaries, "neither load-bearing alone". That is true
+for an authenticated PostgREST caller — each refuses on its own — and it was NOT true for an
+in-database caller: `set_config` is callable from any SQL session, so the marker is
+self-issuable, and the write-once unique index only bit because the RPC happens to number terms
+from zero. `20260924000000` replaces that with a statement-level trigger using a transition
+table, which is what can express "this version already had terms before this statement" — a
+per-row count trips on the second row of its own insert, and an index can only approximate it.
+The independence claim is now true for both profiles rather than softened. `supabase/tests/negotiation.test.sql`
 now pins `has_function_privilege` for **every** function this slice created — the class, not the
 instance — and proves the guard refuses even with grants bypassed.
 
@@ -315,9 +325,21 @@ protect.
 Ledger after: **32 entries**, `local == remote` for every row. Production untouched, and never
 queried.
 
-Post-apply B5B: **478/478 passed, 0 failed**, zero residue. Non-B5B concurrency proof
-**17/17**, now with scoped residue checks and an assertion that the two sessions genuinely
-overlapped — without which that scenario could pass on a sequential run and prove nothing.
+Post-apply B5B: **487/487 passed, 0 failed**, zero residue. Non-B5B concurrency proof
+**19/19**, with fixture-scoped residue checks and, for ALL THREE scenarios, an assertion that
+the two sessions genuinely overlapped — without which each would pass on a sequential run and
+prove nothing.
+
+`20260924000000` also corrected a lock-order comment left inside `submit_barter_counter`'s body
+saying "interest, then offer" — the exact claim `20260921000000`'s own header identifies as
+false and as the cause of the deadlock. Comments in a function body land in `prosrc`, so that
+was the text the next author would read.
+
+Two B5B pins added in this round were themselves wrong on first writing, both in the same way —
+they reported the wrong thing as verified. The `for update` pin used `substring`, which returns
+the FIRST `barter_proposals` read (the unlocked one); and the lock-ORDER pin compared
+`position('barter_offers')`, whose first match is the DECLARE block, so it passed whichever
+order the locks were taken in. Both now compare the lock statements themselves.
 
 ## Prevention
 

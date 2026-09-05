@@ -884,11 +884,28 @@ begin
 
   -- Lock ORDER: every RPC takes the offer before the interest, matching the pre-existing
   -- release/accept RPCs. Taking them in opposite orders is what deadlocks.
-  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
-    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-   where p.proname = 'create_barter_proposal' and n.nspname = 'public';
-  perform pg_temp.chk('negotiation', 'create_barter_proposal locks the OFFER before the interest',
-    'true', (position('barter_offers' in v_src) < position('barter_interests i' in v_src))::text);
+  --
+  -- Compares the two LOCK STATEMENTS, not identifiers. An earlier version of this pin compared
+  -- `position('barter_offers')` against `position('barter_interests i')`, and the first match
+  -- for 'barter_offers' is the DECLARE block -- so a declaration always preceded the first
+  -- interest statement and the assertion passed whichever order the locks were actually taken
+  -- in. That is the same defect as the `substring` bug two pins above: a check that reports
+  -- the wrong thing as verified.
+  declare
+    fn text; v_off integer; v_int integer;
+  begin
+    foreach fn in array array['create_barter_proposal', 'submit_barter_counter',
+                              'accept_barter_version'] loop
+      select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+        from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+       where p.proname = fn and n.nspname = 'public';
+      v_off := position('from public.barter_offers o' in v_src);
+      v_int := position('from public.barter_interests i' in v_src);
+      perform pg_temp.chk('negotiation',
+        fn || ' locks the OFFER before the interest',
+        'true', (v_off > 0 and v_int > 0 and v_off < v_int)::text);
+    end loop;
+  end;
 end $$;
 
 -- ── The denormalised participants still agree with their sources ───────────
@@ -906,4 +923,101 @@ begin
   perform pg_temp.chk('negotiation',
     'no proposal disagrees with its offer and interest about who the participants are',
     '0', v_n::text);
+end $$;
+
+-- ── Written once, independently of how a writer numbers its rows ───────────
+-- The unique index on (version_id, sort_order) only stops a second write because the RPC
+-- numbers from zero; a writer starting at max+1 would append cleanly. The statement-level
+-- guard is what actually expresses "this version already had terms".
+do $$
+declare
+  v1 uuid := current_setting('b5b.ng_v1')::uuid;
+  ou uuid := current_setting('b5b.ng_ou')::uuid;
+  v_code text; v_max integer; v_n integer; v_before integer;
+begin
+  perform pg_temp.act_service();
+  select count(*), max(sort_order) into v_before, v_max
+    from public.barter_proposal_terms where version_id = v1;
+
+  -- Marker held AND a non-colliding sort_order: the index cannot refuse this one.
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ou::text, 'role', 'authenticated')::text, true);
+  perform set_config('app.barter_terms_write', v1::text, true);
+  begin
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
+      sort_order) values (v1, 'owner', 'appended later', v_max + 1);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform set_config('app.barter_terms_write', '', true);
+  perform pg_temp.chk('negotiation',
+    'terms cannot be APPENDED to a version, even past the index', '23514', v_code);
+
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_proposal_terms where version_id = v1;
+  perform pg_temp.chk('negotiation', 'and the accepted terms are still exactly as written',
+    v_before::text, v_n::text);
+end $$;
+
+-- ── Account erasure is not blocked by a negotiation ────────────────────────
+-- The RESTRICT regression this fixed was invisible to a fully green suite. These pin both the
+-- constraint shape and the behaviour, so its return fails here rather than in a review.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; pid uuid; vid uuid;
+  v_code text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Del Owner', 'ndlo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Del Resp', 'ndlr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'del offering', 'del seeking') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.create_barter_proposal(i, pg_temp.ng_terms()) into pid;
+  perform pg_temp.act_service();
+  select id into vid from public.barter_proposal_versions where proposal_id = pid;
+  perform pg_temp.act(ru);
+  perform public.accept_barter_version(vid);
+
+  -- The GoTrue account-deletion profile: no JWT at all, so every barter guard early-returns.
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims', '', true);
+  begin
+    delete from auth.users where id = ru;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation',
+    'a participant with a live negotiation can still be erased', 'NO ERROR', v_code);
+
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_proposals where id = pid;
+  perform pg_temp.chk('negotiation', 'and the negotiation cascades with them', '0', v_n::text);
+  select count(*) into v_n from public.barter_proposal_versions where proposal_id = pid;
+  perform pg_temp.chk('negotiation', 'leaving no orphan versions', '0', v_n::text);
+  select count(*) into v_n from public.barter_version_acceptances where version_id = vid;
+  perform pg_temp.chk('negotiation', 'nor orphan acceptances', '0', v_n::text);
+end $$;
+
+-- Every FK on the negotiation chain cascades. A future RESTRICT would re-break erasure.
+do $$
+declare
+  v_n integer;
+begin
+  select count(*) into v_n
+    from pg_constraint c
+   where c.contype = 'f'
+     and c.conrelid::regclass::text in ('barter_proposals', 'barter_proposal_versions',
+         'barter_proposal_terms', 'barter_version_acceptances')
+     and c.confdeltype <> 'c';
+  perform pg_temp.chk('negotiation',
+    'every negotiation foreign key is ON DELETE CASCADE', '0', v_n::text);
 end $$;

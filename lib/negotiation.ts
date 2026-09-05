@@ -86,6 +86,30 @@ function mapRow(r: RawRow): NegotiationRow {
 }
 
 /**
+ * The interest's own state, for the case where no negotiation exists yet.
+ *
+ * Read from `my_trade_activity`, which carries both the status and the SERVER-derived role.
+ * Without it the screen cannot tell "no terms proposed yet, go ahead" from "this ended before
+ * anyone proposed anything" — and it offered the first to both, on a route that had just been
+ * opened to ended negotiations. It also removes the last place a route param decided which side
+ * of the trade the viewer is on.
+ */
+export async function fetchInterestContext(interestId: string): Promise<{
+  status: NegotiationRow['interestStatus'] | null
+  myRole: TradeSide | null
+  ok: boolean
+}> {
+  const { data, error } = await supabase
+    .from('my_trade_activity')
+    .select('status, my_role')
+    .eq('interest_id', interestId)
+    .maybeSingle()
+  if (error) return { status: null, myRole: null, ok: false }
+  const row = data as unknown as { status: NegotiationRow['interestStatus']; my_role: TradeSide } | null
+  return { status: row?.status ?? null, myRole: row?.my_role ?? null, ok: true }
+}
+
+/**
  * The negotiation attached to one accepted response, if any has been opened.
  *
  * Returns `{ row: null, ok: true }` when none exists — that is a real state (nobody has

@@ -15,9 +15,11 @@ import { Feather } from '@expo/vector-icons'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
+import type { NegotiationRow as NegotiationRowType } from '@/lib/negotiation'
 import {
   acceptVersion,
   createProposal,
+  fetchInterestContext,
   fetchNegotiation,
   fetchNegotiationForInterest,
   NegotiationRow,
@@ -27,6 +29,7 @@ import {
 import { barterWriteFailure } from '@/lib/barterErrors'
 import {
   MAX_DESCRIPTION,
+  acceptedAnEarlierVersion,
   negotiationView,
   shouldShowTermsChangedNote,
   sideLabel,
@@ -73,6 +76,12 @@ export default function NegotiationScreen() {
   const [composing, setComposing] = useState(false)
   const [draft, setDraft] = useState<TermInput[]>([])
   const [showHistory, setShowHistory] = useState(false)
+  // The interest's own state, used only when no negotiation exists yet. Without it this screen
+  // cannot tell "nobody has proposed yet" from "this ended before anyone proposed".
+  const [context, setContext] = useState<{
+    status: NegotiationRowType['interestStatus'] | null
+    myRole: TradeSide | null
+  }>({ status: null, myRole: null })
 
   const load = useCallback(async () => {
     if (!interestId) {
@@ -89,9 +98,11 @@ export default function NegotiationScreen() {
       return
     }
     if (!found.row) {
+      const ctx = await fetchInterestContext(interestId)
       setRow(null)
       setVersions([])
-      setFailed(false)
+      setContext({ status: ctx.status, myRole: ctx.myRole })
+      setFailed(!ctx.ok)
       setLoading(false)
       return
     }
@@ -116,15 +127,25 @@ export default function NegotiationScreen() {
   // disagree, which would label the draft "You give" against the side actually sent. The
   // server-derived role wins whenever a negotiation exists; the param only fills the gap
   // before one does, and only to choose a label.
-  const myRole: TradeSide = row?.myRole ?? (params.role === 'owner' ? 'owner' : 'responder')
-  const iAcceptedAnEarlierVersion = previous.some((v) => user?.id && v.acceptedBy.includes(user.id))
+  // Server-derived in both cases now: from the negotiation when one exists, otherwise from the
+  // interest. The route param is a last-resort label only, and no longer the thing that decides
+  // which side of the trade a first proposal is written against.
+  const myRole: TradeSide =
+    row?.myRole ?? context.myRole ?? (params.role === 'owner' ? 'owner' : 'responder')
+  // Live only when the underlying interest is accepted. A released negotiation with no terms
+  // must not be offered a compose control the server will always refuse.
+  const contextIsLive = (row?.interestStatus ?? context.status) === 'accepted'
+  const iAcceptedAnEarlierVersion = acceptedAnEarlierVersion(
+    versions,
+    row?.currentVersionId ?? null,
+    user?.id ?? null,
+  )
   const view = row
     ? negotiationView({
         interestStatus: row.interestStatus,
         iAcceptedCurrent: row.iAcceptedCurrent,
         theyAcceptedCurrent: row.theyAcceptedCurrent,
         bothAccepted: row.bothAccepted,
-        iAuthoredCurrent: row.currentVersionAuthorId === user?.id,
         everBothAccepted: versions.some((v) => v.acceptedBy.length >= 2),
       })
     : null
@@ -159,7 +180,14 @@ export default function NegotiationScreen() {
     if (!ok) {
       const f = barterWriteFailure('proposeTerms', error)
       Alert.alert(f.title, f.body, [{ text: 'OK' }])
-      if (f.terminal) load()
+      // `stale` as well as `terminal`: "they proposed first" is recoverable, but the screen is
+      // definitely out of date, and leaving it saying "No terms yet" made the alert tell the
+      // user to read terms that were not on screen.
+      if (f.terminal || f.stale) {
+        setComposing(false)
+        setLoading(true)
+        load()
+      }
       return
     }
     setComposing(false)
@@ -181,7 +209,10 @@ export default function NegotiationScreen() {
     if (!ok) {
       const f = barterWriteFailure('proposeTerms', error)
       Alert.alert(f.title, f.body, [{ text: 'OK' }])
-      if (f.terminal) load()
+      if (f.terminal || f.stale) {
+        setComposing(false)
+        load()
+      }
       return
     }
     setComposing(false)
@@ -230,10 +261,15 @@ export default function NegotiationScreen() {
         </View>
       ) : !row || !current || !view ? (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
-          <Text style={styles.state}>No terms yet</Text>
+          <Text style={styles.state}>
+            {contextIsLive ? 'No terms yet' : 'This negotiation ended'}
+          </Text>
           <Text style={styles.stateDetail}>
-            Nobody has proposed terms for this trade. Say what each of you is giving to get
-            started — the other provider can send changes back.
+            {contextIsLive
+              ? 'Nobody has proposed terms for this trade. Say what each of you is giving to '
+                + 'get started — the other provider can send changes back.'
+              : 'No terms were ever proposed, and the negotiation has since ended. There is '
+                + 'nothing on record for this trade.'}
           </Text>
           {composing ? (
             <View style={styles.card}>
@@ -275,13 +311,13 @@ export default function NegotiationScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : (
+          ) : contextIsLive ? (
             <View style={styles.actions}>
               <TouchableOpacity style={styles.primaryBtn} onPress={startComposing}>
                 <Text style={styles.primaryText}>Propose terms</Text>
               </TouchableOpacity>
             </View>
-          )}
+          ) : null}
         </ScrollView>
       ) : (
         <KeyboardAvoidingView
@@ -305,7 +341,9 @@ export default function NegotiationScreen() {
             ) : null}
 
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>On the table now</Text>
+              <Text style={styles.cardTitle}>
+                {view.state === 'ended' ? 'The last terms proposed' : 'On the table now'}
+              </Text>
               <Text style={styles.cardMeta}>
                 {row.currentVersionAuthorId === user?.id ? 'You proposed these' : 'They proposed these'}
                 {' · '}

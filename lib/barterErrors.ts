@@ -62,6 +62,16 @@ export type BarterWriteOp =
 export interface BarterWriteFailure {
   /** Terminal means retrying cannot succeed; the UI must not offer a retry. */
   terminal: boolean
+  /**
+   * The caller's view is out of date and must be re-read, even though the failure is NOT
+   * terminal.
+   *
+   * These are different questions and conflating them produced a real defect: "the other
+   * provider proposed first" is recoverable — you counter — but the screen behind the alert
+   * still said "No terms yet", so the alert told the user to look at terms that were not on
+   * screen, above a button that could only fail again. Screens reload on `terminal || stale`.
+   */
+  stale?: boolean
   title: string
   body: string
 }
@@ -275,6 +285,7 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       // "this negotiation has ended": it is alive and now has terms on it. The right next
       // action is to read theirs and counter.
       terminal: false,
+      stale: true,
       title: 'They proposed first',
       body: 'The other provider sent terms while you were writing. Take a look — you can send changes back.',
     },
@@ -302,6 +313,7 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       // the new ones and accepting again is the correct next action. Calling this permanent
       // would strand someone on a live negotiation.
       terminal: false,
+      stale: true,
       title: 'The terms changed',
       body: 'The other provider sent new terms while you were reading. Take a look and accept again if you agree.',
     },
