@@ -2270,7 +2270,11 @@ do $$
 declare
   v_src text; v_order text;
 begin
-  select prosrc into v_src from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  -- COMMENTS STRIPPED, as the row-lock pin in messaging.test.sql already does: `position()`
+  -- over raw prosrc is satisfied by prose, so a body that mentions a clause in a comment while
+  -- omitting it would pass. Every pin below runs against the stripped body.
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where p.proname = 'enforce_barter_answer_open_offer' and n.nspname = 'public';
   perform pg_temp.chk('barter', 'the answer guard still refuses BOTH accepted and declined',
     'true', (v_src like '%''accepted''%' and v_src like '%''declined''%')::text);
@@ -2278,10 +2282,17 @@ begin
     'true', (position('service_role' in v_src) > 0
              and position('auth.uid()) is null' in v_src) > 0)::text);
 
-  select prosrc into v_src from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where p.proname = 'enforce_barter_offer_active_one_way' and n.nspname = 'public';
   perform pg_temp.chk('barter', 'the one-way guard still exists and reads both directions',
     'true', (v_src like '%old.is_active is false%' and v_src like '%new.is_active is true%')::text);
+  -- SYMMETRY with the answer guard's pin. Without this, a create-or-replace that dropped the
+  -- null-uid escape from THIS guard would pass the whole suite -- and reintroduce exactly the
+  -- operator lockout 20260916000000 was written to fix.
+  perform pg_temp.chk('barter', 'and the one-way guard still exempts BOTH admin paths',
+    'true', (position('service_role' in v_src) > 0
+             and position('auth.uid()) is null' in v_src) > 0)::text);
 
   -- Postgres fires BEFORE row triggers in NAME order. That ordering is what makes an illegal
   -- transition raise 23514 from write_integrity rather than 55000 from the post guard.
