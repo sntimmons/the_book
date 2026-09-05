@@ -142,9 +142,55 @@ for every row. No merged migration file was edited. Production untouched.
 Post-apply B5B: **138/138 passed, 0 failed**, transaction rolled back, zero residue verified by
 re-reading `barter_offers`, `barter_interests` and the barter rows of `rate_limit_log` (all 0).
 
+## 2026-09-04 — `20260907000000`…`20260913000000` applied to non-production (recorded retrospectively)
+
+**Recorded retrospectively, and flagged as such.** These seven migrations — Slice 2 (accept
+handoff), Slice 2B (canonical provider pair), Slice 3a-0 (release), Slice 3a-0b (release signal,
+authorship pin) and Slice 3a-0c (Trade Activity and its hardening) — were applied to the
+non-production project `wcoyjeklscuqsumpjpfo` via `supabase db push --linked` as each slice was
+built, but **no apply record was written at the time**. That is a lapse against the Prevention
+rule below: the ledger silently skipped seven versions, so "what is live on non-prod" was not
+answerable from this document.
+
+Verified 2026-09-04 by `supabase migration list --linked`: `local == remote` for all
+**22 entries**, ending `20260913000000` at the time of the check. Post-apply B5B at that point:
+**339/339 passed, 0 failed**, transaction rolled back, zero residue re-verified by reading
+`barter_offers` (0), `barter_interests` (0) and null-sender `messages` (0).
+
+This record exists because `20260914000000` rests on the claim that `20260913000000` was already
+applied — that claim is the whole reason the corrections went into a forward file rather than an
+edit — and a reviewer could not previously check it here.
+
+## 2026-09-04 — `20260914000000` applied to non-production (ordinary apply, no repair)
+
+Slice 3a-0c corrections: restores the pending-cycle row lock deleted by `20260913000000`, closes
+the quote-breakout in the release notice, and adds the closed-post accept guard
+(`barter_interests_zy_accept_open_offer`). Applied via `supabase db push --linked` — an ordinary
+forward apply, **not** a repair.
+
+Forward-only rather than an edit to `20260913000000`, because that migration was already applied
+(above) and an applied migration does not re-run: editing it in place would have left file and
+database disagreeing, which is the drift this document exists to prevent.
+
+Ledger after: **23 entries**, `local == remote` for every row. No merged migration file was
+edited. Production untouched, and never queried.
+
+Post-apply B5B: **343/343 passed, 0 failed**, transaction rolled back, zero residue verified
+(`barter_offers` 0, `barter_interests` 0, null-sender `messages` 0, `conversation` unchanged at
+its pre-existing 43).
+
+Additionally, a **runtime badge proof** was run against the same non-production project using the
+existing dev accounts (14/14), because the B5B harness runs in a single transaction and cannot
+exercise PostgREST request composition. It confirms that two chained `.or()` calls are emitted as
+two `or=` parameters and ANDed by PostgREST — a claim `hooks/useMessaging.ts` and
+`hooks/useNotifications.ts` both now depend on. Every row it wrote was deleted and the residue
+re-asserted at zero.
+
 ## Prevention
 
-Apply migrations through `supabase migration up` / `db push` so the ledger records them.
+Apply migrations through `supabase migration up` / `db push` so the ledger records them, **and
+write the apply record in the same sitting** — the seven-migration gap above is what happens
+otherwise.
 Hand-applied SQL requires a `migration repair` in the same sitting, or the drift returns.
 
 ## Production
@@ -161,16 +207,71 @@ NOT in the migration that created it.
 
 | Function | Created in | **Current definition** | Why it moved |
 |---|---|---|---|
-| `public.release_barter_interest` | `20260909000000_barter_interest_release.sql` | **`20260911000000_message_authorship_pin.sql`** | `20260910000000` added the in-transaction counterparty signal; `20260911000000` made that signal unable to veto the release and added the provider-identity assertion. **`20260909000000`'s header instructs future slices to add the agreement guard "HERE, inside this function" — that instruction now points at a DEAD definition. Extend the current one.** |
+| `public.release_barter_interest` | `20260909000000_barter_interest_release.sql` | **`20260913000000_trade_activity_hardening.sql`** | `20260910000000` added the in-transaction counterparty signal; `20260911000000` made that signal unable to veto the release and added the provider-identity assertion. **`20260909000000`'s header instructs future slices to add the agreement guard "HERE, inside this function", and `20260911000000` repeats it saying "THIS definition, the live one". BOTH now point at DEAD definitions. Extend the current one.** `20260912000000` adds the post-context label and addresses the notice via `system_recipient_id`. |
 | `public.enforce_barter_interest_write` | `20260906000000_barter_integrity_slice1.sql` | **`20260909000000_barter_interest_release.sql`** | Adds the `accepted -> released` transition and the release-column allow-list, gated on a transaction-local marker **and** the transition itself. The trigger **derives** `released_at` / `released_by` / `release_reason` rather than trusting them, so attribution is non-forgeable independent of the caller — that clamp is the load-bearing part, not the marker. The INSERT path additionally null-clamps the three new release columns so they are never author-supplied. The pre-existing owner-only `pending -> accepted\|declined` rule and the pre-existing INSERT clamps are carried through unchanged. |
 | `public.enforce_message_immutability` (new) / policy `participants_mark_messages_read` | `20260829000000_canonical_live_baseline.sql` (policy) | **`20260911000000_message_authorship_pin.sql`** | The policy's `sender_id = sender_id` conjuncts were TAUTOLOGIES — an RLS policy cannot reference OLD — so they pinned nothing and were NULL for a null sender. The pin moved to a BEFORE UPDATE trigger, where it can compare to OLD; the policy now asserts only participation. |
 | `public.enforce_conversation_update` | `20260901000000_prebooking_message_requests.sql` | **`20260908000000_canonical_provider_pair.sql`** | Redefined twice. `20260907000000` added `declined -> accepted` for the barter handoff (gated on an accepted match AND a transaction-local marker set only by `accept_barter_interest`); `20260908000000` then widened the booking-attach predicate to accept EITHER orientation of a provider pair, because a conversation is now canonical for the pair and its orientation need not match the direction a booking was made in. |
+| `public.enforce_prebooking_message_rules` | `20260901000000_prebooking_message_requests.sql` | **`20260914000000_trade_activity_corrections.sql`** | Redefined THREE times. `20260901010000` added the `select ... for update` row lock closing the SEC-DATA-001 read-then-insert race. `20260913000000` added the `system_recipient_id` insert clamp **and silently deleted that lock**, because its body was written from `20260901000000` rather than from the live definition. `20260914000000` restores the lock and keeps the clamp. **`supabase/tests/messaging.test.sql` asserts on `prosrc`, with comments stripped, that the lock is on the conversation lookup statement itself** — the only mechanism that survives a future `create or replace`. |
+| `public.barter_terms_label` | `20260913000000_trade_activity_hardening.sql` | **`20260914000000_trade_activity_corrections.sql`** | Delegates to the new `public.barter_terms_sanitize`. `20260913000000` quoted and capped the owner-authored offer terms but did not strip the QUOTE CHARACTER, so the boundary the quotes draw could be erased by the quoted text. Sanitising now happens BEFORE the empty test and BEFORE the 40-char cap, so an attacker cannot pad with strippable codepoints. |
 | `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |
 
 `20260907000000`'s "RECORDED, NOT RESOLVED / TWO THREADS PER PAIR" note is **resolved** by
 `20260908000000`: the guarantee now lives in the `conversation_one_per_provider_pair` index,
 not in `barter_canonical_conversation`, which today only chooses an orientation for a row that
 does not exist yet.
+
+**`public.provider_pair_key(uuid, uuid)`** (added by `20260912000000`) is a named READER of the
+pair-key format, **not** the single source of truth: `conversation_pair_key()` — the trigger
+that WRITES the column — plus `resolve_conversation()` and `find_conversation()` all still carry
+the literal (`20260908000000`). Routing them through it is deferred. What guards the drift is
+the B5B case asserting the reader equals what the trigger wrote; a divergence would otherwise be
+silent, since the release lookup would miss and the counterparty would never be told.
+
+**`public.enforce_prebooking_message_rules`** current definition is
+`20260914000000_trade_activity_corrections.sql`. LINEAGE: created in `20260901000000`,
+**corrected by `20260901010000`** (which added the `select ... for update` row lock closing the
+SEC-DATA-001 read-then-insert race), redefined by `20260913000000` (the `system_recipient_id`
+clamp), and redefined again by `20260914000000`.
+
+`20260913000000` **deleted the lock**, because its body was written from `20260901000000` — the
+migration that CREATED the function — rather than from the definition that was actually live.
+`create or replace function` replaces the whole body, so every correction made since the copy
+you started from disappears without a diff, an error, or a failing test. `20260914000000`
+restores it, and `supabase/tests/messaging.test.sql` now asserts on `prosrc` that the lock is
+present, because the B5B harness runs in ONE transaction and no behavioural assertion in it can
+observe a race.
+
+**Before redefining any function, read the definition named in THIS table, not the migration
+that created it.** That is the whole reason the table exists.
+
+The current definition clamps `system_recipient_id` to null for any message that HAS an author.
+The scoping matters: `SECURITY DEFINER` does not change `auth.role()`, so an unconditional clamp
+also fires inside `release_barter_interest` and wipes the addressing it just computed.
+
+**`public.barter_terms_label`** current definition is `20260914000000` (created in
+`20260913000000`), and now delegates sanitising to **`public.barter_terms_sanitize`**
+(`20260914000000`). `20260913000000` quoted and capped the owner-authored offer terms but did
+not remove the QUOTE CHARACTER itself, so the boundary the quotes draw was one the quoted text
+could erase. It also strips the Unicode bidi overrides and zero-width marks by exact codepoint
+via `translate`, because whether `[[:cntrl:]]` classes them depends on the database ctype.
+
+**`public.enforce_barter_accept_open_offer`** (`20260914000000`, trigger
+`barter_interests_zy_accept_open_offer`) refuses the transition INTO `accepted` when the offer
+is not active, with SQLSTATE `55000`. Added as a NEW trigger rather than as a redefinition of
+`accept_barter_interest`, specifically to avoid the failure mode recorded above: an additive
+trigger cannot delete a correction it does not know about.
+
+**`public.my_trade_activity`** (view, `20260912000000`, recreated by `20260913000000`) is
+`security_invoker = true`, pinned by reloption in B5B. Both pre-existing views in this repo set
+it FALSE, so the copyable pattern is the wrong one here. CORRECTED CLAIM: an earlier version of
+this entry said omitting the option would return every provider's negotiations to any
+authenticated caller. That is FALSE — the view's own `WHERE` is `auth.uid()`-scoped, so a
+definer view would still return only the caller's rows. What is lost is the **RLS backstop**:
+`release_barter_interest` re-checks that both provider rows belong to the users it is about to
+message, precisely because it runs with RLS off; the view makes no such check and relies on
+invoker RLS to cover the same identity-drift case. **`messages.system_recipient_id`** (`20260912000000`) names which participant a platform
+notice is FOR, so the actor who caused it is not badged; NULL means addressed to both, which is
+every ordinary message.
 
 The superseding migration names what it replaces and why. The EARLIER file deliberately
 carries no pointer: `supabase/README.md` forbids editing a migration that has already merged,

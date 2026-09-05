@@ -41,6 +41,7 @@ import {
   BarterOfferWithProvider,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
+import { confirmCopy, RESPONDER_FEED_STATE } from '@/lib/tradeActivity'
 
 type FeedPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
 
@@ -381,20 +382,20 @@ export default function CommunityFeed() {
   }
 
   function confirmEndNegotiation(interestId: string) {
-    Alert.alert(
-      'End this negotiation?',
-      'The other provider will be told the negotiation ended. Your response stays on record, '
-        + 'and you will not be able to respond to this post again.',
-      [
-        { text: 'Keep negotiating', style: 'cancel' },
-        {
-          text: 'End negotiation',
-          style: 'destructive',
-          onPress: () => endNegotiation(interestId),
-        },
-      ],
-    )
+    // Shared copy. This route previously omitted "This cannot be undone.", making a responder
+    // ending from the feed the least-informed party performing the most irreversible barter
+    // action available.
+    const c = confirmCopy('endNegotiation', 'responder', 'The other provider')
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      {
+        text: c.confirmLabel,
+        style: 'destructive',
+        onPress: () => endNegotiation(interestId),
+      },
+    ])
   }
+
 
   async function endNegotiation(interestId: string) {
     const { ok, error } = await releaseInterest(interestId)
@@ -459,12 +460,15 @@ export default function CommunityFeed() {
       {
         text: 'Close offer',
         onPress: () =>
-          // No history surface exists yet (My Trades is a later slice), so this copy
-          // must not imply one. Closing currently removes the only route back to the
-          // offer and its responses — say that plainly rather than reassure.
+          // Trade Activity is durable and selects nothing on `is_active`, so responses DO
+          // remain reachable to both parties after closing. The previous copy said the
+          // opposite -- true before Slice 3a-0c, false the moment this screen shipped -- and
+          // understated the app's own capability at the exact moment the owner is deciding.
           Alert.alert(
             'Close this offer?',
-            'It comes off the board and you will not be able to open it again from here. Any responses stay on record but are no longer reachable in the app.',
+            'It comes off the board and you will not be able to open it again from here. '
+              + 'Any responses stay on record and remain in Trade Activity, but you will no '
+              + 'longer be able to accept one.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Close offer', onPress: () => markFilled(offer.id) },
@@ -497,8 +501,6 @@ export default function CommunityFeed() {
       pathname: '/community/barter-interests',
       params: {
         offerId: offer.id,
-        offeringService: offer.offeringService,
-        ownerName: offer.provider.name,
       },
     } as never)
   }
@@ -538,6 +540,20 @@ export default function CommunityFeed() {
       <View style={styles.tabBar}>
         <TabButton label="Posts" active={tab === 'posts'} onPress={() => setTab('posts')} />
         <TabButton label="Barter" active={tab === 'barter'} onPress={() => setTab('barter')} />
+        {tab === 'barter' && (
+          // Durable entry to Trade Activity. Deliberately on the TAB header, not on a feed
+          // card: the feed is discovery and filters `is_active = true` with a 50-row window, so
+          // anything reachable only from a card disappears when the post is closed or ages out
+          // -- which is what left both parties unable to end an accepted negotiation.
+          <TouchableOpacity
+            style={styles.activityBtn}
+            activeOpacity={0.8}
+            onPress={() => router.push('/community/trade-activity' as never)}
+          >
+            <Feather name="repeat" size={13} color="rgba(240,232,213,0.75)" />
+            <Text style={styles.activityBtnText}>Activity</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {tab === 'posts' ? (
@@ -936,37 +952,44 @@ function BarterCard({
           </TouchableOpacity>
         ) : (
           <>
-            <View style={styles.interestCountBtn}>
-              <Feather name="users" size={15} color="rgba(240,232,213,0.5)" />
-              <Text style={styles.interestCountTextMuted}>{offer.interestCount}</Text>
-            </View>
+            {/* No response count for non-owners. BARTER_BETA_CONTRACT: interest counts are not
+                public -- a provider does not see how many others responded. The number shown
+                here was also MEANINGLESS: barter_interests RLS returns only the offer owner's
+                rows or the caller's own, so a non-owner was shown 0 or 1 rendered as a total. */}
             <View style={{ flex: 1 }} />
-            {myInterest?.status === 'released' ? (
-              // Ended, and said so. "Interest sent" persisted here forever, which read as a
-              // live outstanding response on the responder's only surface for this post.
-              <View style={styles.interestSentBtn}>
-                <Feather name="minus-circle" size={15} color="rgba(240,232,213,0.45)" />
-                <Text style={styles.interestSentText}>Negotiation ended</Text>
-              </View>
-            ) : myInterest?.status === 'declined' ? (
-              <View style={styles.interestSentBtn}>
-                <Feather name="minus-circle" size={15} color="rgba(240,232,213,0.45)" />
-                <Text style={styles.interestSentText}>Not selected</Text>
-              </View>
-            ) : myInterest?.status === 'accepted' ? (
-              <TouchableOpacity
-                style={styles.interestSentBtn}
-                activeOpacity={0.85}
-                onPress={() => onEndNegotiation?.(myInterest.id)}
-              >
-                <Feather name="x-circle" size={15} color="rgba(240,232,213,0.6)" />
-                <Text style={styles.interestSentText}>End negotiation</Text>
-              </TouchableOpacity>
-            ) : myInterest ? (
-              <View style={styles.interestSentBtn}>
-                <Feather name="check" size={15} color="rgba(240,232,213,0.6)" />
-                <Text style={styles.interestSentText}>Interest sent</Text>
-              </View>
+            {myInterest ? (
+              // TOTAL Record, not a ternary chain. The chain's final branch was "Interest
+              // sent", so a status added later would have been labelled as an outstanding
+              // response on the responder's only surface for this post -- a live-sounding
+              // claim about a finished state. `status === 'x'` comparisons do not fail when
+              // the union widens; an incomplete Record does.
+              RESPONDER_FEED_STATE[myInterest.status].action === 'end' ? (
+                <TouchableOpacity
+                  style={styles.interestSentBtn}
+                  activeOpacity={0.85}
+                  onPress={() => onEndNegotiation?.(myInterest.id)}
+                >
+                  <Feather
+                    name={RESPONDER_FEED_STATE[myInterest.status].icon}
+                    size={15}
+                    color="rgba(240,232,213,0.6)"
+                  />
+                  <Text style={styles.interestSentText}>
+                    {RESPONDER_FEED_STATE[myInterest.status].label}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.interestSentBtn}>
+                  <Feather
+                    name={RESPONDER_FEED_STATE[myInterest.status].icon}
+                    size={15}
+                    color="rgba(240,232,213,0.5)"
+                  />
+                  <Text style={styles.interestSentText}>
+                    {RESPONDER_FEED_STATE[myInterest.status].label}
+                  </Text>
+                </View>
+              )
             ) : (
               <TouchableOpacity style={styles.interestBtn} activeOpacity={0.85} onPress={onInterest}>
                 <Text style={styles.interestBtnText}>I'm Interested</Text>
@@ -1267,6 +1290,18 @@ const styles = StyleSheet.create({
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   actionText: { fontSize: 13, color: 'rgba(240,232,213,0.5)', fontFamily: 'Manrope_500Medium' },
   actionTextActive: { color: '#C8922A' },
+  activityBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginLeft: 'auto',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: 'rgba(240,232,213,0.08)',
+  },
+  activityBtnText: { color: 'rgba(240,232,213,0.75)', fontSize: 12, fontWeight: '500' },
+
   fab: {
     position: 'absolute',
     right: 20,
@@ -1334,7 +1369,6 @@ const styles = StyleSheet.create({
   },
   interestCountBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   interestCountText: { fontSize: 13, color: 'rgba(240,232,213,0.6)', fontFamily: 'Manrope_500Medium' },
-  interestCountTextMuted: { fontSize: 13, color: 'rgba(240,232,213,0.5)', fontFamily: 'Manrope_500Medium' },
   interestBtn: {
     paddingHorizontal: 18,
     height: 40,

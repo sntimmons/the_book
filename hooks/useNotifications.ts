@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { isSystemMessage, notMineFilter } from '@/lib/messageAuthorship'
+import {
+  addressedToMeFilter,
+  isSystemMessage,
+  notMineFilter,
+} from '@/lib/messageAuthorship'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
@@ -236,10 +240,13 @@ export function useNotifications() {
         const convoIds = userConvos.map((c) => c.id)
         const { data: unreadMessages } = await supabase
           .from('messages')
-          .select('id, conversation_id, sender_id, content, created_at')
+          .select('id, conversation_id, sender_id, content, created_at, system_recipient_id')
           .in('conversation_id', convoIds)
           .eq('is_read', false)
-          .or(notMineFilter(user.id))
+                    .or(notMineFilter(user.id))
+          // AND addressed to me: the actor who ended a negotiation is not notified about
+          // their own action. A second `.or` is a separate AND-ed group in PostgREST.
+          .or(addressedToMeFilter(user.id))
           .order('created_at', { ascending: false })
           .limit(10)
 
@@ -250,6 +257,7 @@ export function useNotifications() {
           // Nullable: a platform notice is authored by nobody. Declaring it `string` here was
           // the same contract lie that let the null case go unhandled in the messaging hook.
           sender_id: string | null
+          system_recipient_id: string | null
           content: string
           created_at: string
         }>) {

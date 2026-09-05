@@ -13,31 +13,31 @@ import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
-import { supabase } from '@/lib/supabase'
 import { cacheBustedPhoto } from '@/lib/image'
 import {
   fetchOfferInterests,
-  isOfferOwner,
+  acceptInterest,
+  fetchOfferAccess,
   declineInterest,
   releaseInterest,
   INTEREST_STATUS_IS_LISTED,
   BarterInterest,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
+import { confirmCopy } from '@/lib/tradeActivity'
 import { timeAgo, initials } from '@/lib/community'
 
 export default function BarterInterests() {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
-  // offeringService / ownerName are still accepted as params for the caller's convenience but
-  // are deliberately NOT read here any more: the match message is composed SERVER-side by
-  // accept_barter_interest from providers.display_name and the offer's own text. Previously
-  // it was built from navigation params, so a deep link could author a platform-looking
-  // "You matched on a barter!" message with arbitrary content.
+  // ONLY offerId. This route once also carried offeringService and ownerName, and the match
+  // message was built from them -- so a deep link could author a platform-looking "You matched
+  // on a barter!" message with arbitrary content. The message is composed SERVER-side now, by
+  // accept_barter_interest from providers.display_name and the offer's own text, and the params
+  // are gone rather than merely unread: leaving them kept the SHAPE of that vector alive for
+  // the next contributor to wire back into copy.
   const params = useLocalSearchParams<{
     offerId: string
-    offeringService?: string
-    ownerName?: string
   }>()
   const offerId = params.offerId
 
@@ -48,17 +48,27 @@ export default function BarterInterests() {
   // responder their OWN response row, so without a server-verified ownership check a
   // non-owner would be shown live Accept/Decline controls on a response they cannot action.
   const [isOwner, setIsOwner] = useState<boolean | null>(null)
+  // PD-050: a closed post's pending responses are history, not actionable. Starts false so a
+  // slow or failed read cannot render an Accept the server would refuse.
+  const [offerIsActive, setOfferIsActive] = useState(false)
+  // Whether the offer read actually landed. A failure must withhold the CONTROL without
+  // asserting the post is closed -- that would be a false claim to its own owner.
+  const [offerReadOk, setOfferReadOk] = useState(true)
 
   const load = useCallback(async () => {
     if (!offerId) {
       setLoading(false)
       return
     }
-    const [all, owns] = await Promise.all([
+    const [all, access] = await Promise.all([
       fetchOfferInterests(offerId),
-      user ? isOfferOwner(offerId, user.id) : Promise.resolve(false),
+      user
+        ? fetchOfferAccess(offerId, user.id)
+        : Promise.resolve({ isOwner: false, isActive: false, ok: false }),
     ])
-    setIsOwner(owns)
+    setIsOwner(access.isOwner)
+    setOfferIsActive(access.isActive)
+    setOfferReadOk(access.ok)
     // Show pending interests as actionable; drop already-declined ones.
     // Driven by a TOTAL Record, not a deny-list and not inline literals. `!== 'declined'`
     // treated every unknown future status as live and actionable, so `released` would have
@@ -82,21 +92,13 @@ export default function BarterInterests() {
   // the whole handoff in one transaction, so either the response is accepted AND a usable
   // conversation exists, or nothing happened at all.
   function confirmRelease(item: BarterInterest) {
-    Alert.alert(
-      'End this negotiation?',
-      // States the irreversible half. "Their response stays on record" alone read as
-      // reassurance while concealing that this permanently bars that provider from the post —
-      // including the owner's own ability to change their mind. The responder's confirm
-      // discloses the same fact about themselves; the party imposing it should not be the
-      // less-informed one.
-      'This cannot be undone. The other provider will be told, and they will not be able to '
-        + 'respond to this post again — you will not be able to re-accept them. Their response '
-        + 'stays on record, and you can accept a different response if one is pending.',
-      [
-        { text: 'Keep negotiating', style: 'cancel' },
-        { text: 'End negotiation', style: 'destructive', onPress: () => release(item) },
-      ],
-    )
+    // Shared copy, so the owner's disclosure does not depend on which screen they ended it
+    // from. The two routes previously differed on whether another response could be accepted.
+    const c = confirmCopy('endNegotiation', isOwner ? 'owner' : 'responder', item.provider.name)
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      { text: c.confirmLabel, style: 'destructive', onPress: () => release(item) },
+    ])
   }
 
   async function release(item: BarterInterest) {
@@ -118,12 +120,13 @@ export default function BarterInterests() {
   async function accept(interest: BarterInterest) {
     if (!user || actioningId || !isOwner) return
     setActioningId(interest.id)
-    const { data, error } = await supabase.rpc('accept_barter_interest', {
-      p_interest_id: interest.id,
-    })
-    if (error) {
+    // Through the shared helper, NOT a raw rpc call. Both accept entry points must go through
+    // one definition or they drift: this site used to cast the result to `string`, so a null
+    // conversation navigated to `/messages/null` -- a dead screen -- while Trade Activity
+    // guarded it.
+    const { ok, conversationId, error } = await acceptInterest(interest.id)
+    if (!ok) {
       const f = barterWriteFailure('accept', error)
-      console.log('Accept interest error:', error)
       setActioningId(null)
       // A terminal outcome means our list is stale — someone else's state won. Reload so the
       // user is not left looking at controls the server has already invalidated.
@@ -131,9 +134,17 @@ export default function BarterInterests() {
       Alert.alert(f.title, f.body, [{ text: 'OK' }])
       return
     }
-    // The RPC returns the conversation id and only returns on full success, so this is the
-    // one place navigation is warranted.
-    router.replace(`/messages/${data as string}` as never)
+    if (!conversationId) {
+      setActioningId(null)
+      Alert.alert(
+        'Accepted, but the conversation could not be opened',
+        'The response was accepted. Open it from Trade Activity to continue.',
+        [{ text: 'OK' }],
+      )
+      load()
+      return
+    }
+    router.replace(`/messages/${conversationId}` as never)
   }
 
   async function decline(interest: BarterInterest) {
@@ -155,10 +166,21 @@ export default function BarterInterests() {
     }
   }
 
+  function confirmAccept(interest: BarterInterest) {
+    const c = confirmCopy('accept', 'owner', interest.provider.name)
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      { text: c.confirmLabel, onPress: () => accept(interest) },
+    ])
+  }
+
   function confirmDecline(interest: BarterInterest) {
-    Alert.alert('Decline interest', `Decline ${interest.provider.name}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Decline', style: 'destructive', onPress: () => decline(interest) },
+    // Shared copy: this dialog previously disclosed no irreversibility at all, on the screen
+    // where declining is the primary action.
+    const c = confirmCopy('decline', 'owner', interest.provider.name)
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      { text: c.confirmLabel, style: 'destructive', onPress: () => decline(interest) },
     ])
   }
 
@@ -257,6 +279,23 @@ export default function BarterInterests() {
                       <Text style={styles.declineText}>End negotiation</Text>
                     </TouchableOpacity>
                   </View>
+                ) : !offerIsActive ? (
+                  // PD-050: a closed post's pending responses are HISTORY, and history is
+                  // non-actionable. An earlier draft of this branch kept Decline, which
+                  // contradicted tradeRowState (which returns 'none' for the identical row)
+                  // and would have let the owner silently rewrite what the responder is told:
+                  // "This post has been closed without your response being accepted" becomes
+                  // "Your response was not selected", collapsing the very distinction PD-050
+                  // requires both parties be shown.
+                  <View style={styles.matchedNote}>
+                    <Text style={styles.matchedNoteText}>
+                      {offerReadOk
+                        ? 'This post is closed. Responses to it are kept as history and can no '
+                          + 'longer be accepted.'
+                        : 'Could not load this post just now, so its responses cannot be '
+                          + 'answered here. Open it again to retry.'}
+                    </Text>
+                  </View>
                 ) : offerMatched ? (
                   <View style={styles.actions}>
                     <TouchableOpacity
@@ -287,7 +326,7 @@ export default function BarterInterests() {
                       style={[styles.acceptBtn, busy && styles.btnDisabled]}
                       activeOpacity={0.85}
                       disabled={busy}
-                      onPress={() => accept(item)}
+                      onPress={() => confirmAccept(item)}
                     >
                       {busy ? (
                         <ActivityIndicator color="#080808" size="small" />

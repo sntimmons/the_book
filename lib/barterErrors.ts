@@ -48,6 +48,10 @@ const INSUFFICIENT_PRIVILEGE = '42501'
 // Raised when an accepted response has no conversation — only reachable for a row accepted
 // before the atomic handoff existed. Retrying cannot fix it, so it must not say "try again".
 const INTERNAL_ERROR = 'XX000'
+// Raised by barter_interests_zy_accept_open_offer when the owner tries to accept a response to
+// a post they have CLOSED. A distinct code exists because check_violation maps, for accept, to
+// "already answered" -- which blames the responder for something the owner did.
+const NOT_IN_PREREQUISITE_STATE = '55000'
 
 const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   respond: { terminal: false, title: 'Could not send', body: 'Please try again.' },
@@ -131,6 +135,11 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       terminal: true,
       title: 'Not your offer',
       body: 'Only the provider who posted an offer can accept responses to it.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      terminal: true,
+      title: 'This post is closed',
+      body: 'Responses to a closed post can no longer be accepted. The list has been updated.',
     },
     [INTERNAL_ERROR]: {
       terminal: true,

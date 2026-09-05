@@ -5,7 +5,12 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { checkRateLimit } from '../lib/rateLimit'
 import { messageEntryAction } from '../lib/messageRequests'
-import { isNotMine, isSystemMessage, notMineFilter } from '@/lib/messageAuthorship'
+import {
+  addressedToMeFilter,
+  countsAsUnread,
+  isSystemMessage,
+  notMineFilter,
+} from '@/lib/messageAuthorship'
 
 // Monotonic counter so each hook instance gets a unique realtime channel name.
 // Two concurrent mounts must not share a channel topic, or the second subscribe
@@ -128,7 +133,7 @@ export function useConversations() {
       const [messagesRes, providersRes, clientsRes, bookingsRes] = await Promise.all([
         supabase
           .from('messages')
-          .select('conversation_id, content, created_at, sender_id, is_read')
+          .select('conversation_id, content, created_at, sender_id, is_read, system_recipient_id')
           .in('conversation_id', convoIds)
           .order('created_at', { ascending: false }),
         supabase
@@ -169,13 +174,14 @@ export function useConversations() {
             content: string
             created_at: string
             sender_id: string | null
+            system_recipient_id: string | null
             is_read: boolean
           }[]
         | null) ?? []) {
         if (!lastMessage.has(m.conversation_id)) {
           lastMessage.set(m.conversation_id, m.content ?? '')
         }
-        if (!m.is_read && isNotMine(m.sender_id, user.id)) {
+        if (!m.is_read && countsAsUnread(m.sender_id, m.system_recipient_id, user.id)) {
           unread.set(m.conversation_id, (unread.get(m.conversation_id) ?? 0) + 1)
         }
       }
@@ -290,6 +296,12 @@ export function useMessages(conversationId: string) {
       // `.or` rather than `.neq`: a null sender is excluded by `<>` and would never be marked
       // read, leaving a permanent unclearable badge on every platform notice.
       .or(notMineFilter(user.id))
+      // AND addressed to me. `is_read` is ONE boolean for two readers, so without this the
+      // ACTOR opening the thread after ending a negotiation marked the notice read and the
+      // counterparty — the party it was addressed to — never got the badge or the notification
+      // at all. An earlier comment here asserted the write was harmless for either party; it
+      // was not, and it silently defeated the addressing this slice added.
+      .or(addressedToMeFilter(user.id))
       .eq('is_read', false)
   }, [user, conversationId])
 

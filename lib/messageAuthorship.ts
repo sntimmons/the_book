@@ -13,6 +13,24 @@ export function isNotMine(senderId: string | null, userId: string): boolean {
   return senderId !== userId
 }
 
+/**
+ * Does this message count as unread FOR this user?
+ *
+ * A platform notice carries `system_recipient_id`: the participant it is for. The actor who
+ * caused it already confirmed the action and watched their own screen change, so badging them
+ * for their own act is noise. NULL means addressed to both — which is every ordinary message,
+ * so their behaviour is unchanged.
+ */
+export function countsAsUnread(
+  senderId: string | null,
+  systemRecipientId: string | null,
+  userId: string,
+): boolean {
+  if (!isNotMine(senderId, userId)) return false
+  if (systemRecipientId === null) return true
+  return systemRecipientId === userId
+}
+
 /** True when nobody authored it: a platform notice, attributable to neither participant. */
 export function isSystemMessage(senderId: string | null): boolean {
   return senderId === null
@@ -25,4 +43,13 @@ export function isSystemMessage(senderId: string | null): boolean {
  */
 export function notMineFilter(userId: string): string {
   return `sender_id.is.null,sender_id.neq.${userId}`
+}
+
+/**
+ * PostgREST form of the addressing rule, for the unread/notification queries: a message is
+ * either addressed to everyone (NULL) or to me. Combined with `notMineFilter` this yields
+ * "not mine AND addressed to me".
+ */
+export function addressedToMeFilter(userId: string): string {
+  return `system_recipient_id.is.null,system_recipient_id.eq.${userId}`
 }

@@ -1621,8 +1621,9 @@ begin
   perform pg_temp.chk('barter',
     'the signal is authored by NOBODY, not by a participant',
     'true', (v_sender is null)::text);
-  perform pg_temp.chk('barter', 'the signal names the role that ended it',
-    'This trade negotiation was ended by the responding provider.', v_content);
+  perform pg_temp.chk('barter', 'the signal names the role that ended it AND the post terms',
+    'true', (position('The responding provider ended the trade negotiation' in v_content) = 1
+             and position('"Sig O" for "Sig S"' in v_content) > 0)::text);
 
   -- 13. An idempotent retry must not duplicate the signal.
   perform pg_temp.act(ru);
@@ -1665,8 +1666,9 @@ begin
   perform pg_temp.act_service();
   select content into v_content from public.messages
    where conversation_id = c order by created_at desc limit 1;
-  perform pg_temp.chk('barter', 'an owner-ended negotiation names the post owner',
-    'This trade negotiation was ended by the post owner.', v_content);
+  perform pg_temp.chk('barter', 'an owner-ended negotiation names the post owner AND the terms',
+    'true', (position('The post owner ended the trade negotiation' in v_content) = 1
+             and position('"Sg2 O" for "Sg2 S"' in v_content) > 0)::text);
 
   -- A client cannot author a system message: the INSERT policy requires sender_id = auth.uid(),
   -- which null can never satisfy. This is what makes the server the only possible author.
@@ -1684,4 +1686,374 @@ begin
   perform pg_temp.act_service();
   perform pg_temp.chk('barter', 'the forged attempt added nothing',
     v_n::text, (select count(*)::text from public.messages where conversation_id = c));
+end $$;
+
+-- ── Trade Activity: durable access independent of the discovery feed ───────
+-- The defect: both release controls hung off the barter feed, which filters `is_active = true`
+-- and shows the newest 50. Closing the post -- or it simply ageing out -- removed the only
+-- route to an ACCEPTED negotiation for both parties, leaving the slot consumed and the
+-- counterparty never told. These prove the view does not inherit that coupling.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid(); xu uuid := gen_random_uuid();
+  opid uuid; rpid uuid; xpid uuid; o uuid; i uuid; c uuid;
+  v_n integer; v_role text; v_active boolean; v_conv uuid; v_status text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru), (xu);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'TA Owner', 'tao_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'TA Resp', 'tar_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.providers(user_id, display_name, username)
+    values (xu, 'TA Third', 'tax_'||substr(xu::text,1,8)) returning id into xpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Photography', 'Personal Training') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'pending') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.accept_barter_interest(i) into c;
+
+  -- 1. The accepted negotiation appears for BOTH parties, with the correct role each side.
+  perform pg_temp.act(ou);
+  select count(*) into v_n from public.my_trade_activity where interest_id = i;
+  select my_role, conversation_id into v_role, v_conv
+    from public.my_trade_activity where interest_id = i;
+  perform pg_temp.chk('barter', 'the owner sees the accepted negotiation', '1', v_n::text);
+  perform pg_temp.chk('barter', 'the owner is shown as the owner', 'owner', v_role);
+  perform pg_temp.chk('barter', 'the canonical conversation is reachable from the row',
+    c::text, coalesce(v_conv::text,'NULL'));
+
+  perform pg_temp.act(ru);
+  select count(*) into v_n from public.my_trade_activity where interest_id = i;
+  select my_role into v_role from public.my_trade_activity where interest_id = i;
+  perform pg_temp.chk('barter', 'the responder sees the same negotiation', '1', v_n::text);
+  perform pg_temp.chk('barter', 'the responder is shown as the responder', 'responder', v_role);
+
+  -- 3. A THIRD provider sees nothing. The view is security_invoker, so RLS still applies.
+  perform pg_temp.act(xu);
+  select count(*) into v_n from public.my_trade_activity where interest_id = i;
+  perform pg_temp.chk('barter', 'an unrelated provider sees none of it', '0', v_n::text);
+
+  -- 2. CLOSING THE POST does not remove it. This is the whole point of the surface.
+  perform pg_temp.act(ou);
+  update public.barter_offers set is_active = false where id = o;
+  select count(*), bool_and(offer_is_active) into v_n, v_active
+    from public.my_trade_activity where interest_id = i;
+  perform pg_temp.chk('barter', 'the negotiation survives the post being closed', '1', v_n::text);
+  perform pg_temp.chk('barter', 'and the row says the post is closed', 'false', v_active::text);
+  perform pg_temp.act(ru);
+  select count(*) into v_n from public.my_trade_activity where interest_id = i;
+  perform pg_temp.chk('barter', 'the responder keeps access to a closed post''s negotiation',
+    '1', v_n::text);
+
+  -- 4. The responder can end it from that durable state.
+  perform public.release_barter_interest(i);
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i;
+  perform pg_temp.chk('barter', 'the responder can end it while the post is closed',
+    'released', v_status);
+
+  -- 6. And it moves to the Ended section, still visible, with no live action.
+  perform pg_temp.act(ru);
+  select count(*) into v_n from public.my_trade_activity where interest_id = i;
+  select status into v_status from public.my_trade_activity where interest_id = i;
+  perform pg_temp.chk('barter', 'the ended negotiation is still listed', '1', v_n::text);
+  perform pg_temp.chk('barter', 'and it is listed as released', 'released', v_status);
+end $$;
+
+-- ── Trade Activity shows pending and declined truthfully ───────────────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o1 uuid; o2 uuid; i1 uuid; i2 uuid; v_status text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'TA2 Owner', 'ta2o_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'TA2 Resp', 'ta2r_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Aa', 'Bb') returning id into o1;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'Cc', 'Dd') returning id into o2;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o1, rpid, ru, 'p', 'pending') returning id into i1;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o2, rpid, ru, 'd', 'declined') returning id into i2;
+
+  perform pg_temp.act(ru);
+  select status into v_status from public.my_trade_activity where interest_id = i1;
+  perform pg_temp.chk('barter', 'a pending interest shows as pending', 'pending', v_status);
+  select status into v_status from public.my_trade_activity where interest_id = i2;
+  perform pg_temp.chk('barter', 'a declined interest shows as declined', 'declined', v_status);
+end $$;
+
+-- ── The release notice names WHICH negotiation ended ───────────────────────
+-- A pair shares ONE canonical conversation and may negotiate on more than one post, so a
+-- generic notice leaves the reader unable to tell which trade died -- and the role label
+-- denotes a different person depending on which.
+do $$
+declare
+  au uuid := gen_random_uuid(); bu uuid := gen_random_uuid();
+  apid uuid; bpid uuid; o1 uuid; o2 uuid; i1 uuid; i2 uuid; c uuid;
+  v_c1 text; v_c2 text; v_recipient uuid; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au), (bu);
+  insert into public.providers(user_id, display_name, username)
+    values (au, 'Lbl A', 'lbla_'||substr(au::text,1,8)) returning id into apid;
+  insert into public.providers(user_id, display_name, username)
+    values (bu, 'Lbl B', 'lblb_'||substr(bu::text,1,8)) returning id into bpid;
+  -- Two DIFFERENT posts between the SAME pair, in opposite directions.
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (apid, au, 'Photography', 'Personal Training') returning id into o1;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (bpid, bu, 'Massage', 'Web Design') returning id into o2;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o1, bpid, bu, 'x', 'pending') returning id into i1;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o2, apid, au, 'y', 'pending') returning id into i2;
+
+  perform pg_temp.act(au);
+  select public.accept_barter_interest(i1) into c;
+  perform pg_temp.act(bu);
+  perform public.accept_barter_interest(i2);
+
+  -- A ends the first; B ends the second. Both notices land in the SAME thread.
+  perform pg_temp.act(au);
+  perform public.release_barter_interest(i1);
+  perform pg_temp.act(bu);
+  perform public.release_barter_interest(i2);
+
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages where conversation_id = c and sender_id is null;
+  perform pg_temp.chk('barter', 'DIAGNOSTIC: null-sender notices in the shared thread',
+    '2', v_n::text);
+  -- `position(... in ...)` rather than LIKE, matching this file's established idiom.
+  -- `sender_id is null` is load-bearing: accept_barter_interest's handoff message ALSO names
+  -- the offering service ("... accepted your barter response for \"Photography\""), so a
+  -- predicate on the text alone matches the accept notice, not the release notice. An earlier
+  -- version of this test did exactly that and reported the release label as missing.
+  v_c1 := (select m.content from public.messages m
+            where m.conversation_id = c and m.sender_id is null
+              and position('Photography' in m.content) > 0 limit 1);
+  v_c2 := (select m.content from public.messages m
+            where m.conversation_id = c and m.sender_id is null
+              and position('Massage' in m.content) > 0 limit 1);
+  perform pg_temp.chk('barter', 'both release notices were located in the shared thread',
+    'true', (v_c1 is not null and v_c2 is not null)::text);
+  perform pg_temp.chk('barter', 'the first notice names its own post''s terms',
+    'true', (position('"Photography" for "Personal Training"' in coalesce(v_c1,'')) > 0)::text);
+  perform pg_temp.chk('barter', 'the second notice names a DIFFERENT post''s terms',
+    'true', (position('"Massage" for "Web Design"' in coalesce(v_c2,'')) > 0)::text);
+  perform pg_temp.chk('barter', 'the two notices are distinguishable',
+    'true', (v_c1 is distinct from v_c2)::text);
+
+  -- 13/14. Addressed to the COUNTERPARTY, not to the actor.
+  v_recipient := (select m.system_recipient_id from public.messages m
+                   where m.conversation_id = c and m.sender_id is null
+                     and position('Photography' in m.content) > 0 limit 1);
+  perform pg_temp.chk('barter', 'the notice is addressed to the counterparty, not the actor',
+    bu::text, coalesce(v_recipient::text,'NULL'));
+  v_recipient := (select m.system_recipient_id from public.messages m
+                   where m.conversation_id = c and m.sender_id is null
+                     and position('Massage' in m.content) > 0 limit 1);
+  perform pg_temp.chk('barter', 'and the reverse release addresses the other party',
+    au::text, coalesce(v_recipient::text,'NULL'));
+
+  -- 15. Idempotent retry adds no second notice.
+  select count(*) into v_n from public.messages where conversation_id = c and sender_id is null;
+  perform pg_temp.act(au);
+  perform public.release_barter_interest(i1);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('barter', 'a repeated release adds no second notice',
+    v_n::text, (select count(*)::text from public.messages
+                 where conversation_id = c and sender_id is null));
+end $$;
+
+-- ── The view's posture ─────────────────────────────────────────────────────
+do $$
+begin
+  perform pg_temp.chk('barter', 'my_trade_activity is security_invoker',
+    'true', (select ('security_invoker=true' = any(c.reloptions))::text
+       from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where c.relname = 'my_trade_activity' and n.nspname = 'public'));
+  perform pg_temp.chk('barter', 'anon cannot read my_trade_activity',
+    'false', has_table_privilege('anon', 'public.my_trade_activity', 'select')::text);
+  perform pg_temp.chk('barter', 'authenticated can read my_trade_activity',
+    'true', has_table_privilege('authenticated', 'public.my_trade_activity', 'select')::text);
+end $$;
+
+-- ── A CLOSED post cannot select a new response ─────────────────────────────
+-- Trade Activity makes an owner's pending responses reachable after the post leaves the
+-- newest-50 discovery feed. That reachability must not silently re-open a post the owner
+-- deliberately closed. Enforced by a trigger, so it binds the TRANSITION rather than one
+-- caller: the RPC is SECURITY DEFINER and runs as postgres, and triggers still fire for it.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid(); r2 uuid := gen_random_uuid();
+  opid uuid; rpid uuid; r2pid uuid; o_open uuid; o_shut uuid;
+  i_open uuid; i_shut uuid; v_code text; v_conv uuid; v_status text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru), (r2);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Shut Owner', 'shuo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Shut Resp', 'shur_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.providers(user_id, display_name, username)
+    values (r2, 'Shut Resp2', 'shu2_'||substr(r2::text,1,8)) returning id into r2pid;
+
+  -- An ACTIVE offer, created long ago: the aged-out case. The feed would not show it, but it
+  -- is still open, so answering it from Trade Activity must work exactly as normal.
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service,
+    is_active, created_at)
+    values (opid, ou, 'aged offering', 'aged seeking', true, now() - interval '400 days')
+    returning id into o_open;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_open, rpid, ru, 'x', 'pending') returning id into i_open;
+
+  -- A CLOSED offer with a pending response still sitting on it.
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service,
+    is_active)
+    values (opid, ou, 'shut offering', 'shut seeking', false) returning id into o_shut;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_shut, r2pid, r2, 'x', 'pending') returning id into i_shut;
+
+  perform pg_temp.act(ou);
+
+  -- ALLOW-PATH FIRST, and with setup ordering that differs from the happy path (the offer is
+  -- 400 days old and absent from every feed window). A guard that refused everything would
+  -- pass the refusal assertion below on its own.
+  select public.accept_barter_interest(i_open) into v_conv;
+  perform pg_temp.chk('barter', 'an ACTIVE but aged-out post can still be answered',
+    'true', (v_conv is not null)::text);
+
+  begin
+    perform public.accept_barter_interest(i_shut);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  -- 55000, NOT 23514: check_violation maps for accept to "already answered", which would blame
+  -- the responder for something the OWNER did.
+  perform pg_temp.chk('barter', 'a closed post refuses a new accept', '55000', v_code);
+
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i_shut;
+  perform pg_temp.chk('barter', 'and the response is left untouched by the refusal',
+    'pending', v_status);
+end $$;
+
+-- ── Response counts are not public ─────────────────────────────────────────
+-- BARTER_BETA_CONTRACT: a provider does not see how many others responded to an offer. The
+-- boundary is RLS, not the client -- the feed formerly rendered this number to non-owners, and
+-- what it actually showed was the caller's own row count presented as a total.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid(); nu uuid := gen_random_uuid();
+  opid uuid; rpid uuid; npid uuid; o uuid; v_seen bigint;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru), (nu);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Cnt Owner', 'cnto_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Cnt Resp', 'cntr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.providers(user_id, display_name, username)
+    values (nu, 'Cnt Nosy', 'cntn_'||substr(nu::text,1,8)) returning id into npid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'counted offering', 'counted seeking') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'pending');
+
+  -- An uninvolved provider sees NOTHING, so no count can be derived.
+  perform pg_temp.act(nu);
+  select count(*) into v_seen from public.barter_interests where offer_id = o;
+  perform pg_temp.chk('barter', 'a non-owner cannot count responses to someone else''s post',
+    '0', v_seen::text);
+
+  -- A SECOND response, so "sees only their own" is distinguishable from "sees the only row".
+  perform pg_temp.act_service();
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, npid, nu, 'x', 'pending');
+
+  -- The responder sees only their own row -- not the total.
+  perform pg_temp.act(ru);
+  select count(*) into v_seen from public.barter_interests where offer_id = o;
+  perform pg_temp.chk('barter', 'a responder sees only their own response, not the total',
+    '1', v_seen::text);
+
+  -- The OWNER sees both, which is what the responses screen is for.
+  perform pg_temp.act(ou);
+  select count(*) into v_seen from public.barter_interests where offer_id = o;
+  perform pg_temp.chk('barter', 'the owner sees every response to their own post',
+    '2', v_seen::text);
+end $$;
+
+-- ── The closed-post rule binds the TRANSITION, not one caller ──────────────
+-- This is the assertion that distinguishes a trigger from an edit to
+-- accept_barter_interest. barter_interests_owner_update lets the offer owner set status
+-- directly with no RPC at all, so a rule living only inside the RPC would not cover it.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid(); r2 uuid := gen_random_uuid();
+  opid uuid; rpid uuid; r2pid uuid; o_shut uuid; o_open uuid;
+  i_direct uuid; i_keep uuid; v_code text; v_status text; v_conv1 uuid; v_conv2 uuid;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru), (r2);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Direct Owner', 'diro_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Direct Resp', 'dirr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.providers(user_id, display_name, username)
+    values (r2, 'Direct Resp2', 'dir2_'||substr(r2::text,1,8)) returning id into r2pid;
+
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service,
+    is_active) values (opid, ou, 'direct offering', 'direct seeking', false)
+    returning id into o_shut;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_shut, rpid, ru, 'x', 'pending') returning id into i_direct;
+
+  perform pg_temp.act(ou);
+  begin
+    update public.barter_interests set status = 'accepted' where id = i_direct;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter',
+    'a DIRECT update to accepted on a closed post is refused too, not just the RPC',
+    '55000', v_code);
+
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i_direct;
+  perform pg_temp.chk('barter', 'and the direct-update row is untouched', 'pending', v_status);
+
+  -- A negotiation accepted while the post was OPEN must survive the post being closed later:
+  -- PD-049 says the negotiation outlives its post, so re-invoking accept must still return the
+  -- same conversation rather than being refused by the new guard.
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'outlive offering', 'outlive seeking') returning id into o_open;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_open, r2pid, r2, 'x', 'pending') returning id into i_keep;
+
+  perform pg_temp.act(ou);
+  select public.accept_barter_interest(i_keep) into v_conv1;
+
+  perform pg_temp.act_service();
+  update public.barter_offers set is_active = false where id = o_open;
+
+  perform pg_temp.act(ou);
+  begin
+    select public.accept_barter_interest(i_keep) into v_conv2;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter',
+    'an already-accepted negotiation survives its post being closed', 'NO ERROR', v_code);
+  perform pg_temp.chk('barter', 'and re-accepting returns the same conversation',
+    v_conv1::text, coalesce(v_conv2::text, 'NULL'));
 end $$;

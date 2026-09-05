@@ -1,5 +1,15 @@
 import { supabase } from './supabase'
 import { fetchProviderInfoMap, CommunityProviderInfo } from './community'
+import type { BarterInterestStatus, BarterReleaseReason } from './tradeActivity'
+
+// The status vocabulary and the Trade Activity section mapping live in lib/tradeActivity.ts --
+// a PURE module, so they can be unit tested. This module imports the Supabase client, which
+// makes anything defined here untestable without live configuration.
+//
+// Re-exported so a SCREEN can take the row type and its vocabulary from one import. Tests and
+// pure modules must import them from './tradeActivity' directly: coming through here pulls in
+// the Supabase client and needs live configuration to run.
+export { TRADE_ACTIVITY_SECTION } from './tradeActivity'
 
 // Barter data layer. Providers trade services without cash: an owner posts an
 // offer (offering X, seeking Y), other providers express interest, and on accept
@@ -18,23 +28,6 @@ export interface BarterOffer {
   createdAt: string
 }
 
-/**
- * The complete response vocabulary. Exported and used everywhere so a value added by a later
- * slice is a COMPILE error at each site rather than an unhandled member at runtime: these rows
- * arrive as `data as {...}[]` from Supabase, so an inline union is a declared shape over
- * untyped data and TypeScript cannot catch a new value on its own.
- *
- * `released` — the pre-agreement negotiation ended (either party). History, never actionable.
- */
-export type BarterInterestStatus = 'pending' | 'accepted' | 'declined' | 'released'
-
-/**
- * Which statuses appear in the owner's responses list. A TOTAL Record, which is what actually
- * produces the compile error: `status === 'x'` comparisons do NOT fail when the union widens,
- * because the member being compared is still in it. Adding a fifth status to
- * BarterInterestStatus makes this object incomplete and `tsc` rejects it, forcing the decision
- * to be made here rather than defaulting to invisible.
- */
 export const INTEREST_STATUS_IS_LISTED: Record<BarterInterestStatus, boolean> = {
   pending: true,
   accepted: true,
@@ -199,22 +192,129 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
   }))
 }
 
+
 /**
- * Does the signed-in user own this offer?
+ * One row of Trade Activity: a barter relationship in whatever state it is actually in.
+ *
+ * Read from the `my_trade_activity` view rather than assembled here, so lifecycle truth stays
+ * server-side. The section a row belongs to is derived from `status` by
+ * TRADE_ACTIVITY_SECTION below — a rendering label, deliberately not a new status vocabulary.
+ */
+export interface TradeActivityRow {
+  interestId: string
+  offerId: string
+  status: BarterInterestStatus
+  createdAt: string
+  releasedAt: string | null
+  releaseReason: BarterReleaseReason | null
+  offeringService: string
+  seekingService: string
+  offerIsActive: boolean
+  myRole: 'owner' | 'responder'
+  counterpartyProviderId: string
+  conversationId: string | null
+  provider: CommunityProviderInfo
+}
+
+/**
+ * Every barter relationship the caller is part of, in either role.
+ *
+ * DURABLE BY CONSTRUCTION: it selects nothing on `is_active` and takes no feed window, so an
+ * accepted negotiation stays reachable after its post is closed or falls out of the newest-50
+ * discovery feed. That coupling — the feed being the only route to an accepted negotiation —
+ * is exactly what stranded both parties with no way to end it.
+ */
+export async function fetchTradeActivity(): Promise<{
+  rows: TradeActivityRow[]
+  ok: boolean
+}> {
+  const { data, error } = await supabase
+    .from('my_trade_activity')
+    .select(
+      'interest_id, offer_id, status, created_at, released_at, release_reason, ' +
+        'offering_service, seeking_service, offer_is_active, my_role, ' +
+        'counterparty_provider_id, conversation_id',
+    )
+    .order('created_at', { ascending: false })
+  // A failure is NOT an empty list. Collapsing the two let the screen say "No trade activity
+  // yet" when the read had failed -- which, on the surface built to guarantee a negotiation is
+  // always findable, is the original stranding with a reassuring sentence attached.
+  if (error) return { rows: [], ok: false }
+  // `as unknown as` because the generated Supabase types do not know this view; the shape is
+  // pinned by the select list above and by the B5B column assertions on the view itself.
+  const rows =
+    (data as unknown as
+      | {
+          interest_id: string
+          offer_id: string
+          status: BarterInterestStatus
+          created_at: string
+          released_at: string | null
+          release_reason: BarterReleaseReason | null
+          offering_service: string
+          seeking_service: string
+          offer_is_active: boolean
+          my_role: 'owner' | 'responder'
+          counterparty_provider_id: string
+          conversation_id: string | null
+        }[]
+      | null) ?? []
+  const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
+  return {
+    ok: true,
+    rows: rows.map((r) => ({
+    interestId: r.interest_id,
+    offerId: r.offer_id,
+    status: r.status,
+    createdAt: r.created_at,
+    releasedAt: r.released_at,
+    releaseReason: r.release_reason,
+    offeringService: r.offering_service,
+    seekingService: r.seeking_service,
+    offerIsActive: r.offer_is_active,
+    myRole: r.my_role,
+    counterpartyProviderId: r.counterparty_provider_id,
+    conversationId: r.conversation_id,
+      provider: infoMap.get(r.counterparty_provider_id) ?? {
+        name: 'Provider',
+        photo: null,
+        category: '',
+        neighborhood: null,
+      },
+    })),
+  }
+}
+
+/**
+ * Ownership AND liveness for an offer, resolved server-side.
  *
  * Server truth, not a navigation param: the interests screen is a real expo-router route and
- * is reachable by deep link with any offerId, so ownership must be resolved from the database
+ * is reachable by deep link with any offerId, so both must be resolved from the database
  * rather than from anything the caller can supply.
+ *
+ * `is_active` is returned alongside ownership because PD-050 makes a CLOSED post's pending
+ * responses non-actionable, and the screen previously never read it — so a deep link to a
+ * closed post rendered a live Accept the server would refuse.
  */
-export async function isOfferOwner(offerId: string, userId: string): Promise<boolean> {
-  if (!offerId || !userId) return false
+export async function fetchOfferAccess(
+  offerId: string,
+  userId: string,
+): Promise<{ isOwner: boolean; isActive: boolean; ok: boolean }> {
+  // Fails CLOSED on both axes: a read error must not present a non-owner as an owner, and must
+  // not present a closed post as open, since `isActive` gates the accept control.
+  //
+  // `ok` is separate BECAUSE of that. Failing closed is right for the CONTROL and wrong for the
+  // COPY: without it a transient read failure told the real owner of an open post "This post is
+  // closed", which is a confident false statement about their own post. The caller withholds
+  // the control on `!isActive` and withholds the explanation on `!ok`.
+  if (!offerId || !userId) return { isOwner: false, isActive: false, ok: false }
   const { data, error } = await supabase
     .from('barter_offers')
-    .select('user_id')
+    .select('user_id, is_active')
     .eq('id', offerId)
-    .maybeSingle<{ user_id: string }>()
-  if (error) return false
-  return data?.user_id === userId
+    .maybeSingle<{ user_id: string; is_active: boolean }>()
+  if (error || !data) return { isOwner: false, isActive: false, ok: false }
+  return { isOwner: data.user_id === userId, isActive: data.is_active, ok: true }
 }
 
 /**
@@ -232,6 +332,28 @@ export async function releaseInterest(
   })
   if (error) return { ok: false, reason: null, error }
   return { ok: true, reason: (data as string | null) ?? null, error: null }
+}
+
+/**
+ * Accept a response, returning the conversation to open on success.
+ *
+ * Both entry points -- the offer's responses screen and Trade Activity -- go through this one
+ * definition. That was claimed before it was true: barter-interests called the RPC inline and
+ * cast the result to `string`, so a null conversation navigated to `/messages/null` while
+ * Trade Activity guarded it. Returning a nullable id makes the guard the caller's obligation.
+ *
+ * The server refuses an accept on a CLOSED post with `object_not_in_prerequisite_state`; the
+ * caller must not treat that as "already answered", which would blame the responder for the
+ * owner's own closure.
+ */
+export async function acceptInterest(
+  interestId: string,
+): Promise<{ ok: boolean; conversationId: string | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('accept_barter_interest', {
+    p_interest_id: interestId,
+  })
+  if (error) return { ok: false, conversationId: null, error }
+  return { ok: true, conversationId: (data as string | null) ?? null, error: null }
 }
 
 /**
