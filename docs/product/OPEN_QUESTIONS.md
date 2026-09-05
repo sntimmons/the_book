@@ -2,7 +2,7 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** this reconciliation — PR number not supplied to the run (previous: PR #41)
+**Last edited by:** post-PR #50 Steward reconciliation — PR number not assigned yet
 
 > **Why the anchor did not move to `76f5632`.** The reconciliation that last edited this file
 > inspected `main` @ `76f5632` and re-verified the **barter** entries there (OQ-006, OQ-007,
@@ -384,4 +384,4 @@ say that was false.
 | **OQ-008** — May an offer's terms still be edited once providers have responded? | 2026-09-04 | **PD-047** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1) |
 
 Nothing here was closed by repository evidence. **OQ-006** and **OQ-007** remain Open, and
-PD-049 … PD-052 closed no question in this ledger — they answered questions nobody had filed.
+PD-049 … PD-055 closed no question in this ledger — they answered questions nobody had filed.

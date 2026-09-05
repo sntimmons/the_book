@@ -1,8 +1,8 @@
 # Current State — what is true on `main` today
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `7713b56c0f0d213ecae4a2d10ab3d08be0920b3e` (2026-09-05)
-**Last edited by:** this reconciliation — PR number not supplied to the run (the previous edit's was not supplied either; last recorded: PR #40)
+**Reconciled against:** `main` @ `e3fa1693875c5e508efe4df668fb415f6013375d` (2026-09-05)
+**Last edited by:** post-PR #50 Steward reconciliation — PR number not assigned yet
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -118,56 +118,42 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 Docs: **[supabase/tests/README.md](../../supabase/tests/README.md)**.
 
-**Migration ledger.** The repository holds **35 migration files** at `7713b56` — counted from
-`supabase/migrations/*.sql`, newest `20260926000000_negotiation_stale_comment.sql` — and that
-part is repository-provable. Ten of them, `20260917000000` … `20260926000000`, are Slice 3a
-(PR #49); the ledger's § Prevention records why one feature took ten files — `20260917000000`
-was applied to non-production before its error contract, write boundary and term shape were
-settled, so each later change had to be a forward correction to a file that could no longer be
-edited. The ledger's dated record runs to `20260926000000`, applied 2026-09-05, but its running
-entry count reaches **34** there and it carries no apply record headed for `20260924000000`
-(that file is mentioned only inside the `20260921000000`…`20260923000000` entry), so the
-recorded count and the file count disagree by one. That discrepancy is reported in this
-reconciliation's output rather than resolved here: whether the remote non-prod ledger holds 34
-or 35 entries is not repository state, and `supabase migration list --linked` is what answers
-it. Seven earlier applies — `20260907000000`…`20260913000000` — were **recorded
-retrospectively** on 2026-09-04, and the ledger flags that lapse itself. None of this **can be
-re-proved from repository state**; a later change made outside this repo would not show up
-here. Process and the dated record:
+**Migration ledger.** The repository holds **39 migration files** at `e3fa169` — counted from
+`supabase/migrations/*.sql`, newest `20260930000000_confirmed_trade_sqlstate.sql` — and that
+part is repository-provable. Ten files, `20260917000000` … `20260926000000`, are Slice 3a
+(PR #49); four files, `20260927000000` … `20260930000000`, are Agreement Finalization (PR #50).
+The ledger's § Prevention records why these features landed as forward correction chains:
+after a migration is applied to non-production, fixes go into a new migration rather than an
+edited historical file. Its dated record now runs through `20260930000000`, with the count
+corrected to **39** and the confirmed-trade SQLSTATE correction recorded separately. Process and
+the dated record:
 **[docs/operations/MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md)**.
 
 **Latest recorded runs.** Rather than restate counts that change with ordinary PRs, this
 records *which runs* to look at. Two different things are recorded, and they are not
 interchangeable:
 
-- **The last CI run this reconciliation could cite** is **33726878929** on `e7ccd87` —
-  `check` and `db-security` both green, the B5B step logging `via TEST_SUPABASE_DB_URL`,
-  88/88. At that run: Jest 22 suites / 251 tests, lint 0 errors within the frozen
-  `--max-warnings` baseline in `package.json`, typecheck 0 errors. That run is now **many
-  merges old** — it pre-dates every barter slice. **No CI run for `7713b56` is cited here**,
-  because CI status is GitHub state
-  and this reconciliation had no way to query it. Read the latest `check` and `db-security`
-  runs directly rather than treating the figures above as current.
-- **The last recorded B5B execution** is the post-apply run logged against
-  `20260925000000` in
-  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) (2026-09-05): **500/500 passed,
-  0 failed**, zero residue; the `20260926000000` entry records no B5B figure of its own. The
-  same entry records the **non-B5B concurrency proof**, `scripts/negotiation-concurrency.mjs`,
-  at **19/19** (an earlier Slice 3a entry recorded 17/17, before overlap assertions were added
-  to all three scenarios). Both were local non-prod runs, not CI runs.
+- **The latest `main` CI run this reconciliation could cite** is **33995133742** on
+  `e3fa169` — `check` and `db-security` both green. The `check` job ran typecheck, lint and
+  unit tests; the `db-security` job ran the non-production B5B harness.
+- **The last recorded local B5B execution** is the post-apply run logged against
+  `20260930000000` in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) (2026-09-05): **574/574 passed,
+  0 failed**, zero residue. The same entry records the **non-B5B concurrency proof**,
+  `scripts/negotiation-concurrency.mjs`, at **30/30**, including finalize × finalize,
+  finalize vs counter, and finalize vs release with per-session interval overlap asserted.
 
-The suite grew enormously between them — 88 → 500 assertions as the barter slices landed —
+The suite grew enormously between them — 88 → 574 assertions as the barter slices landed —
 which is exactly why the count is read from a run rather than from this document. The
 authoritative description of the harness lives in
 [supabase/tests/README.md](../../supabase/tests/README.md).
 
-**Why this document's anchor is now `7713b56`.** The previous anchor was `76f5632` (PR #47).
-PR #49 changed facts *this document* asserts: the migration chain went from 25 files to 35, the
-barter surface gained the proposal / version / term / acceptance schema, three negotiation RPCs,
-the `my_barter_proposals` view and the negotiation route, and the recorded B5B execution moved
-from 368/368 to 500/500. Those are facts asserted above, so the anchor moves to the commit at
-which they were verified — PR #49's squash-merge commit, `7713b56`, read from
-`.git/refs/heads/main` and `.git/refs/remotes/origin/main` (identical).
+**Why this document's anchor is now `e3fa169`.** The previous anchor was `7713b56` (PR #49).
+PR #50 changed facts *this document* asserts: the migration chain went from 35 files to 39, the
+barter surface gained `barter_agreements`, `finalize_barter_agreement(uuid)`, post-agreement
+write guards, confirmed-trade client states/copy, and the recorded B5B execution moved from
+500/500 to 574/574. Those are facts asserted above, so the anchor moves to PR #50's squash-merge
+commit, `e3fa169`.
 
 [ROADMAP.md](ROADMAP.md) remains authoritative for **which** merge delivered **which**
 capability — it carries a Completed row per delivered capability, each citing its merge,
@@ -195,14 +181,14 @@ barter surface as **REAL (beta)** (line 57) — offers, interests and the commun
 What was undecided when that classification was written was the barter **product model**: how a
 trade binds to bookings, messaging, reviews and completion. For the first Houston closed beta
 that model is now locked in **[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md)**, which is
-authoritative for it; the decisions behind it are **PD-030 … PD-054** in
+authoritative for it; the decisions behind it are **PD-030 … PD-055** in
 [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md). Neither is restated here.
 
-This section records **what is built in the current audited branch state** and **what is not**.
+This section records **what is built on `main`** and **what is not**.
 
 ### What is built
 
-Verified against the migration chain on PR #50 — **39 migrations**, newest
+Verified against the migration chain on `main` at `e3fa169` — **39 migrations**, newest
 `supabase/migrations/20260930000000_confirmed_trade_sqlstate.sql`.
 
 | Capability | What is actually enforced | Where |
@@ -253,14 +239,15 @@ keyed on the **interest** id and reached from an active row in Trade Activity
 server-derived — `my_role` on `my_barter_proposals`, or on `my_trade_activity` before any terms
 exist; the route's `role` param is a last-resort label only.
 
-Regression coverage: `supabase/tests/barter.test.sql` and `supabase/tests/negotiation.test.sql`,
-both registered in the B5B runner at `scripts/db-security-test.mjs` (lines 47–48), plus
-`__tests__/lib/tradeActivity.test.ts` and `__tests__/lib/negotiationState.test.ts` for the pure
-client rules — the latter pins that no negotiation copy contains "booked", "owed",
-"confirmed", "complete", "guaranteed" or "official" (PD-054). Races a single-transaction
-harness cannot stage are covered by `scripts/negotiation-concurrency.mjs`, a non-B5B script.
-The last recorded execution of the whole B5B suite is **500/500 passed, 0 failed** — see
-§ Foundation & security above for what that figure does and does not establish.
+Regression coverage: `supabase/tests/barter.test.sql`, `supabase/tests/negotiation.test.sql`
+and `supabase/tests/agreement.test.sql`, all registered in the B5B runner at
+`scripts/db-security-test.mjs` (lines 47–49), plus `__tests__/lib/tradeActivity.test.ts` and
+`__tests__/lib/negotiationState.test.ts` for the pure client rules. Those tests distinguish
+ready-to-confirm from confirmed, and pin that confirmed trade copy does not promise booking,
+completion, fulfilment, delivery or a guarantee. Races a single-transaction harness cannot stage
+are covered by `scripts/negotiation-concurrency.mjs`, a non-B5B script. The last recorded local
+B5B execution is **574/574 passed, 0 failed** — see § Foundation & security above for what that
+figure does and does not establish.
 
 ### What is not built
 
@@ -324,6 +311,5 @@ device, whether the app currently builds for release, live production state (exp
 of scope), or anything about real user behaviour. Where a claim needed a run to confirm, it
 cites the recorded run rather than asserting it fresh.
 
-**One caveat about how this revision was verified.** Earlier reconciliations of this document
-were anchored to `main` at `7713b56`. The barter finalization claims above are PR #50 branch
-state, not production or merged-`main` state; production remains out of scope.
+**One caveat about how this revision was verified.** This reconciliation inspected `main` after
+PR #50 merged. It does not establish live production state; production remains out of scope.
