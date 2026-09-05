@@ -180,15 +180,48 @@ the B5B case asserting the reader equals what the trigger wrote; a divergence wo
 silent, since the release lookup would miss and the counterparty would never be told.
 
 **`public.enforce_prebooking_message_rules`** current definition is
-`20260913000000_trade_activity_hardening.sql` (created in `20260901000000`). It now clamps
-`system_recipient_id` to null for any message that HAS an author. The scoping matters:
-`SECURITY DEFINER` does not change `auth.role()`, so an unconditional clamp also fires inside
-`release_barter_interest` and wipes the addressing it just computed.
+`20260914000000_trade_activity_corrections.sql`. LINEAGE: created in `20260901000000`,
+**corrected by `20260901010000`** (which added the `select ... for update` row lock closing the
+SEC-DATA-001 read-then-insert race), redefined by `20260913000000` (the `system_recipient_id`
+clamp), and redefined again by `20260914000000`.
 
-**`public.my_trade_activity`** (view, `20260912000000`, recreated by `20260913000000`) is `security_invoker = true`, pinned by
-reloption in B5B. Both pre-existing views in this repo set it FALSE, so the copyable pattern is
-the wrong one here — omitting it would return every provider's negotiations to any authenticated
-caller. **`messages.system_recipient_id`** (`20260912000000`) names which participant a platform
+`20260913000000` **deleted the lock**, because its body was written from `20260901000000` — the
+migration that CREATED the function — rather than from the definition that was actually live.
+`create or replace function` replaces the whole body, so every correction made since the copy
+you started from disappears without a diff, an error, or a failing test. `20260914000000`
+restores it, and `supabase/tests/messaging.test.sql` now asserts on `prosrc` that the lock is
+present, because the B5B harness runs in ONE transaction and no behavioural assertion in it can
+observe a race.
+
+**Before redefining any function, read the definition named in THIS table, not the migration
+that created it.** That is the whole reason the table exists.
+
+The current definition clamps `system_recipient_id` to null for any message that HAS an author.
+The scoping matters: `SECURITY DEFINER` does not change `auth.role()`, so an unconditional clamp
+also fires inside `release_barter_interest` and wipes the addressing it just computed.
+
+**`public.barter_terms_label`** current definition is `20260914000000` (created in
+`20260913000000`), and now delegates sanitising to **`public.barter_terms_sanitize`**
+(`20260914000000`). `20260913000000` quoted and capped the owner-authored offer terms but did
+not remove the QUOTE CHARACTER itself, so the boundary the quotes draw was one the quoted text
+could erase. It also strips the Unicode bidi overrides and zero-width marks by exact codepoint
+via `translate`, because whether `[[:cntrl:]]` classes them depends on the database ctype.
+
+**`public.enforce_barter_accept_open_offer`** (`20260914000000`, trigger
+`barter_interests_zy_accept_open_offer`) refuses the transition INTO `accepted` when the offer
+is not active, with SQLSTATE `55000`. Added as a NEW trigger rather than as a redefinition of
+`accept_barter_interest`, specifically to avoid the failure mode recorded above: an additive
+trigger cannot delete a correction it does not know about.
+
+**`public.my_trade_activity`** (view, `20260912000000`, recreated by `20260913000000`) is
+`security_invoker = true`, pinned by reloption in B5B. Both pre-existing views in this repo set
+it FALSE, so the copyable pattern is the wrong one here. CORRECTED CLAIM: an earlier version of
+this entry said omitting the option would return every provider's negotiations to any
+authenticated caller. That is FALSE — the view's own `WHERE` is `auth.uid()`-scoped, so a
+definer view would still return only the caller's rows. What is lost is the **RLS backstop**:
+`release_barter_interest` re-checks that both provider rows belong to the users it is about to
+message, precisely because it runs with RLS off; the view makes no such check and relies on
+invoker RLS to cover the same identity-drift case. **`messages.system_recipient_id`** (`20260912000000`) names which participant a platform
 notice is FOR, so the actor who caused it is not badged; NULL means addressed to both, which is
 every ordinary message.
 

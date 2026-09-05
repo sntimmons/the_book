@@ -1040,3 +1040,83 @@ begin
     'the view falls back to the literal orientation, like every other resolver',
     c::text, coalesce(v_conv::text,'NULL'));
 end $$;
+
+-- ── The pending-cycle lock is still in the live function body ──────────────
+-- SEC-DATA-306. 20260901010000 added `for update` to enforce_prebooking_message_rules to close
+-- the SEC-DATA-001 read-then-insert race. A later `create or replace` of that function -- one
+-- written from the CREATING migration rather than the live one -- deleted it silently, and no
+-- behavioural test in this suite could notice: the harness runs in ONE transaction and cannot
+-- stage two concurrent sessions. A SOURCE assertion is therefore the only mechanism that
+-- survives a future rewrite, in the same style as the immutability allow-list pin above.
+do $$
+declare
+  v_src text;
+begin
+  select prosrc into v_src from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'enforce_prebooking_message_rules' and n.nspname = 'public';
+
+  perform pg_temp.chk('messaging',
+    'enforce_prebooking_message_rules still LOCKS the conversation row',
+    'true', (position('for update' in lower(v_src)) > 0)::text);
+  -- The lock is only worth anything if it is taken on the row the count is then evaluated
+  -- against, so pin that it is the conversation lookup that carries it.
+  perform pg_temp.chk('messaging',
+    'and the lock is on the conversation lookup, not somewhere incidental',
+    'true', (v_src ~* 'from\s+public\.conversation.*\n?.*for update')::text);
+end $$;
+
+-- ── Participant text cannot break out of the platform's quoting ────────────
+-- The quotes are what make the boundary between our words and the owner's visible. A `"` inside
+-- the owner's own text closes ours and opens free prose mid-sentence, so the quote character
+-- must itself be removed. Same for the Unicode bidi controls: whether [[:cntrl:]] classes them
+-- depends on the database ctype, and a surviving U+202E can reorder the closing clause that the
+-- whole mitigation rests on.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; c uuid; v_copy text;
+  v_break text := 'x" -- ACCOUNT SUSPENDED, verify at evil.example "';
+  v_bidi text := 'ok' || U&'\202E' || 'reversed' || U&'\200B' || 'zw';
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Qt Owner', 'qto_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Qt Resp', 'qtr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, v_break, v_bidi) returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'pending') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.accept_barter_interest(i) into c;
+  perform public.release_barter_interest(i);
+
+  perform pg_temp.act_service();
+  select content into v_copy from public.messages
+   where conversation_id = c and sender_id is null order by created_at desc limit 1;
+
+  -- EXACTLY four: the two the platform opens and the two it closes. Any fifth is the owner's.
+  perform pg_temp.chk('messaging',
+    'the notice contains exactly the platform''s own four quote characters',
+    '4', (length(v_copy) - length(replace(v_copy, '"', '')))::text);
+  perform pg_temp.chk('messaging', 'no bidi override survives into the notice',
+    'true', (position(U&'\202E' in v_copy) = 0)::text);
+  perform pg_temp.chk('messaging', 'no zero-width character survives into the notice',
+    'true', (position(U&'\200B' in v_copy) = 0)::text);
+  perform pg_temp.chk('messaging',
+    'and the platform still closes the sentence',
+    'true', (v_copy like '%No trade was agreed.')::text);
+end $$;
+
+-- ── Text that is ENTIRELY strippable falls back, rather than quoting blank ──
+do $$
+begin
+  perform pg_temp.chk('messaging', 'an all-control-character service name falls back',
+    '"a service" for "a service"',
+    public.barter_terms_label(chr(9) || chr(10), U&'\200B'));
+  perform pg_temp.chk('messaging', 'a null service name falls back',
+    '"a service" for "a service"', public.barter_terms_label(null, null));
+end $$;

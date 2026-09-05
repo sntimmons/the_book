@@ -1,5 +1,13 @@
 import { supabase } from './supabase'
 import { fetchProviderInfoMap, CommunityProviderInfo } from './community'
+import type { BarterInterestStatus, BarterReleaseReason } from './tradeActivity'
+
+// The status vocabulary and the Trade Activity section mapping live in lib/tradeActivity.ts --
+// a PURE module, so they can be unit tested. This module imports the Supabase client, which
+// makes anything defined here untestable without live configuration. Re-exported so every
+// existing `from '@/lib/barter'` import site is unchanged.
+export type { BarterInterestStatus, TradeActivitySection } from './tradeActivity'
+export { TRADE_ACTIVITY_SECTION } from './tradeActivity'
 
 // Barter data layer. Providers trade services without cash: an owner posts an
 // offer (offering X, seeking Y), other providers express interest, and on accept
@@ -18,23 +26,6 @@ export interface BarterOffer {
   createdAt: string
 }
 
-/**
- * The complete response vocabulary. Exported and used everywhere so a value added by a later
- * slice is a COMPILE error at each site rather than an unhandled member at runtime: these rows
- * arrive as `data as {...}[]` from Supabase, so an inline union is a declared shape over
- * untyped data and TypeScript cannot catch a new value on its own.
- *
- * `released` — the pre-agreement negotiation ended (either party). History, never actionable.
- */
-export type BarterInterestStatus = 'pending' | 'accepted' | 'declined' | 'released'
-
-/**
- * Which statuses appear in the owner's responses list. A TOTAL Record, which is what actually
- * produces the compile error: `status === 'x'` comparisons do NOT fail when the union widens,
- * because the member being compared is still in it. Adding a fifth status to
- * BarterInterestStatus makes this object incomplete and `tsc` rejects it, forcing the decision
- * to be made here rather than defaulting to invisible.
- */
 export const INTEREST_STATUS_IS_LISTED: Record<BarterInterestStatus, boolean> = {
   pending: true,
   accepted: true,
@@ -213,6 +204,7 @@ export interface TradeActivityRow {
   status: BarterInterestStatus
   createdAt: string
   releasedAt: string | null
+  releaseReason: BarterReleaseReason | null
   offeringService: string
   seekingService: string
   offerIsActive: boolean
@@ -237,8 +229,9 @@ export async function fetchTradeActivity(): Promise<{
   const { data, error } = await supabase
     .from('my_trade_activity')
     .select(
-      'interest_id, offer_id, status, created_at, released_at, offering_service, ' +
-        'seeking_service, offer_is_active, my_role, counterparty_provider_id, conversation_id',
+      'interest_id, offer_id, status, created_at, released_at, release_reason, ' +
+        'offering_service, seeking_service, offer_is_active, my_role, ' +
+        'counterparty_provider_id, conversation_id',
     )
     .order('created_at', { ascending: false })
   // A failure is NOT an empty list. Collapsing the two let the screen say "No trade activity
@@ -255,6 +248,7 @@ export async function fetchTradeActivity(): Promise<{
           status: BarterInterestStatus
           created_at: string
           released_at: string | null
+          release_reason: BarterReleaseReason | null
           offering_service: string
           seeking_service: string
           offer_is_active: boolean
@@ -272,6 +266,7 @@ export async function fetchTradeActivity(): Promise<{
     status: r.status,
     createdAt: r.created_at,
     releasedAt: r.released_at,
+    releaseReason: r.release_reason,
     offeringService: r.offering_service,
     seekingService: r.seeking_service,
     offerIsActive: r.offer_is_active,
@@ -286,23 +281,6 @@ export async function fetchTradeActivity(): Promise<{
       },
     })),
   }
-}
-
-export type TradeActivitySection = 'active' | 'pending' | 'ended' | 'notSelected'
-
-/**
- * Which Trade Activity section a row belongs to. A label, not a status.
- *
- * NOTE the deliberate disagreement with INTEREST_STATUS_IS_LISTED, which excludes `declined`:
- * the owner's RESPONSES list drops declined rows because they are noise while choosing, but
- * Trade Activity is history and must account for every response the user sent or received. Two
- * total Records over one vocabulary, reaching different answers on purpose.
- */
-export const TRADE_ACTIVITY_SECTION: Record<BarterInterestStatus, TradeActivitySection> = {
-  accepted: 'active',
-  pending: 'pending',
-  released: 'ended',
-  declined: 'notSelected',
 }
 
 /**
@@ -338,6 +316,24 @@ export async function releaseInterest(
   })
   if (error) return { ok: false, reason: null, error }
   return { ok: true, reason: (data as string | null) ?? null, error: null }
+}
+
+/**
+ * Accept a response, returning the conversation to open on success.
+ *
+ * Wrapped here rather than called inline so both entry points -- the offer's responses screen
+ * and Trade Activity -- go through one definition. The server refuses an accept on a CLOSED
+ * post with `object_not_in_prerequisite_state`; the caller must not treat that as "already
+ * answered", which would blame the responder for the owner's own closure.
+ */
+export async function acceptInterest(
+  interestId: string,
+): Promise<{ ok: boolean; conversationId: string | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('accept_barter_interest', {
+    p_interest_id: interestId,
+  })
+  if (error) return { ok: false, conversationId: null, error }
+  return { ok: true, conversationId: (data as string | null) ?? null, error: null }
 }
 
 /**

@@ -14,7 +14,8 @@ import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { cacheBustedPhoto } from '@/lib/image'
 import {
-  BarterInterestStatus,
+  acceptInterest,
+  declineInterest,
   fetchTradeActivity,
   releaseInterest,
   TRADE_ACTIVITY_SECTION,
@@ -22,6 +23,7 @@ import {
   TradeActivitySection,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
+import { SECTION_COPY, tradeRowState } from '@/lib/tradeActivity'
 
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
@@ -34,59 +36,9 @@ import { barterWriteFailure } from '@/lib/barterErrors'
 // meant closing the post — or the post simply ageing out — removed the only route to it for
 // BOTH parties, leaving the slot consumed and the counterparty never told.
 
-// A TOTAL Record keyed by the exported section type, so adding a section breaks the build here
-// rather than silently dropping every row in it — an array would not.
-//
-// The captions take the ROLE, because the view carries `my_role` and the same status means
-// opposite things on the two sides: a pending interest is waiting on the OWNER to answer and on
-// the RESPONDER to be answered, and "not selected" is something the owner DID, not something
-// that happened to them. Role-blind copy told an owner to wait for something that would never
-// come.
-const SECTION_COPY: Record<
-  TradeActivitySection,
-  { title: string; caption: (role: 'owner' | 'responder') => string }
-> = {
-  active: {
-    title: 'Active negotiations',
-    caption: () => 'You are working out the details of these.',
-  },
-  pending: {
-    title: 'Pending',
-    caption: (role) =>
-      role === 'owner'
-        ? 'Responses to your posts, waiting on you.'
-        : 'Sent, waiting on the other provider.',
-  },
-  ended: {
-    title: 'Ended',
-    caption: () => 'Negotiations that ended before a trade was agreed.',
-  },
-  notSelected: {
-    title: 'Not selected',
-    caption: (role) =>
-      role === 'owner' ? 'Responses you declined.' : 'The provider chose someone else.',
-  },
-}
-
-// TOTAL over the status vocabulary. The previous nested ternary fell through to "Waiting on
-// the other provider." for any unknown status — a confident false statement about a state the
-// code does not model. A Record makes a fifth status a compile error instead.
-const HISTORY_NOTE: Record<
-  BarterInterestStatus,
-  (role: 'owner' | 'responder') => string
-> = {
-  accepted: () => '',
-  pending: (role) =>
-    role === 'owner' ? 'Waiting on you to accept or decline.' : 'Waiting on the other provider.',
-  released: () => 'Negotiation ended. Kept as history.',
-  declined: (role) =>
-    role === 'owner' ? 'You declined this response. Kept as history.' : 'Not selected. Kept as history.',
-}
-
-function historyNote(item: TradeActivityRow): string {
-  return HISTORY_NOTE[item.status](item.myRole)
-}
-
+// Section copy and per-row state live in lib/tradeActivityCopy.ts. They are pure and unit
+// tested there: every defect this screen has shipped was a copy defect, and copy rules embedded
+// in a react-native component cannot be tested without rendering one.
 const SECTION_ORDER: TradeActivitySection[] = ['active', 'pending', 'ended', 'notSelected']
 
 export default function TradeActivityScreen() {
@@ -139,18 +91,77 @@ export default function TradeActivityScreen() {
     load()
   }
 
+  // Accept and decline are reachable HERE, not only from the offer's responses screen, because
+  // that screen is reachable only from an owner's card in the discovery feed -- which filters
+  // `is_active = true` and takes the newest 50. A still-active post that simply aged out of
+  // that window left its owner with a pending response and no route to answer it.
+  //
+  // Only offered when the post is still active; tradeRowState decides, and the server holds
+  // the same rule so a stale screen is refused rather than silently reopening a closed post.
+  async function answerAccept(item: TradeActivityRow) {
+    if (actioningId) return
+    setActioningId(item.interestId)
+    const { ok, conversationId, error } = await acceptInterest(item.interestId)
+    setActioningId(null)
+    if (!ok) {
+      const f = barterWriteFailure('accept', error)
+      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+      if (f.terminal) load()
+      return
+    }
+    // Only navigate on a conversation the server actually returned. Accepting is worthless
+    // without the thread, and pushing to `/messages/null` would be a dead screen.
+    if (conversationId) {
+      router.push(`/messages/${conversationId}` as never)
+    } else {
+      load()
+    }
+  }
+
+  async function answerDecline(item: TradeActivityRow) {
+    if (actioningId) return
+    setActioningId(item.interestId)
+    const { ok, error } = await declineInterest(item.interestId)
+    setActioningId(null)
+    if (!ok) {
+      const f = barterWriteFailure('decline', error)
+      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+      if (f.terminal) load()
+      return
+    }
+    load()
+  }
+
+  function confirmAccept(item: TradeActivityRow) {
+    Alert.alert(
+      'Accept this response?',
+      `You will be connected with ${item.provider.name} to work out the details. `
+        + 'Only one response per post can be accepted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Accept', onPress: () => answerAccept(item) },
+      ],
+    )
+  }
+
+  function confirmDecline(item: TradeActivityRow) {
+    Alert.alert(
+      'Decline this response?',
+      `${item.provider.name} will not be matched with you for this post. `
+        + 'This cannot be undone. Their response stays on record.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Decline', style: 'destructive', onPress: () => answerDecline(item) },
+      ],
+    )
+  }
+
   const grouped = SECTION_ORDER.map((key) => {
     const items = rows.filter((r) => TRADE_ACTIVITY_SECTION[r.status] === key)
     return {
       key,
       title: SECTION_COPY[key].title,
-      // Role is per-row; the caption takes the majority role in the section so it is truthful
-      // for what the user is actually looking at rather than assuming they are the responder.
-      caption: SECTION_COPY[key].caption(
-        items.filter((i) => i.myRole === 'owner').length > items.length / 2
-          ? 'owner'
-          : 'responder',
-      ),
+      caption: SECTION_COPY[key].caption,
       items,
     }
   }).filter((s) => s.items.length > 0)
@@ -208,7 +219,11 @@ export default function TradeActivityScreen() {
               <Text style={styles.sectionCaption}>{section.caption}</Text>
               {section.items.map((item) => {
                 const busy = actioningId === item.interestId
-                const isActive = item.status === 'accepted'
+                // One pure function decides what this row SAYS and what it can DO, so the two
+                // can never disagree -- which is how "Waiting on you to accept or decline."
+                // ended up printed on a row with no accept or decline control.
+                const state = tradeRowState(item)
+                const showActions = state.action !== 'none' || item.conversationId !== null
                 return (
                   <View key={item.interestId} style={styles.card}>
                     <View style={styles.cardTop}>
@@ -232,18 +247,19 @@ export default function TradeActivityScreen() {
                       </View>
                     </View>
 
-                    {/* Only on a LIVE negotiation. Rendered outside this branch it also fired
-                        on ended and declined rows, telling a provider "the negotiation is still
-                        open" directly above "Negotiation ended" — two sentences that cannot both
-                        be true, with the wrong one reading as the actionable one. */}
-                    {isActive && !item.offerIsActive && (
-                      <Text style={styles.closedNote}>
-                        This post is no longer on the board. The negotiation is still open.
+                    {state.note ? (
+                      <Text
+                        style={state.action === 'end' ? styles.closedNote : styles.historyNote}
+                      >
+                        {state.note}
                       </Text>
-                    )}
+                    ) : null}
 
-                    {isActive ? (
+                    {showActions ? (
                       <View style={styles.actions}>
+                        {/* Offered on EVERY row that has a thread, not only live ones: the
+                            release notice is written INTO that thread, so an ended row with no
+                            route to it hides the only record of how it ended. */}
                         {item.conversationId ? (
                           <TouchableOpacity
                             style={styles.secondaryBtn}
@@ -260,22 +276,48 @@ export default function TradeActivityScreen() {
                             <Text style={styles.secondaryText}>Open conversation</Text>
                           </TouchableOpacity>
                         ) : null}
-                        <TouchableOpacity
-                          style={[styles.endBtn, busy && styles.btnDisabled]}
-                          activeOpacity={0.8}
-                          disabled={busy}
-                          onPress={() => confirmEnd(item)}
-                        >
-                          {busy ? (
-                            <ActivityIndicator color="#F0E8D5" size="small" />
-                          ) : (
-                            <Text style={styles.endText}>End negotiation</Text>
-                          )}
-                        </TouchableOpacity>
+
+                        {state.action === 'end' ? (
+                          <TouchableOpacity
+                            style={[styles.endBtn, busy && styles.btnDisabled]}
+                            activeOpacity={0.8}
+                            disabled={busy}
+                            onPress={() => confirmEnd(item)}
+                          >
+                            {busy ? (
+                              <ActivityIndicator color="#F0E8D5" size="small" />
+                            ) : (
+                              <Text style={styles.endText}>End negotiation</Text>
+                            )}
+                          </TouchableOpacity>
+                        ) : null}
+
+                        {state.action === 'answer' ? (
+                          <>
+                            <TouchableOpacity
+                              style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+                              activeOpacity={0.8}
+                              disabled={busy}
+                              onPress={() => confirmDecline(item)}
+                            >
+                              <Text style={styles.secondaryText}>Decline</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.endBtn, busy && styles.btnDisabled]}
+                              activeOpacity={0.8}
+                              disabled={busy}
+                              onPress={() => confirmAccept(item)}
+                            >
+                              {busy ? (
+                                <ActivityIndicator color="#F0E8D5" size="small" />
+                              ) : (
+                                <Text style={styles.endText}>Accept</Text>
+                              )}
+                            </TouchableOpacity>
+                          </>
+                        ) : null}
                       </View>
-                    ) : (
-                      <Text style={styles.historyNote}>{historyNote(item)}</Text>
-                    )}
+                    ) : null}
                   </View>
                 )
               })}

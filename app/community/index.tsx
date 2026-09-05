@@ -383,8 +383,10 @@ export default function CommunityFeed() {
   function confirmEndNegotiation(interestId: string) {
     Alert.alert(
       'End this negotiation?',
-      'The other provider will be told the negotiation ended. Your response stays on record, '
-        + 'and you will not be able to respond to this post again.',
+      // Same disclosure as the Trade Activity route. A responder ending from the feed was the
+      // least-informed party performing the most irreversible barter action available.
+      'This cannot be undone. The other provider will be told the negotiation ended. Your '
+        + 'response stays on record, and you will not be able to respond to this post again.',
       [
         { text: 'Keep negotiating', style: 'cancel' },
         {
@@ -459,12 +461,15 @@ export default function CommunityFeed() {
       {
         text: 'Close offer',
         onPress: () =>
-          // No history surface exists yet (My Trades is a later slice), so this copy
-          // must not imply one. Closing currently removes the only route back to the
-          // offer and its responses — say that plainly rather than reassure.
+          // Trade Activity is durable and selects nothing on `is_active`, so responses DO
+          // remain reachable to both parties after closing. The previous copy said the
+          // opposite -- true before Slice 3a-0c, false the moment this screen shipped -- and
+          // understated the app's own capability at the exact moment the owner is deciding.
           Alert.alert(
             'Close this offer?',
-            'It comes off the board and you will not be able to open it again from here. Any responses stay on record but are no longer reachable in the app.',
+            'It comes off the board and you will not be able to open it again from here. '
+              + 'Any responses stay on record and remain in Trade Activity, but you will no '
+              + 'longer be able to accept one.',
             [
               { text: 'Cancel', style: 'cancel' },
               { text: 'Close offer', onPress: () => markFilled(offer.id) },
@@ -950,10 +955,10 @@ function BarterCard({
           </TouchableOpacity>
         ) : (
           <>
-            <View style={styles.interestCountBtn}>
-              <Feather name="users" size={15} color="rgba(240,232,213,0.5)" />
-              <Text style={styles.interestCountTextMuted}>{offer.interestCount}</Text>
-            </View>
+            {/* No response count for non-owners. BARTER_BETA_CONTRACT: interest counts are not
+                public -- a provider does not see how many others responded. The number shown
+                here was also MEANINGLESS: barter_interests RLS returns only the offer owner's
+                rows or the caller's own, so a non-owner was shown 0 or 1 rendered as a total. */}
             <View style={{ flex: 1 }} />
             {myInterest?.status === 'released' ? (
               // Ended, and said so. "Interest sent" persisted here forever, which read as a
@@ -1360,7 +1365,6 @@ const styles = StyleSheet.create({
   },
   interestCountBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   interestCountText: { fontSize: 13, color: 'rgba(240,232,213,0.6)', fontFamily: 'Manrope_500Medium' },
-  interestCountTextMuted: { fontSize: 13, color: 'rgba(240,232,213,0.5)', fontFamily: 'Manrope_500Medium' },
   interestBtn: {
     paddingHorizontal: 18,
     height: 40,

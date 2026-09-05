@@ -66,9 +66,22 @@ Locked 2026-09-04 — **PD-049**. A post may receive many interests; **only one 
 > post → many pending interests → **ONE accepted interest** → **ONE active negotiation**
 
 If the negotiation ends **before** an official agreement, the interest moves to **`released`**:
-history preserved, slot freed, and the owner may accept another pending interest. A released
-interest is never deleted and never re-pended, and the released responder may not open a second
-interest on that post in the first beta.
+history preserved, slot freed, and the owner may accept another pending interest **while the
+post is still active**. A released interest is never deleted and never re-pended, and the
+released responder may not open a second interest on that post in the first beta.
+
+**"Still active" is load-bearing, and is not the same as "still in the feed."** Locked
+2026-09-04 — **PD-050**:
+
+- A post that is **active but has aged out** of the discovery feed's newest-50 window is fully
+  answerable. Accept and decline are reachable from Trade Activity for exactly this case: the
+  feed is discovery, and falling out of it is not a product event.
+- A post the owner **manually closed** is finished. Its pending responses become history and
+  **no further response may be accepted** — accepting one would silently return a post to the
+  board that the owner deliberately took off it. Enforced in the database by
+  `barter_interests_zy_accept_open_offer`, not by hiding a button.
+- Both parties are told which case they are in. The owner's closed-post rows say the post was
+  closed; the responder's say so too, rather than reading as an open wait forever.
 
 The reason is **derived from who ended it** — `responder_withdrew` or
 `owner_ended_negotiation` — so neither party can characterise the other's exit. This is a
@@ -214,7 +227,11 @@ truthful dead-end copy may remain in the interim.
 | New interests per provider per rolling 24h | 15 | **Yes**, server-authoritative — **PD-045** |
 | Public interest count | Not shown | n/a |
 
-Interest counts are **not public**. A provider does not see how many others responded to an
+Interest counts are **not public**. Enforced by RLS on `barter_interests`, which returns only
+the offer owner's rows and the caller's own; B5B asserts all three sides of it. Until Slice
+3a-0c the discovery feed rendered a count to non-owners — what it actually showed was the
+caller's own row count presented as a total, so it was both a contract violation and a false
+number. Removed. A provider does not see how many others responded to an
 offer.
 
 ## 11. Deferred, and open
