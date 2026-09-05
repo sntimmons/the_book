@@ -222,18 +222,35 @@ Regression coverage: `supabase/tests/barter.test.sql`, registered in the B5B run
   open (`lib/rateLimit.ts:50-65`, called at `app/community/barter-compose.tsx:55`). A caller
   that omits the call is unlimited on offers. The migration header records this as a
   partial closure, not a closure.
-- **Accept is a client-orchestrated sequence, not one atomic step.**
-  `app/community/barter-interests.tsx:56-108` updates the response status, then calls
-  `getOrCreateConversation` and inserts a seed message; if the conversation cannot be
-  opened, the status change has already committed and the screen reloads the list.
-- **Offer terms stay editable by their author after responses exist** — recorded as OQ-008.
+- ~~**Accept is a client-orchestrated sequence, not one atomic step.**~~ **SUPERSEDED** — see
+  the Slice 2 note below. Accept is now one RPC.
+- **Offer terms stay editable by their author after responses exist** — OQ-008, **closed
+  2026-09-04**: the post stays editable and any agreement must snapshot its terms. See
+  `PRODUCT_DECISIONS.md` PD-047.
 - Slice 1 created **no** agreement or obligation schema and touched neither `bookings` nor
   the reviews surface.
 
-**Slice 2 is not on `main`.** An atomic accept → conversation handoff is in flight on branch
-`feature/barter-slice2-handoff` (PR #39) and no part of it has merged: `main` holds fifteen
-migrations, the newest being `20260906000000`. Everything above describes `main` as it stands
-at `feba568`, not what Slice 2 would change.
+**Slices 2, 2B, 3a-0 and 3a-0b ARE now on `main`** (as of `c85c9ed`, twenty migrations, the
+newest `20260911000000`). This section above describes `main` at `feba568` and is **kept as a
+Slice 1 record, not as current truth**. What changed since, in one line each — the owning
+document is authoritative for all of it:
+
+| Slice | Migration | What it changed | Owner |
+|---|---|---|---|
+| 2 | `20260907000000` | Accept became **one atomic RPC** (`accept_barter_interest`), not a client sequence | `MIGRATION_LEDGER.md` |
+| 2B | `20260908000000` | One canonical conversation per provider pair, enforced in the DB | `MIGRATION_LEDGER.md` |
+| 3a-0 | `20260909000000` | `released` status: a dead negotiation frees the post's slot | PD-049 |
+| 3a-0b | `20260910000000`, `20260911000000` | Server-authored release notice (`sender_id IS NULL`); message authorship pinned | PD-049, `BARTER_BETA_CONTRACT.md` § 3.2 |
+
+**Not yet on `main`:** Slice 3a-0c (Trade Activity) is in flight on
+`feature/barter-slice3a0c-trade-activity` (PR #46) and includes PD-050. Do not read
+`BARTER_BETA_CONTRACT.md` § 3.2's "Reachable as of Slice 3a-0c" or PD-050 as describing `main`
+until that merges.
+
+> **This barter section is due a full Project State Steward reconciliation.** It was written
+> for Slice 1 and has been corrected in place rather than rewritten, because a reconciliation
+> pass is the Steward's scope and this is not it. Treat the table above as the index, and the
+> owning documents as the truth.
 
 Open barter questions: OQ-001 … OQ-008 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). None of
 them is closed by Slice 1: a migration is an implementation, not an approval.

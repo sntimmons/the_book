@@ -1992,3 +1992,68 @@ begin
   perform pg_temp.chk('barter', 'the owner sees every response to their own post',
     '2', v_seen::text);
 end $$;
+
+-- ── The closed-post rule binds the TRANSITION, not one caller ──────────────
+-- This is the assertion that distinguishes a trigger from an edit to
+-- accept_barter_interest. barter_interests_owner_update lets the offer owner set status
+-- directly with no RPC at all, so a rule living only inside the RPC would not cover it.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid(); r2 uuid := gen_random_uuid();
+  opid uuid; rpid uuid; r2pid uuid; o_shut uuid; o_open uuid;
+  i_direct uuid; i_keep uuid; v_code text; v_status text; v_conv1 uuid; v_conv2 uuid;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru), (r2);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Direct Owner', 'diro_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Direct Resp', 'dirr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.providers(user_id, display_name, username)
+    values (r2, 'Direct Resp2', 'dir2_'||substr(r2::text,1,8)) returning id into r2pid;
+
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service,
+    is_active) values (opid, ou, 'direct offering', 'direct seeking', false)
+    returning id into o_shut;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_shut, rpid, ru, 'x', 'pending') returning id into i_direct;
+
+  perform pg_temp.act(ou);
+  begin
+    update public.barter_interests set status = 'accepted' where id = i_direct;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter',
+    'a DIRECT update to accepted on a closed post is refused too, not just the RPC',
+    '55000', v_code);
+
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i_direct;
+  perform pg_temp.chk('barter', 'and the direct-update row is untouched', 'pending', v_status);
+
+  -- A negotiation accepted while the post was OPEN must survive the post being closed later:
+  -- PD-049 says the negotiation outlives its post, so re-invoking accept must still return the
+  -- same conversation rather than being refused by the new guard.
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'outlive offering', 'outlive seeking') returning id into o_open;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_open, r2pid, r2, 'x', 'pending') returning id into i_keep;
+
+  perform pg_temp.act(ou);
+  select public.accept_barter_interest(i_keep) into v_conv1;
+
+  perform pg_temp.act_service();
+  update public.barter_offers set is_active = false where id = o_open;
+
+  perform pg_temp.act(ou);
+  begin
+    select public.accept_barter_interest(i_keep) into v_conv2;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter',
+    'an already-accepted negotiation survives its post being closed', 'NO ERROR', v_code);
+  perform pg_temp.chk('barter', 'and re-accepting returns the same conversation',
+    v_conv1::text, coalesce(v_conv2::text, 'NULL'));
+end $$;

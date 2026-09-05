@@ -1050,20 +1050,29 @@ end $$;
 -- survives a future rewrite, in the same style as the immutability allow-list pin above.
 do $$
 declare
-  v_src text;
+  v_src text; v_body text; v_stmt text;
 begin
   select prosrc into v_src from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
    where p.proname = 'enforce_prebooking_message_rules' and n.nspname = 'public';
 
+  -- COMMENTS STRIPPED FIRST. `position('for update' in prosrc)` matches anywhere, including a
+  -- comment -- so a body whose comment says "restore the for update lock" while omitting it
+  -- would pass. The assertion must be unsatisfiable by prose.
+  v_body := regexp_replace(v_src, '--[^' || chr(10) || ']*', '', 'g');
+
   perform pg_temp.chk('messaging',
     'enforce_prebooking_message_rules still LOCKS the conversation row',
-    'true', (position('for update' in lower(v_src)) > 0)::text);
-  -- The lock is only worth anything if it is taken on the row the count is then evaluated
-  -- against, so pin that it is the conversation lookup that carries it.
+    'true', (position('for update' in lower(v_body)) > 0)::text);
+
+  -- SAME STATEMENT, not merely somewhere later in the body. Postgres regexes are newline-blind
+  -- by default, so `.*` spans the whole function: the previous form would have passed with the
+  -- lock moved onto the messages count select -- the one placement that reintroduces the race.
+  -- Taking the text from the conversation lookup to its terminating semicolon cannot.
+  v_stmt := substring(lower(v_body) from 'from\s+public\.conversation[^;]*;');
   perform pg_temp.chk('messaging',
-    'and the lock is on the conversation lookup, not somewhere incidental',
-    'true', (v_src ~* 'from\s+public\.conversation.*\n?.*for update')::text);
+    'and the lock is on the conversation lookup itself, not a later statement',
+    'true', (v_stmt is not null and position('for update' in v_stmt) > 0)::text);
 end $$;
 
 -- ── Participant text cannot break out of the platform's quoting ────────────

@@ -41,6 +41,7 @@ import {
   BarterOfferWithProvider,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
+import { confirmCopy, RESPONDER_FEED_STATE } from '@/lib/tradeActivity'
 
 type FeedPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
 
@@ -381,22 +382,20 @@ export default function CommunityFeed() {
   }
 
   function confirmEndNegotiation(interestId: string) {
-    Alert.alert(
-      'End this negotiation?',
-      // Same disclosure as the Trade Activity route. A responder ending from the feed was the
-      // least-informed party performing the most irreversible barter action available.
-      'This cannot be undone. The other provider will be told the negotiation ended. Your '
-        + 'response stays on record, and you will not be able to respond to this post again.',
-      [
-        { text: 'Keep negotiating', style: 'cancel' },
-        {
-          text: 'End negotiation',
-          style: 'destructive',
-          onPress: () => endNegotiation(interestId),
-        },
-      ],
-    )
+    // Shared copy. This route previously omitted "This cannot be undone.", making a responder
+    // ending from the feed the least-informed party performing the most irreversible barter
+    // action available.
+    const c = confirmCopy('endNegotiation', 'responder', 'The other provider')
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      {
+        text: c.confirmLabel,
+        style: 'destructive',
+        onPress: () => endNegotiation(interestId),
+      },
+    ])
   }
+
 
   async function endNegotiation(interestId: string) {
     const { ok, error } = await releaseInterest(interestId)
@@ -960,32 +959,35 @@ function BarterCard({
                 here was also MEANINGLESS: barter_interests RLS returns only the offer owner's
                 rows or the caller's own, so a non-owner was shown 0 or 1 rendered as a total. */}
             <View style={{ flex: 1 }} />
-            {myInterest?.status === 'released' ? (
-              // Ended, and said so. "Interest sent" persisted here forever, which read as a
-              // live outstanding response on the responder's only surface for this post.
-              <View style={styles.interestSentBtn}>
-                <Feather name="minus-circle" size={15} color="rgba(240,232,213,0.45)" />
-                <Text style={styles.interestSentText}>Negotiation ended</Text>
-              </View>
-            ) : myInterest?.status === 'declined' ? (
-              <View style={styles.interestSentBtn}>
-                <Feather name="minus-circle" size={15} color="rgba(240,232,213,0.45)" />
-                <Text style={styles.interestSentText}>Not selected</Text>
-              </View>
-            ) : myInterest?.status === 'accepted' ? (
-              <TouchableOpacity
-                style={styles.interestSentBtn}
-                activeOpacity={0.85}
-                onPress={() => onEndNegotiation?.(myInterest.id)}
-              >
-                <Feather name="x-circle" size={15} color="rgba(240,232,213,0.6)" />
-                <Text style={styles.interestSentText}>End negotiation</Text>
-              </TouchableOpacity>
-            ) : myInterest ? (
-              <View style={styles.interestSentBtn}>
-                <Feather name="check" size={15} color="rgba(240,232,213,0.6)" />
-                <Text style={styles.interestSentText}>Interest sent</Text>
-              </View>
+            {myInterest ? (
+              // TOTAL Record, not a ternary chain. The chain's final branch was "Interest
+              // sent", so a status added later would have been labelled as an outstanding
+              // response on the responder's only surface for this post -- a live-sounding
+              // claim about a finished state. `status === 'x'` comparisons do not fail when
+              // the union widens; an incomplete Record does.
+              RESPONDER_FEED_STATE[myInterest.status].action === 'end' ? (
+                <TouchableOpacity
+                  style={styles.interestSentBtn}
+                  activeOpacity={0.85}
+                  onPress={() => onEndNegotiation?.(myInterest.id)}
+                >
+                  <Feather name="x-circle" size={15} color="rgba(240,232,213,0.6)" />
+                  <Text style={styles.interestSentText}>
+                    {RESPONDER_FEED_STATE[myInterest.status].label}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.interestSentBtn}>
+                  <Feather
+                    name={myInterest.status === 'pending' ? 'check' : 'minus-circle'}
+                    size={15}
+                    color="rgba(240,232,213,0.5)"
+                  />
+                  <Text style={styles.interestSentText}>
+                    {RESPONDER_FEED_STATE[myInterest.status].label}
+                  </Text>
+                </View>
+              )
             ) : (
               <TouchableOpacity style={styles.interestBtn} activeOpacity={0.85} onPress={onInterest}>
                 <Text style={styles.interestBtnText}>I'm Interested</Text>

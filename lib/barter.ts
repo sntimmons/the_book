@@ -4,8 +4,11 @@ import type { BarterInterestStatus, BarterReleaseReason } from './tradeActivity'
 
 // The status vocabulary and the Trade Activity section mapping live in lib/tradeActivity.ts --
 // a PURE module, so they can be unit tested. This module imports the Supabase client, which
-// makes anything defined here untestable without live configuration. Re-exported so every
-// existing `from '@/lib/barter'` import site is unchanged.
+// makes anything defined here untestable without live configuration.
+//
+// Re-exported so a SCREEN can take the row type and its vocabulary from one import. Tests and
+// pure modules must import them from './tradeActivity' directly: coming through here pulls in
+// the Supabase client and needs live configuration to run.
 export type { BarterInterestStatus, TradeActivitySection } from './tradeActivity'
 export { TRADE_ACTIVITY_SECTION } from './tradeActivity'
 
@@ -284,21 +287,30 @@ export async function fetchTradeActivity(): Promise<{
 }
 
 /**
- * Does the signed-in user own this offer?
+ * Ownership AND liveness for an offer, resolved server-side.
  *
  * Server truth, not a navigation param: the interests screen is a real expo-router route and
- * is reachable by deep link with any offerId, so ownership must be resolved from the database
+ * is reachable by deep link with any offerId, so both must be resolved from the database
  * rather than from anything the caller can supply.
+ *
+ * `is_active` is returned alongside ownership because PD-050 makes a CLOSED post's pending
+ * responses non-actionable, and the screen previously never read it — so a deep link to a
+ * closed post rendered a live Accept the server would refuse.
  */
-export async function isOfferOwner(offerId: string, userId: string): Promise<boolean> {
-  if (!offerId || !userId) return false
+export async function fetchOfferAccess(
+  offerId: string,
+  userId: string,
+): Promise<{ isOwner: boolean; isActive: boolean }> {
+  // Fails CLOSED on both axes: a read error must not present a non-owner as an owner, and must
+  // not present a closed post as open, since `isActive` gates the accept control.
+  if (!offerId || !userId) return { isOwner: false, isActive: false }
   const { data, error } = await supabase
     .from('barter_offers')
-    .select('user_id')
+    .select('user_id, is_active')
     .eq('id', offerId)
-    .maybeSingle<{ user_id: string }>()
-  if (error) return false
-  return data?.user_id === userId
+    .maybeSingle<{ user_id: string; is_active: boolean }>()
+  if (error || !data) return { isOwner: false, isActive: false }
+  return { isOwner: data.user_id === userId, isActive: data.is_active }
 }
 
 /**
@@ -321,10 +333,14 @@ export async function releaseInterest(
 /**
  * Accept a response, returning the conversation to open on success.
  *
- * Wrapped here rather than called inline so both entry points -- the offer's responses screen
- * and Trade Activity -- go through one definition. The server refuses an accept on a CLOSED
- * post with `object_not_in_prerequisite_state`; the caller must not treat that as "already
- * answered", which would blame the responder for the owner's own closure.
+ * Both entry points -- the offer's responses screen and Trade Activity -- go through this one
+ * definition. That was claimed before it was true: barter-interests called the RPC inline and
+ * cast the result to `string`, so a null conversation navigated to `/messages/null` while
+ * Trade Activity guarded it. Returning a nullable id makes the guard the caller's obligation.
+ *
+ * The server refuses an accept on a CLOSED post with `object_not_in_prerequisite_state`; the
+ * caller must not treat that as "already answered", which would blame the responder for the
+ * owner's own closure.
  */
 export async function acceptInterest(
   interestId: string,

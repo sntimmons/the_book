@@ -13,17 +13,18 @@ import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
-import { supabase } from '@/lib/supabase'
 import { cacheBustedPhoto } from '@/lib/image'
 import {
   fetchOfferInterests,
-  isOfferOwner,
+  acceptInterest,
+  fetchOfferAccess,
   declineInterest,
   releaseInterest,
   INTEREST_STATUS_IS_LISTED,
   BarterInterest,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
+import { confirmCopy } from '@/lib/tradeActivity'
 import { timeAgo, initials } from '@/lib/community'
 
 export default function BarterInterests() {
@@ -48,17 +49,23 @@ export default function BarterInterests() {
   // responder their OWN response row, so without a server-verified ownership check a
   // non-owner would be shown live Accept/Decline controls on a response they cannot action.
   const [isOwner, setIsOwner] = useState<boolean | null>(null)
+  // PD-050: a closed post's pending responses are history, not actionable. Starts false so a
+  // slow or failed read cannot render an Accept the server would refuse.
+  const [offerIsActive, setOfferIsActive] = useState(false)
 
   const load = useCallback(async () => {
     if (!offerId) {
       setLoading(false)
       return
     }
-    const [all, owns] = await Promise.all([
+    const [all, access] = await Promise.all([
       fetchOfferInterests(offerId),
-      user ? isOfferOwner(offerId, user.id) : Promise.resolve(false),
+      user
+        ? fetchOfferAccess(offerId, user.id)
+        : Promise.resolve({ isOwner: false, isActive: false }),
     ])
-    setIsOwner(owns)
+    setIsOwner(access.isOwner)
+    setOfferIsActive(access.isActive)
     // Show pending interests as actionable; drop already-declined ones.
     // Driven by a TOTAL Record, not a deny-list and not inline literals. `!== 'declined'`
     // treated every unknown future status as live and actionable, so `released` would have
@@ -82,21 +89,13 @@ export default function BarterInterests() {
   // the whole handoff in one transaction, so either the response is accepted AND a usable
   // conversation exists, or nothing happened at all.
   function confirmRelease(item: BarterInterest) {
-    Alert.alert(
-      'End this negotiation?',
-      // States the irreversible half. "Their response stays on record" alone read as
-      // reassurance while concealing that this permanently bars that provider from the post —
-      // including the owner's own ability to change their mind. The responder's confirm
-      // discloses the same fact about themselves; the party imposing it should not be the
-      // less-informed one.
-      'This cannot be undone. The other provider will be told, and they will not be able to '
-        + 'respond to this post again — you will not be able to re-accept them. Their response '
-        + 'stays on record, and you can accept a different response if one is pending.',
-      [
-        { text: 'Keep negotiating', style: 'cancel' },
-        { text: 'End negotiation', style: 'destructive', onPress: () => release(item) },
-      ],
-    )
+    // Shared copy, so the owner's disclosure does not depend on which screen they ended it
+    // from. The two routes previously differed on whether another response could be accepted.
+    const c = confirmCopy('endNegotiation', isOwner ? 'owner' : 'responder', item.provider.name)
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      { text: c.confirmLabel, style: 'destructive', onPress: () => release(item) },
+    ])
   }
 
   async function release(item: BarterInterest) {
@@ -118,12 +117,13 @@ export default function BarterInterests() {
   async function accept(interest: BarterInterest) {
     if (!user || actioningId || !isOwner) return
     setActioningId(interest.id)
-    const { data, error } = await supabase.rpc('accept_barter_interest', {
-      p_interest_id: interest.id,
-    })
-    if (error) {
+    // Through the shared helper, NOT a raw rpc call. Both accept entry points must go through
+    // one definition or they drift: this site used to cast the result to `string`, so a null
+    // conversation navigated to `/messages/null` -- a dead screen -- while Trade Activity
+    // guarded it.
+    const { ok, conversationId, error } = await acceptInterest(interest.id)
+    if (!ok) {
       const f = barterWriteFailure('accept', error)
-      console.log('Accept interest error:', error)
       setActioningId(null)
       // A terminal outcome means our list is stale — someone else's state won. Reload so the
       // user is not left looking at controls the server has already invalidated.
@@ -131,9 +131,17 @@ export default function BarterInterests() {
       Alert.alert(f.title, f.body, [{ text: 'OK' }])
       return
     }
-    // The RPC returns the conversation id and only returns on full success, so this is the
-    // one place navigation is warranted.
-    router.replace(`/messages/${data as string}` as never)
+    if (!conversationId) {
+      setActioningId(null)
+      Alert.alert(
+        'Accepted, but the conversation could not be opened',
+        'The response was accepted. Open it from Trade Activity to continue.',
+        [{ text: 'OK' }],
+      )
+      load()
+      return
+    }
+    router.replace(`/messages/${conversationId}` as never)
   }
 
   async function decline(interest: BarterInterest) {
@@ -155,10 +163,21 @@ export default function BarterInterests() {
     }
   }
 
+  function confirmAccept(interest: BarterInterest) {
+    const c = confirmCopy('accept', 'owner', interest.provider.name)
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      { text: c.confirmLabel, onPress: () => accept(interest) },
+    ])
+  }
+
   function confirmDecline(interest: BarterInterest) {
-    Alert.alert('Decline interest', `Decline ${interest.provider.name}?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Decline', style: 'destructive', onPress: () => decline(interest) },
+    // Shared copy: this dialog previously disclosed no irreversibility at all, on the screen
+    // where declining is the primary action.
+    const c = confirmCopy('decline', 'owner', interest.provider.name)
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      { text: c.confirmLabel, style: 'destructive', onPress: () => decline(interest) },
     ])
   }
 
@@ -257,6 +276,25 @@ export default function BarterInterests() {
                       <Text style={styles.declineText}>End negotiation</Text>
                     </TouchableOpacity>
                   </View>
+                ) : !offerIsActive ? (
+                  // PD-050. Reachable by deep link or by a close performed elsewhere while
+                  // this screen is open. Decline stays available: it is a legal transition and
+                  // is how an owner tidies a post they have finished with.
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={[styles.declineBtn, busy && styles.btnDisabled]}
+                      activeOpacity={0.8}
+                      disabled={busy}
+                      onPress={() => confirmDecline(item)}
+                    >
+                      <Text style={styles.declineText}>Decline</Text>
+                    </TouchableOpacity>
+                    <View style={styles.matchedNote}>
+                      <Text style={styles.matchedNoteText}>
+                        This post is closed, so this response can no longer be accepted.
+                      </Text>
+                    </View>
+                  </View>
                 ) : offerMatched ? (
                   <View style={styles.actions}>
                     <TouchableOpacity
@@ -287,7 +325,7 @@ export default function BarterInterests() {
                       style={[styles.acceptBtn, busy && styles.btnDisabled]}
                       activeOpacity={0.85}
                       disabled={busy}
-                      onPress={() => accept(item)}
+                      onPress={() => confirmAccept(item)}
                     >
                       {busy ? (
                         <ActivityIndicator color="#080808" size="small" />

@@ -1,8 +1,12 @@
 import {
   BarterInterestStatus,
   BarterReleaseReason,
+  confirmCopy,
+  DestructiveAction,
   formatTradeDate,
+  RESPONDER_FEED_STATE,
   SECTION_COPY,
+  SECTION_ORDER,
   TRADE_ACTIVITY_SECTION,
   TradeActivitySection,
   TradeRole,
@@ -15,9 +19,13 @@ import {
 // an action the screen could not perform, and a claim that another provider had been chosen when
 // nobody had been. All three were invisible to typecheck and to the SQL suite.
 
-const STATUSES: BarterInterestStatus[] = ['pending', 'accepted', 'declined', 'released']
+// DERIVED from the total Records, not hand-listed. A hand-written array accepts a subset, so
+// the suite's own coverage would silently stop tracking the union it exists to test — the same
+// defect class as SECTION_ORDER being a literal array.
+const STATUSES = Object.keys(TRADE_ACTIVITY_SECTION) as BarterInterestStatus[]
+const SECTIONS = Object.keys(SECTION_COPY) as TradeActivitySection[]
 const ROLES: TradeRole[] = ['owner', 'responder']
-const SECTIONS: TradeActivitySection[] = ['active', 'pending', 'ended', 'notSelected']
+const ACTIONS: DestructiveAction[] = ['endNegotiation', 'decline', 'accept']
 
 function facts(over: Partial<TradeRowFacts> = {}): TradeRowFacts {
   return {
@@ -26,6 +34,7 @@ function facts(over: Partial<TradeRowFacts> = {}): TradeRowFacts {
     offerIsActive: true,
     releasedAt: null,
     releaseReason: null,
+    offerHasAcceptedResponse: false,
     ...over,
   }
 }
@@ -35,9 +44,13 @@ describe('totality', () => {
     for (const status of STATUSES) {
       for (const myRole of ROLES) {
         for (const offerIsActive of [true, false]) {
-          const s = tradeRowState(facts({ status, myRole, offerIsActive }))
-          expect(['none', 'end', 'answer']).toContain(s.action)
-          expect(typeof s.note).toBe('string')
+          for (const offerHasAcceptedResponse of [true, false]) {
+            const s = tradeRowState(
+              facts({ status, myRole, offerIsActive, offerHasAcceptedResponse }),
+            )
+            expect(['none', 'end', 'answer', 'declineOnly']).toContain(s.action)
+            expect(typeof s.note).toBe('string')
+          }
         }
       }
     }
@@ -79,9 +92,13 @@ describe('a row never instructs an action it cannot perform', () => {
     for (const status of STATUSES) {
       for (const myRole of ROLES) {
         for (const offerIsActive of [true, false]) {
-          const s = tradeRowState(facts({ status, myRole, offerIsActive }))
-          const instructs = /waiting on you to accept or decline/i.test(s.note)
-          if (instructs) expect(s.action).toBe('answer')
+          for (const offerHasAcceptedResponse of [true, false]) {
+            const s = tradeRowState(
+              facts({ status, myRole, offerIsActive, offerHasAcceptedResponse }),
+            )
+            const instructs = /waiting on you to accept or decline/i.test(s.note)
+            if (instructs) expect(s.action).toBe('answer')
+          }
         }
       }
     }
@@ -196,5 +213,96 @@ describe('formatTradeDate', () => {
   it('returns empty rather than "Invalid Date" for absent or unparseable input', () => {
     expect(formatTradeDate(null)).toBe('')
     expect(formatTradeDate('not-a-date')).toBe('')
+  })
+})
+
+describe('a post already in negotiation cannot accept another response', () => {
+  // PD-049 allows one accepted response per post. While one is held, Accept on any other
+  // pending response can only fail with "Already matched" — so the row must not offer it, and
+  // must not tell the owner to accept or decline.
+  it('offers decline only, and says why', () => {
+    const s = tradeRowState(
+      facts({
+        status: 'pending',
+        myRole: 'owner',
+        offerIsActive: true,
+        offerHasAcceptedResponse: true,
+      }),
+    )
+    expect(s.action).toBe('declineOnly')
+    expect(s.note).toMatch(/already in negotiation/i)
+    expect(s.note).not.toMatch(/accept or decline/i)
+  })
+
+  it('still lets the accepted row itself be ended', () => {
+    const s = tradeRowState(
+      facts({ status: 'accepted', myRole: 'owner', offerHasAcceptedResponse: true }),
+    )
+    expect(s.action).toBe('end')
+  })
+
+  it('a closed post beats an open slot: still no accept', () => {
+    const s = tradeRowState(
+      facts({
+        status: 'pending',
+        myRole: 'owner',
+        offerIsActive: false,
+        offerHasAcceptedResponse: false,
+      }),
+    )
+    expect(s.action).toBe('none')
+  })
+})
+
+describe('SECTION_ORDER is derived, not hand-listed', () => {
+  it('renders every section that has copy', () => {
+    expect([...SECTION_ORDER].sort()).toEqual([...SECTIONS].sort())
+  })
+
+  it('puts active work before history', () => {
+    expect(SECTION_ORDER.indexOf('active')).toBeLessThan(SECTION_ORDER.indexOf('ended'))
+    expect(SECTION_ORDER.indexOf('pending')).toBeLessThan(SECTION_ORDER.indexOf('notSelected'))
+  })
+})
+
+describe('the responder feed accounts for every status', () => {
+  it('has a label for each, and never calls a finished state an outstanding one', () => {
+    for (const status of STATUSES) {
+      const state = RESPONDER_FEED_STATE[status]
+      expect(state.label.length).toBeGreaterThan(0)
+      if (status !== 'pending') expect(state.label).not.toMatch(/interest sent/i)
+    }
+  })
+
+  it('offers the end control only on an accepted response', () => {
+    for (const status of STATUSES) {
+      expect(RESPONDER_FEED_STATE[status].action === 'end').toBe(status === 'accepted')
+    }
+  })
+})
+
+describe('destructive confirmations disclose irreversibility', () => {
+  // The disclosure a provider gets before an irreversible act must not depend on the route
+  // they took to it. Three screens previously authored these separately and diverged.
+  it.each(ACTIONS)('%s discloses that it cannot be undone', (action) => {
+    for (const role of ROLES) {
+      const c = confirmCopy(action, role, 'Alex')
+      expect(c.body).toMatch(/cannot be undone/i)
+      expect(c.title.length).toBeGreaterThan(0)
+      expect(c.confirmLabel.length).toBeGreaterThan(0)
+      expect(c.cancelLabel.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('names the counterparty where the action is about one person', () => {
+    expect(confirmCopy('decline', 'owner', 'Alex').body).toContain('Alex')
+    expect(confirmCopy('accept', 'owner', 'Alex').body).toContain('Alex')
+  })
+
+  it('tells each side of an ending what it means for them', () => {
+    expect(confirmCopy('endNegotiation', 'owner', 'Alex').body).toMatch(/re-accept/i)
+    expect(confirmCopy('endNegotiation', 'responder', 'Alex').body).toMatch(
+      /you will not be able to respond/i,
+    )
   })
 })

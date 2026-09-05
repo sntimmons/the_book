@@ -20,10 +20,9 @@ import {
   releaseInterest,
   TRADE_ACTIVITY_SECTION,
   TradeActivityRow,
-  TradeActivitySection,
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
-import { SECTION_COPY, tradeRowState } from '@/lib/tradeActivity'
+import { confirmCopy, SECTION_COPY, SECTION_ORDER, tradeRowState } from '@/lib/tradeActivity'
 
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
@@ -36,10 +35,9 @@ import { SECTION_COPY, tradeRowState } from '@/lib/tradeActivity'
 // meant closing the post — or the post simply ageing out — removed the only route to it for
 // BOTH parties, leaving the slot consumed and the counterparty never told.
 
-// Section copy and per-row state live in lib/tradeActivityCopy.ts. They are pure and unit
-// tested there: every defect this screen has shipped was a copy defect, and copy rules embedded
-// in a react-native component cannot be tested without rendering one.
-const SECTION_ORDER: TradeActivitySection[] = ['active', 'pending', 'ended', 'notSelected']
+// Section copy, section ORDER and per-row state all live in lib/tradeActivity.ts. They are pure
+// and unit tested there: every defect this screen has shipped was a copy defect, and copy rules
+// embedded in a react-native component cannot be tested without rendering one.
 
 export default function TradeActivityScreen() {
   const insets = useSafeAreaInsets()
@@ -62,16 +60,10 @@ export default function TradeActivityScreen() {
   )
 
   function confirmEnd(item: TradeActivityRow) {
-    const body =
-      item.myRole === 'owner'
-        ? 'This cannot be undone. The other provider will be told, and they will not be able to '
-          + 'respond to this post again — you will not be able to re-accept them. Their response '
-          + 'stays on record.'
-        : 'This cannot be undone. The other provider will be told, and you will not be able to '
-          + 'respond to this post again. Your response stays on record.'
-    Alert.alert('End this negotiation?', body, [
-      { text: 'Keep negotiating', style: 'cancel' },
-      { text: 'End negotiation', style: 'destructive', onPress: () => end(item) },
+    const c = confirmCopy('endNegotiation', item.myRole, item.provider.name)
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      { text: c.confirmLabel, style: 'destructive', onPress: () => end(item) },
     ])
   }
 
@@ -133,28 +125,26 @@ export default function TradeActivityScreen() {
   }
 
   function confirmAccept(item: TradeActivityRow) {
-    Alert.alert(
-      'Accept this response?',
-      `You will be connected with ${item.provider.name} to work out the details. `
-        + 'Only one response per post can be accepted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Accept', onPress: () => answerAccept(item) },
-      ],
-    )
+    const c = confirmCopy('accept', item.myRole, item.provider.name)
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      { text: c.confirmLabel, onPress: () => answerAccept(item) },
+    ])
   }
 
   function confirmDecline(item: TradeActivityRow) {
-    Alert.alert(
-      'Decline this response?',
-      `${item.provider.name} will not be matched with you for this post. `
-        + 'This cannot be undone. Their response stays on record.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Decline', style: 'destructive', onPress: () => answerDecline(item) },
-      ],
-    )
+    const c = confirmCopy('decline', item.myRole, item.provider.name)
+    Alert.alert(c.title, c.body, [
+      { text: c.cancelLabel, style: 'cancel' },
+      { text: c.confirmLabel, style: 'destructive', onPress: () => answerDecline(item) },
+    ])
   }
+
+  // Which posts already have their negotiation slot filled. Computed once from the caller's
+  // own rows -- the owner sees every response to their post -- so no extra query is needed.
+  const matchedOfferIds = new Set(
+    rows.filter((r) => r.status === 'accepted').map((r) => r.offerId),
+  )
 
   const grouped = SECTION_ORDER.map((key) => {
     const items = rows.filter((r) => TRADE_ACTIVITY_SECTION[r.status] === key)
@@ -222,7 +212,10 @@ export default function TradeActivityScreen() {
                 // One pure function decides what this row SAYS and what it can DO, so the two
                 // can never disagree -- which is how "Waiting on you to accept or decline."
                 // ended up printed on a row with no accept or decline control.
-                const state = tradeRowState(item)
+                const state = tradeRowState({
+                  ...item,
+                  offerHasAcceptedResponse: matchedOfferIds.has(item.offerId),
+                })
                 const showActions = state.action !== 'none' || item.conversationId !== null
                 return (
                   <View key={item.interestId} style={styles.card}>
@@ -289,6 +282,17 @@ export default function TradeActivityScreen() {
                             ) : (
                               <Text style={styles.endText}>End negotiation</Text>
                             )}
+                          </TouchableOpacity>
+                        ) : null}
+
+                        {state.action === 'declineOnly' ? (
+                          <TouchableOpacity
+                            style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+                            activeOpacity={0.8}
+                            disabled={busy}
+                            onPress={() => confirmDecline(item)}
+                          >
+                            <Text style={styles.secondaryText}>Decline</Text>
                           </TouchableOpacity>
                         ) : null}
 

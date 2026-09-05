@@ -47,7 +47,7 @@ export type TradeRole = 'owner' | 'responder'
  * (barter_interests_zy_accept_open_offer), so this only decides whether to render a control
  * that would otherwise be refused.
  */
-export type TradeRowAction = 'none' | 'end' | 'answer'
+export type TradeRowAction = 'none' | 'end' | 'answer' | 'declineOnly'
 
 export interface TradeRowFacts {
   status: BarterInterestStatus
@@ -55,6 +55,16 @@ export interface TradeRowFacts {
   offerIsActive: boolean
   releasedAt: string | null
   releaseReason: BarterReleaseReason | null
+  /**
+   * Does ANOTHER response to the same post already hold the negotiation slot?
+   *
+   * PD-049 allows exactly one accepted response per post, so while one is held every other
+   * pending response is unanswerable — accepting it can only fail with "Already matched".
+   * Without this fact the row said "Waiting on you to accept or decline." and offered Accept,
+   * which is the caption-contradicts-capability defect this module exists to end. Derived from
+   * the caller's own rows (the owner sees every response to their post), not from a new query.
+   */
+  offerHasAcceptedResponse: boolean
 }
 
 export interface TradeRowState {
@@ -72,24 +82,43 @@ export interface TradeRowState {
  * resolved to 'responder', so a single response waiting on the owner was captioned as waiting on
  * someone else. Role is a property of a ROW, so role-specific truth is carried only by the row.
  */
-export const SECTION_COPY: Record<TradeActivitySection, { title: string; caption: string }> = {
+export const SECTION_COPY: Record<
+  TradeActivitySection,
+  { title: string; caption: string; rank: number }
+> = {
   active: {
     title: 'Active negotiations',
     caption: 'You are working out the details of these.',
+    rank: 0,
   },
   pending: {
     title: 'Pending',
     caption: 'Responses that have not been answered yet.',
+    rank: 1,
   },
   ended: {
     title: 'Ended',
     caption: 'Negotiations that ended before a trade was agreed.',
+    rank: 2,
   },
   notSelected: {
     title: 'Not selected',
     caption: 'Responses that were not taken forward.',
+    rank: 3,
   },
 }
+
+/**
+ * Render order, DERIVED from the total Record rather than hand-listed.
+ *
+ * A hand-written `TradeActivitySection[]` accepts a SUBSET, so a fifth section would compile
+ * while its rows silently vanished from the list — reintroducing, on the screen built to stop
+ * negotiations becoming unfindable, exactly that. Deriving it means a new section cannot be
+ * added without a rank, and it is rendered the moment it exists.
+ */
+export const SECTION_ORDER: TradeActivitySection[] = (
+  Object.keys(SECTION_COPY) as TradeActivitySection[]
+).sort((a, b) => SECTION_COPY[a].rank - SECTION_COPY[b].rank)
 
 /**
  * Who ended it, in the viewer's terms. TOTAL over the reason vocabulary, so a reason added
@@ -131,6 +160,15 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
 
   pending: (f) => {
     if (f.myRole === 'owner') {
+      // The slot is already taken: accepting can only fail, so it is not offered. Decline
+      // stays legal (pending -> declined is permitted on an active post) and is the only
+      // thing the owner can still usefully do with this row.
+      if (f.offerIsActive && f.offerHasAcceptedResponse) {
+        return {
+          action: 'declineOnly',
+          note: 'You are already in negotiation on this post, so this response cannot be accepted.',
+        }
+      }
       return f.offerIsActive
         ? { action: 'answer', note: 'Waiting on you to accept or decline.' }
         : {
@@ -171,4 +209,91 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
 
 export function tradeRowState(f: TradeRowFacts): TradeRowState {
   return ROW_STATE[f.status](f)
+}
+
+/**
+ * Destructive-confirmation copy, owned HERE rather than authored per screen.
+ *
+ * Accept, decline and end-negotiation are all irreversible (`pending -> accepted | declined` is
+ * the only participant transition, and `accepted -> released` permanently bars that responder),
+ * and each was reachable from two or three screens with a DIFFERENT disclosure on each — one
+ * route omitted "This cannot be undone", and accept had no confirmation at all on the screen
+ * where it is the primary action. The disclosure a provider gets before an irreversible act
+ * must not depend on the route they took to it.
+ *
+ * TOTAL over the action vocabulary, and takes the role, so a new destructive action cannot be
+ * added without deciding what both sides are told.
+ */
+export type DestructiveAction = 'endNegotiation' | 'decline' | 'accept'
+
+export interface ConfirmCopy {
+  title: string
+  body: string
+  /** Label for the destructive button, so it names the act rather than saying "OK". */
+  confirmLabel: string
+  cancelLabel: string
+}
+
+const CONFIRM_COPY: Record<
+  DestructiveAction,
+  (role: TradeRole, counterparty: string) => ConfirmCopy
+> = {
+  endNegotiation: (role) => ({
+    title: 'End this negotiation?',
+    body:
+      role === 'owner'
+        ? 'This cannot be undone. The other provider will be told, and they will not be able '
+          + 'to respond to this post again — you will not be able to re-accept them. Their '
+          + 'response stays on record.'
+        : 'This cannot be undone. The other provider will be told, and you will not be able to '
+          + 'respond to this post again. Your response stays on record.',
+    confirmLabel: 'End negotiation',
+    cancelLabel: 'Keep negotiating',
+  }),
+  decline: (_role, counterparty) => ({
+    title: 'Decline this response?',
+    body:
+      `${counterparty} will not be matched with you for this post. This cannot be undone. `
+      + 'Their response stays on record.',
+    confirmLabel: 'Decline',
+    cancelLabel: 'Cancel',
+  }),
+  accept: (_role, counterparty) => ({
+    title: 'Accept this response?',
+    body:
+      `You will be connected with ${counterparty} to work out the details. Only one response `
+      + 'per post can be accepted, and this cannot be undone.',
+    confirmLabel: 'Accept',
+    cancelLabel: 'Cancel',
+  }),
+}
+
+export function confirmCopy(
+  action: DestructiveAction,
+  role: TradeRole,
+  counterparty: string,
+): ConfirmCopy {
+  return CONFIRM_COPY[action](role, counterparty)
+}
+
+/**
+ * What the barter FEED shows a responder about their own response to a post.
+ *
+ * A total Record for the same reason as everything else here: the feed previously used a
+ * ternary chain whose final branch was "Interest sent", so a status added later would have been
+ * labelled as an outstanding response — a live-sounding claim about a finished state, on the
+ * responder's only surface for that post. `status === 'x'` comparisons do not fail when the
+ * union widens; an incomplete Record does.
+ */
+export interface ResponderFeedState {
+  label: string
+  /** `end` renders the End-negotiation control; `none` is a static label. */
+  action: 'none' | 'end'
+}
+
+export const RESPONDER_FEED_STATE: Record<BarterInterestStatus, ResponderFeedState> = {
+  pending: { label: 'Interest sent', action: 'none' },
+  accepted: { label: 'End negotiation', action: 'end' },
+  declined: { label: 'Not selected', action: 'none' },
+  released: { label: 'Negotiation ended', action: 'none' },
 }
