@@ -6,6 +6,43 @@
 -- violate, plus the security posture of every object 20260927000000 created.
 
 -- Shared cast: owner, responder, stranger; an accepted interest with a two-version negotiation.
+create or replace function pg_temp.ag_due(p_days integer)
+returns timestamptz
+language sql
+as $$
+  select clock_timestamp() + make_interval(days => p_days)
+$$;
+
+create or replace function pg_temp.create_barter_proposal_timed(
+  p_interest_id uuid,
+  p_owner_gives text,
+  p_responder_gives text
+)
+returns uuid
+language sql
+as $$
+  select public.create_barter_proposal(
+    p_interest_id,
+    p_owner_gives, pg_temp.ag_due(7), null,
+    p_responder_gives, pg_temp.ag_due(8), null
+  )
+$$;
+
+create or replace function pg_temp.submit_barter_counter_timed(
+  p_proposal_id uuid,
+  p_owner_gives text,
+  p_responder_gives text
+)
+returns integer
+language sql
+as $$
+  select public.submit_barter_counter(
+    p_proposal_id,
+    p_owner_gives, pg_temp.ag_due(7), null,
+    p_responder_gives, pg_temp.ag_due(8), null
+  )
+$$;
+
 do $$
 declare
   ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid(); xu uuid := gen_random_uuid();
@@ -25,7 +62,7 @@ begin
     message, status) values (off1, rpid, ru, 'x', 'accepted') returning id into int1;
 
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(int1, 'a photo session', 'four PT sessions') into pid;
+  select pg_temp.create_barter_proposal_timed(int1, 'a photo session', 'four PT sessions') into pid;
 
   perform set_config('b5b.ag_ou', ou::text, true);
   perform set_config('b5b.ag_ru', ru::text, true);
@@ -68,7 +105,7 @@ begin
 
   -- The responder COUNTERS instead of accepting: v1's acceptance is now of an OLD version.
   perform pg_temp.act(ru);
-  select public.submit_barter_counter(pid, 'a photo session', 'FIVE PT sessions') into v_no;
+  select pg_temp.submit_barter_counter_timed(pid, 'a photo session', 'FIVE PT sessions') into v_no;
   perform pg_temp.act_service();
   select id into v2 from public.barter_proposal_versions where proposal_id = pid and version_no = 2;
 
@@ -186,7 +223,7 @@ declare
 begin
   perform pg_temp.act(ou);
   begin
-    perform public.submit_barter_counter(pid, 'new', 'terms');
+    perform pg_temp.submit_barter_counter_timed(pid, 'new', 'terms');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -276,7 +313,7 @@ begin
   insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
     message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(i, 'a', 'b') into pid;
+  select pg_temp.create_barter_proposal_timed(i, 'a', 'b') into pid;
   perform pg_temp.act_service();
   select id into v1 from public.barter_proposal_versions where proposal_id = pid;
   perform pg_temp.act(ou); perform public.accept_barter_version(v1);

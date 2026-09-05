@@ -52,7 +52,21 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // obligation, fulfilment, delivery, cancellation-after-agreement or adjudication model, so no
 // copy on this screen may say a trade is booked, owed, complete or safely cancelable.
 
-const EMPTY_DRAFT: ProposalDraft = { ownerGives: '', responderGives: '' }
+const EMPTY_DRAFT: ProposalDraft = {
+  ownerGives: '',
+  ownerDueAt: '',
+  ownerScheduledAt: '',
+  responderGives: '',
+  responderDueAt: '',
+  responderScheduledAt: '',
+}
+
+function formatTermTime(value: string | null): string | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleString()
+}
 
 export default function NegotiationScreen() {
   const insets = useSafeAreaInsets()
@@ -260,24 +274,56 @@ export default function NegotiationScreen() {
   // place a wrong-box entry would be typed and sent. Nothing here decides which participant a
   // side belongs to; the server derives that, and the client sends content only.
   function renderComposer(title: string, onSubmit: () => void) {
-    const ordered: { key: keyof ProposalDraft; side: ProposalSide }[] = [
-      { key: 'ownerGives', side: 'offer_owner' },
-      { key: 'responderGives', side: 'responder' },
+    const ordered: {
+      givesKey: keyof ProposalDraft
+      dueKey: keyof ProposalDraft
+      scheduledKey: keyof ProposalDraft
+      side: ProposalSide
+    }[] = [
+      {
+        givesKey: 'ownerGives',
+        dueKey: 'ownerDueAt',
+        scheduledKey: 'ownerScheduledAt',
+        side: 'offer_owner',
+      },
+      {
+        givesKey: 'responderGives',
+        dueKey: 'responderDueAt',
+        scheduledKey: 'responderScheduledAt',
+        side: 'responder',
+      },
     ]
     return (
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{title}</Text>
         {ordered.map((f) => (
-          <View key={f.key} style={styles.draftRow}>
+          <View key={f.givesKey} style={styles.draftRow}>
             <Text style={styles.termSide}>{sideLabel(f.side, myRole)}</Text>
+            <Text style={styles.fieldLabel}>What this side provides</Text>
             <TextInput
               style={styles.input}
-              value={draft[f.key]}
-              onChangeText={(v) => setDraft((d) => ({ ...d, [f.key]: v }))}
+              value={draft[f.givesKey]}
+              onChangeText={(v) => setDraft((d) => ({ ...d, [f.givesKey]: v }))}
               placeholder="What is provided"
               placeholderTextColor="rgba(240,232,213,0.35)"
               maxLength={MAX_DESCRIPTION}
               multiline
+            />
+            <Text style={styles.fieldLabel}>Due by</Text>
+            <TextInput
+              style={styles.input}
+              value={draft[f.dueKey]}
+              onChangeText={(v) => setDraft((d) => ({ ...d, [f.dueKey]: v }))}
+              placeholder="2026-10-15 5:00 PM"
+              placeholderTextColor="rgba(240,232,213,0.35)"
+            />
+            <Text style={styles.fieldLabel}>Optional scheduled time</Text>
+            <TextInput
+              style={styles.input}
+              value={draft[f.scheduledKey]}
+              onChangeText={(v) => setDraft((d) => ({ ...d, [f.scheduledKey]: v }))}
+              placeholder="2026-10-10 2:00 PM"
+              placeholderTextColor="rgba(240,232,213,0.35)"
             />
           </View>
         ))}
@@ -407,6 +453,12 @@ export default function NegotiationScreen() {
                 <View key={t.id} style={styles.term}>
                   <Text style={styles.termSide}>{sideLabel(t.providedBy, row.myRole)}</Text>
                   <Text style={styles.termText}>{t.serviceDescription}</Text>
+                  <Text style={styles.termTiming}>Due by {formatTermTime(t.dueAt)}</Text>
+                  {t.scheduledAt ? (
+                    <Text style={styles.termTiming}>
+                      Scheduled for {formatTermTime(t.scheduledAt)}
+                    </Text>
+                  ) : null}
                 </View>
               ))}
               <View style={styles.acceptRow}>
@@ -493,6 +545,12 @@ export default function NegotiationScreen() {
                       <View key={t.id} style={styles.term}>
                         <Text style={styles.termSide}>{sideLabel(t.providedBy, row.myRole)}</Text>
                         <Text style={styles.termText}>{t.serviceDescription}</Text>
+                        <Text style={styles.termTiming}>Due by {formatTermTime(t.dueAt)}</Text>
+                        {t.scheduledAt ? (
+                          <Text style={styles.termTiming}>
+                            Scheduled for {formatTermTime(t.scheduledAt)}
+                          </Text>
+                        ) : null}
                       </View>
                     ))}
                   </View>
@@ -563,9 +621,11 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   termText: { color: '#F0E8D5', fontSize: 14, lineHeight: 20, marginTop: 2 },
+  termTiming: { color: 'rgba(240,232,213,0.6)', fontSize: 12.5, lineHeight: 18, marginTop: 2 },
   acceptRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14 },
   acceptText: { color: 'rgba(240,232,213,0.6)', fontSize: 12.5, marginRight: 10 },
   draftRow: { marginTop: 12 },
+  fieldLabel: { color: 'rgba(240,232,213,0.6)', fontSize: 12, marginTop: 8 },
   input: {
     marginTop: 4,
     padding: 10,

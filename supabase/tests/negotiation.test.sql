@@ -41,7 +41,45 @@ begin
 end $$;
 
 -- The RPCs take CONTENT for the two sides; the server binds each to its participant. Nothing a
--- test could pass here names a provider, which is the point.
+-- test could pass here names a provider. Timing is part of the versioned proposal too; provider
+-- identity, participant identity, side identity and version number still never come from the
+-- caller.
+create or replace function pg_temp.ng_due(p_days integer)
+returns timestamptz
+language sql
+as $$
+  select clock_timestamp() + make_interval(days => p_days)
+$$;
+
+create or replace function pg_temp.create_barter_proposal_timed(
+  p_interest_id uuid,
+  p_owner_gives text,
+  p_responder_gives text
+)
+returns uuid
+language sql
+as $$
+  select public.create_barter_proposal(
+    p_interest_id,
+    p_owner_gives, pg_temp.ng_due(7), null,
+    p_responder_gives, pg_temp.ng_due(8), null
+  )
+$$;
+
+create or replace function pg_temp.submit_barter_counter_timed(
+  p_proposal_id uuid,
+  p_owner_gives text,
+  p_responder_gives text
+)
+returns integer
+language sql
+as $$
+  select public.submit_barter_counter(
+    p_proposal_id,
+    p_owner_gives, pg_temp.ng_due(7), null,
+    p_responder_gives, pg_temp.ng_due(8), null
+  )
+$$;
 
 -- ── Who may open a negotiation ─────────────────────────────────────────────
 do $$
@@ -56,7 +94,7 @@ begin
   -- the state refusals: "not yours" and "not active" are different facts.
   perform pg_temp.act(xu);
   begin
-    perform public.create_barter_proposal(int1, 'a photo session', 'four PT sessions');
+    perform pg_temp.create_barter_proposal_timed(int1, 'a photo session', 'four PT sessions');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -74,7 +112,7 @@ begin
 
   perform pg_temp.act(ou);
   begin
-    perform public.create_barter_proposal(int_pending, 'a photo session', 'four PT sessions');
+    perform pg_temp.create_barter_proposal_timed(int_pending, 'a photo session', 'four PT sessions');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -95,7 +133,7 @@ declare
   v_pid uuid; v_vid uuid; v_n integer; v_code text; v_both boolean; v_snap jsonb;
 begin
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(int1, 'a photo session', 'four PT sessions') into v_pid;
+  select pg_temp.create_barter_proposal_timed(int1, 'a photo session', 'four PT sessions') into v_pid;
   perform set_config('b5b.ng_pid', v_pid::text, true);
 
   perform pg_temp.chk('negotiation', 'the owner can open a negotiation on an accepted response',
@@ -132,7 +170,7 @@ begin
   -- A SECOND proposal on the same accepted interest is refused: one negotiation per response.
   perform pg_temp.act(ou);
   begin
-    perform public.create_barter_proposal(int1, 'a photo session', 'four PT sessions');
+    perform pg_temp.create_barter_proposal_timed(int1, 'a photo session', 'four PT sessions');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -180,7 +218,7 @@ begin
   -- Only participants may counter.
   perform pg_temp.act(xu);
   begin
-    perform public.submit_barter_counter(pid, 'x', 'y');
+    perform pg_temp.submit_barter_counter_timed(pid, 'x', 'y');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -188,7 +226,7 @@ begin
 
   -- The responder counters. The version number is derived, never supplied.
   perform pg_temp.act(ru);
-  select public.submit_barter_counter(pid, 'a photo session', 'SIX PT sessions')
+  select pg_temp.submit_barter_counter_timed(pid, 'a photo session', 'SIX PT sessions')
     into v_no;
   perform pg_temp.chk('negotiation', 'a counter creates the next version', '2', v_no::text);
 
@@ -204,6 +242,63 @@ begin
 
   select count(*) into v_n from public.barter_proposal_versions where proposal_id = pid;
   perform pg_temp.chk('negotiation', 'both versions exist as history', '2', v_n::text);
+end $$;
+
+-- ── Timing changes are proposal changes ───────────────────────────────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; pid uuid; v1 uuid; v_no integer; v_n integer;
+  v_old_due timestamptz; v_new_due timestamptz; v_both boolean;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Timing Owner', 'ngti_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Timing Resp', 'ngtj_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'timing offering', 'timing seeking') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.create_barter_proposal(
+    i,
+    'same owner content', pg_temp.ng_due(5), null,
+    'same responder content', pg_temp.ng_due(6), null
+  ) into pid;
+  perform pg_temp.act_service();
+  select id into v1 from public.barter_proposal_versions where proposal_id = pid and version_no = 1;
+  select due_at into v_old_due from public.barter_proposal_terms
+   where version_id = v1 and provided_by = 'offer_owner';
+
+  perform pg_temp.act(ru);
+  perform public.accept_barter_version(v1);
+  perform pg_temp.act(ou);
+  select public.submit_barter_counter(
+    pid,
+    'same owner content', pg_temp.ng_due(9), null,
+    'same responder content', pg_temp.ng_due(10), null
+  ) into v_no;
+  perform pg_temp.chk('negotiation', 'a timing-only counter creates a new version',
+    '2', v_no::text);
+
+  perform pg_temp.act_service();
+  select current_version_no into v_n from public.barter_proposals where id = pid;
+  perform pg_temp.chk('negotiation', 'and the timing-only version becomes current',
+    '2', v_n::text);
+  select due_at into v_new_due
+    from public.barter_proposal_terms t
+    join public.barter_proposal_versions v on v.id = t.version_id
+   where v.proposal_id = pid and v.version_no = 2 and t.provided_by = 'offer_owner';
+  perform pg_temp.chk('negotiation', 'the old timing is immutable history',
+    'true', (v_old_due is distinct from v_new_due)::text);
+
+  perform pg_temp.act(ru);
+  select both_accepted into v_both from public.my_barter_proposals where proposal_id = pid;
+  perform pg_temp.chk('negotiation', 'prior acceptance does not satisfy changed timing',
+    'false', v_both::text);
 end $$;
 
 -- ── History is append-only, and version numbers cannot be forged ───────────
@@ -372,7 +467,7 @@ declare
 begin
   -- Version 2 is fully accepted. A material change supersedes it.
   perform pg_temp.act(ou);
-  select public.submit_barter_counter(pid, 'TWO photo sessions', 'six PT sessions')
+  select pg_temp.submit_barter_counter_timed(pid, 'TWO photo sessions', 'six PT sessions')
     into v_no;
   perform pg_temp.chk('negotiation', 'a counter after agreement creates version 3', '3', v_no::text);
 
@@ -469,8 +564,12 @@ begin
   end loop;
 
   perform pg_temp.chk('negotiation', 'anon cannot execute the proposal RPCs', 'false',
-    (has_function_privilege('anon', 'public.create_barter_proposal(uuid, text, text)', 'execute')
-     or has_function_privilege('anon', 'public.submit_barter_counter(uuid, text, text)', 'execute')
+    (has_function_privilege('anon',
+       'public.create_barter_proposal(uuid, text, timestamptz, timestamptz, text, timestamptz, timestamptz)',
+       'execute')
+     or has_function_privilege('anon',
+       'public.submit_barter_counter(uuid, text, timestamptz, timestamptz, text, timestamptz, timestamptz)',
+       'execute')
      or has_function_privilege('anon', 'public.accept_barter_version(uuid)', 'execute'))::text);
   perform pg_temp.chk('negotiation', 'anon cannot read the negotiation view', 'false',
     has_table_privilege('anon', 'public.my_barter_proposals', 'select')::text);
@@ -525,7 +624,7 @@ begin
   update public.barter_offers set is_active = false where id = off1;
 
   begin
-    select public.submit_barter_counter(pid, 'one photo session', 'five PT sessions')
+    select pg_temp.submit_barter_counter_timed(pid, 'one photo session', 'five PT sessions')
       into v_no;
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
@@ -561,7 +660,7 @@ begin
     message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
 
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(i, 'a photo session', 'four PT sessions') into pid;
+  select pg_temp.create_barter_proposal_timed(i, 'a photo session', 'four PT sessions') into pid;
   perform pg_temp.act_service();
   select id into vid from public.barter_proposal_versions where proposal_id = pid;
 
@@ -571,7 +670,7 @@ begin
   perform public.release_barter_interest(i);
 
   begin
-    perform public.submit_barter_counter(pid, 'x', 'y');
+    perform pg_temp.submit_barter_counter_timed(pid, 'x', 'y');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -587,7 +686,7 @@ begin
 
   -- Nor can a fresh negotiation be opened on the released response.
   begin
-    perform public.create_barter_proposal(i, 'a photo session', 'four PT sessions');
+    perform pg_temp.create_barter_proposal_timed(i, 'a photo session', 'four PT sessions');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -624,11 +723,11 @@ begin
 
   -- The owner opens the negotiation: that is their 1st version.
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(i, 'a photo session', 'four PT sessions') into pid;
+  select pg_temp.create_barter_proposal_timed(i, 'a photo session', 'four PT sessions') into pid;
 
   -- 19 more from the same participant reaches exactly 20.
   for k in 2..20 loop
-    perform public.submit_barter_counter(pid, 'own ' || k, 'theirs ' || k);
+    perform pg_temp.submit_barter_counter_timed(pid, 'own ' || k, 'theirs ' || k);
   end loop;
 
   perform pg_temp.act_service();
@@ -638,7 +737,7 @@ begin
 
   perform pg_temp.act(ou);
   begin
-    perform public.submit_barter_counter(pid, 'over', 'limit');
+    perform pg_temp.submit_barter_counter_timed(pid, 'over', 'limit');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -655,7 +754,7 @@ begin
   -- exhaust the negotiation for both.
   perform pg_temp.act(ru);
   begin
-    perform public.submit_barter_counter(pid, 'their turn', 'my turn');
+    perform pg_temp.submit_barter_counter_timed(pid, 'their turn', 'my turn');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -677,7 +776,7 @@ begin
       message, status) values (o2, r2pid, ru2, 'x', 'accepted') returning id into i2;
     perform pg_temp.act(ou);
     begin
-      perform public.create_barter_proposal(i2, 'a photo session', 'four PT sessions');
+      perform pg_temp.create_barter_proposal_timed(i2, 'a photo session', 'four PT sessions');
       v_code := 'NO ERROR';
     exception when others then v_code := sqlstate;
     end;
@@ -709,28 +808,28 @@ begin
 
   -- MISSING SIDE, either way round.
   begin
-    perform public.create_barter_proposal(i, 'only the owner', '');
+    perform pg_temp.create_barter_proposal_timed(i, 'only the owner', '');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
   perform pg_temp.chk('negotiation', 'a missing responder side is refused', '22023', v_code);
 
   begin
-    perform public.create_barter_proposal(i, '   ', 'only the responder');
+    perform pg_temp.create_barter_proposal_timed(i, '   ', 'only the responder');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
   perform pg_temp.chk('negotiation', 'a missing owner side is refused', '22023', v_code);
 
   begin
-    perform public.create_barter_proposal(i, null, null);
+    perform pg_temp.create_barter_proposal_timed(i, null, null);
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
   perform pg_temp.chk('negotiation', 'null sides are refused', '22023', v_code);
 
   begin
-    perform public.create_barter_proposal(i, repeat('x', 201), 'b');
+    perform pg_temp.create_barter_proposal_timed(i, repeat('x', 201), 'b');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -741,6 +840,99 @@ begin
   select count(*) into v_n from public.barter_proposals where interest_id = i;
   perform pg_temp.chk('negotiation', 'and no partial proposal survives a refusal',
     '0', v_n::text);
+end $$;
+
+-- ── Proposal timing rules ─────────────────────────────────────────────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; v_code text; v_n integer; v_pid uuid;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Time Owner', 'ngto_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Time Resp', 'ngtr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'timed offering', 'timed seeking') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+
+  perform pg_temp.act(ou);
+  begin
+    perform public.create_barter_proposal(
+      i,
+      'owner gives', null, null,
+      'responder gives', pg_temp.ng_due(8), null
+    );
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'owner due_at is required', '22023', v_code);
+
+  begin
+    perform public.create_barter_proposal(
+      i,
+      'owner gives', pg_temp.ng_due(7), null,
+      'responder gives', null, null
+    );
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'responder due_at is required', '22023', v_code);
+
+  begin
+    perform public.create_barter_proposal(
+      i,
+      'owner gives', clock_timestamp() - interval '1 minute', null,
+      'responder gives', pg_temp.ng_due(8), null
+    );
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'past due_at is refused', '22023', v_code);
+
+  begin
+    perform public.create_barter_proposal(
+      i,
+      'owner gives', pg_temp.ng_due(7), clock_timestamp() - interval '1 minute',
+      'responder gives', pg_temp.ng_due(8), null
+    );
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'past scheduled_at is refused', '22023', v_code);
+
+  begin
+    perform public.create_barter_proposal(
+      i,
+      'owner gives', pg_temp.ng_due(7), pg_temp.ng_due(9),
+      'responder gives', pg_temp.ng_due(8), null
+    );
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'scheduled_at after due_at is refused', '22023', v_code);
+
+  select public.create_barter_proposal(
+    i,
+    'owner gives', pg_temp.ng_due(7), pg_temp.ng_due(6),
+    'responder gives', pg_temp.ng_due(8), null
+  ) into v_pid;
+  perform pg_temp.chk('negotiation', 'valid scheduled_at is accepted',
+    'true', (v_pid is not null)::text);
+
+  perform pg_temp.act_service();
+  select count(*) into v_n
+    from public.barter_proposal_terms t
+    join public.barter_proposal_versions v on v.id = t.version_id
+   where v.proposal_id = v_pid
+     and t.due_at > clock_timestamp()
+     and (t.scheduled_at is null or t.scheduled_at > clock_timestamp())
+     and (t.scheduled_at is null or t.scheduled_at <= t.due_at);
+  perform pg_temp.chk('negotiation', 'stored timing stays future and internally consistent',
+    '2', v_n::text);
 end $$;
 
 -- ── Participant identity is server-owned ───────────────────────────────────
@@ -761,7 +953,7 @@ declare
 begin
   -- The RESPONDER authors both sides' content. They do not become both providers.
   perform pg_temp.act(ru);
-  select public.submit_barter_counter(pid, 'owner side by responder', 'responder side by responder')
+  select pg_temp.submit_barter_counter_timed(pid, 'owner side by responder', 'responder side by responder')
     into v_no;
 
   perform pg_temp.act_service();
@@ -808,9 +1000,10 @@ begin
   -- Third provider on a side.
   begin
     insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      provider_id, provider_user_id)
-    values (v_vid, 'offer_owner', 'x', (select id from public.providers where user_id = xu), xu),
-           (v_vid, 'responder', 'y', v_exp_resp_prov, ru);
+      provider_id, provider_user_id, due_at)
+    values (v_vid, 'offer_owner', 'x', (select id from public.providers where user_id = xu),
+              xu, pg_temp.ng_due(7)),
+           (v_vid, 'responder', 'y', v_exp_resp_prov, ru, pg_temp.ng_due(8));
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -819,9 +1012,9 @@ begin
   -- Sides swapped: the owner's identity on the responder side and vice versa.
   begin
     insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      provider_id, provider_user_id)
-    values (v_vid, 'offer_owner', 'x', v_exp_resp_prov, ru),
-           (v_vid, 'responder', 'y', v_exp_owner_prov, ou);
+      provider_id, provider_user_id, due_at)
+    values (v_vid, 'offer_owner', 'x', v_exp_resp_prov, ru, pg_temp.ng_due(7)),
+           (v_vid, 'responder', 'y', v_exp_owner_prov, ou, pg_temp.ng_due(8));
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -830,9 +1023,9 @@ begin
   -- Same provider on both sides.
   begin
     insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      provider_id, provider_user_id)
-    values (v_vid, 'offer_owner', 'x', v_exp_owner_prov, ou),
-           (v_vid, 'responder', 'y', v_exp_owner_prov, ou);
+      provider_id, provider_user_id, due_at)
+    values (v_vid, 'offer_owner', 'x', v_exp_owner_prov, ou, pg_temp.ng_due(7)),
+           (v_vid, 'responder', 'y', v_exp_owner_prov, ou, pg_temp.ng_due(8));
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -841,9 +1034,9 @@ begin
   -- Duplicate side.
   begin
     insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      provider_id, provider_user_id)
-    values (v_vid, 'offer_owner', 'x', v_exp_owner_prov, ou),
-           (v_vid, 'offer_owner', 'y', v_exp_owner_prov, ou);
+      provider_id, provider_user_id, due_at)
+    values (v_vid, 'offer_owner', 'x', v_exp_owner_prov, ou, pg_temp.ng_due(7)),
+           (v_vid, 'offer_owner', 'y', v_exp_owner_prov, ou, pg_temp.ng_due(8));
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -851,9 +1044,9 @@ begin
 
   begin
     insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      provider_id, provider_user_id)
-    values (v_vid, 'responder', 'x', v_exp_resp_prov, ru),
-           (v_vid, 'responder', 'y', v_exp_resp_prov, ru);
+      provider_id, provider_user_id, due_at)
+    values (v_vid, 'responder', 'x', v_exp_resp_prov, ru, pg_temp.ng_due(7)),
+           (v_vid, 'responder', 'y', v_exp_resp_prov, ru, pg_temp.ng_due(8));
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -862,8 +1055,8 @@ begin
   -- Only one side.
   begin
     insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      provider_id, provider_user_id)
-    values (v_vid, 'offer_owner', 'x', v_exp_owner_prov, ou);
+      provider_id, provider_user_id, due_at)
+    values (v_vid, 'offer_owner', 'x', v_exp_owner_prov, ou, pg_temp.ng_due(7));
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -898,7 +1091,7 @@ declare
   fn text;
 begin
   foreach fn in array array[
-    'public.write_barter_proposal_terms(uuid, text, text)',
+    'public.write_barter_proposal_terms(uuid, text, timestamptz, timestamptz, text, timestamptz, timestamptz)',
     'public.assert_barter_version_budget(uuid, uuid)',
     'public.barter_post_snapshot(public.barter_offers)',
     'public.barter_negotiation_role(public.barter_interests, public.barter_offers, uuid)',
@@ -914,8 +1107,8 @@ begin
 
   -- ...and the three that ARE the public surface still work.
   foreach fn in array array[
-    'public.create_barter_proposal(uuid, text, text)',
-    'public.submit_barter_counter(uuid, text, text)',
+    'public.create_barter_proposal(uuid, text, timestamptz, timestamptz, text, timestamptz, timestamptz)',
+    'public.submit_barter_counter(uuid, text, timestamptz, timestamptz, text, timestamptz, timestamptz)',
     'public.accept_barter_version(uuid)'
   ] loop
     perform pg_temp.chk('negotiation', 'the public RPC is executable by authenticated: ' || fn,
@@ -944,7 +1137,11 @@ begin
   perform set_config('request.jwt.claims',
     json_build_object('sub', ru::text, 'role', 'authenticated')::text, true);
   begin
-    perform public.write_barter_proposal_terms(v1, 'injected', 'injected');
+    perform public.write_barter_proposal_terms(
+      v1,
+      'injected', pg_temp.ng_due(7), null,
+      'injected', pg_temp.ng_due(8), null
+    );
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -955,9 +1152,9 @@ begin
   -- And a direct INSERT is refused by the same guard, not merely by the missing grant.
   begin
     insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      provider_id, provider_user_id)
+      provider_id, provider_user_id, due_at)
     values (v1, 'offer_owner', 'forged', (select provider_id from public.barter_offers
-      where id = current_setting('b5b.ng_off1')::uuid), ou);
+      where id = current_setting('b5b.ng_off1')::uuid), ou, pg_temp.ng_due(7));
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -969,9 +1166,9 @@ begin
   perform set_config('app.barter_terms_write', v1::text, true);
   begin
     insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      provider_id, provider_user_id)
+      provider_id, provider_user_id, due_at)
     values (v1, 'offer_owner', 'second write', (select provider_id from public.barter_offers
-      where id = current_setting('b5b.ng_off1')::uuid), ou);
+      where id = current_setting('b5b.ng_off1')::uuid), ou, pg_temp.ng_due(7));
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -1085,7 +1282,7 @@ begin
     message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
 
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(i, 'a photo session', 'four PT sessions') into pid;
+  select pg_temp.create_barter_proposal_timed(i, 'a photo session', 'four PT sessions') into pid;
   perform pg_temp.act_service();
   select id into vid from public.barter_proposal_versions where proposal_id = pid;
   perform pg_temp.act(ru);

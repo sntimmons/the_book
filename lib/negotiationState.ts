@@ -38,7 +38,11 @@ export function sideForRole(role: TradeSide): ProposalSide {
  */
 export interface ProposalDraft {
   ownerGives: string
+  ownerDueAt: string
+  ownerScheduledAt: string
   responderGives: string
+  responderDueAt: string
+  responderScheduledAt: string
 }
 
 /**
@@ -231,6 +235,18 @@ export const TERMS_CHANGED_NOTE =
 
 export const MAX_DESCRIPTION = 200
 
+function parseDraftTime(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const time = Date.parse(trimmed)
+  return Number.isFinite(time) ? time : null
+}
+
+function toIsoOrNull(value: string): string | null {
+  const time = parseDraftTime(value)
+  return time === null ? null : new Date(time).toISOString()
+}
+
 /**
  * Mirror of the server's rules, so the UI can refuse early with a sentence a provider can act
  * on rather than surfacing a database refusal. The server remains the authority.
@@ -239,6 +255,11 @@ export const MAX_DESCRIPTION = 200
 export function validateDraft(d: ProposalDraft): string | null {
   const owner = d.ownerGives.trim()
   const responder = d.responderGives.trim()
+  const ownerDue = parseDraftTime(d.ownerDueAt)
+  const responderDue = parseDraftTime(d.responderDueAt)
+  const ownerScheduled = parseDraftTime(d.ownerScheduledAt)
+  const responderScheduled = parseDraftTime(d.responderScheduledAt)
+  const now = Date.now()
   if (owner.length === 0 && responder.length === 0) {
     return 'Say what each of you is giving.'
   }
@@ -249,12 +270,43 @@ export function validateDraft(d: ProposalDraft): string | null {
   if (owner.length > MAX_DESCRIPTION || responder.length > MAX_DESCRIPTION) {
     return `Keep each side under ${MAX_DESCRIPTION} characters.`
   }
+  if (ownerDue === null || responderDue === null) {
+    return 'Add a due date for each side.'
+  }
+  if (ownerDue <= now || responderDue <= now) {
+    return 'Due dates must be in the future.'
+  }
+  if (d.ownerScheduledAt.trim() && ownerScheduled === null) {
+    return 'Use a valid scheduled time for the provider who posted the offer.'
+  }
+  if (d.responderScheduledAt.trim() && responderScheduled === null) {
+    return 'Use a valid scheduled time for the responding provider.'
+  }
+  if (
+    (ownerScheduled !== null && ownerScheduled <= now)
+    || (responderScheduled !== null && responderScheduled <= now)
+  ) {
+    return 'Scheduled times must be in the future.'
+  }
+  if (
+    (ownerScheduled !== null && ownerScheduled > ownerDue)
+    || (responderScheduled !== null && responderScheduled > responderDue)
+  ) {
+    return 'Scheduled times must be on or before the due date.'
+  }
   return null
 }
 
 /** Trimmed here so the stored term is what the reader saw. */
 export function draftPayload(d: ProposalDraft) {
-  return { p_owner_gives: d.ownerGives.trim(), p_responder_gives: d.responderGives.trim() }
+  return {
+    p_owner_gives: d.ownerGives.trim(),
+    p_owner_due_at: toIsoOrNull(d.ownerDueAt),
+    p_owner_scheduled_at: toIsoOrNull(d.ownerScheduledAt),
+    p_responder_gives: d.responderGives.trim(),
+    p_responder_due_at: toIsoOrNull(d.responderDueAt),
+    p_responder_scheduled_at: toIsoOrNull(d.responderScheduledAt),
+  }
 }
 
 /** Whose side a term is on, in the viewer's own terms. */
