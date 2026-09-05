@@ -278,7 +278,7 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
     [MALFORMED_TERMS]: {
       terminal: false,
       title: 'Check these terms',
-      body: 'A proposal needs at least one thing from each provider, and each item must be under 200 characters.',
+      body: 'Say what each of you is giving — one line per side, 200 characters or fewer.',
     },
     [UNIQUE_VIOLATION]: {
       // The other provider opened the negotiation first. NOT terminal, and emphatically not

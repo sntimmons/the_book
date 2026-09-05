@@ -297,3 +297,20 @@ describe('acceptedAnEarlierVersion', () => {
     expect(acceptedAnEarlierVersion([{ id: 'v1', acceptedBy: [me] }], 'v2', null)).toBe(false)
   })
 })
+
+describe('term copy describes two sides, not a list', () => {
+  // The 2-6-term list model was removed by ruling. Copy that still said "item" or "at least
+  // one" would invite exactly the input the server now refuses.
+  const drafts: ProposalDraft[] = [
+    { ownerGives: '', responderGives: '' },
+    { ownerGives: 'x', responderGives: '' },
+    { ownerGives: '', responderGives: 'y' },
+    { ownerGives: 'x'.repeat(MAX_DESCRIPTION + 1), responderGives: 'y' },
+  ]
+  it('never uses list-model words', () => {
+    for (const d of drafts) {
+      const msg = validateDraft(d) ?? ''
+      expect(msg).not.toMatch(/\b(item|items|list|at least one)\b/i)
+    }
+  })
+})

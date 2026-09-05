@@ -252,6 +252,9 @@ describe('negotiation refusals advise the right next action', () => {
     const malformed = barterWriteFailure('proposeTerms', pgErr('22023'))
     expect(malformed.terminal).toBe(false)
     expect(malformed.title).toMatch(/check these terms/i)
+    // Two directed sides, not a list.
+    expect(malformed.body).not.toMatch(/\b(item|items|list|at least one)\b/i)
+    expect(malformed.body).toMatch(/one line per side/i)
 
     const gone = barterWriteFailure('proposeTerms', pgErr('23514'))
     expect(gone.terminal).toBe(true)

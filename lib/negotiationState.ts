@@ -193,8 +193,10 @@ export function validateDraft(d: ProposalDraft): string | null {
   if (owner.length === 0 && responder.length === 0) {
     return 'Say what each of you is giving.'
   }
-  if (owner.length === 0) return 'Add what the provider who posted is giving.'
-  if (responder.length === 0) return 'Add what the responding provider is giving.'
+  // Named the way the inputs are labelled, so the reader is not asked to translate between
+  // "the provider who posted" and "You give" / "They give".
+  if (owner.length === 0) return 'Fill in what the provider who posted the offer gives.'
+  if (responder.length === 0) return 'Fill in what the responding provider gives.'
   if (owner.length > MAX_DESCRIPTION || responder.length > MAX_DESCRIPTION) {
     return `Keep each side under ${MAX_DESCRIPTION} characters.`
   }

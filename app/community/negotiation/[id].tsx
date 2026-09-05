@@ -128,6 +128,9 @@ export default function NegotiationScreen() {
   // Live only when the underlying interest is accepted. A released negotiation with no terms
   // must not be offered a compose control the server will always refuse.
   const contextIsLive = (row?.interestStatus ?? context.status) === 'accepted'
+  // No row and no context means the interest is not readable by this viewer (deep link to a
+  // foreign or deleted id). That is "not found", not "this negotiation ended".
+  const contextUnknown = !row && context.status === null
   const iAcceptedAnEarlierVersion = acceptedAnEarlierVersion(
     versions,
     row?.currentVersionId ?? null,
@@ -219,15 +222,16 @@ export default function NegotiationScreen() {
   }
 
   // One composer for both opening and countering: two fixed inputs, one per side, labelled
-  // from the viewer's server-derived role. The viewer's own side is listed first. Nothing here
-  // decides which participant a side belongs to — the server derives that from the accepted
-  // interest, and the client sends content only.
+  // from the viewer's server-derived role. OWNER-FIRST for both roles — the same order the
+  // terms cards use — so the composer lines up with the card directly above it. It briefly
+  // put the viewer's own side first, which flipped the order for a responder in exactly the
+  // place a wrong-box entry would be typed and sent. Nothing here decides which participant a
+  // side belongs to; the server derives that, and the client sends content only.
   function renderComposer(title: string, onSubmit: () => void) {
-    const fields: { key: keyof ProposalDraft; side: 'offer_owner' | 'responder' }[] = [
+    const ordered: { key: keyof ProposalDraft; side: 'offer_owner' | 'responder' }[] = [
       { key: 'ownerGives', side: 'offer_owner' },
       { key: 'responderGives', side: 'responder' },
     ]
-    const ordered = myRole === 'owner' ? fields : [...fields].reverse()
     return (
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{title}</Text>
@@ -300,16 +304,27 @@ export default function NegotiationScreen() {
           </TouchableOpacity>
         </View>
       ) : !row || !current || !view ? (
+        <KeyboardAvoidingView
+          style={{ flex: 1 }}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
           <Text style={styles.state}>
-            {contextIsLive ? 'No terms yet' : 'This negotiation ended'}
+            {contextUnknown
+              ? 'This trade is not available'
+              : contextIsLive
+                ? 'No terms yet'
+                : 'This negotiation ended'}
           </Text>
           <Text style={styles.stateDetail}>
-            {contextIsLive
-              ? 'Nobody has proposed terms for this trade. Say what each of you is giving to '
-                + 'get started — the other provider can send changes back.'
-              : 'No terms were ever proposed, and the negotiation has since ended. There is '
-                + 'nothing on record for this trade.'}
+            {contextUnknown
+              ? 'It may have been removed, or it may not be one of yours. Your trades are in '
+                + 'Trade Activity.'
+              : contextIsLive
+                ? 'Nobody has proposed terms for this trade. Say what each of you is giving to '
+                  + 'get started — the other provider can send changes back.'
+                : 'No terms were ever proposed, and the negotiation has since ended. There is '
+                  + 'nothing on record for this trade.'}
           </Text>
           {composing ? (
             renderComposer('Propose terms', onOpen)
@@ -321,6 +336,7 @@ export default function NegotiationScreen() {
             </View>
           ) : null}
         </ScrollView>
+        </KeyboardAvoidingView>
       ) : (
         <KeyboardAvoidingView
           style={{ flex: 1 }}

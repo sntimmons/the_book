@@ -1114,3 +1114,22 @@ begin
   perform pg_temp.chk('negotiation',
     'every negotiation foreign key is ON DELETE CASCADE', '0', v_n::text);
 end $$;
+
+-- ── The client-asserted-side signatures are GONE, and stay gone ────────────
+-- 20260925000000 dropped the (uuid, jsonb) overloads because an overload that still accepted a
+-- client-chosen side would be exactly the path it closes. A re-apply of a superseded file
+-- (20260922 / 20260924 still contain `create or replace ... (uuid, jsonb)` + a grant) would
+-- resurrect one silently; this is what notices.
+do $$
+declare
+  fn text;
+begin
+  foreach fn in array array['create_barter_proposal', 'submit_barter_counter',
+                            'write_barter_proposal_terms'] loop
+    perform pg_temp.chk('negotiation', 'no (uuid, jsonb) overload of ' || fn || ' exists',
+      'true', (to_regprocedure('public.' || fn || '(uuid, jsonb)') is null)::text);
+    perform pg_temp.chk('negotiation', 'exactly one overload of ' || fn,
+      '1', (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+             where n.nspname = 'public' and p.proname = fn)::text);
+  end loop;
+end $$;
