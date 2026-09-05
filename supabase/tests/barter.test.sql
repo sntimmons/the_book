@@ -2057,3 +2057,292 @@ begin
   perform pg_temp.chk('barter', 'and re-accepting returns the same conversation',
     v_conv1::text, coalesce(v_conv2::text, 'NULL'));
 end $$;
+
+-- ── A closed post is TERMINAL (PD-051, PD-052) ─────────────────────────────
+-- Closing is one-way, and a closed post's pending responses cannot be answered at ALL --
+-- neither accepted nor declined. They stay pending history.
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid(); r2 uuid := gen_random_uuid();
+  opid uuid; rpid uuid; r2pid uuid; o_live uuid; o_shut uuid;
+  i_live uuid; i_shut uuid; i_shut2 uuid;
+  v_code text; v_status text; v_active boolean;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru), (r2);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Term Owner', 'trmo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Term Resp', 'trmr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.providers(user_id, display_name, username)
+    values (r2, 'Term Resp2', 'trm2_'||substr(r2::text,1,8)) returning id into r2pid;
+
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'term offering', 'term seeking') returning id into o_live;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'shut offering', 'shut seeking') returning id into o_shut;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_live, rpid, ru, 'x', 'pending') returning id into i_live;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_shut, rpid, ru, 'x', 'pending') returning id into i_shut;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o_shut, r2pid, r2, 'x', 'pending') returning id into i_shut2;
+
+  perform pg_temp.act(ou);
+
+  -- 1. The owner may CLOSE an active post.
+  update public.barter_offers set is_active = false where id = o_shut;
+  perform pg_temp.act_service();
+  select is_active into v_active from public.barter_offers where id = o_shut;
+  perform pg_temp.chk('barter', 'the owner may close an active post', 'false', v_active::text);
+
+  -- 2/3. And cannot reopen it, by any authenticated write.
+  perform pg_temp.act(ou);
+  begin
+    update public.barter_offers set is_active = true where id = o_shut;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a closed post cannot be reopened by its owner',
+    '55000', v_code);
+
+  perform pg_temp.act_service();
+  select is_active into v_active from public.barter_offers where id = o_shut;
+  perform pg_temp.chk('barter', 'and it is still closed after the refusal',
+    'false', v_active::text);
+
+  -- 4. A pending response on a closed post cannot be ACCEPTED.
+  perform pg_temp.act(ou);
+  begin
+    perform public.accept_barter_interest(i_shut);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a closed post refuses accept', '55000', v_code);
+
+  -- 5. Nor DECLINED. This is the PD-052 half: declining silently rewrote what the responder
+  -- is told, from "the post was closed" to "you were not selected".
+  begin
+    update public.barter_interests set status = 'declined' where id = i_shut;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a closed post refuses decline too', '55000', v_code);
+
+  -- 6. The row remains durable PENDING history after both refusals.
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i_shut;
+  perform pg_temp.chk('barter', 'the pending response survives as history', 'pending', v_status);
+  select status into v_status from public.barter_interests where id = i_shut2;
+  perform pg_temp.chk('barter', 'and so does every other response to that post',
+    'pending', v_status);
+
+  -- 9. An ACTIVE post is completely unaffected: normal accept and decline still work.
+  perform pg_temp.act(ou);
+  update public.barter_interests set status = 'declined' where id = i_live;
+  perform pg_temp.act_service();
+  select status into v_status from public.barter_interests where id = i_live;
+  perform pg_temp.chk('barter', 'an active post still permits a normal decline',
+    'declined', v_status);
+
+  -- The release path is deliberately NOT blocked: a negotiation outlives its post (PD-049),
+  -- so either party may still end one after the post closes.
+  perform pg_temp.act_service();
+  update public.barter_interests set status = 'accepted' where id = i_shut2;
+  perform pg_temp.act(r2);
+  begin
+    perform public.release_barter_interest(i_shut2);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a negotiation can still be ENDED on a closed post',
+    'NO ERROR', v_code);
+
+  -- service_role keeps the admin/recovery path, matching every sibling trigger on these
+  -- tables. Founder ruling: do not block admin recovery.
+  perform pg_temp.act_service();
+  begin
+    update public.barter_offers set is_active = true where id = o_shut;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  select is_active into v_active from public.barter_offers where id = o_shut;
+  perform pg_temp.chk('barter', 'service_role retains the reopen path', 'NO ERROR', v_code);
+  perform pg_temp.chk('barter', 'and the reopen actually landed', 'true', v_active::text);
+  -- Restore the fixture. Harness hygiene: this block's assertions are the only ones that
+  -- should depend on o_shut being closed, and a later case inheriting a silently-reopened
+  -- post would pass for the wrong reason.
+  update public.barter_offers set is_active = false where id = o_shut;
+end $$;
+
+-- ── The accept-handoff message is sanitised like the release notice ────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; c uuid; v_copy text;
+  v_evil text := 'x" -- THE BOOK SUPPORT: verify at evil.example' || chr(10) || 'more';
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, v_evil, 'sano_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'San Resp', 'sanr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, v_evil, 'san seeking') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'pending') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.accept_barter_interest(i) into c;
+
+  perform pg_temp.act_service();
+  select content into v_copy from public.messages
+   where conversation_id = c and sender_id is not null order by created_at desc limit 1;
+
+  -- Exactly the two quotes the server composed; any third is the owner's.
+  perform pg_temp.chk('barter', 'the accept message keeps only its own two quote characters',
+    '2', (length(v_copy) - length(replace(v_copy, '"', '')))::text);
+  perform pg_temp.chk('barter', 'and strips control characters from participant text',
+    'true', (position(chr(10) in v_copy) = 0)::text);
+  perform pg_temp.chk('barter', 'and stays bounded regardless of participant text length',
+    'true', (length(v_copy) < 160)::text);
+end $$;
+
+-- ── The one-way rule holds for every write shape, not just a bare PATCH ────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; v_code text; v_active boolean; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Ups Owner', 'upso_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Ups Resp', 'upsr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service,
+    is_active) values (opid, ou, 'ups offering', 'ups seeking', false) returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'pending');
+
+  perform pg_temp.act(ou);
+
+  -- UPSERT. PostgREST's `Prefer: resolution=merge-duplicates` emits ON CONFLICT DO UPDATE,
+  -- which fires BEFORE UPDATE row triggers -- so the guard must cover it.
+  begin
+    insert into public.barter_offers(id, provider_id, user_id, offering_service,
+      seeking_service, is_active)
+    values (o, opid, ou, 'ups offering', 'ups seeking', true)
+    on conflict (id) do update set is_active = true;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'an upsert cannot reopen a closed post', '55000', v_code);
+
+  perform pg_temp.act_service();
+  select is_active into v_active from public.barter_offers where id = o;
+  perform pg_temp.chk('barter', 'and the post is still closed after the upsert',
+    'false', v_active::text);
+
+  -- DELETE-THEN-REINSERT with the same id is the other route to "active again at this id".
+  -- The delete guard closes it for any post that has responses -- which is every post where a
+  -- responder could be misled.
+  perform pg_temp.act(ou);
+  begin
+    delete from public.barter_offers where id = o;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a closed post with responses cannot be deleted and recreated',
+    '23514', v_code);
+
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_offers where id = o;
+  perform pg_temp.chk('barter', 'and the offer still exists', '1', v_n::text);
+end $$;
+
+-- ── The guards themselves are pinned, and so is their firing order ─────────
+-- Both guards in this area have already been replaced once by a later migration. A source pin
+-- is the only mechanism that survives the next `create or replace`, and trigger ORDER now
+-- decides which SQLSTATE -- and therefore which sentence -- a provider sees.
+do $$
+declare
+  v_src text; v_order text;
+begin
+  -- COMMENTS STRIPPED, as the row-lock pin in messaging.test.sql already does: `position()`
+  -- over raw prosrc is satisfied by prose, so a body that mentions a clause in a comment while
+  -- omitting it would pass. Every pin below runs against the stripped body.
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'enforce_barter_answer_open_offer' and n.nspname = 'public';
+  perform pg_temp.chk('barter', 'the answer guard still refuses BOTH accepted and declined',
+    'true', (v_src like '%''accepted''%' and v_src like '%''declined''%')::text);
+  perform pg_temp.chk('barter', 'and still exempts the admin paths',
+    'true', (position('service_role' in v_src) > 0
+             and position('auth.uid()) is null' in v_src) > 0)::text);
+
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'enforce_barter_offer_active_one_way' and n.nspname = 'public';
+  perform pg_temp.chk('barter', 'the one-way guard still exists and reads both directions',
+    'true', (v_src like '%old.is_active is false%' and v_src like '%new.is_active is true%')::text);
+  -- SYMMETRY with the answer guard's pin. Without this, a create-or-replace that dropped the
+  -- null-uid escape from THIS guard would pass the whole suite -- and reintroduce exactly the
+  -- operator lockout 20260916000000 was written to fix.
+  perform pg_temp.chk('barter', 'and the one-way guard still exempts BOTH admin paths',
+    'true', (position('service_role' in v_src) > 0
+             and position('auth.uid()) is null' in v_src) > 0)::text);
+
+  -- Postgres fires BEFORE row triggers in NAME order. That ordering is what makes an illegal
+  -- transition raise 23514 from write_integrity rather than 55000 from the post guard.
+  select string_agg(t.tgname, ',' order by t.tgname) into v_order
+    from pg_trigger t
+   where t.tgrelid = 'public.barter_interests'::regclass
+     and not t.tgisinternal
+     -- bit 2 = BEFORE, bits 4|16 = INSERT|UPDATE. The DELETE guards are excluded on purpose:
+     -- the ordering that decides which SQLSTATE a write returns is the INSERT/UPDATE chain.
+     and (t.tgtype & 2) <> 0 and (t.tgtype & 20) <> 0;
+  perform pg_temp.chk('barter', 'barter_interests BEFORE write triggers fire in the intended order',
+    'barter_interests_write_integrity,barter_interests_zy_answer_open_offer,'
+      || 'barter_interests_zz_rate_limit', v_order);
+
+  select string_agg(t.tgname, ',' order by t.tgname) into v_order
+    from pg_trigger t
+   where t.tgrelid = 'public.barter_offers'::regclass
+     and not t.tgisinternal
+     and (t.tgtype & 2) <> 0 and (t.tgtype & 20) <> 0;
+  perform pg_temp.chk('barter', 'barter_offers BEFORE write triggers fire in the intended order',
+    'barter_offers_write_integrity,barter_offers_zy_active_one_way', v_order);
+end $$;
+
+-- ── An ILLEGAL transition on a CLOSED post is refused by the rule that owns it ──
+-- The only case where both guards apply. write_integrity sorts first, so the caller is told
+-- the transition is illegal (23514), not that the post is closed (55000).
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Ord Owner', 'ordo_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Ord Resp', 'ordr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service,
+    is_active) values (opid, ou, 'ord offering', 'ord seeking', false) returning id into o;
+  -- Already declined: declined -> accepted is not a legal transition for anyone.
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'declined') returning id into i;
+
+  perform pg_temp.act(ou);
+  begin
+    update public.barter_interests set status = 'accepted' where id = i;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter',
+    'an illegal transition is refused by write_integrity, not by the post guard',
+    '23514', v_code);
+end $$;

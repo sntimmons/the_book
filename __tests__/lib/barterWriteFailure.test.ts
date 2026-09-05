@@ -133,3 +133,32 @@ describe('release', () => {
   })
 })
 
+
+describe('a closed post is not the responder\'s doing', () => {
+  // The property PD-052's rationale rests on: a closed-post refusal must never be reported as
+  // "Already answered", which blames the responder for something the owner did. This was the
+  // one mapping with no test.
+  it('reports decline on a closed post as a closed post', () => {
+    const f = barterWriteFailure('decline', { code: '55000' })
+    expect(f.terminal).toBe(true)
+    expect(f.title).toMatch(/closed/i)
+  })
+
+  it('and never confuses it with "already answered"', () => {
+    expect(barterWriteFailure('decline', { code: '55000' })).not.toEqual(
+      barterWriteFailure('decline', { code: '23514' }),
+    )
+  })
+
+  it('says the same for accept', () => {
+    const f = barterWriteFailure('accept', { code: '55000' })
+    expect(f.terminal).toBe(true)
+    expect(f.title).toMatch(/closed/i)
+  })
+
+  it('does not tell a user to retry a reopen that can never succeed', () => {
+    const f = barterWriteFailure('closeOffer', { code: '55000' })
+    expect(f.terminal).toBe(true)
+    expect(f.body).not.toMatch(/try again/i)
+  })
+})

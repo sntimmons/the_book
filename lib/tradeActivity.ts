@@ -44,7 +44,7 @@ export type TradeRole = 'owner' | 'responder'
  * from the status alone: a pending response on a still-active post that has merely fallen out
  * of the newest-50 feed must stay answerable, while a post the owner deliberately closed must
  * not be re-opened by answering one. The server holds the same rule
- * (barter_interests_zy_accept_open_offer), so this only decides whether to render a control
+ * (barter_interests_zy_answer_open_offer), so this only decides whether to render a control
  * that would otherwise be refused.
  */
 export type TradeRowAction = 'none' | 'end' | 'answer' | 'declineOnly'
@@ -173,9 +173,11 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
         ? { action: 'answer', note: 'Waiting on you to accept or decline.' }
         : {
             action: 'none',
-            // Says WHY it cannot be answered. The previous copy instructed an accept/decline
-            // the screen did not offer and the server would have refused.
-            note: 'You closed this post, so this response can no longer be accepted. Kept as history.',
+            // Says WHY it cannot be answered, and names BOTH refusals: PD-052 withdraws
+            // decline as well as accept, so copy mentioning only accept explains half the rule
+            // and makes the missing Decline control read as a bug.
+            note: 'You closed this post, so this response can no longer be accepted or '
+              + 'declined. Kept as history.',
           }
     }
     return f.offerIsActive
@@ -224,7 +226,7 @@ export function tradeRowState(f: TradeRowFacts): TradeRowState {
  * TOTAL over the action vocabulary, and takes the role, so a new destructive action cannot be
  * added without deciding what both sides are told.
  */
-export type DestructiveAction = 'endNegotiation' | 'decline' | 'accept'
+export type DestructiveAction = 'endNegotiation' | 'decline' | 'accept' | 'closeOffer'
 
 export interface ConfirmCopy {
   title: string
@@ -257,6 +259,20 @@ const CONFIRM_COPY: Record<
       `${counterparty} will not be matched with you for this post. This cannot be undone. `
       + 'Their response stays on record.',
     confirmLabel: 'Decline',
+    cancelLabel: 'Cancel',
+  }),
+  // Closing was the ONLY destructive barter act still authored inline, and it is the one
+  // PD-051 made irreversible. Its inline copy had already fallen behind the rulings shipped
+  // alongside it: it said the owner could not reopen "from here", scoping a permanent loss to
+  // one screen, and disclosed losing Accept but not Decline.
+  closeOffer: () => ({
+    title: 'Close this offer?',
+    body:
+      'This cannot be undone. A closed post cannot be reopened — to offer this again you '
+      + 'would post a new one. Any responses stay on record and remain in Trade Activity, but '
+      + 'they can no longer be accepted or declined. A negotiation you have already accepted '
+      + 'is not ended by closing.',
+    confirmLabel: 'Close offer',
     cancelLabel: 'Cancel',
   }),
   accept: (_role, counterparty) => ({

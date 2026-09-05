@@ -25,7 +25,7 @@ import {
 const STATUSES = Object.keys(TRADE_ACTIVITY_SECTION) as BarterInterestStatus[]
 const SECTIONS = Object.keys(SECTION_COPY) as TradeActivitySection[]
 const ROLES: TradeRole[] = ['owner', 'responder']
-const ACTIONS: DestructiveAction[] = ['endNegotiation', 'decline', 'accept']
+const ACTIONS: DestructiveAction[] = ['endNegotiation', 'decline', 'accept', 'closeOffer']
 
 function facts(over: Partial<TradeRowFacts> = {}): TradeRowFacts {
   return {
@@ -116,7 +116,9 @@ describe('pending responses', () => {
     const s = tradeRowState(facts({ status: 'pending', myRole: 'owner', offerIsActive: false }))
     expect(s.action).toBe('none')
     expect(s.note).toMatch(/closed this post/i)
-    expect(s.note).not.toMatch(/accept or decline/i)
+    // PD-052 withdraws BOTH. Copy naming only accept explains half the rule and makes the
+    // missing Decline control read as a bug.
+    expect(s.note).toMatch(/declined/i)
   })
 
   it('never offers the responder an answer control', () => {
@@ -322,5 +324,143 @@ describe('destructive confirmations disclose irreversibility', () => {
     expect(confirmCopy('endNegotiation', 'responder', 'Alex').body).toMatch(
       /you will not be able to respond/i,
     )
+  })
+})
+
+describe('a closed post is terminal for BOTH parties (PD-050, PD-052)', () => {
+  // The responses screen now derives its capability from this same function, so these
+  // assertions cover both surfaces. Previously that screen had its own JSX ternary chain and
+  // the two had already drifted on exactly this question.
+  it('offers the owner no action at all on a closed post, whatever the slot state', () => {
+    for (const offerHasAcceptedResponse of [true, false]) {
+      const s = tradeRowState(
+        facts({
+          status: 'pending',
+          myRole: 'owner',
+          offerIsActive: false,
+          offerHasAcceptedResponse,
+        }),
+      )
+      expect(s.action).toBe('none')
+    }
+  })
+
+  it('tells the responder the post is closed rather than that they were not selected', () => {
+    const s = tradeRowState(
+      facts({ status: 'pending', myRole: 'responder', offerIsActive: false }),
+    )
+    expect(s.note).toMatch(/closed/i)
+    expect(s.note).not.toMatch(/not selected/i)
+  })
+
+  it('never yields an accept-capable action for ANY row on a closed post', () => {
+    // The invariant the server now also holds (barter_interests_zy_answer_open_offer): a
+    // closed post's responses cannot be answered. If this ever yields 'answer', a screen
+    // renders an Accept the database will refuse.
+    for (const status of STATUSES) {
+      for (const myRole of ROLES) {
+        for (const offerHasAcceptedResponse of [true, false]) {
+          const s = tradeRowState(
+            facts({ status, myRole, offerIsActive: false, offerHasAcceptedResponse }),
+          )
+          expect(s.action).not.toBe('answer')
+        }
+      }
+    }
+  })
+})
+
+describe('accept is reachable ONLY through the answer action', () => {
+  // Guards the defect the responses screen shipped with: a non-total chain whose final else
+  // rendered a live Accept, so an unknown future status fell through to it. Capability is a
+  // closed set now — every status resolves to one of four actions, and only one permits accept.
+  it('resolves every status to a known action, on active and closed posts', () => {
+    const seen = new Set<string>()
+    for (const status of STATUSES) {
+      for (const myRole of ROLES) {
+        for (const offerIsActive of [true, false]) {
+          for (const offerHasAcceptedResponse of [true, false]) {
+            seen.add(
+              tradeRowState(
+                facts({ status, myRole, offerIsActive, offerHasAcceptedResponse }),
+              ).action,
+            )
+          }
+        }
+      }
+    }
+    for (const action of seen) {
+      expect(['none', 'end', 'answer', 'declineOnly']).toContain(action)
+    }
+    // And 'answer' is genuinely reachable, so the assertion above is not vacuous.
+    expect(seen.has('answer')).toBe(true)
+  })
+
+  it('grants answer only to an owner, on an active post, with a free slot', () => {
+    for (const status of STATUSES) {
+      for (const myRole of ROLES) {
+        for (const offerIsActive of [true, false]) {
+          for (const offerHasAcceptedResponse of [true, false]) {
+            const s = tradeRowState(
+              facts({ status, myRole, offerIsActive, offerHasAcceptedResponse }),
+            )
+            if (s.action === 'answer') {
+              expect(status).toBe('pending')
+              expect(myRole).toBe('owner')
+              expect(offerIsActive).toBe(true)
+              expect(offerHasAcceptedResponse).toBe(false)
+            }
+          }
+        }
+      }
+    }
+  })
+})
+
+describe('closing a post discloses that it is permanent', () => {
+  // PD-051 made closing irreversible and PD-052 withdrew decline as well as accept. The inline
+  // copy this replaced said the owner could not reopen it "from here" — scoping a permanent
+  // loss to one screen — and mentioned only accept.
+  const c = confirmCopy('closeOffer', 'owner', '')
+
+  it('does not scope the loss to one screen', () => {
+    expect(c.body).not.toMatch(/from here/i)
+  })
+
+  it('states that it cannot be undone and that the post cannot be reopened', () => {
+    expect(c.body).toMatch(/cannot be undone/i)
+    expect(c.body).toMatch(/cannot be reopened/i)
+  })
+
+  it('names BOTH withdrawn actions, not only accept', () => {
+    expect(c.body).toMatch(/accepted/i)
+    expect(c.body).toMatch(/declined/i)
+  })
+
+  it('says an accepted negotiation is not ended by closing', () => {
+    expect(c.body).toMatch(/not ended by closing/i)
+  })
+})
+
+describe('an ending is described to the party being asked', () => {
+  // The invariant confirmCopy exists to hold, asserted rather than assumed: a call site that
+  // hardcodes a role hands one participant the other's consequences. That happened once — the
+  // responses screen passed 'owner' after its End control was un-gated for responders.
+  const owner = confirmCopy('endNegotiation', 'owner', 'Alex').body
+  const responder = confirmCopy('endNegotiation', 'responder', 'Alex').body
+
+  it('never tells a responder about capabilities only an owner has', () => {
+    expect(responder).not.toMatch(/re-accept/i)
+    expect(responder).not.toMatch(/your post/i)
+    expect(responder).not.toMatch(/accept another response/i)
+  })
+
+  it('tells each side the consequence that actually lands on them', () => {
+    expect(responder).toMatch(/you will not be able to respond/i)
+    expect(owner).toMatch(/they will not be able to respond/i)
+  })
+
+  it('gives the two roles genuinely different bodies', () => {
+    expect(owner).not.toEqual(responder)
   })
 })

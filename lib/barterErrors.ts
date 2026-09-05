@@ -48,8 +48,9 @@ const INSUFFICIENT_PRIVILEGE = '42501'
 // Raised when an accepted response has no conversation — only reachable for a row accepted
 // before the atomic handoff existed. Retrying cannot fix it, so it must not say "try again".
 const INTERNAL_ERROR = 'XX000'
-// Raised by barter_interests_zy_accept_open_offer when the owner tries to accept a response to
-// a post they have CLOSED. A distinct code exists because check_violation maps, for accept, to
+// Raised by barter_interests_zy_answer_open_offer when the owner tries to ACCEPT OR DECLINE a
+// response to a post they have closed, and by barter_offers_zy_active_one_way when anyone tries
+// to reopen one. A distinct code exists because check_violation maps, for accept and decline, to
 // "already answered" -- which blames the responder for something the owner did.
 const NOT_IN_PREREQUISITE_STATE = '55000'
 
@@ -153,6 +154,13 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       title: 'Already answered',
       body: 'This response has already been accepted or declined. The list has been updated.',
     },
+    // PD-052: a closed post's responses cannot be answered at all, decline included. Must not
+    // reuse "Already answered", which blames the responder for the owner's own closure.
+    [NOT_IN_PREREQUISITE_STATE]: {
+      terminal: true,
+      title: 'This post is closed',
+      body: 'Its responses are kept as history and can no longer be answered. The list has been updated.',
+    },
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,
       title: 'Not your offer',
@@ -172,6 +180,16 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       terminal: true,
       title: 'Not your negotiation',
       body: 'Only the two providers in a negotiation can end it.',
+    },
+  },
+  closeOffer: {
+    // PD-051: closing is one-way. No reopen control exists today, so this is latent -- but a
+    // terminal refusal reported as "try again" would loop a user on an impossible action, and
+    // the next contributor to add any is_active write inherits the mapping.
+    [NOT_IN_PREREQUISITE_STATE]: {
+      terminal: true,
+      title: 'That post is closed for good',
+      body: 'A closed post cannot be reopened. Post a new offer to trade this again.',
     },
   },
   deleteOffer: {

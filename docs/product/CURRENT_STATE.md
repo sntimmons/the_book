@@ -232,8 +232,8 @@ Regression coverage: `supabase/tests/barter.test.sql`, registered in the B5B run
 - Slice 1 created **no** agreement or obligation schema and touched neither `bookings` nor
   the reviews surface.
 
-**Slices 2, 2B, 3a-0 and 3a-0b ARE now on `main`** (as of `c85c9ed`, twenty migrations, the
-newest `20260911000000`). This section above describes `main` at `feba568` and is **kept as a
+**Slices 2, 2B, 3a-0, 3a-0b and 3a-0c ARE now on `main`** (as of `27756bb`, twenty-three
+migrations, the newest `20260914000000`). This section above describes `main` at `feba568` and is **kept as a
 Slice 1 record, not as current truth**. What changed since, in one line each — the owning
 document is authoritative for all of it:
 
@@ -243,11 +243,12 @@ document is authoritative for all of it:
 | 2B | `20260908000000` | One canonical conversation per provider pair, enforced in the DB | `MIGRATION_LEDGER.md` |
 | 3a-0 | `20260909000000` | `released` status: a dead negotiation frees the post's slot | PD-049 |
 | 3a-0b | `20260910000000`, `20260911000000` | Server-authored release notice (`sender_id IS NULL`); message authorship pinned | PD-049, `BARTER_BETA_CONTRACT.md` § 3.2 |
+| 3a-0c | `20260912000000`–`20260914000000` | **Trade Activity** (`/community/trade-activity`), durable negotiation access; a closed post cannot select a new response | PD-050 |
 
-**Not yet on `main`:** Slice 3a-0c (Trade Activity) is in flight on
-`feature/barter-slice3a0c-trade-activity` (PR #46) and includes PD-050. Do not read
-`BARTER_BETA_CONTRACT.md` § 3.2's "Reachable as of Slice 3a-0c" or PD-050 as describing `main`
-until that merges.
+**Not yet on `main`:** the closed-post-terminal cleanup (PD-051, PD-052 — closing is one-way and
+a closed post's responses cannot be answered at all) is in flight on
+`chore/barter-closed-post-terminal` (PR #47), with migrations `20260915000000` and
+`20260916000000`. Do not read PD-051 or PD-052 as describing `main` until that merges.
 
 > **This barter section is due a full Project State Steward reconciliation.** It was written
 > for Slice 1 and has been corrected in place rather than rewritten, because a reconciliation
