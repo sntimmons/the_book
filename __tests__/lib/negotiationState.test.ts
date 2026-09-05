@@ -1,6 +1,7 @@
 import {
   MAX_TERMS,
   negotiationView,
+  shouldShowTermsChangedNote,
   NegotiationFacts,
   NegotiationState,
   sideLabel,
@@ -28,6 +29,7 @@ function facts(over: Partial<NegotiationFacts> = {}): NegotiationFacts {
     theyAcceptedCurrent: false,
     bothAccepted: false,
     iAuthoredCurrent: false,
+    everBothAccepted: false,
     ...over,
   }
 }
@@ -75,10 +77,22 @@ describe('a dead negotiation offers nothing', () => {
     }
   })
 
-  it('says the terms are history rather than that anything was agreed', () => {
-    const v = negotiationView(facts({ interestStatus: 'released', bothAccepted: true }))
+  it('says the terms are kept as history', () => {
+    const v = negotiationView(facts({ interestStatus: 'released' }))
     expect(v.detail).toMatch(/history/i)
-    expect(v.headline).not.toMatch(/agreed/i)
+  })
+
+  it('does not deny an agreement that actually happened', () => {
+    // The record most likely to matter in a disagreement is the one this would get wrong: a
+    // negotiation where both accepted and one party then ended it.
+    const v = negotiationView(facts({ interestStatus: 'released', everBothAccepted: true }))
+    expect(v.detail).not.toMatch(/no terms were agreed/i)
+    expect(v.detail).toMatch(/both accepted/i)
+  })
+
+  it('and still says nothing was agreed when nothing was', () => {
+    const v = negotiationView(facts({ interestStatus: 'released', everBothAccepted: false }))
+    expect(v.detail).toMatch(/no terms were agreed/i)
   })
 })
 
@@ -194,5 +208,78 @@ describe('sideLabel speaks from the viewer', () => {
     expect(sideLabel('responder', 'owner')).toMatch(/they/i)
     expect(sideLabel('responder', 'responder')).toMatch(/you/i)
     expect(sideLabel('owner', 'responder')).toMatch(/they/i)
+  })
+})
+
+describe('the lapsed-acceptance note addresses the right person', () => {
+  // Wrong in both directions before: it fired for anyone whenever ANY earlier version had ANY
+  // acceptance, and was suppressed exactly when the other provider had accepted the new terms
+  // — which is the person whose acceptance actually lapsed.
+  const base = { interestStatus: 'accepted' as const }
+
+  it('is shown to someone whose earlier acceptance no longer counts', () => {
+    expect(
+      shouldShowTermsChangedNote({
+        ...base,
+        iAcceptedAnEarlierVersion: true,
+        iAcceptedCurrent: false,
+      }),
+    ).toBe(true)
+  })
+
+  it('is shown even when the other provider has already accepted the new terms', () => {
+    // The suppressed case. Their acceptance says nothing about whether mine lapsed.
+    expect(
+      shouldShowTermsChangedNote({
+        ...base,
+        iAcceptedAnEarlierVersion: true,
+        iAcceptedCurrent: false,
+      }),
+    ).toBe(true)
+  })
+
+  it('is NOT shown to someone who never accepted anything', () => {
+    expect(
+      shouldShowTermsChangedNote({
+        ...base,
+        iAcceptedAnEarlierVersion: false,
+        iAcceptedCurrent: false,
+      }),
+    ).toBe(false)
+  })
+
+  it('is NOT shown once they have accepted the current terms', () => {
+    expect(
+      shouldShowTermsChangedNote({
+        ...base,
+        iAcceptedAnEarlierVersion: true,
+        iAcceptedCurrent: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('is never shown on a dead negotiation', () => {
+    for (const interestStatus of ['released', 'declined', 'pending'] as const) {
+      expect(
+        shouldShowTermsChangedNote({
+          interestStatus,
+          iAcceptedAnEarlierVersion: true,
+          iAcceptedCurrent: false,
+        }),
+      ).toBe(false)
+    }
+  })
+})
+
+describe('the agreed state does not overstate what has happened', () => {
+  const v = negotiationView(
+    facts({ bothAccepted: true, iAcceptedCurrent: true, theyAcceptedCurrent: true }),
+  )
+
+  it('says either side can still change or end it', () => {
+    // Without this a provider reads "nothing left to confirm" and starts work, while the
+    // counterparty can still supersede or end the negotiation the same day.
+    expect(v.detail).toMatch(/still send different terms|end this/i)
+    expect(v.detail).toMatch(/withdraws/i)
   })
 })

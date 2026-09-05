@@ -151,6 +151,19 @@ async function raceCounters() {
   ])
 
   chk('two simultaneous counters both succeed', 'true', String(a.ok && b.ok))
+
+  // OVERLAP EVIDENCE. Without this the scenario cannot fail: if the two CLI processes do not
+  // reach the server together, a lock-free submit_barter_counter also produces three distinct
+  // consecutive versions and every assertion below passes. Reporting that as proof of the lock
+  // would be a false claim about what was tested.
+  const w = await runSql(`
+select (extract(epoch from (max(created_at) - min(created_at))) < 1.5) as overlapped
+  from public.barter_proposal_versions
+ where proposal_id = (select id from public.barter_proposals where interest_id = '${ids.interest}')
+   and version_no > 1;`)
+  const overlapped = /true/i.test(scalar(w.out, 'overlapped') ?? '')
+  chk('the two sessions genuinely overlapped (else this scenario proves nothing)',
+    'true', String(overlapped))
   if (!a.ok) console.log('   session A:', a.out.slice(0, 300))
   if (!b.ok) console.log('   session B:', b.out.slice(0, 300))
 
@@ -249,14 +262,20 @@ begin
 end $$;`)
   if (!r.ok) console.error('cleanup failed:', r.out)
 
+  // SCOPED to this run's own fixtures. A global count(*) = 0 passes today only because the
+  // non-production barter tables happen to be empty, and would report a false FAILURE the
+  // moment any real row exists on the target.
   const q = await runSql(`
-select (select count(*) from public.barter_proposals) as proposals,
-       (select count(*) from public.barter_proposal_versions) as versions,
-       (select count(*) from public.barter_proposal_terms) as terms,
-       (select count(*) from public.barter_version_acceptances) as acceptances,
-       (select count(*) from public.barter_offers) as offers,
-       (select count(*) from public.barter_interests) as interests;`)
-  for (const k of ['proposals', 'versions', 'terms', 'acceptances', 'offers', 'interests']) {
+select (select count(*) from public.barter_offers where id in
+          ('${ids.offer}','${ids.offer2}','${ids.offer3}')) as offers,
+       (select count(*) from public.barter_interests where id in
+          ('${ids.interest}','${ids.interest2}','${ids.interest3}')) as interests,
+       (select count(*) from public.barter_proposals where interest_id in
+          ('${ids.interest}','${ids.interest2}','${ids.interest3}')) as proposals,
+       (select count(*) from public.providers where user_id in
+          ('${ids.ou}','${ids.ru}')) as providers,
+       (select count(*) from auth.users where id in ('${ids.ou}','${ids.ru}')) as users;`)
+  for (const k of ['offers', 'interests', 'proposals', 'providers', 'users']) {
     chk(`zero residue: ${k}`, '0', scalar(q.out, k))
   }
 }

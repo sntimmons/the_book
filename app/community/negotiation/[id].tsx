@@ -26,10 +26,13 @@ import {
 } from '@/lib/negotiation'
 import { barterWriteFailure } from '@/lib/barterErrors'
 import {
+  MAX_DESCRIPTION,
   negotiationView,
+  shouldShowTermsChangedNote,
   sideLabel,
   TermInput,
   TERMS_CHANGED_NOTE,
+  TradeSide,
   validateTerms,
 } from '@/lib/negotiationState'
 import { formatTradeDate } from '@/lib/tradeActivity'
@@ -108,6 +111,13 @@ export default function NegotiationScreen() {
 
   const current = versions.find((v) => v.id === row?.currentVersionId) ?? null
   const previous = versions.filter((v) => v.id !== row?.currentVersionId)
+  // ONE source for the viewer's side, resolved once per render. It was spelled three times —
+  // once from `row.myRole` and twice from the route param — and two of those spellings could
+  // disagree, which would label the draft "You give" against the side actually sent. The
+  // server-derived role wins whenever a negotiation exists; the param only fills the gap
+  // before one does, and only to choose a label.
+  const myRole: TradeSide = row?.myRole ?? (params.role === 'owner' ? 'owner' : 'responder')
+  const iAcceptedAnEarlierVersion = previous.some((v) => user?.id && v.acceptedBy.includes(user.id))
   const view = row
     ? negotiationView({
         interestStatus: row.interestStatus,
@@ -115,6 +125,7 @@ export default function NegotiationScreen() {
         theyAcceptedCurrent: row.theyAcceptedCurrent,
         bothAccepted: row.bothAccepted,
         iAuthoredCurrent: row.currentVersionAuthorId === user?.id,
+        everBothAccepted: versions.some((v) => v.acceptedBy.length >= 2),
       })
     : null
 
@@ -179,11 +190,7 @@ export default function NegotiationScreen() {
   }
 
   function startComposing() {
-    // Before any proposal exists the viewer's role is not yet known from the server, so the
-    // caller passes it. It only decides which draft line is labelled "You give"; the SERVER
-    // decides who each term belongs to and who the caller is.
-    const role = row?.myRole ?? (params.role === 'owner' ? 'owner' : 'responder')
-    setDraft(EMPTY_TERMS(role))
+    setDraft(EMPTY_TERMS(myRole))
     setComposing(true)
   }
 
@@ -234,7 +241,7 @@ export default function NegotiationScreen() {
               {draft.map((t, i) => (
                 <View key={i} style={styles.draftRow}>
                   <Text style={styles.termSide}>
-                    {sideLabel(t.providedBy, params.role === 'owner' ? 'owner' : 'responder')}
+                    {sideLabel(t.providedBy, myRole)}
                   </Text>
                   <TextInput
                     style={styles.input}
@@ -242,7 +249,7 @@ export default function NegotiationScreen() {
                     onChangeText={(v) => updateDraft(i, { serviceDescription: v })}
                     placeholder="What is provided"
                     placeholderTextColor="rgba(240,232,213,0.35)"
-                    maxLength={200}
+                    maxLength={MAX_DESCRIPTION}
                     multiline
                   />
                 </View>
@@ -285,10 +292,15 @@ export default function NegotiationScreen() {
             <Text style={styles.state}>{view.headline}</Text>
             <Text style={styles.stateDetail}>{view.detail}</Text>
 
-            {/* The one moment where an acceptance silently stopped counting. Said plainly,
-                because the alternative is a provider believing they have agreed to something
-                the other party has already moved past. */}
-            {view.state === 'awaitingBoth' && previous.some((v) => v.acceptedBy.length > 0) ? (
+            {/* The one moment where an acceptance silently stopped counting. Keyed on whether
+                THIS viewer accepted an earlier set — the inline condition it replaced fired for
+                people who never accepted and was suppressed for the one person whose acceptance
+                actually lapsed. */}
+            {shouldShowTermsChangedNote({
+              interestStatus: row.interestStatus,
+              iAcceptedAnEarlierVersion,
+              iAcceptedCurrent: row.iAcceptedCurrent,
+            }) ? (
               <Text style={styles.changedNote}>{TERMS_CHANGED_NOTE}</Text>
             ) : null}
 
@@ -336,7 +348,7 @@ export default function NegotiationScreen() {
                       onChangeText={(v) => updateDraft(i, { serviceDescription: v })}
                       placeholder="What is provided"
                       placeholderTextColor="rgba(240,232,213,0.35)"
-                      maxLength={200}
+                      maxLength={MAX_DESCRIPTION}
                       multiline
                     />
                   </View>
@@ -403,9 +415,13 @@ export default function NegotiationScreen() {
                       {v.authorUserId === user?.id ? 'You proposed' : 'They proposed'}
                       {' · '}
                       {formatTradeDate(v.createdAt)}
-                      {v.acceptedBy.length > 0
-                        ? ` · accepted by ${v.acceptedBy.length === 2 ? 'both' : 'one'}`
-                        : ''}
+                      {v.acceptedBy.length >= 2
+                        ? ' · accepted by both'
+                        : v.acceptedBy.length === 1
+                          ? user?.id && v.acceptedBy.includes(user.id)
+                            ? ' · you accepted'
+                            : ' · they accepted'
+                          : ''}
                     </Text>
                     {v.terms.map((t) => (
                       <View key={t.id} style={styles.term}>

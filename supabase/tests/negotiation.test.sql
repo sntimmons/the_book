@@ -143,7 +143,9 @@ begin
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('negotiation', 'a duplicate initial proposal is refused', '55000', v_code);
+  -- 23505, not 55000. Sharing 55000 with "this negotiation is not active" told a provider
+  -- whose negotiation is ALIVE — and now has terms on it — that it had ended.
+  perform pg_temp.chk('negotiation', 'a duplicate initial proposal is refused', '23505', v_code);
 end $$;
 
 -- ── Editing the post cannot rewrite a version ──────────────────────────────
@@ -719,7 +721,9 @@ begin
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('negotiation', 'a one-sided proposal is refused', '23514', v_code);
+  -- 22023 for malformed input, so it is distinguishable from "the negotiation is gone", which
+  -- also raises check_violation on this path.
+  perform pg_temp.chk('negotiation', 'a one-sided proposal is refused', '22023', v_code);
 
   begin
     perform public.create_barter_proposal(i, jsonb_build_array(
@@ -727,7 +731,7 @@ begin
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('negotiation', 'a single-term proposal is refused', '23514', v_code);
+  perform pg_temp.chk('negotiation', 'a single-term proposal is refused', '22023', v_code);
 
   begin
     perform public.create_barter_proposal(i, jsonb_build_array(
@@ -736,7 +740,7 @@ begin
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('negotiation', 'an invented side is refused', '23514', v_code);
+  perform pg_temp.chk('negotiation', 'an invented side is refused', '23514', v_code);  -- table check
 
   begin
     perform public.create_barter_proposal(i, jsonb_build_array(
@@ -745,12 +749,161 @@ begin
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('negotiation', 'an over-long term is refused', '23514', v_code);
+  perform pg_temp.chk('negotiation', 'an over-long term is refused', '23514', v_code);  -- table check
 
   -- Every refusal above must have written NOTHING: a partially-written proposal would leave a
   -- negotiation whose terms neither party proposed.
   perform pg_temp.act_service();
   select count(*) into v_n from public.barter_proposals where interest_id = i;
   perform pg_temp.chk('negotiation', 'and no partial proposal survives a refusal',
+    '0', v_n::text);
+end $$;
+
+-- ── The write boundary: grants, and a guard that does not depend on them ───
+-- The defect this closes: `write_barter_proposal_terms` is SECURITY DEFINER with NO
+-- authorization, and was revoked only `from public, anon` -- leaving intact the EXECUTE that
+-- ALTER DEFAULT PRIVILEGES grants `authenticated`. Any signed-in user could append terms to any
+-- version they could read, including one the counterparty had already accepted: not an UPDATE
+-- or DELETE, so the append-only trigger never fired; the pointer did not move, so nothing was
+-- superseded; and `both_accepted` kept reporting true over changed content.
+--
+-- The class, not the instance: every function this slice created is pinned, so the next helper
+-- added without a revoke fails here rather than in a review.
+do $$
+declare
+  fn text;
+begin
+  foreach fn in array array[
+    'public.write_barter_proposal_terms(uuid, jsonb)',
+    'public.assert_barter_version_budget(uuid, uuid)',
+    'public.barter_post_snapshot(public.barter_offers)',
+    'public.barter_negotiation_role(public.barter_interests, public.barter_offers, uuid)',
+    'public.enforce_barter_negotiation_append_only()',
+    'public.enforce_barter_proposal_immutable()',
+    'public.enforce_barter_terms_write()'
+  ] loop
+    perform pg_temp.chk('negotiation', 'internal helper is not executable by authenticated: ' || fn,
+      'false', has_function_privilege('authenticated', fn, 'execute')::text);
+    perform pg_temp.chk('negotiation', 'nor by anon: ' || fn,
+      'false', has_function_privilege('anon', fn, 'execute')::text);
+  end loop;
+
+  -- ...and the three that ARE the public surface still work.
+  foreach fn in array array[
+    'public.create_barter_proposal(uuid, jsonb)',
+    'public.submit_barter_counter(uuid, jsonb)',
+    'public.accept_barter_version(uuid)'
+  ] loop
+    perform pg_temp.chk('negotiation', 'the public RPC is executable by authenticated: ' || fn,
+      'true', has_function_privilege('authenticated', fn, 'execute')::text);
+    perform pg_temp.chk('negotiation', 'and not by anon: ' || fn,
+      'false', has_function_privilege('anon', fn, 'execute')::text);
+  end loop;
+end $$;
+
+-- The guard, proven independently of the grant. If the grant were ever restored, this is what
+-- still refuses -- so neither layer is load-bearing alone.
+do $$
+declare
+  ou uuid := current_setting('b5b.ng_ou')::uuid;
+  ru uuid := current_setting('b5b.ng_ru')::uuid;
+  xu uuid := current_setting('b5b.ng_xu')::uuid;
+  v1 uuid := current_setting('b5b.ng_v1')::uuid;
+  v_code text; v_n integer; v_before integer;
+begin
+  perform pg_temp.act_service();
+  select count(*) into v_before from public.barter_proposal_terms where version_id = v1;
+
+  -- A participant, with the grant bypassed (postgres role, real auth.uid()) -- exactly the
+  -- profile of a future definer function, and of the attack if the grant came back.
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ru::text, 'role', 'authenticated')::text, true);
+  begin
+    perform public.write_barter_proposal_terms(v1, pg_temp.ng_terms('injected', 'injected'));
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation',
+    'a participant cannot append terms to a version, even with grants bypassed',
+    '42501', v_code);
+
+  -- And a direct INSERT is refused by the same guard, not merely by the missing grant.
+  begin
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description)
+    values (v1, 'owner', 'forged');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'nor insert a term row directly', '42501', v_code);
+
+  -- The structural backstop: even holding the marker, a second write to the same version
+  -- collides on (version_id, sort_order). A per-row count could not express this -- it cannot
+  -- tell a second call from the second row of the first.
+  perform set_config('app.barter_terms_write', v1::text, true);
+  begin
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
+      sort_order) values (v1, 'owner', 'second write', 0);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform set_config('app.barter_terms_write', '', true);
+  perform pg_temp.chk('negotiation',
+    'a version''s terms are written ONCE, even with the marker held', '23505', v_code);
+
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_proposal_terms where version_id = v1;
+  perform pg_temp.chk('negotiation', 'and the accepted terms are unchanged',
+    v_before::text, v_n::text);
+end $$;
+
+-- ── The locks are pinned in source ─────────────────────────────────────────
+-- This harness runs in ONE transaction and cannot observe a race, so the locks that make
+-- counters and acceptances serialisable have no behavioural test here. The repo has already
+-- lost a `for update` to a `create or replace` with no error, no diff and no failing test; a
+-- comment-stripped source pin is the only mechanism that survives the next rewrite.
+do $$
+declare
+  v_src text;
+begin
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'submit_barter_counter' and n.nspname = 'public';
+  -- Matches only if a barter_proposals select reaches `for update` BEFORE its terminating
+  -- semicolon. `substring(... from ...)` returned the FIRST such statement, which is the
+  -- unlocked read — so the pin was checking the wrong one and reported a present lock as
+  -- missing. `[^;]*` is what ties the lock to the same statement.
+  perform pg_temp.chk('negotiation', 'submit_barter_counter LOCKS the proposal row',
+    'true', (lower(v_src) ~ 'from\s+public\.barter_proposals[^;]*for update')::text);
+
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'accept_barter_version' and n.nspname = 'public';
+  perform pg_temp.chk('negotiation', 'accept_barter_version re-reads the pointer UNDER LOCK',
+    'true', (lower(v_src) ~ 'from\s+public\.barter_proposals[^;]*for update')::text);
+
+  -- Lock ORDER: every RPC takes the offer before the interest, matching the pre-existing
+  -- release/accept RPCs. Taking them in opposite orders is what deadlocks.
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where p.proname = 'create_barter_proposal' and n.nspname = 'public';
+  perform pg_temp.chk('negotiation', 'create_barter_proposal locks the OFFER before the interest',
+    'true', (position('barter_offers' in v_src) < position('barter_interests i' in v_src))::text);
+end $$;
+
+-- ── The denormalised participants still agree with their sources ───────────
+-- 20260917000000 claims "B5B pins that they still agree". It did not. This is that assertion.
+do $$
+declare
+  v_n integer;
+begin
+  perform pg_temp.act_service();
+  select count(*) into v_n
+    from public.barter_proposals p
+    join public.barter_interests i on i.id = p.interest_id
+    join public.barter_offers o on o.id = p.offer_id
+   where p.owner_user_id <> o.user_id or p.responder_user_id <> i.interested_user_id;
+  perform pg_temp.chk('negotiation',
+    'no proposal disagrees with its offer and interest about who the participants are',
     '0', v_n::text);
 end $$;

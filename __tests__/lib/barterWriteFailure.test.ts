@@ -5,6 +5,22 @@ import { barterWriteFailure, BarterWriteOp, interpretWrite } from '../../lib/bar
 // SAME code means different things for different operations, and that anything unrecognised
 // stays retryable rather than being force-fitted to a terminal message.
 
+// DRIVEN FROM THE UNION, not hand-listed. Both safety suites below previously enumerated five
+// operations by hand, so the two added by the negotiation slice were silently excluded — and
+// the most consequential mappings in that slice (40001 must be NON-terminal or a provider is
+// stranded on a live negotiation; 54000 must be terminal-for-today or they loop for a day) had
+// no client test at all. A hand-written list cannot fail when the union grows.
+const ALL_OPS: BarterWriteOp[] = [
+  'respond',
+  'accept',
+  'decline',
+  'release',
+  'closeOffer',
+  'deleteOffer',
+  'proposeTerms',
+  'acceptTerms',
+]
+
 const pgErr = (code: string) => ({ code, message: 'raw db text', details: '', hint: '' })
 
 describe('barterWriteFailure', () => {
@@ -38,13 +54,13 @@ describe('barterWriteFailure', () => {
   })
 
   // The safety property: an unknown failure must never be presented as permanent.
-  it.each<[BarterWriteOp]>([
-    ['respond'], ['accept'], ['decline'], ['closeOffer'], ['deleteOffer'],
-  ])('treats an unmapped code as retryable for %s', (op) => {
+  it.each<[BarterWriteOp]>(ALL_OPS.map((op) => [op]))(
+    'treats an unmapped code as retryable for %s', (op) => {
     const r = barterWriteFailure(op, pgErr('08006')) // connection failure
     expect(r.terminal).toBe(false)
     expect(r.body).toBe('Please try again.')
   })
+
 
   it('treats a transport error with no code as retryable, not permanent', () => {
     // postgrest-js synthesises an error with an empty code for network failures. Reporting
@@ -72,7 +88,7 @@ describe('barterWriteFailure', () => {
   describe('zero-row writes', () => {
     const noRows = { barterClientCode: 'no_rows' }
 
-    it.each([['respond'], ['accept'], ['decline'], ['closeOffer'], ['deleteOffer']] as const)(
+    it.each<[BarterWriteOp]>(ALL_OPS.map((op) => [op]))(
       'is terminal for %s (retrying cannot make a missing row reappear)',
       (op) => {
         expect(barterWriteFailure(op, noRows).terminal).toBe(true)
@@ -203,5 +219,50 @@ describe('interpretWrite — a filtered write is not a success', () => {
     const f = barterWriteFailure('decline', error)
     expect(f.terminal).toBe(true)
     expect(f.title).not.toMatch(/not your/i)
+  })
+})
+
+describe('negotiation refusals advise the right next action', () => {
+  it('a replaced-terms refusal is recoverable, not terminal', () => {
+    // The user must read the new terms and accept again. Calling this permanent would strand
+    // them on a live negotiation.
+    const f = barterWriteFailure('acceptTerms', pgErr('40001'))
+    expect(f.terminal).toBe(false)
+    expect(f.title).toMatch(/changed/i)
+    expect(f.body).not.toMatch(/ended|no longer/i)
+  })
+
+  it('a spent daily budget is terminal for today, and says when to come back', () => {
+    const f = barterWriteFailure('proposeTerms', pgErr('54000'))
+    expect(f.terminal).toBe(true)
+    expect(f.body).toMatch(/tomorrow/i)
+    expect(f.body).not.toMatch(/try again/i)
+  })
+
+  it('losing the race to open a negotiation is not "this has ended"', () => {
+    // Two providers open Trade terms at once; one wins. The loser's negotiation is alive and
+    // now has terms on it.
+    const f = barterWriteFailure('proposeTerms', pgErr('23505'))
+    expect(f.terminal).toBe(false)
+    expect(f.title).not.toMatch(/ended/i)
+    expect(f.body).toMatch(/changes back|take a look/i)
+  })
+
+  it('malformed terms are fix-and-resend, and are not confused with a dead negotiation', () => {
+    const malformed = barterWriteFailure('proposeTerms', pgErr('22023'))
+    expect(malformed.terminal).toBe(false)
+    expect(malformed.title).toMatch(/check these terms/i)
+
+    const gone = barterWriteFailure('proposeTerms', pgErr('23514'))
+    expect(gone.terminal).toBe(true)
+    expect(gone).not.toEqual(malformed)
+  })
+
+  it('a non-participant is told that, not that the negotiation is over', () => {
+    for (const op of ['proposeTerms', 'acceptTerms'] as const) {
+      const f = barterWriteFailure(op, pgErr('42501'))
+      expect(f.terminal).toBe(true)
+      expect(f.title).toMatch(/not your/i)
+    }
   })
 })

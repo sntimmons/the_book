@@ -272,8 +272,14 @@ export default function TradeActivityScreen() {
 
                         {/* Terms live on their own surface. The conversation stays the
                             logistics anchor; a pair may trade more than once over time while
-                            keeping one thread, so the negotiation needs its own identity. */}
-                        {state.action === 'end' ? (
+                            keeping one thread, so the negotiation needs its own identity.
+                            
+                            Offered on ENDED rows too, not only live ones — the same reasoning
+                            the conversation button already carries. The tables are append-only
+                            and three separate strings promise the terms "stay on record", but
+                            gating this on a live negotiation made that record unreachable at
+                            exactly the moment a disagreement would need it. */}
+                        {state.action === 'end' || item.status === 'released' ? (
                           <TouchableOpacity
                             style={styles.secondaryBtn}
                             activeOpacity={0.8}

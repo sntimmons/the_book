@@ -32,6 +32,15 @@ export interface NegotiationFacts {
   bothAccepted: boolean
   /** True when the newest terms are the viewer's own. */
   iAuthoredCurrent: boolean
+  /**
+   * Did BOTH providers ever accept the same version, at any point in this negotiation?
+   *
+   * Separate from `bothAccepted`, which is about the terms on the table NOW. An ended
+   * negotiation that once reached agreement must not be described as one where nothing was
+   * agreed — that is the record most likely to matter in a disagreement, and it would be the
+   * one that is wrong.
+   */
+  everBothAccepted: boolean
 }
 
 export type NegotiationState =
@@ -59,8 +68,9 @@ export interface NegotiationView {
 const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }> = {
   ended: {
     headline: 'This negotiation ended',
-    detail:
-      'No terms were agreed. What was proposed is kept here as history.',
+    // Filled in by negotiationView, because what is true here depends on whether the two of
+    // you ever accepted the same terms.
+    detail: '',
   },
   agreed: {
     headline: 'You both accepted these terms',
@@ -69,7 +79,8 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
       // accepting is recorded; turning that into an official agreement is not built yet, and
       // saying otherwise would promise something the app cannot do.
       'Neither of you has anything to confirm here yet. Work out the details in your'
-      + ' conversation — the trade itself is arranged between you.',
+      + ' conversation — the trade itself is arranged between you. Either of you can still send'
+      + ' different terms or end this, which withdraws what you have both accepted.',
   },
   awaitingThem: {
     headline: 'Waiting on the other provider',
@@ -97,14 +108,42 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
           ? 'awaitingYou'
           : 'awaitingBoth'
 
+  const detail =
+    state === 'ended'
+      ? f.everBothAccepted
+        ? 'You had both accepted terms, and the negotiation was then ended. Those terms are '
+          + 'kept here as history.'
+        : 'No terms were agreed. What was proposed is kept here as history.'
+      : STATE_COPY[state].detail
+
   return {
     state,
-    ...STATE_COPY[state],
+    headline: STATE_COPY[state].headline,
+    detail,
     // A dead negotiation accepts nothing. The server refuses both independently; this only
     // decides whether to render a control that would otherwise be refused.
     canPropose: live,
     canAccept: live && !f.iAcceptedCurrent,
   }
+}
+
+/**
+ * Should this viewer be told their earlier acceptance stopped counting?
+ *
+ * Keyed on whether THEY accepted an earlier set of terms and have not accepted the current
+ * ones. The condition lived inline in the screen and was wrong in both directions: it fired for
+ * anyone whenever ANY earlier version had ANY acceptance — so it told the person who had just
+ * countered that their acceptance lapsed, when they had never accepted — and it was suppressed
+ * whenever the other provider had accepted the new terms, which is exactly the person whose
+ * acceptance actually did lapse.
+ */
+export function shouldShowTermsChangedNote(f: {
+  interestStatus: NegotiationFacts['interestStatus']
+  iAcceptedAnEarlierVersion: boolean
+  iAcceptedCurrent: boolean
+}): boolean {
+  if (f.interestStatus !== 'accepted') return false
+  return f.iAcceptedAnEarlierVersion && !f.iAcceptedCurrent
 }
 
 /** Copy for the moment terms change under someone. */

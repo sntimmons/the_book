@@ -85,6 +85,12 @@ const STALE_TERMS = '40001'
 // Raised by assert_barter_version_budget. Distinct from check_violation because a spent daily
 // budget and a malformed proposal are reachable from the same button and need opposite advice.
 const VERSION_BUDGET = '54000'
+// Raised by write_barter_proposal_terms for malformed terms. Distinct from check_violation
+// because the two propose RPCs also raise 23514 for "not authenticated", "that response no
+// longer exists", "that post no longer exists" and "that negotiation no longer exists" —
+// mapping all five to "Check these terms" told a user with an expired session to edit terms
+// that were already valid, and (being non-terminal) never refreshed the screen to show why.
+const MALFORMED_TERMS = '22023'
 // Raised by barter_interests_zy_answer_open_offer when the owner tries to ACCEPT OR DECLINE a
 // response to a post they have closed, and by barter_offers_zy_active_one_way when anyone tries
 // to reopen one. A distinct code exists because check_violation maps, for accept and decline, to
@@ -259,10 +265,25 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       // into a loop for a day.
       body: 'You have sent the maximum number of proposals for this trade today. You can send more tomorrow.',
     },
-    [CHECK_VIOLATION]: {
+    [MALFORMED_TERMS]: {
       terminal: false,
       title: 'Check these terms',
       body: 'A proposal needs at least one thing from each provider, and each item must be under 200 characters.',
+    },
+    [UNIQUE_VIOLATION]: {
+      // The other provider opened the negotiation first. NOT terminal, and emphatically not
+      // "this negotiation has ended": it is alive and now has terms on it. The right next
+      // action is to read theirs and counter.
+      terminal: false,
+      title: 'They proposed first',
+      body: 'The other provider sent terms while you were writing. Take a look — you can send changes back.',
+    },
+    [CHECK_VIOLATION]: {
+      // What is left once malformed terms have their own code: the negotiation, the response or
+      // the post is gone, or the session is not valid. Terminal, and the screen re-reads.
+      terminal: true,
+      title: 'That negotiation is no longer available',
+      body: 'It may have ended or been removed. The details have been updated.',
     },
   },
   acceptTerms: {

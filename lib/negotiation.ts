@@ -1,5 +1,4 @@
 import { supabase } from './supabase'
-import { interpretWrite } from './barterErrors'
 import type { TermInput, TradeSide } from './negotiationState'
 import { termsPayload } from './negotiationState'
 
@@ -246,5 +245,8 @@ export async function acceptVersion(
 // Supabase client and needs live configuration to run.
 export type { TermInput, TradeSide } from './negotiationState'
 
-/** Kept for symmetry with the other barter writes; the RPCs already return a discriminator. */
-export const negotiationWriteOutcome = interpretWrite
+// No `interpretWrite` here, deliberately. That helper exists for a PostgREST write FILTERED to
+// zero rows by an RLS USING clause; every negotiation write is an RPC returning a scalar, and
+// these tables have no write policy or grant at all, so the zero-row case cannot arise. An
+// alias "kept for symmetry" only invites the next contributor to report an RPC error as a
+// filtered write.
