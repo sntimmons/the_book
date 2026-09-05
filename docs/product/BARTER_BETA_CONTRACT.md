@@ -108,7 +108,10 @@ pre-agreement path only: once an agreement is formed the post is consumed and cl
 
 
 > **Built as of Slice 3a — the proposal machinery, not the agreement.** Inside an accepted
-> interest either provider may propose terms, and terms are **versioned**: a counter creates a
+> interest either provider may propose terms. Each version is **exactly two directed terms** —
+> what the offer owner gives, what the responder gives — with **no value field** and with each
+> side's participant **derived by the server** from the accepted interest, never sent by the
+> client. Terms are **versioned**: a counter creates a
 > new version, no version is ever edited, and advancing to a new one withdraws any acceptance of
 > the previous one. Both providers must explicitly accept the **same current version** —
 > authoring is not acceptance and countering is not acceptance (**PD-053**). Each version

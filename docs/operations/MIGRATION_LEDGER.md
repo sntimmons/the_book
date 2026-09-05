@@ -341,6 +341,24 @@ the FIRST `barter_proposals` read (the unlocked one); and the lock-ORDER pin com
 `position('barter_offers')`, whose first match is the DECLARE block, so it passed whichever
 order the locks were taken in. Both now compare the lock statements themselves.
 
+## 2026-09-05 — `20260925000000` applied to non-production (Founder rulings on terms)
+
+Three rulings, all narrowing what a client may assert. `estimated_value` and `sort_order` are
+dropped from `barter_proposal_terms`; a version holds **exactly two directed terms**, one per
+fixed side (`offer_owner` / `responder`), enforced by a one-per-side unique index plus the
+statement-level guard; and each term carries `provider_id` / `provider_user_id` **derived by
+`write_barter_proposal_terms` from the accepted interest** and asserted by the statement guard
+against the offer and interest rows. The RPC signatures change to
+`(uuid, text, text)` — content for the two sides — and the old `(uuid, jsonb)` signatures are
+**dropped**, not left as overloads: an overload that still accepted client-asserted sides would
+be exactly the path this closes. Safe as straight alters because the table has never held a row
+on any environment this was applied to, and has never been on `main`.
+
+Ledger after: **33 entries**, `local == remote` for every row. Production untouched.
+
+Post-apply B5B: **500/500 passed, 0 failed**, zero residue. Concurrency proof **19/19**, all
+three scenarios with overlap proven.
+
 ## Prevention
 
 Apply migrations through `supabase migration up` / `db push` so the ledger records them, **and
@@ -375,6 +393,9 @@ NOT in the migration that created it.
 | `public.create_barter_proposal` | `20260917000000_barter_proposal_versions.sql` | **`20260922000000_negotiation_error_contract.sql`** | Lock order corrected to offer-then-interest (`20260921000000`); the no-op budget call removed; the terms write marker published; and the duplicate-negotiation refusal changed from `55000` to `23505`, because sharing `55000` with "this negotiation is not active" told a provider whose negotiation is ALIVE that it had ended. |
 | `public.submit_barter_counter` | `20260917000000_barter_proposal_versions.sql` | **`20260921000000_negotiation_write_boundary.sql`** | Fail-closed `not found` branches, offer-before-interest lock order, and the terms write marker. |
 | `public.write_barter_proposal_terms` | `20260917000000_barter_proposal_versions.sql` | **`20260922000000_negotiation_error_contract.sql`** | Malformed input now raises `22023` rather than `check_violation`. **Its EXECUTE grant to `authenticated` was removed by `20260921000000` — see the apply record below.** |
+| `public.write_barter_proposal_terms` (signature changed) | `20260917000000` as `(uuid, jsonb)` | **`20260925000000_negotiation_directed_terms.sql`** as `(uuid, text, text)`; the old signature is DROPPED | Takes content for the two sides and derives each side's provider/user from the accepted interest in one place. Nothing is passed in that a caller could get wrong, and there is no parameter a caller could forge. |
+| `public.enforce_barter_terms_written_once` | `20260924000000` | **`20260925000000_negotiation_directed_terms.sql`** | Now also asserts exactly two terms, one per side, and that each side's stored identity matches the offer/interest — a backstop against a future writer that derives them wrongly or is handed them. |
+| `public.create_barter_proposal` / `public.submit_barter_counter` (signatures changed) | `20260917000000` as `(uuid, jsonb)` | **`20260925000000`** as `(uuid, text, text)`; old signatures DROPPED | Only the signature and the helper call changed — verified by diff, 4 lines each. |
 | `public.enforce_barter_terms_write` | `20260921000000_negotiation_write_boundary.sql` | **`20260923000000_negotiation_terms_write_once.sql`** | The write-once check was a per-row count, which the RPC's own multi-row insert tripped on its second row. Write-once is now a unique index on `(version_id, sort_order)`; the trigger keeps the marker check. |
 | `public.enforce_barter_offer_active_one_way` | `20260915000000_barter_closed_post_terminal.sql` | **`20260916000000_barter_guard_admin_escape.sql`** | Makes `is_active` one-way for authenticated writers (PD-051). `20260915000000` exempted only `auth.role() = 'service_role'`, which covers the PostgREST service path but NOT a psql / SQL-console / migration session, where there is no JWT and `auth.role()` is NULL — so it silently excluded the sessions an operator actually recovers from, and would abort any future migration touching `is_active`. `20260916000000` adds `or (select auth.uid()) is null`, matching `enforce_barter_offer_delete`. |
 | `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |

@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
-import type { TermInput, TradeSide } from './negotiationState'
-import { termsPayload } from './negotiationState'
+import type { ProposalDraft, ProposalSide, TradeSide } from './negotiationState'
+import { draftPayload } from './negotiationState'
 
 // Barter negotiation data layer (Slice 3a). Reads come from `my_barter_proposals` and the three
 // participant-scoped tables; every WRITE goes through a SECURITY DEFINER RPC, because the rules
@@ -30,10 +30,9 @@ export interface NegotiationRow {
 export interface ProposalTerm {
   id: string
   versionId: string
-  providedBy: TradeSide
+  /** Server-assigned side. Never sent by the client. */
+  providedBy: ProposalSide
   serviceDescription: string
-  estimatedValue: number | null
-  sortOrder: number
 }
 
 export interface ProposalVersion {
@@ -170,9 +169,10 @@ export async function fetchNegotiation(proposalId: string): Promise<{
   const [termRes, acceptRes] = await Promise.all([
     supabase
       .from('barter_proposal_terms')
-      .select('id, version_id, provided_by, service_description, estimated_value, sort_order')
+      .select('id, version_id, provided_by, service_description')
       .in('version_id', versionIds)
-      .order('sort_order', { ascending: true }),
+      // Owner side first: 'offer_owner' sorts before 'responder', and there are exactly two.
+      .order('provided_by', { ascending: true }),
     supabase
       .from('barter_version_acceptances')
       .select('version_id, participant_user_id')
@@ -183,10 +183,8 @@ export async function fetchNegotiation(proposalId: string): Promise<{
   const terms = (termRes.data as unknown as {
     id: string
     version_id: string
-    provided_by: TradeSide
+    provided_by: ProposalSide
     service_description: string
-    estimated_value: number | null
-    sort_order: number
   }[] | null) ?? []
   const accepts = (acceptRes.data as unknown as {
     version_id: string
@@ -205,8 +203,6 @@ export async function fetchNegotiation(proposalId: string): Promise<{
         versionId: t.version_id,
         providedBy: t.provided_by,
         serviceDescription: t.service_description,
-        estimatedValue: t.estimated_value,
-        sortOrder: t.sort_order,
       })),
     acceptedBy: accepts.filter((a) => a.version_id === v.id).map((a) => a.participant_user_id),
   }))
@@ -221,11 +217,13 @@ export async function fetchNegotiation(proposalId: string): Promise<{
 /** Open a negotiation on an accepted response. The server refuses a cold or duplicate open. */
 export async function createProposal(
   interestId: string,
-  terms: TermInput[],
+  draft: ProposalDraft,
 ): Promise<{ ok: boolean; proposalId: string | null; error: unknown }> {
+  // Content only. Which participant each side is bound to is derived by the server from the
+  // accepted interest — there is no parameter here through which identity could be asserted.
   const { data, error } = await supabase.rpc('create_barter_proposal', {
     p_interest_id: interestId,
-    p_terms: termsPayload(terms),
+    ...draftPayload(draft),
   })
   if (error) return { ok: false, proposalId: null, error }
   return { ok: true, proposalId: (data as string | null) ?? null, error: null }
@@ -237,11 +235,11 @@ export async function createProposal(
  */
 export async function submitCounter(
   proposalId: string,
-  terms: TermInput[],
+  draft: ProposalDraft,
 ): Promise<{ ok: boolean; versionNo: number | null; error: unknown }> {
   const { data, error } = await supabase.rpc('submit_barter_counter', {
     p_proposal_id: proposalId,
-    p_terms: termsPayload(terms),
+    ...draftPayload(draft),
   })
   if (error) return { ok: false, versionNo: null, error }
   return { ok: true, versionNo: (data as number | null) ?? null, error: null }
@@ -267,7 +265,7 @@ export async function acceptVersion(
 // Re-exported so a screen takes the negotiation vocabulary from one import. Tests and pure
 // modules must import from './negotiationState' directly — coming through here pulls in the
 // Supabase client and needs live configuration to run.
-export type { TermInput, TradeSide } from './negotiationState'
+export type { ProposalDraft, ProposalSide, TradeSide } from './negotiationState'
 
 // No `interpretWrite` here, deliberately. That helper exists for a PostgREST write FILTERED to
 // zero rows by an RLS USING clause; every negotiation write is an RPC returning a scalar, and

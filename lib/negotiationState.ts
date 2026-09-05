@@ -7,14 +7,30 @@
 // version pointer. A provider is negotiating a trade, not operating a database: terms were
 // "changed", an offer is "waiting on you", history is "what was proposed before".
 
-/** Which side of the trade provides a term. */
+/** The viewer's role in a negotiation, as the server reports it. */
 export type TradeSide = 'owner' | 'responder'
 
-export interface TermInput {
-  providedBy: TradeSide
-  serviceDescription: string
-  /** Optional rough value, in whole dollars. Never a price — barter takes no cash. */
-  estimatedValue: number | null
+/**
+ * Which side of the trade a term belongs to. A FIXED label the server assigns — the client
+ * never sends it. A client that could choose the side could swap who gives what, so the
+ * authoritative record of the trade would come from the party with most reason to get it
+ * wrong.
+ */
+export type ProposalSide = 'offer_owner' | 'responder'
+
+export function sideForRole(role: TradeSide): ProposalSide {
+  return role === 'owner' ? 'offer_owner' : 'responder'
+}
+
+/**
+ * What the client submits: CONTENT for both sides, nothing about identity. Exactly two directed
+ * terms per version — one for what the offer owner gives, one for what the responder gives.
+ * Complex packages live inside a side's description. No value field: barter requires no dollar
+ * equivalence and an unused authoritative field would imply a meaning it does not have.
+ */
+export interface ProposalDraft {
+  ownerGives: string
+  responderGives: string
 }
 
 /**
@@ -164,60 +180,33 @@ export const TERMS_CHANGED_NOTE =
   'The terms changed after you accepted, so your acceptance no longer applies. Read the new'
   + ' terms and accept again if you agree.'
 
-export const MIN_TERMS = 2
-export const MAX_TERMS = 6
 export const MAX_DESCRIPTION = 200
 
 /**
- * Mirror of the server's term rules, so the UI can refuse early with a sentence a provider can
- * act on rather than surfacing a database refusal.
- *
- * The server remains the authority — `write_barter_proposal_terms` raises on every one of
- * these independently. Returns null when the terms are sendable.
+ * Mirror of the server's rules, so the UI can refuse early with a sentence a provider can act
+ * on rather than surfacing a database refusal. The server remains the authority.
+ * Returns null when the draft is sendable.
  */
-export function validateTerms(terms: TermInput[]): string | null {
-  const filled = terms.filter((t) => t.serviceDescription.trim().length > 0)
-  if (filled.length < MIN_TERMS) {
-    return 'Say what each of you is giving — at least one thing from each side.'
+export function validateDraft(d: ProposalDraft): string | null {
+  const owner = d.ownerGives.trim()
+  const responder = d.responderGives.trim()
+  if (owner.length === 0 && responder.length === 0) {
+    return 'Say what each of you is giving.'
   }
-  if (filled.length > MAX_TERMS) {
-    return `A proposal can have at most ${MAX_TERMS} items.`
-  }
-  if (!filled.some((t) => t.providedBy === 'owner')) {
-    return 'Add what the provider who posted is giving.'
-  }
-  if (!filled.some((t) => t.providedBy === 'responder')) {
-    return 'Add what the responding provider is giving.'
-  }
-  const tooLong = filled.find((t) => t.serviceDescription.trim().length > MAX_DESCRIPTION)
-  if (tooLong) {
-    return `Keep each item under ${MAX_DESCRIPTION} characters.`
-  }
-  const badValue = filled.find(
-    (t) =>
-      t.estimatedValue !== null
-      && (!Number.isInteger(t.estimatedValue)
-        || t.estimatedValue < 0
-        || t.estimatedValue > 1000000),
-  )
-  if (badValue) {
-    return 'An estimated value must be a whole number of dollars.'
+  if (owner.length === 0) return 'Add what the provider who posted is giving.'
+  if (responder.length === 0) return 'Add what the responding provider is giving.'
+  if (owner.length > MAX_DESCRIPTION || responder.length > MAX_DESCRIPTION) {
+    return `Keep each side under ${MAX_DESCRIPTION} characters.`
   }
   return null
 }
 
-/** Shape the server expects. Trimmed here so the stored term is what the reader saw. */
-export function termsPayload(terms: TermInput[]) {
-  return terms
-    .filter((t) => t.serviceDescription.trim().length > 0)
-    .map((t) => ({
-      provided_by: t.providedBy,
-      service_description: t.serviceDescription.trim(),
-      estimated_value: t.estimatedValue,
-    }))
+/** Trimmed here so the stored term is what the reader saw. */
+export function draftPayload(d: ProposalDraft) {
+  return { p_owner_gives: d.ownerGives.trim(), p_responder_gives: d.responderGives.trim() }
 }
 
 /** Whose side a term is on, in the viewer's own terms. */
-export function sideLabel(side: TradeSide, myRole: TradeSide): string {
-  return side === myRole ? 'You give' : 'They give'
+export function sideLabel(side: ProposalSide, myRole: TradeSide): string {
+  return side === sideForRole(myRole) ? 'You give' : 'They give'
 }

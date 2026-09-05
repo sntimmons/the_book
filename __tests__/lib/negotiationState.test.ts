@@ -1,15 +1,16 @@
 import {
   acceptedAnEarlierVersion,
-  MAX_TERMS,
+  draftPayload,
+  MAX_DESCRIPTION,
   negotiationView,
   shouldShowTermsChangedNote,
   NegotiationFacts,
   NegotiationState,
+  ProposalDraft,
+  sideForRole,
   sideLabel,
-  TermInput,
   TERMS_CHANGED_NOTE,
-  termsPayload,
-  validateTerms,
+  validateDraft,
 } from '@/lib/negotiationState'
 
 // Negotiation copy and capability rules. These live in a pure module and are tested here for
@@ -34,14 +35,7 @@ function facts(over: Partial<NegotiationFacts> = {}): NegotiationFacts {
   }
 }
 
-function term(over: Partial<TermInput> = {}): TermInput {
-  return { providedBy: 'owner', serviceDescription: 'a photo session', estimatedValue: null, ...over }
-}
-
-const BOTH_SIDES: TermInput[] = [
-  term({ providedBy: 'owner' }),
-  term({ providedBy: 'responder', serviceDescription: 'four PT sessions' }),
-]
+const BOTH_SIDES: ProposalDraft = { ownerGives: 'a photo session', responderGives: 'four PT sessions' }
 
 describe('totality', () => {
   it('resolves a view for every status and acceptance combination', () => {
@@ -154,60 +148,47 @@ describe('copy is negotiation language, not database language', () => {
   })
 })
 
-describe('validateTerms mirrors the server rules', () => {
-  it('accepts a two-sided proposal', () => {
-    expect(validateTerms(BOTH_SIDES)).toBeNull()
+describe('validateDraft mirrors the server rules', () => {
+  // Exactly two directed terms, content only. There is no side, provider or value field for
+  // the client to get wrong — the server binds each side to its participant.
+  it('accepts a draft with both sides filled', () => {
+    expect(validateDraft(BOTH_SIDES)).toBeNull()
   })
 
-  it('refuses a one-sided trade', () => {
-    const oneSided = [term({ providedBy: 'owner' }), term({ providedBy: 'owner' })]
-    expect(validateTerms(oneSided)).toMatch(/responding provider/i)
+  it('names the missing side', () => {
+    expect(validateDraft({ ownerGives: 'x', responderGives: '' })).toMatch(/responding provider/i)
+    expect(validateDraft({ ownerGives: '', responderGives: 'y' })).toMatch(/provider who posted/i)
   })
 
-  it('refuses a single item', () => {
-    expect(validateTerms([term()])).toMatch(/each of you/i)
+  it('asks for both when both are blank', () => {
+    expect(validateDraft({ ownerGives: '  ', responderGives: '' })).toMatch(/each of you/i)
   })
 
-  it('ignores blank lines rather than sending them', () => {
-    const withBlank = [...BOTH_SIDES, term({ serviceDescription: '   ' })]
-    expect(validateTerms(withBlank)).toBeNull()
-    expect(termsPayload(withBlank)).toHaveLength(2)
-  })
-
-  it('refuses more items than the server will store', () => {
-    const many = Array.from({ length: MAX_TERMS + 1 }, (_, i) =>
-      term({ providedBy: i % 2 === 0 ? 'owner' : 'responder', serviceDescription: `item ${i}` }),
+  it('refuses an over-long side', () => {
+    expect(validateDraft({ ...BOTH_SIDES, ownerGives: 'x'.repeat(MAX_DESCRIPTION + 1) })).toMatch(
+      /200/,
     )
-    expect(validateTerms(many)).toMatch(/at most/i)
   })
 
-  it('refuses an over-long description', () => {
-    const long = [BOTH_SIDES[0], term({ providedBy: 'responder', serviceDescription: 'x'.repeat(201) })]
-    expect(validateTerms(long)).toMatch(/200/)
-  })
-
-  it('refuses a non-integer or negative value', () => {
-    expect(validateTerms([BOTH_SIDES[0], term({ providedBy: 'responder', estimatedValue: -5 })]))
-      .toMatch(/whole number/i)
-    expect(validateTerms([BOTH_SIDES[0], term({ providedBy: 'responder', estimatedValue: 1.5 })]))
-      .toMatch(/whole number/i)
-  })
-
-  it('trims what it sends, so the stored term is what the reader saw', () => {
-    const padded = [
-      term({ serviceDescription: '  a photo session  ' }),
-      term({ providedBy: 'responder', serviceDescription: ' four PT sessions ' }),
-    ]
-    expect(termsPayload(padded)[0].service_description).toBe('a photo session')
+  it('sends content only, trimmed, under the names the server expects', () => {
+    const p = draftPayload({ ownerGives: '  a photo session  ', responderGives: ' four PT ' })
+    expect(p).toEqual({ p_owner_gives: 'a photo session', p_responder_gives: 'four PT' })
+    // No side, no provider id, no value: nothing about identity crosses the boundary.
+    expect(Object.keys(p).sort()).toEqual(['p_owner_gives', 'p_responder_gives'])
   })
 })
 
 describe('sideLabel speaks from the viewer', () => {
   it('names the viewer as the giver on their own side', () => {
-    expect(sideLabel('owner', 'owner')).toMatch(/you/i)
+    expect(sideLabel('offer_owner', 'owner')).toMatch(/you/i)
     expect(sideLabel('responder', 'owner')).toMatch(/they/i)
     expect(sideLabel('responder', 'responder')).toMatch(/you/i)
-    expect(sideLabel('owner', 'responder')).toMatch(/they/i)
+    expect(sideLabel('offer_owner', 'responder')).toMatch(/they/i)
+  })
+
+  it('maps a role to its fixed side', () => {
+    expect(sideForRole('owner')).toBe('offer_owner')
+    expect(sideForRole('responder')).toBe('responder')
   })
 })
 

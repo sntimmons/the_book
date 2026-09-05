@@ -71,9 +71,8 @@ begin
   ${body}
 end $$;`
 
-const TERMS = (a, b) => `jsonb_build_array(
-  jsonb_build_object('provided_by','owner','service_description','${a}'),
-  jsonb_build_object('provided_by','responder','service_description','${b}'))`
+// Content for the two sides. The RPCs bind each to its participant; nothing here names one.
+const TERMS = (a, b) => `'${a}', '${b}'`
 
 const results = []
 const chk = (name, expected, actual) => {

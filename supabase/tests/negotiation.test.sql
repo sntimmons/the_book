@@ -40,15 +40,8 @@ begin
   perform pg_temp.act(null, 'anon');
 end $$;
 
--- A reusable well-formed terms payload.
-create or replace function pg_temp.ng_terms(p_owner text default 'a photo session',
-                                            p_resp text default 'four PT sessions')
-returns jsonb language sql immutable as $$
-  select jsonb_build_array(
-    jsonb_build_object('provided_by', 'owner', 'service_description', p_owner),
-    jsonb_build_object('provided_by', 'responder', 'service_description', p_resp)
-  );
-$$;
+-- The RPCs take CONTENT for the two sides; the server binds each to its participant. Nothing a
+-- test could pass here names a provider, which is the point.
 
 -- ── Who may open a negotiation ─────────────────────────────────────────────
 do $$
@@ -63,7 +56,7 @@ begin
   -- the state refusals: "not yours" and "not active" are different facts.
   perform pg_temp.act(xu);
   begin
-    perform public.create_barter_proposal(int1, pg_temp.ng_terms());
+    perform public.create_barter_proposal(int1, 'a photo session', 'four PT sessions');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -81,7 +74,7 @@ begin
 
   perform pg_temp.act(ou);
   begin
-    perform public.create_barter_proposal(int_pending, pg_temp.ng_terms());
+    perform public.create_barter_proposal(int_pending, 'a photo session', 'four PT sessions');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -102,7 +95,7 @@ declare
   v_pid uuid; v_vid uuid; v_n integer; v_code text; v_both boolean; v_snap jsonb;
 begin
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(int1, pg_temp.ng_terms()) into v_pid;
+  select public.create_barter_proposal(int1, 'a photo session', 'four PT sessions') into v_pid;
   perform set_config('b5b.ng_pid', v_pid::text, true);
 
   perform pg_temp.chk('negotiation', 'the owner can open a negotiation on an accepted response',
@@ -139,7 +132,7 @@ begin
   -- A SECOND proposal on the same accepted interest is refused: one negotiation per response.
   perform pg_temp.act(ou);
   begin
-    perform public.create_barter_proposal(int1, pg_temp.ng_terms());
+    perform public.create_barter_proposal(int1, 'a photo session', 'four PT sessions');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -187,7 +180,7 @@ begin
   -- Only participants may counter.
   perform pg_temp.act(xu);
   begin
-    perform public.submit_barter_counter(pid, pg_temp.ng_terms('x', 'y'));
+    perform public.submit_barter_counter(pid, 'x', 'y');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -195,7 +188,7 @@ begin
 
   -- The responder counters. The version number is derived, never supplied.
   perform pg_temp.act(ru);
-  select public.submit_barter_counter(pid, pg_temp.ng_terms('a photo session', 'SIX PT sessions'))
+  select public.submit_barter_counter(pid, 'a photo session', 'SIX PT sessions')
     into v_no;
   perform pg_temp.chk('negotiation', 'a counter creates the next version', '2', v_no::text);
 
@@ -379,7 +372,7 @@ declare
 begin
   -- Version 2 is fully accepted. A material change supersedes it.
   perform pg_temp.act(ou);
-  select public.submit_barter_counter(pid, pg_temp.ng_terms('TWO photo sessions', 'six PT sessions'))
+  select public.submit_barter_counter(pid, 'TWO photo sessions', 'six PT sessions')
     into v_no;
   perform pg_temp.chk('negotiation', 'a counter after agreement creates version 3', '3', v_no::text);
 
@@ -476,8 +469,8 @@ begin
   end loop;
 
   perform pg_temp.chk('negotiation', 'anon cannot execute the proposal RPCs', 'false',
-    (has_function_privilege('anon', 'public.create_barter_proposal(uuid, jsonb)', 'execute')
-     or has_function_privilege('anon', 'public.submit_barter_counter(uuid, jsonb)', 'execute')
+    (has_function_privilege('anon', 'public.create_barter_proposal(uuid, text, text)', 'execute')
+     or has_function_privilege('anon', 'public.submit_barter_counter(uuid, text, text)', 'execute')
      or has_function_privilege('anon', 'public.accept_barter_version(uuid)', 'execute'))::text);
   perform pg_temp.chk('negotiation', 'anon cannot read the negotiation view', 'false',
     has_table_privilege('anon', 'public.my_barter_proposals', 'select')::text);
@@ -532,7 +525,7 @@ begin
   update public.barter_offers set is_active = false where id = off1;
 
   begin
-    select public.submit_barter_counter(pid, pg_temp.ng_terms('one photo session', 'five PT sessions'))
+    select public.submit_barter_counter(pid, 'one photo session', 'five PT sessions')
       into v_no;
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
@@ -568,7 +561,7 @@ begin
     message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
 
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(i, pg_temp.ng_terms()) into pid;
+  select public.create_barter_proposal(i, 'a photo session', 'four PT sessions') into pid;
   perform pg_temp.act_service();
   select id into vid from public.barter_proposal_versions where proposal_id = pid;
 
@@ -578,7 +571,7 @@ begin
   perform public.release_barter_interest(i);
 
   begin
-    perform public.submit_barter_counter(pid, pg_temp.ng_terms('x', 'y'));
+    perform public.submit_barter_counter(pid, 'x', 'y');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -594,7 +587,7 @@ begin
 
   -- Nor can a fresh negotiation be opened on the released response.
   begin
-    perform public.create_barter_proposal(i, pg_temp.ng_terms());
+    perform public.create_barter_proposal(i, 'a photo session', 'four PT sessions');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -631,11 +624,11 @@ begin
 
   -- The owner opens the negotiation: that is their 1st version.
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(i, pg_temp.ng_terms()) into pid;
+  select public.create_barter_proposal(i, 'a photo session', 'four PT sessions') into pid;
 
   -- 19 more from the same participant reaches exactly 20.
   for k in 2..20 loop
-    perform public.submit_barter_counter(pid, pg_temp.ng_terms('own ' || k, 'theirs ' || k));
+    perform public.submit_barter_counter(pid, 'own ' || k, 'theirs ' || k);
   end loop;
 
   perform pg_temp.act_service();
@@ -645,7 +638,7 @@ begin
 
   perform pg_temp.act(ou);
   begin
-    perform public.submit_barter_counter(pid, pg_temp.ng_terms('over', 'limit'));
+    perform public.submit_barter_counter(pid, 'over', 'limit');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -662,7 +655,7 @@ begin
   -- exhaust the negotiation for both.
   perform pg_temp.act(ru);
   begin
-    perform public.submit_barter_counter(pid, pg_temp.ng_terms('their turn', 'my turn'));
+    perform public.submit_barter_counter(pid, 'their turn', 'my turn');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -684,7 +677,7 @@ begin
       message, status) values (o2, r2pid, ru2, 'x', 'accepted') returning id into i2;
     perform pg_temp.act(ou);
     begin
-      perform public.create_barter_proposal(i2, pg_temp.ng_terms());
+      perform public.create_barter_proposal(i2, 'a photo session', 'four PT sessions');
       v_code := 'NO ERROR';
     exception when others then v_code := sqlstate;
     end;
@@ -694,6 +687,8 @@ begin
 end $$;
 
 -- ── Malformed terms are refused, not reshaped ──────────────────────────────
+-- Two directed terms, content only. The server binds each side to its participant; the client
+-- cannot name a side, a provider, or a value.
 do $$
 declare
   ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
@@ -712,50 +707,179 @@ begin
 
   perform pg_temp.act(ou);
 
-  -- ONE-SIDED: a "trade" where one provider gives everything is not a trade, and no table
-  -- constraint can see across rows.
+  -- MISSING SIDE, either way round.
   begin
-    perform public.create_barter_proposal(i, jsonb_build_array(
-      jsonb_build_object('provided_by', 'owner', 'service_description', 'a'),
-      jsonb_build_object('provided_by', 'owner', 'service_description', 'b')));
+    perform public.create_barter_proposal(i, 'only the owner', '');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  -- 22023 for malformed input, so it is distinguishable from "the negotiation is gone", which
-  -- also raises check_violation on this path.
-  perform pg_temp.chk('negotiation', 'a one-sided proposal is refused', '22023', v_code);
+  perform pg_temp.chk('negotiation', 'a missing responder side is refused', '22023', v_code);
 
   begin
-    perform public.create_barter_proposal(i, jsonb_build_array(
-      jsonb_build_object('provided_by', 'owner', 'service_description', 'only one')));
+    perform public.create_barter_proposal(i, '   ', 'only the responder');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('negotiation', 'a single-term proposal is refused', '22023', v_code);
+  perform pg_temp.chk('negotiation', 'a missing owner side is refused', '22023', v_code);
 
   begin
-    perform public.create_barter_proposal(i, jsonb_build_array(
-      jsonb_build_object('provided_by', 'sideways', 'service_description', 'a'),
-      jsonb_build_object('provided_by', 'responder', 'service_description', 'b')));
+    perform public.create_barter_proposal(i, null, null);
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('negotiation', 'an invented side is refused', '23514', v_code);  -- table check
+  perform pg_temp.chk('negotiation', 'null sides are refused', '22023', v_code);
 
   begin
-    perform public.create_barter_proposal(i, jsonb_build_array(
-      jsonb_build_object('provided_by', 'owner', 'service_description', repeat('x', 201)),
-      jsonb_build_object('provided_by', 'responder', 'service_description', 'b')));
+    perform public.create_barter_proposal(i, repeat('x', 201), 'b');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('negotiation', 'an over-long term is refused', '23514', v_code);  -- table check
+  perform pg_temp.chk('negotiation', 'an over-long side is refused', '22023', v_code);
 
-  -- Every refusal above must have written NOTHING: a partially-written proposal would leave a
-  -- negotiation whose terms neither party proposed.
+  -- Every refusal above must have written NOTHING.
   perform pg_temp.act_service();
   select count(*) into v_n from public.barter_proposals where interest_id = i;
   perform pg_temp.chk('negotiation', 'and no partial proposal survives a refusal',
+    '0', v_n::text);
+end $$;
+
+-- ── Participant identity is server-owned ───────────────────────────────────
+-- The RPC payload carries no identity at all, so "swap the sides" and "inject a third
+-- provider" have no parameter to go through. These prove what is STORED: each side is bound to
+-- the participant the accepted interest says it is, whoever authored the content.
+do $$
+declare
+  ou uuid := current_setting('b5b.ng_ou')::uuid;
+  ru uuid := current_setting('b5b.ng_ru')::uuid;
+  xu uuid := current_setting('b5b.ng_xu')::uuid;
+  pid uuid := current_setting('b5b.ng_pid')::uuid;
+  off1 uuid := current_setting('b5b.ng_off1')::uuid;
+  int1 uuid := current_setting('b5b.ng_int1')::uuid;
+  v_no integer; v_vid uuid; v_n integer; v_code text;
+  v_owner_user uuid; v_resp_user uuid; v_owner_prov uuid; v_resp_prov uuid;
+  v_exp_owner_prov uuid; v_exp_resp_prov uuid;
+begin
+  -- The RESPONDER authors both sides' content. They do not become both providers.
+  perform pg_temp.act(ru);
+  select public.submit_barter_counter(pid, 'owner side by responder', 'responder side by responder')
+    into v_no;
+
+  perform pg_temp.act_service();
+  select id into v_vid from public.barter_proposal_versions
+   where proposal_id = pid and version_no = v_no;
+  select o.provider_id, i.interested_provider_id into v_exp_owner_prov, v_exp_resp_prov
+    from public.barter_offers o join public.barter_interests i on i.offer_id = o.id
+   where i.id = int1;
+
+  select provider_user_id, provider_id into v_owner_user, v_owner_prov
+    from public.barter_proposal_terms where version_id = v_vid and provided_by = 'offer_owner';
+  select provider_user_id, provider_id into v_resp_user, v_resp_prov
+    from public.barter_proposal_terms where version_id = v_vid and provided_by = 'responder';
+
+  perform pg_temp.chk('negotiation', 'the owner side is bound to the OFFER OWNER',
+    ou::text, v_owner_user::text);
+  perform pg_temp.chk('negotiation', 'and to the owner''s provider row',
+    v_exp_owner_prov::text, v_owner_prov::text);
+  perform pg_temp.chk('negotiation', 'the responder side is bound to the RESPONDER',
+    ru::text, v_resp_user::text);
+  perform pg_temp.chk('negotiation', 'and to the responder''s provider row',
+    v_exp_resp_prov::text, v_resp_prov::text);
+  perform pg_temp.chk('negotiation', 'authoring both sides did not make the author both providers',
+    'true', (v_owner_user <> v_resp_user)::text);
+
+  -- EXACTLY TWO, one per side.
+  select count(*) into v_n from public.barter_proposal_terms where version_id = v_vid;
+  perform pg_temp.chk('negotiation', 'a version has exactly two terms', '2', v_n::text);
+  select count(distinct provided_by) into v_n from public.barter_proposal_terms
+   where version_id = v_vid;
+  perform pg_temp.chk('negotiation', 'one per side', '2', v_n::text);
+
+  -- A writer that reaches the table with grants bypassed and the marker held still cannot
+  -- inject a third provider, duplicate a side, or re-point a side at the wrong participant.
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ou::text, 'role', 'authenticated')::text, true);
+
+  -- A fresh version with NO terms yet, so the shape guards (not write-once) are what decide.
+  insert into public.barter_proposal_versions(proposal_id, version_no, author_user_id, post_snapshot)
+  values (pid, 900, ou, '{}'::jsonb) returning id into v_vid;
+  perform set_config('app.barter_terms_write', v_vid::text, true);
+
+  -- Third provider on a side.
+  begin
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
+      provider_id, provider_user_id)
+    values (v_vid, 'offer_owner', 'x', (select id from public.providers where user_id = xu), xu),
+           (v_vid, 'responder', 'y', v_exp_resp_prov, ru);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'a third provider cannot be bound to a side', '42501', v_code);
+
+  -- Sides swapped: the owner's identity on the responder side and vice versa.
+  begin
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
+      provider_id, provider_user_id)
+    values (v_vid, 'offer_owner', 'x', v_exp_resp_prov, ru),
+           (v_vid, 'responder', 'y', v_exp_owner_prov, ou);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'the two identities cannot be swapped', '42501', v_code);
+
+  -- Same provider on both sides.
+  begin
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
+      provider_id, provider_user_id)
+    values (v_vid, 'offer_owner', 'x', v_exp_owner_prov, ou),
+           (v_vid, 'responder', 'y', v_exp_owner_prov, ou);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'one provider cannot hold both sides', '42501', v_code);
+
+  -- Duplicate side.
+  begin
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
+      provider_id, provider_user_id)
+    values (v_vid, 'offer_owner', 'x', v_exp_owner_prov, ou),
+           (v_vid, 'offer_owner', 'y', v_exp_owner_prov, ou);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'a duplicate owner side is refused', '23505', v_code);
+
+  begin
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
+      provider_id, provider_user_id)
+    values (v_vid, 'responder', 'x', v_exp_resp_prov, ru),
+           (v_vid, 'responder', 'y', v_exp_resp_prov, ru);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'a duplicate responder side is refused', '23505', v_code);
+
+  -- Only one side.
+  begin
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
+      provider_id, provider_user_id)
+    values (v_vid, 'offer_owner', 'x', v_exp_owner_prov, ou);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'a lone side is refused', '22023', v_code);
+
+  perform set_config('app.barter_terms_write', '', true);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_proposal_terms where version_id = v_vid;
+  perform pg_temp.chk('negotiation', 'and none of those refusals wrote anything', '0', v_n::text);
+  delete from public.barter_proposal_versions where id = v_vid;
+
+  -- estimated_value is GONE from the authoritative model, not merely unused.
+  select count(*) into v_n from information_schema.columns
+   where table_schema = 'public' and table_name = 'barter_proposal_terms'
+     and column_name in ('estimated_value', 'sort_order');
+  perform pg_temp.chk('negotiation', 'no value or ordering column remains on terms',
     '0', v_n::text);
 end $$;
 
@@ -774,7 +898,7 @@ declare
   fn text;
 begin
   foreach fn in array array[
-    'public.write_barter_proposal_terms(uuid, jsonb)',
+    'public.write_barter_proposal_terms(uuid, text, text)',
     'public.assert_barter_version_budget(uuid, uuid)',
     'public.barter_post_snapshot(public.barter_offers)',
     'public.barter_negotiation_role(public.barter_interests, public.barter_offers, uuid)',
@@ -790,8 +914,8 @@ begin
 
   -- ...and the three that ARE the public surface still work.
   foreach fn in array array[
-    'public.create_barter_proposal(uuid, jsonb)',
-    'public.submit_barter_counter(uuid, jsonb)',
+    'public.create_barter_proposal(uuid, text, text)',
+    'public.submit_barter_counter(uuid, text, text)',
     'public.accept_barter_version(uuid)'
   ] loop
     perform pg_temp.chk('negotiation', 'the public RPC is executable by authenticated: ' || fn,
@@ -820,7 +944,7 @@ begin
   perform set_config('request.jwt.claims',
     json_build_object('sub', ru::text, 'role', 'authenticated')::text, true);
   begin
-    perform public.write_barter_proposal_terms(v1, pg_temp.ng_terms('injected', 'injected'));
+    perform public.write_barter_proposal_terms(v1, 'injected', 'injected');
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -830,20 +954,24 @@ begin
 
   -- And a direct INSERT is refused by the same guard, not merely by the missing grant.
   begin
-    insert into public.barter_proposal_terms(version_id, provided_by, service_description)
-    values (v1, 'owner', 'forged');
+    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
+      provider_id, provider_user_id)
+    values (v1, 'offer_owner', 'forged', (select provider_id from public.barter_offers
+      where id = current_setting('b5b.ng_off1')::uuid), ou);
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
   perform pg_temp.chk('negotiation', 'nor insert a term row directly', '42501', v_code);
 
-  -- The structural backstop: even holding the marker, a second write to the same version
-  -- collides on (version_id, sort_order). A per-row count could not express this -- it cannot
-  -- tell a second call from the second row of the first.
+  -- The structural backstop: even holding the marker, a second write to the same version is
+  -- refused -- by the one-per-side index for a duplicate side, and by the statement-level
+  -- written-once guard for anything else.
   perform set_config('app.barter_terms_write', v1::text, true);
   begin
     insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      sort_order) values (v1, 'owner', 'second write', 0);
+      provider_id, provider_user_id)
+    values (v1, 'offer_owner', 'second write', (select provider_id from public.barter_offers
+      where id = current_setting('b5b.ng_off1')::uuid), ou);
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
@@ -925,41 +1053,6 @@ begin
     '0', v_n::text);
 end $$;
 
--- ── Written once, independently of how a writer numbers its rows ───────────
--- The unique index on (version_id, sort_order) only stops a second write because the RPC
--- numbers from zero; a writer starting at max+1 would append cleanly. The statement-level
--- guard is what actually expresses "this version already had terms".
-do $$
-declare
-  v1 uuid := current_setting('b5b.ng_v1')::uuid;
-  ou uuid := current_setting('b5b.ng_ou')::uuid;
-  v_code text; v_max integer; v_n integer; v_before integer;
-begin
-  perform pg_temp.act_service();
-  select count(*), max(sort_order) into v_before, v_max
-    from public.barter_proposal_terms where version_id = v1;
-
-  -- Marker held AND a non-colliding sort_order: the index cannot refuse this one.
-  perform set_config('role', 'none', true);
-  perform set_config('request.jwt.claims',
-    json_build_object('sub', ou::text, 'role', 'authenticated')::text, true);
-  perform set_config('app.barter_terms_write', v1::text, true);
-  begin
-    insert into public.barter_proposal_terms(version_id, provided_by, service_description,
-      sort_order) values (v1, 'owner', 'appended later', v_max + 1);
-    v_code := 'NO ERROR';
-  exception when others then v_code := sqlstate;
-  end;
-  perform set_config('app.barter_terms_write', '', true);
-  perform pg_temp.chk('negotiation',
-    'terms cannot be APPENDED to a version, even past the index', '23514', v_code);
-
-  perform pg_temp.act_service();
-  select count(*) into v_n from public.barter_proposal_terms where version_id = v1;
-  perform pg_temp.chk('negotiation', 'and the accepted terms are still exactly as written',
-    v_before::text, v_n::text);
-end $$;
-
 -- ── Account erasure is not blocked by a negotiation ────────────────────────
 -- The RESTRICT regression this fixed was invisible to a fully green suite. These pin both the
 -- constraint shape and the behaviour, so its return fails here rather than in a review.
@@ -981,7 +1074,7 @@ begin
     message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
 
   perform pg_temp.act(ou);
-  select public.create_barter_proposal(i, pg_temp.ng_terms()) into pid;
+  select public.create_barter_proposal(i, 'a photo session', 'four PT sessions') into pid;
   perform pg_temp.act_service();
   select id into vid from public.barter_proposal_versions where proposal_id = pid;
   perform pg_temp.act(ru);

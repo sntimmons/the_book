@@ -28,15 +28,15 @@ import {
 } from '@/lib/negotiation'
 import { barterWriteFailure } from '@/lib/barterErrors'
 import {
-  MAX_DESCRIPTION,
   acceptedAnEarlierVersion,
+  MAX_DESCRIPTION,
   negotiationView,
+  ProposalDraft,
   shouldShowTermsChangedNote,
   sideLabel,
-  TermInput,
   TERMS_CHANGED_NOTE,
   TradeSide,
-  validateTerms,
+  validateDraft,
 } from '@/lib/negotiationState'
 import { formatTradeDate } from '@/lib/tradeActivity'
 
@@ -50,14 +50,7 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // shown; there is no agreement, obligation or fulfilment model yet, so no copy on this screen
 // may say a trade is booked, owed or complete.
 
-const EMPTY_TERMS = (myRole: 'owner' | 'responder'): TermInput[] => [
-  { providedBy: myRole, serviceDescription: '', estimatedValue: null },
-  {
-    providedBy: myRole === 'owner' ? 'responder' : 'owner',
-    serviceDescription: '',
-    estimatedValue: null,
-  },
-]
+const EMPTY_DRAFT: ProposalDraft = { ownerGives: '', responderGives: '' }
 
 export default function NegotiationScreen() {
   const insets = useSafeAreaInsets()
@@ -74,7 +67,7 @@ export default function NegotiationScreen() {
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
   const [composing, setComposing] = useState(false)
-  const [draft, setDraft] = useState<TermInput[]>([])
+  const [draft, setDraft] = useState<ProposalDraft>(EMPTY_DRAFT)
   const [showHistory, setShowHistory] = useState(false)
   // The interest's own state, used only when no negotiation exists yet. Without it this screen
   // cannot tell "nobody has proposed yet" from "this ended before anyone proposed".
@@ -169,7 +162,7 @@ export default function NegotiationScreen() {
 
   async function onOpen() {
     if (busy) return
-    const problem = validateTerms(draft)
+    const problem = validateDraft(draft)
     if (problem) {
       Alert.alert('Check these terms', problem, [{ text: 'OK' }])
       return
@@ -191,14 +184,14 @@ export default function NegotiationScreen() {
       return
     }
     setComposing(false)
-    setDraft([])
+    setDraft(EMPTY_DRAFT)
     setLoading(true)
     load()
   }
 
   async function onSend() {
     if (!row || busy) return
-    const problem = validateTerms(draft)
+    const problem = validateDraft(draft)
     if (problem) {
       Alert.alert('Check these terms', problem, [{ text: 'OK' }])
       return
@@ -216,17 +209,64 @@ export default function NegotiationScreen() {
       return
     }
     setComposing(false)
-    setDraft([])
+    setDraft(EMPTY_DRAFT)
     load()
   }
 
   function startComposing() {
-    setDraft(EMPTY_TERMS(myRole))
+    setDraft(EMPTY_DRAFT)
     setComposing(true)
   }
 
-  function updateDraft(index: number, patch: Partial<TermInput>) {
-    setDraft((d) => d.map((t, i) => (i === index ? { ...t, ...patch } : t)))
+  // One composer for both opening and countering: two fixed inputs, one per side, labelled
+  // from the viewer's server-derived role. The viewer's own side is listed first. Nothing here
+  // decides which participant a side belongs to — the server derives that from the accepted
+  // interest, and the client sends content only.
+  function renderComposer(title: string, onSubmit: () => void) {
+    const fields: { key: keyof ProposalDraft; side: 'offer_owner' | 'responder' }[] = [
+      { key: 'ownerGives', side: 'offer_owner' },
+      { key: 'responderGives', side: 'responder' },
+    ]
+    const ordered = myRole === 'owner' ? fields : [...fields].reverse()
+    return (
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{title}</Text>
+        {ordered.map((f) => (
+          <View key={f.key} style={styles.draftRow}>
+            <Text style={styles.termSide}>{sideLabel(f.side, myRole)}</Text>
+            <TextInput
+              style={styles.input}
+              value={draft[f.key]}
+              onChangeText={(v) => setDraft((d) => ({ ...d, [f.key]: v }))}
+              placeholder="What is provided"
+              placeholderTextColor="rgba(240,232,213,0.35)"
+              maxLength={MAX_DESCRIPTION}
+              multiline
+            />
+          </View>
+        ))}
+        <View style={styles.actions}>
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            onPress={() => setComposing(false)}
+            disabled={busy}
+          >
+            <Text style={styles.secondaryText}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.primaryBtn, busy && styles.btnDisabled]}
+            onPress={onSubmit}
+            disabled={busy}
+          >
+            {busy ? (
+              <ActivityIndicator color="#080808" size="small" />
+            ) : (
+              <Text style={styles.primaryText}>Send terms</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    )
   }
 
   return (
@@ -272,45 +312,7 @@ export default function NegotiationScreen() {
                 + 'nothing on record for this trade.'}
           </Text>
           {composing ? (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Propose terms</Text>
-              {draft.map((t, i) => (
-                <View key={i} style={styles.draftRow}>
-                  <Text style={styles.termSide}>
-                    {sideLabel(t.providedBy, myRole)}
-                  </Text>
-                  <TextInput
-                    style={styles.input}
-                    value={t.serviceDescription}
-                    onChangeText={(v) => updateDraft(i, { serviceDescription: v })}
-                    placeholder="What is provided"
-                    placeholderTextColor="rgba(240,232,213,0.35)"
-                    maxLength={MAX_DESCRIPTION}
-                    multiline
-                  />
-                </View>
-              ))}
-              <View style={styles.actions}>
-                <TouchableOpacity
-                  style={styles.secondaryBtn}
-                  onPress={() => setComposing(false)}
-                  disabled={busy}
-                >
-                  <Text style={styles.secondaryText}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.primaryBtn, busy && styles.btnDisabled]}
-                  onPress={onOpen}
-                  disabled={busy}
-                >
-                  {busy ? (
-                    <ActivityIndicator color="#080808" size="small" />
-                  ) : (
-                    <Text style={styles.primaryText}>Send terms</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
+            renderComposer('Propose terms', onOpen)
           ) : contextIsLive ? (
             <View style={styles.actions}>
               <TouchableOpacity style={styles.primaryBtn} onPress={startComposing}>
@@ -353,9 +355,6 @@ export default function NegotiationScreen() {
                 <View key={t.id} style={styles.term}>
                   <Text style={styles.termSide}>{sideLabel(t.providedBy, row.myRole)}</Text>
                   <Text style={styles.termText}>{t.serviceDescription}</Text>
-                  {t.estimatedValue != null ? (
-                    <Text style={styles.termValue}>~${t.estimatedValue} value</Text>
-                  ) : null}
                 </View>
               ))}
               <View style={styles.acceptRow}>
@@ -375,43 +374,7 @@ export default function NegotiationScreen() {
             </View>
 
             {composing ? (
-              <View style={styles.card}>
-                <Text style={styles.cardTitle}>Send different terms</Text>
-                {draft.map((t, i) => (
-                  <View key={i} style={styles.draftRow}>
-                    <Text style={styles.termSide}>{sideLabel(t.providedBy, row.myRole)}</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={t.serviceDescription}
-                      onChangeText={(v) => updateDraft(i, { serviceDescription: v })}
-                      placeholder="What is provided"
-                      placeholderTextColor="rgba(240,232,213,0.35)"
-                      maxLength={MAX_DESCRIPTION}
-                      multiline
-                    />
-                  </View>
-                ))}
-                <View style={styles.actions}>
-                  <TouchableOpacity
-                    style={styles.secondaryBtn}
-                    onPress={() => setComposing(false)}
-                    disabled={busy}
-                  >
-                    <Text style={styles.secondaryText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.primaryBtn, busy && styles.btnDisabled]}
-                    onPress={onSend}
-                    disabled={busy}
-                  >
-                    {busy ? (
-                      <ActivityIndicator color="#080808" size="small" />
-                    ) : (
-                      <Text style={styles.primaryText}>Send terms</Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
+              renderComposer('Send different terms', onSend)
             ) : (
               <View style={styles.actions}>
                 {view.canPropose ? (
@@ -535,7 +498,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   termText: { color: '#F0E8D5', fontSize: 14, lineHeight: 20, marginTop: 2 },
-  termValue: { color: 'rgba(240,232,213,0.5)', fontSize: 12, marginTop: 2 },
   acceptRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14 },
   acceptText: { color: 'rgba(240,232,213,0.6)', fontSize: 12.5, marginRight: 10 },
   draftRow: { marginTop: 12 },
