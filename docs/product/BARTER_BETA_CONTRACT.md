@@ -106,6 +106,22 @@ pre-agreement path only: once an agreement is formed the post is consumed and cl
 - An **official agreement is required before a trade is real**. Conversation alone — however
   clear — does not create a trade.
 
+
+> **Built as of Slice 3a — the proposal machinery, not the agreement.** Inside an accepted
+> interest either provider may propose terms. Each version is **exactly two directed terms** —
+> what the offer owner gives, what the responder gives — with **no value field** and with each
+> side's participant **derived by the server** from the accepted interest, never sent by the
+> client. Terms are **versioned**: a counter creates a
+> new version, no version is ever edited, and advancing to a new one withdraws any acceptance of
+> the previous one. Both providers must explicitly accept the **same current version** —
+> authoring is not acceptance and countering is not acceptance (**PD-053**). Each version
+> snapshots the public post as it stood when authored, so editing the post cannot rewrite what
+> was proposed.
+>
+> **Both accepting does NOT yet make a trade official (PD-054).** It is recorded and shown; no
+> agreement, obligation or fulfilment schema exists, and the sourcing post is not closed. That
+> is the next slice. Nothing in the app may call such a trade booked, owed or complete.
+
 ## 5. What may be traded
 
 - **Service for service only.**

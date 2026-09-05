@@ -218,7 +218,166 @@ firing order on `barter_interests` and `barter_offers` — the ordering decides 
 provider's write returns, and it had been governed only by a naming convention documented in
 three migration headers and asserted nowhere.
 
+## 2026-09-05 — `20260917000000`…`20260920000000` applied to non-production
+
+Slice 3a, the proposal / versioning foundation. Four files, applied in order via
+`supabase db push --linked`. New objects only — no existing function was redefined except the
+two this slice itself created.
+
+- `20260917000000_barter_proposal_versions.sql` — four tables (`barter_proposals`,
+  `barter_proposal_versions`, `barter_proposal_terms`, `barter_version_acceptances`), the
+  append-only and proposal-immutability triggers, RLS, grants, three RPCs
+  (`create_barter_proposal`, `submit_barter_counter`, `accept_barter_version`) and the
+  `my_barter_proposals` view.
+- `20260918000000_negotiation_grant_tighten.sql` — the four tables shipped with `authenticated`
+  still holding INSERT/UPDATE/DELETE. `20260917000000` revoked from `public, anon` but not from
+  `authenticated`, and Supabase's `ALTER DEFAULT PRIVILEGES` grants ALL to that role too. Not a
+  hole (no write policy exists, so a direct write was filtered to zero rows) but the design
+  intends grants and RLS as two independent refusals and only one was there.
+- `20260919000000_negotiation_stale_terms_code.sql` — `accept_barter_version` raised `55000`
+  for both "this negotiation ended" and "these terms were replaced". Those need opposite
+  advice: one is terminal, the other means read the new terms and accept again. The second is
+  now `40001`.
+- `20260920000000_negotiation_budget_code.sql` — `assert_barter_version_budget` raised `23514`,
+  the same code as a malformed proposal, and both are reachable from one button. The cap is now
+  `54000`.
+
+**PROCESS NOTE, recorded because it cost three extra files.** `20260917000000` was applied
+before its ERROR CONTRACT was settled. Everything after it is a forward correction to a
+migration that could no longer be edited. The schema was right; what was not yet worked out was
+which refusals a client must be able to tell apart — which is a design question, not an
+implementation detail, and is cheapest to answer before the first apply.
+
+Ledger after: **29 entries**, `local == remote` for every row. Production untouched, and never
+queried.
+
+Post-apply B5B: **450/450 passed, 0 failed**, transaction rolled back, zero residue verified
+(`barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms`,
+`barter_version_acceptances`, `barter_offers`, `barter_interests` all 0).
+
+**Non-B5B concurrency proof: `scripts/negotiation-concurrency.mjs`, 17/17.** B5B runs the whole
+suite in ONE transaction and therefore cannot race anything; calling a sequential case a
+concurrency proof would misstate what was tested. That script opens genuinely parallel sessions
+and proves: two simultaneous counters both succeed with distinct consecutive version numbers
+(without the `for update` lock they collide on the unique index); two simultaneous opens on one
+accepted response leave exactly one negotiation; and an acceptance racing a counter either lands
+while its version is current or is refused `40001`, never counting as agreement to replaced
+terms. Everything it writes is deleted and residue re-asserted at zero.
+
+## 2026-09-05 — `20260921000000`…`20260923000000` applied to non-production (security corrections)
+
+Three forward migrations closing what a security review of PR #49 found, plus the two
+error-contract splits both reviews found independently.
+
+**`20260921000000` closes a BLOCKER.** `write_barter_proposal_terms` is `SECURITY DEFINER`,
+owned by `postgres`, and performs **no authorization at all** — no `auth.uid()` read, no
+participant check, no interest-status check. It was revoked only `from public, anon`, leaving
+intact the EXECUTE that `ALTER DEFAULT PRIVILEGES` grants `authenticated`. Any signed-in user
+could append terms to any version they could read.
+
+The consequence was worse than an unauthorized write. Appending rows is neither an UPDATE nor a
+DELETE, so the append-only trigger never fired; the current-version pointer did not move, so
+nothing was superseded; no acceptance row was touched, so `both_accepted` kept reporting **true**
+over changed content. One participant could rewrite the terms the other had already accepted,
+with the server still asserting mutual agreement, and the victim would see the injected terms
+attributed to themselves.
+
+**This is the same trap `20260918000000` documented and fixed three migrations earlier — for the
+TABLES.** That fix named four tables and none of the five functions in the same migration. The
+lesson, recorded here because it has now cost two findings: **`revoke ... from public, anon` is
+never the complete form on this platform, for any object kind.** A survey found the same gap on
+every `enforce_*` trigger function in the repo, including pre-existing ones outside barter;
+those are trigger functions and not usefully callable over PostgREST, but the pattern is wrong
+and is flagged for a follow-up sweep.
+
+Closed by three layers for the reachable attacker: the EXECUTE grant is removed, the table has
+no INSERT grant and no INSERT policy, and a write guard requires a transaction-local marker that
+only the negotiation RPCs publish (the `app.barter_handoff` shape from `20260907000000`),
+carrying the version id so a marker for one version cannot write terms onto another.
+
+**CORRECTED CLAIM.** An earlier version of this entry, and `20260921000000`'s header, said the
+grant and the guard were two independent boundaries, "neither load-bearing alone". That is true
+for an authenticated PostgREST caller — each refuses on its own — and it was NOT true for an
+in-database caller: `set_config` is callable from any SQL session, so the marker is
+self-issuable, and the write-once unique index only bit because the RPC happens to number terms
+from zero. `20260924000000` replaces that with a statement-level trigger using a transition
+table, which is what can express "this version already had terms before this statement" — a
+per-row count trips on the second row of its own insert, and an index can only approximate it.
+The independence claim is now true for both profiles rather than softened. `supabase/tests/negotiation.test.sql`
+now pins `has_function_privilege` for **every** function this slice created — the class, not the
+instance — and proves the guard refuses even with grants bypassed.
+
+`20260921000000` also: corrected the lock order to offer-then-interest in all three RPCs (the
+slice claimed "interest → offer → proposal in every RPC", but the pre-existing
+`release_barter_interest` and `accept_barter_interest` take the offer first, so
+`create_barter_proposal` could deadlock against a concurrent release); removed a budget call that
+sat after the proposal insert and could only ever count zero; added `not found` branches so the
+liveness gate fails closed structurally rather than by arrangement; and changed the four
+`auth.users` foreign keys from `ON DELETE RESTRICT` to `CASCADE`, because `barter_interests`
+already cascades and the RESTRICT silently made account erasure impossible for any provider who
+had negotiated.
+
+`20260922000000` splits the last two overloaded SQLSTATEs on the propose path. `20260923000000`
+replaces the write-once count with a unique index, because a per-row count cannot tell a second
+call from the second row of the first — the guard blocked the legitimate write it was written to
+protect.
+
+Ledger after: **32 entries**, `local == remote` for every row. Production untouched, and never
+queried.
+
+Post-apply B5B: **487/487 passed, 0 failed**, zero residue. Non-B5B concurrency proof
+**19/19**, with fixture-scoped residue checks and, for ALL THREE scenarios, an assertion that
+the two sessions genuinely overlapped — without which each would pass on a sequential run and
+prove nothing.
+
+`20260924000000` also corrected a lock-order comment left inside `submit_barter_counter`'s body
+saying "interest, then offer" — the exact claim `20260921000000`'s own header identifies as
+false and as the cause of the deadlock. Comments in a function body land in `prosrc`, so that
+was the text the next author would read.
+
+Two B5B pins added in this round were themselves wrong on first writing, both in the same way —
+they reported the wrong thing as verified. The `for update` pin used `substring`, which returns
+the FIRST `barter_proposals` read (the unlocked one); and the lock-ORDER pin compared
+`position('barter_offers')`, whose first match is the DECLARE block, so it passed whichever
+order the locks were taken in. Both now compare the lock statements themselves.
+
+## 2026-09-05 — `20260925000000` applied to non-production (Founder rulings on terms)
+
+Three rulings, all narrowing what a client may assert. `estimated_value` and `sort_order` are
+dropped from `barter_proposal_terms`; a version holds **exactly two directed terms**, one per
+fixed side (`offer_owner` / `responder`), enforced by a one-per-side unique index plus the
+statement-level guard; and each term carries `provider_id` / `provider_user_id` **derived by
+`write_barter_proposal_terms` from the accepted interest** and asserted by the statement guard
+against the offer and interest rows. The RPC signatures change to
+`(uuid, text, text)` — content for the two sides — and the old `(uuid, jsonb)` signatures are
+**dropped**, not left as overloads: an overload that still accepted client-asserted sides would
+be exactly the path this closes. Safe as straight alters because the table has never held a row
+on any environment this was applied to, and has never been on `main`.
+
+Ledger after: **33 entries**, `local == remote` for every row. Production untouched.
+
+Post-apply B5B: **500/500 passed, 0 failed**, zero residue. Concurrency proof **19/19**, all
+three scenarios with overlap proven.
+
+## 2026-09-05 — `20260926000000` applied to non-production
+
+Comment-only refresh of `enforce_barter_terms_write`, whose live body cited an index that
+`20260925000000` had dropped. Function-body comments land in `prosrc`. B5B now also pins that
+no `(uuid, jsonb)` overload of the three changed functions exists — a re-apply of a superseded
+file would resurrect a granted one silently. Ledger after: **34 entries**.
+
+**Stale comment, recorded here because it is outside `prosrc`:** `20260917000000:266-267`, above
+`barter_negotiation_role` (never redefined, so that file IS its current source), still says the
+lock order is "interest → offer → proposal in every RPC". `20260921000000` corrected the order to
+offer → interest → proposal and B5B pins it; the file comment is wrong and was not reachable by
+the comment-refresh migrations, which only touch function bodies.
+
 ## Prevention
+
+**Do not apply a slice to non-production before its security review and Founder rulings have
+landed.** Slice 3a took ten migration files for one feature: `20260917000000` was applied with
+its schema right but its error contract, write boundary and term shape all still open, and every
+one of those was then a forward correction to a file that could no longer be edited.
 
 Apply migrations through `supabase migration up` / `db push` so the ledger records them, **and
 write the apply record in the same sitting** — the seven-migration gap above is what happens
@@ -247,6 +406,12 @@ NOT in the migration that created it.
 | `public.barter_terms_label` | `20260913000000_trade_activity_hardening.sql` | **`20260914000000_trade_activity_corrections.sql`** | Delegates to the new `public.barter_terms_sanitize`. `20260913000000` quoted and capped the owner-authored offer terms but did not strip the QUOTE CHARACTER, so the boundary the quotes draw could be erased by the quoted text. Sanitising now happens BEFORE the empty test and BEFORE the 40-char cap, so an attacker cannot pad with strippable codepoints. |
 | `public.accept_barter_interest` | `20260907000000_barter_accept_handoff.sql` | **`20260915000000_barter_closed_post_terminal.sql`** | Routes the handoff message's two participant-authored values (`providers.display_name`, `barter_offers.offering_service`) through `barter_terms_sanitize` and caps each at 40 chars. That call site was missed when the release notice was hardened. Lower stakes — the message is attributed to the owner, so it never posed as platform speech — but it interpolated up to 200 unbounded characters with a working quote breakout. **The new body was taken from `20260907000000` and diffed before commit: exactly 2 lines of the FUNCTION BODY changed.** Outside the body, the two trailing `revoke` statements were also consolidated into one `revoke all ... from public, anon` — semantically identical, and it still removes the `anon` grant Supabase's `ALTER DEFAULT PRIVILEGES` creates. Recorded because the bare "2 lines" claim was one line short of the literal file diff. |
 | `public.enforce_barter_accept_open_offer` → **`public.enforce_barter_answer_open_offer`** | `20260914000000_trade_activity_corrections.sql` | **`20260916000000_barter_guard_admin_escape.sql`** (RENAMED by `20260915000000`, which dropped the old function and trigger; body refreshed by `20260916000000`) | Now refuses the transition into `declined` as well as `accepted` when the parent offer is closed (PD-052), and gains the `service_role` exemption every sibling trigger on this table has — without it the INSERT arm bound *only* service_role, since `enforce_barter_interest_write` clamps every authenticated insert to `pending`. Renamed because "accept" understated what it refuses. Trigger `barter_interests_zy_accept_open_offer` → `barter_interests_zy_answer_open_offer`. `20260916000000` then added the null-`auth.uid()` half of the admin exemption, which `20260915000000` omitted. |
+| `public.accept_barter_version` | `20260917000000_barter_proposal_versions.sql` | **`20260921000000_negotiation_write_boundary.sql`** | `20260919000000` gave "these terms were replaced" its own SQLSTATE (`40001`) so it is distinguishable from "this negotiation ended"; `20260921000000` added fail-closed `not found` branches and moved the offer lock ahead of the interest lock. |
+| `public.assert_barter_version_budget` | `20260917000000_barter_proposal_versions.sql` | **`20260920000000_negotiation_budget_code.sql`** | The 20-per-24h cap raised `check_violation`, the same code as a malformed proposal and reachable from the same button; now `54000`. Note `create_barter_proposal` no longer calls it — the call sat after the proposal insert and always counted zero. |
+| `public.write_barter_proposal_terms` (signature changed) | `20260917000000` as `(uuid, jsonb)` | **`20260925000000_negotiation_directed_terms.sql`** as `(uuid, text, text)`; the old signature is DROPPED | Takes content for the two sides and derives each side's provider/user from the accepted interest in one place. Nothing is passed in that a caller could get wrong, and there is no parameter a caller could forge. |
+| `public.enforce_barter_terms_written_once` | `20260924000000` | **`20260925000000_negotiation_directed_terms.sql`** | Now also asserts exactly two terms, one per side, and that each side's stored identity matches the offer/interest — a backstop against a future writer that derives them wrongly or is handed them. |
+| `public.create_barter_proposal` / `public.submit_barter_counter` (signatures changed) | `20260917000000` as `(uuid, jsonb)` | **`20260925000000`** as `(uuid, text, text)`; old signatures DROPPED | Only the signature and the helper call changed — verified by diff, 4 lines each. |
+| `public.enforce_barter_terms_write` | `20260921000000_negotiation_write_boundary.sql` | **`20260926000000_negotiation_stale_comment.sql`** | `20260923000000` removed a per-row write-once count that tripped on the second row of the RPC's own insert; the trigger keeps only the marker check. Write-once now rests on the statement-level `enforce_barter_terms_written_once` (`20260924000000`), and `20260926000000` refreshed a body comment that still cited a since-dropped index. |
 | `public.enforce_barter_offer_active_one_way` | `20260915000000_barter_closed_post_terminal.sql` | **`20260916000000_barter_guard_admin_escape.sql`** | Makes `is_active` one-way for authenticated writers (PD-051). `20260915000000` exempted only `auth.role() = 'service_role'`, which covers the PostgREST service path but NOT a psql / SQL-console / migration session, where there is no JWT and `auth.role()` is NULL — so it silently excluded the sessions an operator actually recovers from, and would abort any future migration touching `is_active`. `20260916000000` adds `or (select auth.uid()) is null`, matching `enforce_barter_offer_delete`. |
 | `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |
 

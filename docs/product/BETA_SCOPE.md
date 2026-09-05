@@ -66,7 +66,7 @@ create *trust*.
 ## Community / barter — the pre-agreement negotiation lifecycle
 
 Bounded update, 2026-09-04, bringing this section level with what has shipped. Authoritative
-detail lives in [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) and PD-043 … PD-052 in
+detail lives in [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) and PD-043 … PD-054 in
 [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md); this records only the scope classification.
 
 **What is REAL (beta):**
@@ -89,8 +89,16 @@ detail lives in [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) and PD-043 �
   answering responses to their own post. It is not a responder surface; a responder manages
   their negotiations in Trade Activity.
 
-**What is NOT built:** there is no proposal, agreement, obligation or fulfilment schema. Nothing
-above makes a trade *official*; it is the negotiation surface that precedes one. Barter reviews,
+- **Proposed terms (Slice 3a, PR #49).** Inside an accepted interest either provider may
+  propose terms; each version is exactly **two directed terms** — what the offer owner gives,
+  what the responder gives — with participant identity **derived by the server**, never sent by
+  the client. Terms are **versioned** and never edited; a counter creates a new version and
+  withdraws any acceptance of the previous one. Both providers must explicitly accept the
+  **same current version** (**PD-053**). No value field: barter requires no dollar equivalence.
+
+**What is NOT built:** there is no agreement, obligation or fulfilment schema. Both providers
+accepting the same terms is **recorded, not finalised** (**PD-054**) — no agreement row exists,
+the sourcing post is not closed, and nothing above makes a trade *official*. Barter reviews,
 reputation and adjudication are also not built. See
 [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 for the authoritative gap list.
 

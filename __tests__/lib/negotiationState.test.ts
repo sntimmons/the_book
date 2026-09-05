@@ -1,0 +1,316 @@
+import {
+  acceptedAnEarlierVersion,
+  draftPayload,
+  MAX_DESCRIPTION,
+  negotiationView,
+  shouldShowTermsChangedNote,
+  NegotiationFacts,
+  NegotiationState,
+  ProposalDraft,
+  sideForRole,
+  sideLabel,
+  TERMS_CHANGED_NOTE,
+  validateDraft,
+} from '@/lib/negotiationState'
+
+// Negotiation copy and capability rules. These live in a pure module and are tested here for
+// the same reason the Trade Activity rules are: every defect that surface shipped was a copy
+// defect, and copy embedded in a component cannot be tested without rendering one.
+
+const STATUSES: NegotiationFacts['interestStatus'][] = [
+  'pending',
+  'accepted',
+  'declined',
+  'released',
+]
+
+function facts(over: Partial<NegotiationFacts> = {}): NegotiationFacts {
+  return {
+    interestStatus: 'accepted',
+    iAcceptedCurrent: false,
+    theyAcceptedCurrent: false,
+    bothAccepted: false,
+    everBothAccepted: false,
+    ...over,
+  }
+}
+
+const BOTH_SIDES: ProposalDraft = { ownerGives: 'a photo session', responderGives: 'four PT sessions' }
+
+describe('totality', () => {
+  it('resolves a view for every status and acceptance combination', () => {
+    const seen = new Set<NegotiationState>()
+    for (const interestStatus of STATUSES) {
+      for (const iAcceptedCurrent of [true, false]) {
+        for (const theyAcceptedCurrent of [true, false]) {
+          for (const bothAccepted of [true, false]) {
+            const v = negotiationView(
+              facts({ interestStatus, iAcceptedCurrent, theyAcceptedCurrent, bothAccepted }),
+            )
+            expect(v.headline.length).toBeGreaterThan(0)
+            expect(v.detail.length).toBeGreaterThan(0)
+            seen.add(v.state)
+          }
+        }
+      }
+    }
+    // Every state is reachable, so the assertions below are not vacuous.
+    expect(seen.size).toBe(5)
+  })
+})
+
+describe('a dead negotiation offers nothing', () => {
+  it('withholds both controls whenever the interest is not accepted', () => {
+    for (const interestStatus of STATUSES.filter((s) => s !== 'accepted')) {
+      for (const bothAccepted of [true, false]) {
+        const v = negotiationView(facts({ interestStatus, bothAccepted }))
+        expect(v.state).toBe('ended')
+        expect(v.canPropose).toBe(false)
+        expect(v.canAccept).toBe(false)
+      }
+    }
+  })
+
+  it('says the terms are kept as history', () => {
+    const v = negotiationView(facts({ interestStatus: 'released' }))
+    expect(v.detail).toMatch(/history/i)
+  })
+
+  it('does not deny an agreement that actually happened', () => {
+    // The record most likely to matter in a disagreement is the one this would get wrong: a
+    // negotiation where both accepted and one party then ended it.
+    const v = negotiationView(facts({ interestStatus: 'released', everBothAccepted: true }))
+    expect(v.detail).not.toMatch(/no terms were agreed/i)
+    expect(v.detail).toMatch(/both accepted/i)
+  })
+
+  it('and still says nothing was agreed when nothing was', () => {
+    const v = negotiationView(facts({ interestStatus: 'released', everBothAccepted: false }))
+    expect(v.detail).toMatch(/no terms were agreed/i)
+  })
+})
+
+describe('accepting is once, and only what is on the table', () => {
+  it('does not offer accept to someone who already accepted', () => {
+    expect(negotiationView(facts({ iAcceptedCurrent: true })).canAccept).toBe(false)
+  })
+
+  it('offers accept while the other side is waiting on you', () => {
+    const v = negotiationView(facts({ theyAcceptedCurrent: true }))
+    expect(v.state).toBe('awaitingYou')
+    expect(v.canAccept).toBe(true)
+  })
+
+  it('lets either party send new terms right up until the negotiation ends', () => {
+    for (const bothAccepted of [true, false]) {
+      expect(negotiationView(facts({ bothAccepted })).canPropose).toBe(true)
+    }
+  })
+})
+
+describe('agreement copy promises nothing the app cannot do', () => {
+  // No agreement, obligation or fulfilment model exists. Copy that called a trade booked, owed
+  // or complete would be a promise with no schema behind it.
+  const v = negotiationView(facts({ bothAccepted: true, iAcceptedCurrent: true, theyAcceptedCurrent: true }))
+
+  it('reports that both accepted', () => {
+    expect(v.state).toBe('agreed')
+    expect(v.headline).toMatch(/both accepted/i)
+  })
+
+  it('does not claim the trade is booked, owed, confirmed or complete', () => {
+    const text = `${v.headline} ${v.detail}`.toLowerCase()
+    for (const word of ['booked', 'owed', 'confirmed', 'complete', 'guaranteed', 'official']) {
+      expect(text).not.toContain(word)
+    }
+  })
+})
+
+describe('copy is negotiation language, not database language', () => {
+  it('never leaks implementation vocabulary', () => {
+    const all = STATUSES.flatMap((interestStatus) =>
+      [true, false].flatMap((b) => {
+        const v = negotiationView(facts({ interestStatus, bothAccepted: b }))
+        return [v.headline, v.detail]
+      }),
+    ).concat(TERMS_CHANGED_NOTE)
+    for (const line of all) {
+      const l = line.toLowerCase()
+      for (const word of ['version', 'row', 'rpc', 'superseded', 'record id', 'null']) {
+        expect(l).not.toContain(word)
+      }
+    }
+  })
+
+  it('explains a lost acceptance in terms of what the other person did', () => {
+    expect(TERMS_CHANGED_NOTE).toMatch(/terms changed/i)
+    expect(TERMS_CHANGED_NOTE).toMatch(/accept again/i)
+  })
+})
+
+describe('validateDraft mirrors the server rules', () => {
+  // Exactly two directed terms, content only. There is no side, provider or value field for
+  // the client to get wrong — the server binds each side to its participant.
+  it('accepts a draft with both sides filled', () => {
+    expect(validateDraft(BOTH_SIDES)).toBeNull()
+  })
+
+  it('names the missing side', () => {
+    expect(validateDraft({ ownerGives: 'x', responderGives: '' })).toMatch(/responding provider/i)
+    expect(validateDraft({ ownerGives: '', responderGives: 'y' })).toMatch(/provider who posted/i)
+  })
+
+  it('asks for both when both are blank', () => {
+    expect(validateDraft({ ownerGives: '  ', responderGives: '' })).toMatch(/each of you/i)
+  })
+
+  it('refuses an over-long side', () => {
+    expect(validateDraft({ ...BOTH_SIDES, ownerGives: 'x'.repeat(MAX_DESCRIPTION + 1) })).toMatch(
+      /200/,
+    )
+  })
+
+  it('sends content only, trimmed, under the names the server expects', () => {
+    const p = draftPayload({ ownerGives: '  a photo session  ', responderGives: ' four PT ' })
+    expect(p).toEqual({ p_owner_gives: 'a photo session', p_responder_gives: 'four PT' })
+    // No side, no provider id, no value: nothing about identity crosses the boundary.
+    expect(Object.keys(p).sort()).toEqual(['p_owner_gives', 'p_responder_gives'])
+  })
+})
+
+describe('sideLabel speaks from the viewer', () => {
+  it('names the viewer as the giver on their own side', () => {
+    expect(sideLabel('offer_owner', 'owner')).toMatch(/you/i)
+    expect(sideLabel('responder', 'owner')).toMatch(/they/i)
+    expect(sideLabel('responder', 'responder')).toMatch(/you/i)
+    expect(sideLabel('offer_owner', 'responder')).toMatch(/they/i)
+  })
+
+  it('maps a role to its fixed side', () => {
+    expect(sideForRole('owner')).toBe('offer_owner')
+    expect(sideForRole('responder')).toBe('responder')
+  })
+})
+
+describe('the lapsed-acceptance note addresses the right person', () => {
+  // Wrong in both directions before: it fired for anyone whenever ANY earlier version had ANY
+  // acceptance, and was suppressed exactly when the other provider had accepted the new terms
+  // — which is the person whose acceptance actually lapsed.
+  const base = { interestStatus: 'accepted' as const }
+
+  it('is shown to someone whose earlier acceptance no longer counts', () => {
+    expect(
+      shouldShowTermsChangedNote({
+        ...base,
+        iAcceptedAnEarlierVersion: true,
+        iAcceptedCurrent: false,
+      }),
+    ).toBe(true)
+  })
+
+  it('does not depend on what the counterparty accepted', () => {
+    // The false negative was caused by keying on the counterparty's acceptance, which
+    // suppressed the note for the one person whose acceptance had actually lapsed. The rule
+    // takes no such input now, and this asserts that structurally: the visible signature has
+    // three fields and none of them is theirs.
+    expect(Object.keys({ ...base, iAcceptedAnEarlierVersion: true, iAcceptedCurrent: false }))
+      .toEqual(['interestStatus', 'iAcceptedAnEarlierVersion', 'iAcceptedCurrent'])
+  })
+
+  it('is NOT shown to someone who never accepted anything', () => {
+    expect(
+      shouldShowTermsChangedNote({
+        ...base,
+        iAcceptedAnEarlierVersion: false,
+        iAcceptedCurrent: false,
+      }),
+    ).toBe(false)
+  })
+
+  it('is NOT shown once they have accepted the current terms', () => {
+    expect(
+      shouldShowTermsChangedNote({
+        ...base,
+        iAcceptedAnEarlierVersion: true,
+        iAcceptedCurrent: true,
+      }),
+    ).toBe(false)
+  })
+
+  it('is never shown on a dead negotiation', () => {
+    for (const interestStatus of ['released', 'declined', 'pending'] as const) {
+      expect(
+        shouldShowTermsChangedNote({
+          interestStatus,
+          iAcceptedAnEarlierVersion: true,
+          iAcceptedCurrent: false,
+        }),
+      ).toBe(false)
+    }
+  })
+})
+
+describe('the agreed state does not overstate what has happened', () => {
+  const v = negotiationView(
+    facts({ bothAccepted: true, iAcceptedCurrent: true, theyAcceptedCurrent: true }),
+  )
+
+  it('says either side can still change or end it', () => {
+    // Without this a provider reads "nothing left to confirm" and starts work, while the
+    // counterparty can still supersede or end the negotiation the same day.
+    expect(v.detail).toMatch(/still send different terms|end this/i)
+    expect(v.detail).toMatch(/withdraws/i)
+  })
+})
+
+describe('acceptedAnEarlierVersion', () => {
+  // The derivation the whole lapsed-acceptance rule rests on. It lived inline in the screen,
+  // where nothing could assert it.
+  const me = 'me'
+  const them = 'them'
+
+  it('is true when I accepted a version that is no longer current', () => {
+    expect(
+      acceptedAnEarlierVersion(
+        [{ id: 'v1', acceptedBy: [me] }, { id: 'v2', acceptedBy: [] }],
+        'v2',
+        me,
+      ),
+    ).toBe(true)
+  })
+
+  it('ignores my acceptance of the CURRENT version', () => {
+    expect(acceptedAnEarlierVersion([{ id: 'v1', acceptedBy: [me] }], 'v1', me)).toBe(false)
+  })
+
+  it('ignores the counterparty accepting an earlier version', () => {
+    expect(
+      acceptedAnEarlierVersion(
+        [{ id: 'v1', acceptedBy: [them] }, { id: 'v2', acceptedBy: [] }],
+        'v2',
+        me,
+      ),
+    ).toBe(false)
+  })
+
+  it('is false when the viewer is unknown, rather than guessing', () => {
+    expect(acceptedAnEarlierVersion([{ id: 'v1', acceptedBy: [me] }], 'v2', null)).toBe(false)
+  })
+})
+
+describe('term copy describes two sides, not a list', () => {
+  // The 2-6-term list model was removed by ruling. Copy that still said "item" or "at least
+  // one" would invite exactly the input the server now refuses.
+  const drafts: ProposalDraft[] = [
+    { ownerGives: '', responderGives: '' },
+    { ownerGives: 'x', responderGives: '' },
+    { ownerGives: '', responderGives: 'y' },
+    { ownerGives: 'x'.repeat(MAX_DESCRIPTION + 1), responderGives: 'y' },
+  ]
+  it('never uses list-model words', () => {
+    for (const d of drafts) {
+      const msg = validateDraft(d) ?? ''
+      expect(msg).not.toMatch(/\b(item|items|list|at least one)\b/i)
+    }
+  })
+})

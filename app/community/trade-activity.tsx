@@ -216,7 +216,14 @@ export default function TradeActivityScreen() {
                   ...item,
                   offerHasAcceptedResponse: matchedOfferIds.has(item.offerId),
                 })
-                const showActions = state.action !== 'none' || item.conversationId !== null
+                // The terms route counts as an action. It was nested inside a strip that also
+                // required a conversation, so a released row whose accept predates the atomic
+                // handoff -- exactly the rows most likely to need support -- kept no route to
+                // its terms at all.
+                const showActions =
+                  state.action !== 'none'
+                  || item.conversationId !== null
+                  || item.status === 'released'
                 return (
                   <View key={item.interestId} style={styles.card}>
                     <View style={styles.cardTop}>
@@ -267,6 +274,30 @@ export default function TradeActivityScreen() {
                               color="rgba(240,232,213,0.75)"
                             />
                             <Text style={styles.secondaryText}>Open conversation</Text>
+                          </TouchableOpacity>
+                        ) : null}
+
+                        {/* Terms live on their own surface. The conversation stays the
+                            logistics anchor; a pair may trade more than once over time while
+                            keeping one thread, so the negotiation needs its own identity.
+                            
+                            Offered on ENDED rows too, not only live ones — the same reasoning
+                            the conversation button already carries. The tables are append-only
+                            and three separate strings promise the terms "stay on record", but
+                            gating this on a live negotiation made that record unreachable at
+                            exactly the moment a disagreement would need it. */}
+                        {state.action === 'end' || item.status === 'released' ? (
+                          <TouchableOpacity
+                            style={styles.secondaryBtn}
+                            activeOpacity={0.8}
+                            onPress={() =>
+                              router.push(
+                                `/community/negotiation/${item.interestId}?role=${item.myRole}` as never,
+                              )
+                            }
+                          >
+                            <Feather name="file-text" size={14} color="rgba(240,232,213,0.75)" />
+                            <Text style={styles.secondaryText}>Trade terms</Text>
                           </TouchableOpacity>
                         ) : null}
 
