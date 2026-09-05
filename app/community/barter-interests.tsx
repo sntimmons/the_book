@@ -98,16 +98,11 @@ export default function BarterInterests() {
   // the whole handoff in one transaction, so either the response is accepted AND a usable
   // conversation exists, or nothing happened at all.
   function confirmRelease(item: BarterInterest) {
-    // Shared copy, so the owner's disclosure does not depend on which screen they ended it
-    // from. The two routes previously differed on whether another response could be accepted.
-    // Role comes from the VIEWER. An earlier pass removed this ternary as dead -- correctly,
-    // at the time, because the End control sat behind the ownership gate. Un-gating it (so a
-    // responder can end their own negotiation, which the server has always permitted) made the
-    // responder path live again in the same commit, and the hardcoded 'owner' then handed them
-    // a disclosure about losing capabilities they never had while omitting the one consequence
-    // that applies to them.
-    const c = confirmCopy('endNegotiation', isOwner === true ? 'owner' : 'responder',
-      item.provider.name)
+    // Always the OWNER variant, and that is now a property of the screen rather than an
+    // assumption: this route is owner-only by Founder ruling, and the End control below is
+    // gated on `canAct`. A responder ends their negotiation from Trade Activity, which passes
+    // the row's real role. Shared copy either way, so the disclosure does not depend on route.
+    const c = confirmCopy('endNegotiation', 'owner', item.provider.name)
     Alert.alert(c.title, c.body, [
       { text: c.cancelLabel, style: 'cancel' },
       { text: c.confirmLabel, style: 'destructive', onPress: () => release(item) },
@@ -297,13 +292,14 @@ export default function BarterInterests() {
                   </View>
                 ) : null}
 
-                {/* ENDING comes first, and is NOT behind the ownership gate: either
-                    participant may end an accepted negotiation (release_barter_interest checks
-                    participation, and PD-052 keeps this legal on a closed post). Putting the
-                    ownership note first told a responder who deep-linked to their own accepted
-                    row that they could not act, while tradeRowState and both other surfaces
-                    correctly granted them the control. */}
-                {state.action === 'end' ? (
+                {/* OWNER-ONLY, by Founder ruling: this screen exists for a post owner managing
+                    responses to their own post. The server permits either participant to end a
+                    negotiation, and briefly this screen offered that to a deep-linked responder
+                    — which was a second, unsupported management journey. A responder ends a
+                    negotiation from Trade Activity, the surface built for it. Authorization is
+                    unaffected: `release_barter_interest` still checks participation server-side,
+                    so nothing here is load-bearing for safety. */}
+                {canAct && state.action === 'end' ? (
                   <View style={styles.acceptedRow}>
                     <View style={styles.acceptedRowLeft}>
                       <Feather name="check-circle" size={14} color="#4CAF50" />
@@ -318,21 +314,19 @@ export default function BarterInterests() {
                       <Text style={styles.declineText}>End negotiation</Text>
                     </TouchableOpacity>
                   </View>
-                ) : offerReadOk && isOwner === false && item.status === 'pending' ? (
+                ) : offerReadOk && isOwner === false ? (
+                  // A non-owner reached an owner-only screen — normal navigation never sends
+                  // them here, so this is a deep link. Handle it truthfully and point at the
+                  // surface that IS theirs, rather than building a journey here.
+                  //
                   // Gated on `offerReadOk`, NOT on an `isOwner === null` sentinel: a failed
                   // read returns isOwner FALSE (fetchOfferAccess fails closed on both axes),
-                  // so guarding on null was dead code and a transient failure still told a
-                  // post's real owner they did not own it.
-                  //
-                  // Only on `pending`, because that is the only row where a control is
-                  // withheld from this viewer. On a released or declined row nobody gets a
-                  // control, so the sentence answered a question the reader had not asked.
-                  // It also names the actual capability: a responder plainly DID respond to
-                  // the offer; what they cannot do is answer the responses.
+                  // so guarding on null was dead code and a transient failure told a post's
+                  // real owner they did not own it.
                   <View style={styles.matchedNote}>
                     <Text style={styles.matchedNoteText}>
-                      Only the provider who posted this offer can accept or decline responses
-                      to it.
+                      This is the post owner&apos;s view. Your own responses and negotiations
+                      live in Trade Activity.
                     </Text>
                   </View>
                 ) : !canAct ? null : state.action === 'answer' ? (

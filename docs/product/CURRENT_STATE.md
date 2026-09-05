@@ -1,8 +1,8 @@
 # Current State — what is true on `main` today
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `feba568a900401e3e8dffc560ea5e214cb9be38c` (2026-09-04)
-**Last edited by:** PR #40
+**Reconciled against:** `main` @ `76f5632c4db112c9b4482b6c93800c2caa166c79` (2026-09-04)
+**Last edited by:** this reconciliation — PR number not supplied to the run (previous: PR #40)
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -118,14 +118,15 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 Docs: **[supabase/tests/README.md](../../supabase/tests/README.md)**.
 
-**Migration ledger.** The repository holds **15 migration files** at `feba568` — counted from
+**Migration ledger.** The repository holds **25 migration files** at `76f5632` — counted from
 `supabase/migrations/*.sql`, and that part is repository-provable. That the *remote non-prod
 ledger* matches them (`local == remote`, no merged migration edited) was established by
-`supabase migration list --linked` — 14 entries on 2026-09-02, and 15 after
-`20260906000000` was applied to non-production on 2026-09-03 by an ordinary forward
-`db push` (no repair; no drift existed). Neither **can be re-proved from repository state**;
-a later change made outside this repo would not show up here. Process and the dated record:
-**[docs/operations/MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md)**.
+`supabase migration list --linked`: **25 entries** after `20260916000000` was applied to
+non-production on 2026-09-05 by an ordinary forward `db push` (no repair). Seven of those
+applies — `20260907000000`…`20260913000000` — were **recorded retrospectively** on 2026-09-04,
+and the ledger flags that lapse itself. None of this **can be re-proved from repository
+state**; a later change made outside this repo would not show up here. Process and the dated
+record: **[docs/operations/MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md)**.
 
 **Latest recorded runs.** Rather than restate counts that change with ordinary PRs, this
 records *which runs* to look at. Two different things are recorded, and they are not
@@ -134,25 +135,27 @@ interchangeable:
 - **The last CI run this reconciliation could cite** is **33726878929** on `e7ccd87` —
   `check` and `db-security` both green, the B5B step logging `via TEST_SUPABASE_DB_URL`,
   88/88. At that run: Jest 22 suites / 251 tests, lint 0 errors within the frozen
-  `--max-warnings` baseline in `package.json`, typecheck 0 errors. **No CI run for
-  `feba568` is cited here**, because CI status is GitHub state and this reconciliation had
-  no way to query it. Read the latest `check` and `db-security` runs directly.
+  `--max-warnings` baseline in `package.json`, typecheck 0 errors. That run is now **many
+  merges old** — it pre-dates every barter slice. **No CI run for `76f5632` is cited here**,
+  because CI status is GitHub state
+  and this reconciliation had no way to query it. Read the latest `check` and `db-security`
+  runs directly rather than treating the figures above as current.
 - **The last recorded B5B execution** is the post-apply run logged against
-  `20260906000000` in
-  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md): **138/138 passed, 0 failed**,
-  transaction rolled back. That was a local non-prod run, not a CI run.
+  `20260916000000` in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) (2026-09-04): **368/368 passed,
+  0 failed**, transaction rolled back. That was a local non-prod run, not a CI run.
 
-The suite grew between them — `supabase/tests/barter.test.sql` was added by Slice 1 — which
-is exactly why the count is read from a run rather than from this document. The
+The suite grew enormously between them — 88 → 367 assertions as the barter slices landed —
+which is exactly why the count is read from a run rather than from this document. The
 authoritative description of the harness lives in
 [supabase/tests/README.md](../../supabase/tests/README.md).
 
-**Why this document's anchor is now `feba568`.** The previous anchor was `e7ccd87`, and it
-held while the merges after it (#32 … #37) changed nothing *this document* asserts. Slice 1
-(PR #38, merge `feba568`) did: it added the fifteenth migration, replaced six barter write
-policies, added five triggers and two indexes, added a B5B suite, and changed two community
-screens. Those are facts asserted above, so the anchor moves to the commit at which they
-were verified.
+**Why this document's anchor is now `76f5632`.** The previous anchor was `feba568` (Slice 1).
+Everything after it changed facts *this document* asserts: the migration chain went from 15
+files to 25, the barter surface gained an atomic accept RPC, canonical pair conversations, the
+`released` status, Trade Activity and the closed-post guards, and the recorded B5B execution
+moved from 138/138 to 368/368. Those are facts asserted above, so the anchor moves to the
+commit at which they were verified — PR #47's merge, `76f5632`.
 
 [ROADMAP.md](ROADMAP.md) remains authoritative for **which** merge delivered **which**
 capability — it carries a Completed row per delivered capability, each citing its merge,
@@ -160,103 +163,93 @@ under its own anchor. This document deliberately does not restate that; a second
 drift. An anchor is per-document: it moves when that document's own asserted facts move, not
 whenever `main` does, which is why this file and `ROADMAP.md` can carry different anchors.
 
-**Two sessions preceding Slice 1 left no artifact in this repository.** The Slice 1 migration
-header cites a "Session 4 audit" and a "Session 5 agent review" (line 9) and a plan clause
-"E-3" (line 36), and the defect IDs it closes (`SEC-AUTHZ-001`, `SEC-DATA-009`, …) appear
-nowhere else on `main`. Session 4 was a read-only audit and Session 5 produced a product
-contract and implementation plan; **neither is committed here**, so the only in-repo record of
-either is the migration comment that cites them. That is recorded as a fact about the
-repository, not as a criticism of the work — but it means a cold reader cannot reconstruct
-why each defect was ranked as it was, and `ROADMAP.md` carries no Completed row for either
-session, because a row needs an artifact on `main`.
+**The Session 4 audit still has no artifact in this repository; Session 5's now does.** The
+Slice 1 migration header cites a "Session 4 audit + Session 5 agent review"
+(`20260906000000_barter_integrity_slice1.sql:9`) and a plan clause "E-3" (line 36), and the
+defect IDs it closes (`SEC-AUTHZ-001`, `SEC-DATA-009`, …) appear nowhere else on `main`. The
+**Session 5 output is now committed**: its approved barter clauses are
+[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md), and the rulings behind them are PD-043 …
+PD-048 (PD-044 records E-3 explicitly). The **Session 4 read-only audit is still not
+committed**, so the only in-repo record of it is the migration comment citing it — which means
+a cold reader cannot reconstruct why each defect was ranked as it was. That is recorded as a
+fact about the repository, not as a criticism of the work.
 
 ---
 
-## Barter — existing surface, integrity-hardened (Slice 1)
+## Barter — the provider-to-provider trade surface
 
 **Barter is not a blank slate.** [BETA_SCOPE.md](BETA_SCOPE.md) classifies the community /
-barter *surface* as **REAL (beta)** — offers, interests and the community screens work. What
-is **not** established is the barter *product model*: how a trade binds to bookings,
-messaging, reviews and completion. That gap is why it had to be **audited read-only before any
-redesign** (PD-033), not a claim that the surface was broken.
+barter surface as **REAL (beta)** (line 57) — offers, interests and the community screens work.
+What was undecided when that classification was written was the barter **product model**: how a
+trade binds to bookings, messaging, reviews and completion. For the first Houston closed beta
+that model is now locked in **[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md)**, which is
+authoritative for it; the decisions behind it are **PD-030 … PD-052** in
+[PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md). Neither is restated here.
 
-**Slice 1 snapshot (`feba568`), NOT current truth.** The table and notes below record barter as
-it stood after Slice 1. Four slices have merged since — see the index further down for what each
-changed and which document owns it. Read this section as history:
+This section records only **what is built on `main`** and **what is not**.
 
-| Surface | Evidence |
-|---|---|
-| Data model | `barter_offers`, `barter_interests` tables |
-| RLS — reads | `barter_offers_provider_read`, `barter_interests_offer_owner_read`. Both are **unchanged by Slice 1**, deliberately: the migration header (lines 40–48) records that gating the board on provider eligibility is a separate decision, and that gating the responses read on it would be actively wrong — a de-approved provider would lose sight of responses already sent to them. |
-| RLS — writes | Replaced by Slice 1: `barter_offers_provider_insert`, `barter_offers_owner_update`, `barter_offers_owner_delete`, `barter_interests_provider_insert`, `barter_interests_owner_update`, `barter_interests_own_delete` |
-| Constraints (baseline) | `barter_offers_offering_service_check`, `_seeking_service_check`, `_notes_check`; `barter_interests_status_check`, `_message_check`; unique `(offer_id, interested_provider_id)` |
-| Client library | `lib/barter.ts` — `BarterOffer`, `BarterInterest`, `BarterOfferWithProvider`, `fetchBarterFeed()`, `fetchMyInterests()`, `fetchOfferInterests()` |
-| Screens | `app/community/barter-compose.tsx`, `app/community/barter-interests.tsx`, referenced from `app/community/index.tsx` |
-| Origin | `supabase/migrations/20260829000000_canonical_live_baseline.sql` |
+### What is on `main`
 
-**Slice 1 — integrity hardening of that existing surface** (PR #38, merge `feba568`).
-Migration `supabase/migrations/20260906000000_barter_integrity_slice1.sql` is authoritative
-for exactly what it does and, in its own header, for what it deliberately did not do; this
-is an orientation summary, not a second copy of it. Enforced **server-side**:
+Verified against the migration chain at `76f5632` — **25 migrations**, newest
+`supabase/migrations/20260916000000_barter_guard_admin_escape.sql`.
 
-- **Write identity is bound to the caller.** One named predicate, `caller_provider_id()`,
-  takes no argument and derives the provider from `auth.uid()`, so nothing client-supplied
-  enters the comparison. It backs the three write-identity policies — offers insert, offers
-  update, interests insert (§§ 1–3).
-- **An offer owner may change exactly one column on a counterparty's response:** `status`.
-  Enforced by a trigger with an **allow-list**, so a column added later is immutable by
-  default (§ 5). Legal transitions are `pending → accepted | declined` only.
-- **Counterparty history survives one participant.** Deleting an offer that has responses is
-  refused; the owner closes it instead (`is_active = false`, `app/community/index.tsx:398`).
-  An accepted or declined response cannot be erased by either side (§ 4).
-- **`created_at` is server-stamped** on both tables, and **at most one accepted response per
-  offer** is enforced by a partial unique index rather than a read-then-write check (§§ 5–7).
-- **Interest writes are rate-limited in the write path** (15 per 24h, § 9), counted from
-  `rate_limit_log` so delete-and-resend cannot reset the window.
-- **`anon` holds nothing** on either barter table (§ 10).
+| Capability | What is actually enforced | Where |
+|---|---|---|
+| Data model | `barter_offers` and `barter_interests`, and nothing else. **No proposal, agreement or obligation schema exists** — no migration in the chain creates one. | Origin: `20260829000000_canonical_live_baseline.sql` |
+| Response vocabulary | `pending → accepted \| declined \| released`, with `released_at`, `released_by` and `release_reason` required together and null together. | `20260909000000_barter_interest_release.sql` (status + completeness check constraints) |
+| Write identity | `caller_provider_id()` derives the provider from `auth.uid()`; nothing client-supplied enters the comparison. Foreign-field writes are governed by an **allow-list** trigger, `created_at` is server-stamped, delete guards preserve counterparty history (PD-043), and `anon` holds nothing on either table. | `20260906000000_barter_integrity_slice1.sql` §§ 1–7, 10 |
+| Interest rate limit | 15 new interests per provider per rolling 24h, counted from `rate_limit_log` so delete-and-resend cannot reset the window (PD-045). | `20260906000000` § 9 (`enforce_barter_interest_rate_limit`) |
+| One negotiation per post | At most one `accepted` response per offer, enforced by a partial unique index and by the accept RPC locking the **offer** row (PD-049). | `20260906000000` § 7; `20260907000000_barter_accept_handoff.sql` |
+| Accept | **One atomic RPC**, `accept_barter_interest`: it accepts the response, opens or reuses the pair's conversation and posts the handoff message in a single transaction. Body redefined once, to route the composed message through the sanitiser. | `20260907000000`; redefined by `20260915000000_barter_closed_post_terminal.sql` § 3 |
+| Conversation identity | One canonical conversation per provider pair, enforced in the database rather than by client convention. | `20260908000000_canonical_provider_pair.sql` |
+| Ending a dead negotiation | `release_barter_interest` moves `accepted → released` and **derives the reason from the caller** (`responder_withdrew` / `owner_ended_negotiation`), so neither party can characterise the other's exit. The counterparty is told by a **server-authored** notice, and message authorship is pinned at the write boundary. | `20260909000000`; `20260910000000_barter_release_signal.sql`; `20260911000000_message_authorship_pin.sql` |
+| Durable access | The `my_trade_activity` view (`security_invoker`, `select` to `authenticated` only, revoked from `anon`) backs the route `/community/trade-activity`, so an accepted negotiation stays reachable after its post closes or ages out of the newest-50 discovery feed. | `20260912000000_trade_activity.sql`, hardened by `20260913000000` and `20260914000000` |
+| Closed post is terminal | `is_active` is **one-way** for authenticated writers (`enforce_barter_offer_active_one_way`, trigger `barter_offers_zy_active_one_way`), and a closed post's pending responses can be **neither accepted nor declined** (`enforce_barter_answer_open_offer`, trigger `barter_interests_zy_answer_open_offer`). Both raise SQLSTATE `55000`; both exempt `service_role` and the null-`auth.uid()` (no-JWT) path. `released` stays permitted, because a negotiation outlives its post. PD-051, PD-052. | `20260915000000` §§ 1–2, bodies refreshed by `20260916000000` |
+
+**The barter RLS policies are still the Slice 1 set.** `barter_offers_provider_read` and
+`barter_interests_offer_owner_read` on reads; `barter_offers_provider_insert`,
+`barter_offers_owner_update`, `barter_offers_owner_delete`, `barter_interests_provider_insert`,
+`barter_interests_owner_update`, `barter_interests_own_delete` on writes. No migration after
+`20260906000000` creates or drops a policy on either table — every rule added since is a trigger
+or an RPC, which is why a policy-level reading of this surface is now incomplete on its own.
+
+**Client surfaces.** `lib/barter.ts` is the data layer; `lib/tradeActivity.ts` holds the
+per-row capability and copy rules (`tradeRowState`) that **both** barter surfaces consume, and
+`lib/barterErrors.ts` interprets the server's refusals. Screens: `app/community/index.tsx`
+(feed), `barter-compose.tsx`, `barter-interests.tsx` (an offer's responses) and
+`trade-activity.tsx`. Interest counts are shown to the **offer owner only**
+(`app/community/index.tsx`, the `isOwner` branch), which is what
+[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 10 requires.
 
 Regression coverage: `supabase/tests/barter.test.sql`, registered in the B5B runner at
-`scripts/db-security-test.mjs:47`.
+`scripts/db-security-test.mjs`, plus `__tests__/lib/tradeActivity.test.ts` for the pure client
+rules. The last recorded execution of the whole B5B suite is **368/368 passed, 0 failed** —
+see § Foundation & security above for what that figure does and does not establish.
 
-**Still true after Slice 1**, and recorded so it is not mistaken for closed:
+### What is not built
 
-- **Offer creation is still limited only by the client-invoked edge function**, which fails
-  open (`lib/rateLimit.ts:50-65`, called at `app/community/barter-compose.tsx:55`). A caller
-  that omits the call is unlimited on offers. The migration header records this as a
-  partial closure, not a closure.
-- ~~**Accept is a client-orchestrated sequence, not one atomic step.**~~ **SUPERSEDED** — see
-  the Slice 2 note below. Accept is now one RPC.
-- **Offer terms stay editable by their author after responses exist** — OQ-008, **closed
-  2026-09-04**: the post stays editable and any agreement must snapshot its terms. See
-  `PRODUCT_DECISIONS.md` PD-047.
-- Slice 1 created **no** agreement or obligation schema and touched neither `bookings` nor
-  the reviews surface.
+**[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 is the authoritative gap list** and is
+not copied here. Two gaps matter most to anyone reading this document cold:
 
-**Slices 2, 2B, 3a-0, 3a-0b and 3a-0c ARE now on `main`** (as of `27756bb`, twenty-three
-migrations, the newest `20260914000000`). This section above describes `main` at `feba568` and is **kept as a
-Slice 1 record, not as current truth**. What changed since, in one line each — the owning
-document is authoritative for all of it:
+- **There is no agreement or obligation schema.** PD-046 (cancellation / no-show), PD-047
+  (proposal snapshots) and § 4/§ 6 of the contract describe a trade model that has **no tables
+  behind it**. Everything above is the *pre-agreement* negotiation surface.
+- **Offer creation is not server-limited.** The interest cap is server-authoritative; the
+  offers-per-day cap is client-side only and its check fails open
+  ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 10, `lib/rateLimit.ts`).
 
-| Slice | Migration | What it changed | Owner |
-|---|---|---|---|
-| 2 | `20260907000000` | Accept became **one atomic RPC** (`accept_barter_interest`), not a client sequence | `MIGRATION_LEDGER.md` |
-| 2B | `20260908000000` | One canonical conversation per provider pair, enforced in the DB | `MIGRATION_LEDGER.md` |
-| 3a-0 | `20260909000000` | `released` status: a dead negotiation frees the post's slot | PD-049 |
-| 3a-0b | `20260910000000`, `20260911000000` | Server-authored release notice (`sender_id IS NULL`); message authorship pinned | PD-049, `BARTER_BETA_CONTRACT.md` § 3.2 |
-| 3a-0c | `20260912000000`–`20260914000000` | **Trade Activity** (`/community/trade-activity`), durable negotiation access; a closed post cannot select a new response | PD-050 |
+Also unbuilt: the `is_approved` **eligibility conjunct** (PD-044 — `caller_provider_id()`
+deliberately carries the seam without the condition, `20260906000000:145`), the **Open to
+Trades** opt-in, and the post-decline reverse-contact episode (PD-048).
 
-**Not yet on `main`:** the closed-post-terminal cleanup (PD-051, PD-052 — closing is one-way and
-a closed post's responses cannot be answered at all) is in flight on
-`chore/barter-closed-post-terminal` (PR #47), with migrations `20260915000000` and
-`20260916000000`. Do not read PD-051 or PD-052 as describing `main` until that merges.
+**Which merge delivered which capability is [ROADMAP.md](ROADMAP.md)'s record**, not this
+document's — it carries a Completed row per delivered capability, each citing its evidence.
 
-> **This barter section is due a full Project State Steward reconciliation.** It was written
-> for Slice 1 and has been corrected in place rather than rewritten, because a reconciliation
-> pass is the Steward's scope and this is not it. Treat the table above as the index, and the
-> owning documents as the truth.
-
-Open barter questions: OQ-001 … OQ-008 in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). None of
-them is closed by Slice 1: a migration is an implementation, not an approval.
+Open barter questions: **OQ-006** (collusion / reciprocal-rating gaming) and **OQ-007** (what in
+the pre-existing implementation is salvageable) remain **Open**. OQ-001 … OQ-005 and OQ-008 are
+closed, each citing the decision that closed it, in
+[OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). A migration is an implementation, not an approval, and
+none of the work above closes a question by itself.
 
 ---
 
@@ -291,3 +284,10 @@ Written from repository state at rest. It does **not** establish: runtime behavi
 device, whether the app currently builds for release, live production state (explicitly out
 of scope), or anything about real user behaviour. Where a claim needed a run to confirm, it
 cites the recorded run rather than asserting it fresh.
+
+**One caveat about how this revision was verified.** The reconciliation that produced it read
+the working tree at `871eb2a` — `main` @ `76f5632` plus one unmerged commit on
+`chore/pre-proposal-closeout` that touches **barter client code**. The migration chain was
+confirmed to be `main`'s (25 files, newest `20260916000000`), so every server-enforced claim
+above is anchored to `main`. Client-side citations name a **file and symbol rather than a line
+number**, because that one commit can move lines this document does not own.

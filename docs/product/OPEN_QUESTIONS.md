@@ -2,7 +2,13 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** PR #41
+**Last edited by:** this reconciliation — PR number not supplied to the run (previous: PR #41)
+
+> **Why the anchor did not move to `76f5632`.** The reconciliation that last edited this file
+> inspected `main` @ `76f5632` and re-verified the **barter** entries there (OQ-006, OQ-007,
+> OQ-008), but did **not** re-verify the repository claims carried by OQ-011, OQ-036 or OQ-070.
+> An anchor asserts that *this document's* facts were verified at that commit, so it stays
+> where the last full verification happened.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -61,7 +67,9 @@ an entry is self-describing when quoted alone.
 - **Why it matters:** One side may deliver before the other. A no-show on the second leg is materially different from one on a paid booking. Interacts with PD-026 and PD-027.
 - **Blocks:** Slice 3 (agreement / obligation schema) must not encode a cancellation model
   before this is settled.
-- **Reconciliation note (2026-09-04):** deliberately **left open**. The beta contract settles the
+- **Reconciliation note (2026-09-04) — historical, and superseded later the same day by the
+  ruling recorded as PD-046. Kept because it records why the question could not be closed on
+  repository evidence:** deliberately **left open**. The beta contract settles the
   *frame* — no timeout completion, receiver-confirmed delivery, truthful Partially Fulfilled
   outcomes, and history retention (PD-043) — but not this question's own wording. Specifically
   undecided: whether a two-party trade may be **mutually cancelled before delivery**, and how
@@ -121,6 +129,14 @@ an entry is self-describing when quoted alone.
 ### OQ-010 — What are the rules for provider- or community-initiated contact?
 - **Area:** Messaging
 - **Why it matters:** Today the client sends the first request. Whether a provider may initiate — and under what anti-spam limits — is undefined.
+- **Related, and deliberately not treated as closing this (2026-09-04):** **PD-048** rules that
+  a provider who declined another provider's request may later initiate contact, as a new
+  reverse-direction episode on the same canonical provider-pair conversation. That settles one
+  specific case and **supplies none of the general rules or anti-spam limits this question
+  asks for**; PD-048 itself records the work as an unimplemented follow-up. Barter accept also
+  opens a provider-to-provider thread server-side (`accept_barter_interest`,
+  `20260907000000`), but that is a consequence of a mutual accept, not provider-initiated
+  contact, and code does not close a question in any case.
 - **Blocks:** nothing yet.
 - **Status:** Open
 
@@ -348,7 +364,24 @@ schema; the product rules around them do not. Each question below is separately 
 
 ---
 
-## Closed
+## Closed — index
 
-None yet. When a decision closes a question, it moves here with its `PD-NNN` and date —
-the question text is kept, not deleted.
+**Closed questions are not moved.** An earlier version of this section said they would be, and
+practice went the other way: every closed entry has stayed in its own area section, keeping its
+full text, with the closure cited in its `Status`. That is what the preamble above requires, and
+it is the better of the two conventions — a question read in its area is read next to the
+questions it interacts with. This section is therefore an **index**, not a destination. It was
+previously reading "None yet" while six questions were closed, which was the one thing it could
+say that was false.
+
+| Question | Closed | By |
+|---|---|---|
+| **OQ-001** — Is "open to trades" provider-level, service-level, or both? | 2026-09-04 | [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 2 — provider-level |
+| **OQ-002** — Reciprocal bookings, or a parent trade agreement? | 2026-09-04 | [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) §§ 4, 6 — a parent trade agreement |
+| **OQ-003** — What minimum terms must a trade capture for beta? | 2026-09-04 | [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) §§ 5, 6 |
+| **OQ-004** — How should cancellation and no-show work for trades? | 2026-09-04 | **PD-046** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7) |
+| **OQ-005** — How should barter interact with reviews and reputation? | 2026-09-04 | [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 8 — not at all, in the first beta |
+| **OQ-008** — May an offer's terms still be edited once providers have responded? | 2026-09-04 | **PD-047** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1) |
+
+Nothing here was closed by repository evidence. **OQ-006** and **OQ-007** remain Open, and
+PD-049 … PD-052 closed no question in this ledger — they answered questions nobody had filed.
