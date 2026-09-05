@@ -411,7 +411,7 @@ export default function CommunityFeed() {
     loadBarter()
   }
 
-  async function markFilled(offerId: string) {
+  async function closeOffer(offerId: string) {
     const prev = offers
     setOffers((list) => list.filter((o) => o.id !== offerId))
     // `.select()` because authorization here is an RLS USING clause, which FILTERS a row the
@@ -435,7 +435,7 @@ export default function CommunityFeed() {
   async function deleteOffer(offerId: string) {
     const prev = offers
     setOffers((list) => list.filter((o) => o.id !== offerId))
-    // `.select()` for the same reason as markFilled: a non-owner delete is FILTERED by RLS
+    // `.select()` for the same reason as closeOffer: a non-owner delete is FILTERED by RLS
     // and raises nothing. The owner's blocked delete does raise (23514) and is classified.
     const { data, error } = await supabase
       .from('barter_offers')
@@ -459,21 +459,17 @@ export default function CommunityFeed() {
     Alert.alert('Manage offer', undefined, [
       {
         text: 'Close offer',
-        onPress: () =>
-          // Trade Activity is durable and selects nothing on `is_active`, so responses DO
-          // remain reachable to both parties after closing. The previous copy said the
-          // opposite -- true before Slice 3a-0c, false the moment this screen shipped -- and
-          // understated the app's own capability at the exact moment the owner is deciding.
-          Alert.alert(
-            'Close this offer?',
-            'It comes off the board and you will not be able to open it again from here. '
-              + 'Any responses stay on record and remain in Trade Activity, but you will no '
-              + 'longer be able to accept one.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Close offer', onPress: () => markFilled(offer.id) },
-            ],
-          ),
+        onPress: () => {
+          // Shared copy. Closing is now irreversible (PD-051) and withdraws BOTH accept and
+          // decline (PD-052); the inline string here still said the owner could not reopen it
+          // "from here" and mentioned only accept -- it had fallen behind rulings shipped in
+          // the same commit, which is exactly what confirmCopy exists to prevent.
+          const c = confirmCopy('closeOffer', 'owner', '')
+          Alert.alert(c.title, c.body, [
+            { text: c.cancelLabel, style: 'cancel' },
+            { text: c.confirmLabel, style: 'destructive', onPress: () => closeOffer(offer.id) },
+          ])
+        },
       },
       ...(hasResponses
         ? []

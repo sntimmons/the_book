@@ -54,6 +54,7 @@ export default function BarterInterests() {
   // Whether the offer read actually landed. A failure must withhold the CONTROL without
   // asserting the post is closed -- that would be a false claim to its own owner.
   const [offerReadOk, setOfferReadOk] = useState(true)
+  const [hasAccepted, setHasAccepted] = useState(false)
 
   const load = useCallback(async () => {
     if (!offerId) {
@@ -74,6 +75,11 @@ export default function BarterInterests() {
     // treated every unknown future status as live and actionable, so `released` would have
     // rendered with a working Accept button that could only fail. A total Record is also the
     // only form that actually breaks the build when the status union widens.
+    // The capability fact comes from ALL rows, before the display filter. Deriving it from
+    // the filtered list coupled a presentation decision to a capability decision: hiding
+    // accepted rows from the owner's list -- a purely cosmetic change -- would have flipped
+    // this to false and restored a live Accept on every pending row.
+    setHasAccepted(all.some((i) => i.status === 'accepted'))
     setInterests(all.filter((i) => INTEREST_STATUS_IS_LISTED[i.status]))
     setLoading(false)
   }, [offerId, user])
@@ -94,7 +100,9 @@ export default function BarterInterests() {
   function confirmRelease(item: BarterInterest) {
     // Shared copy, so the owner's disclosure does not depend on which screen they ended it
     // from. The two routes previously differed on whether another response could be accepted.
-    const c = confirmCopy('endNegotiation', isOwner ? 'owner' : 'responder', item.provider.name)
+    // Owner-only: this screen's End control sits behind the ownership gate. The ternary that
+    // was here read as though a responder path existed, which it does not.
+    const c = confirmCopy('endNegotiation', 'owner', item.provider.name)
     Alert.alert(c.title, c.body, [
       { text: c.cancelLabel, style: 'cancel' },
       { text: c.confirmLabel, style: 'destructive', onPress: () => release(item) },
@@ -215,9 +223,6 @@ export default function BarterInterests() {
           }
           renderItem={({ item }) => {
             const busy = actioningId === item.id
-            // At most one response per offer can be accepted (partial unique index). Once one
-            // is, Accept on every other response is an action that can only fail.
-            const offerMatched = interests.some((i) => i.status === 'accepted')
             // ONE interpreter. This screen used to re-derive capability from its own ternary
             // chain over `released` / `isOwner` / `accepted` / `offerIsActive` / `offerMatched`.
             // That chain was NOT total -- a status added later matched no branch and fell
@@ -235,11 +240,19 @@ export default function BarterInterests() {
               offerIsActive,
               releasedAt: item.releasedAt,
               releaseReason: item.releaseReason,
-              offerHasAcceptedResponse: offerMatched,
+              offerHasAcceptedResponse: hasAccepted,
             })
             // `isOwner` is `boolean | null` -- null means the ownership read has not landed.
             // Controls require a POSITIVE answer, so an unresolved read shows none.
             const canAct = isOwner === true
+            // `released` and `declined` are terminal facts about the row itself; `pending` and
+            // `accepted` notes speak about the post's liveness, which a failed read does not
+            // know.
+            const rowDependsOnOffer = item.status === 'pending' || item.status === 'accepted'
+            const rowNote = offerReadOk || !rowDependsOnOffer
+              ? state.note
+              : 'Could not load this post just now, so its responses cannot be answered here. '
+                + 'Open it again to retry.'
             return (
               <View style={styles.card}>
                 <View style={styles.cardTop}>
@@ -269,24 +282,23 @@ export default function BarterInterests() {
                 {/* STATUS BEFORE ROLE, preserved: the row's own state is stated first, so a
                     responder who deep-links to their released response learns the negotiation
                     ended rather than being told only about permissions. */}
-                {state.note || !offerReadOk ? (
+                {/* A released or declined row's note is a pure function of the ROW, so a
+                    failed OFFER read must not replace it with a retry instruction for
+                    something that will never change. Only liveness-dependent notes are
+                    suppressed. */}
+                {rowNote ? (
                   <View style={styles.matchedNote}>
-                    <Text style={styles.matchedNoteText}>
-                      {offerReadOk
-                        ? state.note
-                        : 'Could not load this post just now, so its responses cannot be '
-                          + 'answered here. Open it again to retry.'}
-                    </Text>
+                    <Text style={styles.matchedNoteText}>{rowNote}</Text>
                   </View>
                 ) : null}
 
-                {!canAct ? (
-                  <View style={styles.matchedNote}>
-                    <Text style={styles.matchedNoteText}>
-                      Only the provider who posted this offer can respond to it.
-                    </Text>
-                  </View>
-                ) : state.action === 'end' ? (
+                {/* ENDING comes first, and is NOT behind the ownership gate: either
+                    participant may end an accepted negotiation (release_barter_interest checks
+                    participation, and PD-052 keeps this legal on a closed post). Putting the
+                    ownership note first told a responder who deep-linked to their own accepted
+                    row that they could not act, while tradeRowState and both other surfaces
+                    correctly granted them the control. */}
+                {state.action === 'end' ? (
                   <View style={styles.acceptedRow}>
                     <View style={styles.acceptedRowLeft}>
                       <Feather name="check-circle" size={14} color="#4CAF50" />
@@ -301,7 +313,17 @@ export default function BarterInterests() {
                       <Text style={styles.declineText}>End negotiation</Text>
                     </TouchableOpacity>
                   </View>
-                ) : state.action === 'answer' ? (
+                ) : isOwner === false ? (
+                  // Only when ownership is RESOLVED as false. `isOwner === null` means the read
+                  // has not landed, and asserting non-ownership then told a post's real owner
+                  // they did not own it -- the same false-claim-on-a-failed-read defect that
+                  // `ok` was added to fetchOfferAccess to prevent, one line away.
+                  <View style={styles.matchedNote}>
+                    <Text style={styles.matchedNoteText}>
+                      Only the provider who posted this offer can respond to it.
+                    </Text>
+                  </View>
+                ) : !canAct ? null : state.action === 'answer' ? (
                   <View style={styles.actions}>
                     <TouchableOpacity
                       style={[styles.declineBtn, busy && styles.btnDisabled]}
@@ -346,11 +368,15 @@ export default function BarterInterests() {
 }
 
 const styles = StyleSheet.create({
+  // minHeight, not a fixed height: these notes now carry the whole explanation for why a
+  // control is absent, and they run two to three lines. A fixed 40pt box clipped them on
+  // Android, where View overflow defaults to hidden.
   matchedNote: {
     flex: 1,
-    height: 40,
+    minHeight: 40,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 8,
   },
   matchedNoteText: {
     fontSize: 12,

@@ -25,7 +25,7 @@ import {
 const STATUSES = Object.keys(TRADE_ACTIVITY_SECTION) as BarterInterestStatus[]
 const SECTIONS = Object.keys(SECTION_COPY) as TradeActivitySection[]
 const ROLES: TradeRole[] = ['owner', 'responder']
-const ACTIONS: DestructiveAction[] = ['endNegotiation', 'decline', 'accept']
+const ACTIONS: DestructiveAction[] = ['endNegotiation', 'decline', 'accept', 'closeOffer']
 
 function facts(over: Partial<TradeRowFacts> = {}): TradeRowFacts {
   return {
@@ -116,7 +116,9 @@ describe('pending responses', () => {
     const s = tradeRowState(facts({ status: 'pending', myRole: 'owner', offerIsActive: false }))
     expect(s.action).toBe('none')
     expect(s.note).toMatch(/closed this post/i)
-    expect(s.note).not.toMatch(/accept or decline/i)
+    // PD-052 withdraws BOTH. Copy naming only accept explains half the rule and makes the
+    // missing Decline control read as a bug.
+    expect(s.note).toMatch(/declined/i)
   })
 
   it('never offers the responder an answer control', () => {
@@ -412,5 +414,30 @@ describe('accept is reachable ONLY through the answer action', () => {
         }
       }
     }
+  })
+})
+
+describe('closing a post discloses that it is permanent', () => {
+  // PD-051 made closing irreversible and PD-052 withdrew decline as well as accept. The inline
+  // copy this replaced said the owner could not reopen it "from here" — scoping a permanent
+  // loss to one screen — and mentioned only accept.
+  const c = confirmCopy('closeOffer', 'owner', '')
+
+  it('does not scope the loss to one screen', () => {
+    expect(c.body).not.toMatch(/from here/i)
+  })
+
+  it('states that it cannot be undone and that the post cannot be reopened', () => {
+    expect(c.body).toMatch(/cannot be undone/i)
+    expect(c.body).toMatch(/cannot be reopened/i)
+  })
+
+  it('names BOTH withdrawn actions, not only accept', () => {
+    expect(c.body).toMatch(/accepted/i)
+    expect(c.body).toMatch(/declined/i)
+  })
+
+  it('says an accepted negotiation is not ended by closing', () => {
+    expect(c.body).toMatch(/not ended by closing/i)
   })
 })

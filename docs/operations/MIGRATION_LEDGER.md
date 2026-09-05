@@ -204,6 +204,20 @@ Post-apply B5B: **356/356 passed, 0 failed**, transaction rolled back, zero resi
 (`barter_offers` 0, `barter_interests` 0, null-sender `messages` 0, `conversation` unchanged at
 its pre-existing 43).
 
+## 2026-09-05 — `20260916000000` applied to non-production (ordinary apply, no repair)
+
+Restores the null-`auth.uid()` escape on the two guards added by `20260915000000`, matching the
+sibling convention on the same tables. Forward-only, because `20260915000000` was already
+applied. Each body carries exactly one changed clause.
+
+Ledger after: **25 entries**, `local == remote` for every row. Production untouched.
+
+Post-apply B5B: **367/367 passed, 0 failed**, transaction rolled back, zero residue verified.
+The suite now also PINS both guards by `prosrc` and asserts the BEFORE INSERT/UPDATE trigger
+firing order on `barter_interests` and `barter_offers` — the ordering decides which SQLSTATE a
+provider's write returns, and it had been governed only by a naming convention documented in
+three migration headers and asserted nowhere.
+
 ## Prevention
 
 Apply migrations through `supabase migration up` / `db push` so the ledger records them, **and
@@ -231,7 +245,7 @@ NOT in the migration that created it.
 | `public.enforce_conversation_update` | `20260901000000_prebooking_message_requests.sql` | **`20260908000000_canonical_provider_pair.sql`** | Redefined twice. `20260907000000` added `declined -> accepted` for the barter handoff (gated on an accepted match AND a transaction-local marker set only by `accept_barter_interest`); `20260908000000` then widened the booking-attach predicate to accept EITHER orientation of a provider pair, because a conversation is now canonical for the pair and its orientation need not match the direction a booking was made in. |
 | `public.enforce_prebooking_message_rules` | `20260901000000_prebooking_message_requests.sql` | **`20260914000000_trade_activity_corrections.sql`** | Redefined THREE times. `20260901010000` added the `select ... for update` row lock closing the SEC-DATA-001 read-then-insert race. `20260913000000` added the `system_recipient_id` insert clamp **and silently deleted that lock**, because its body was written from `20260901000000` rather than from the live definition. `20260914000000` restores the lock and keeps the clamp. **`supabase/tests/messaging.test.sql` asserts on `prosrc`, with comments stripped, that the lock is on the conversation lookup statement itself** — the only mechanism that survives a future `create or replace`. |
 | `public.barter_terms_label` | `20260913000000_trade_activity_hardening.sql` | **`20260914000000_trade_activity_corrections.sql`** | Delegates to the new `public.barter_terms_sanitize`. `20260913000000` quoted and capped the owner-authored offer terms but did not strip the QUOTE CHARACTER, so the boundary the quotes draw could be erased by the quoted text. Sanitising now happens BEFORE the empty test and BEFORE the 40-char cap, so an attacker cannot pad with strippable codepoints. |
-| `public.accept_barter_interest` | `20260907000000_barter_accept_handoff.sql` | **`20260915000000_barter_closed_post_terminal.sql`** | Routes the handoff message's two participant-authored values (`providers.display_name`, `barter_offers.offering_service`) through `barter_terms_sanitize` and caps each at 40 chars. That call site was missed when the release notice was hardened. Lower stakes — the message is attributed to the owner, so it never posed as platform speech — but it interpolated up to 200 unbounded characters with a working quote breakout. **The new body was taken from `20260907000000` and diffed before commit: exactly 2 lines changed.** |
+| `public.accept_barter_interest` | `20260907000000_barter_accept_handoff.sql` | **`20260915000000_barter_closed_post_terminal.sql`** | Routes the handoff message's two participant-authored values (`providers.display_name`, `barter_offers.offering_service`) through `barter_terms_sanitize` and caps each at 40 chars. That call site was missed when the release notice was hardened. Lower stakes — the message is attributed to the owner, so it never posed as platform speech — but it interpolated up to 200 unbounded characters with a working quote breakout. **The new body was taken from `20260907000000` and diffed before commit: exactly 2 lines of the FUNCTION BODY changed.** Outside the body, the two trailing `revoke` statements were also consolidated into one `revoke all ... from public, anon` — semantically identical, and it still removes the `anon` grant Supabase's `ALTER DEFAULT PRIVILEGES` creates. Recorded because the bare "2 lines" claim was one line short of the literal file diff. |
 | `public.enforce_barter_accept_open_offer` → **`public.enforce_barter_answer_open_offer`** | `20260914000000_trade_activity_corrections.sql` | **`20260915000000_barter_closed_post_terminal.sql`** (RENAMED; old function and trigger dropped) | Now refuses the transition into `declined` as well as `accepted` when the parent offer is closed (PD-052), and gains the `service_role` exemption every sibling trigger on this table has — without it the INSERT arm bound *only* service_role, since `enforce_barter_interest_write` clamps every authenticated insert to `pending`. Renamed because "accept" understated what it refuses. Trigger `barter_interests_zy_accept_open_offer` → `barter_interests_zy_answer_open_offer`. |
 | `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |
 
@@ -275,11 +289,23 @@ not remove the QUOTE CHARACTER itself, so the boundary the quotes draw was one t
 could erase. It also strips the Unicode bidi overrides and zero-width marks by exact codepoint
 via `translate`, because whether `[[:cntrl:]]` classes them depends on the database ctype.
 
-**`public.enforce_barter_accept_open_offer`** (`20260914000000`, trigger
-`barter_interests_zy_accept_open_offer`) refuses the transition INTO `accepted` when the offer
-is not active, with SQLSTATE `55000`. Added as a NEW trigger rather than as a redefinition of
-`accept_barter_interest`, specifically to avoid the failure mode recorded above: an additive
-trigger cannot delete a correction it does not know about.
+**`public.enforce_barter_answer_open_offer`** (`20260915000000`, trigger
+`barter_interests_zy_answer_open_offer`; bodies refreshed by `20260916000000`) refuses the
+transition into `accepted` **or** `declined` when the offer is not active, with SQLSTATE
+`55000`. **CORRECTED CLAIM:** this paragraph previously described
+`public.enforce_barter_accept_open_offer` / `barter_interests_zy_accept_open_offer`
+(`20260914000000`) in the present tense. Both objects were **dropped** by `20260915000000`, and
+the old description also stated the accept-only rule that PD-052 superseded. Added as a NEW
+trigger rather than as a redefinition of `accept_barter_interest`, specifically to avoid the
+failure mode recorded above: an additive trigger cannot delete a correction it does not know
+about.
+
+**`public.enforce_barter_offer_active_one_way`** (`20260915000000`, trigger
+`barter_offers_zy_active_one_way`; body refreshed by `20260916000000`) makes `is_active`
+one-way for authenticated writers (PD-051), with SQLSTATE `55000`. Both guards exempt
+`service_role` **and** the null-`auth.uid()` (no-JWT) path, matching
+`enforce_barter_offer_delete`; `20260915000000` implemented only the first half, which silently
+excluded the psql / SQL-console / migration sessions an operator actually recovers from.
 
 **`public.my_trade_activity`** (view, `20260912000000`, recreated by `20260913000000`) is
 `security_invoker = true`, pinned by reloption in B5B. Both pre-existing views in this repo set
