@@ -805,7 +805,7 @@ begin
   perform pg_temp.act_service();
   select count(*) into v_n from public.messages
    where conversation_id = v_conv and sender_id is null
-     and content = 'This trade was cancelled by one provider.';
+     and content like 'The trade for %was cancelled by one provider.';
   perform pg_temp.chk('cancellation',
     'the first cancellation writes exactly one system message', '1', v_n::text);
   perform pg_temp.chk('cancellation', 'and the thread''s last_message_at moved', 'true',
@@ -818,7 +818,7 @@ begin
   perform pg_temp.act_service();
   select count(*) into v_n from public.messages
    where conversation_id = v_conv and sender_id is null
-     and content = 'This trade was cancelled by one provider.';
+     and content like 'The trade for %was cancelled by one provider.';
   perform pg_temp.chk('cancellation', 'a repeat by the same participant writes no duplicate',
     '1', v_n::text);
 
@@ -830,7 +830,7 @@ begin
   perform pg_temp.act_service();
   select count(*) into v_n from public.messages
    where conversation_id = v_conv and sender_id is null
-     and content = 'Both providers agreed to cancel this trade.';
+     and content like 'Both providers agreed to cancel the trade for %';
   perform pg_temp.chk('cancellation',
     'the second act writes exactly one mutual-cancellation message', '1', v_n::text);
 
@@ -840,7 +840,7 @@ begin
   perform pg_temp.act_service();
   select count(*) into v_n from public.messages
    where conversation_id = v_conv and sender_id is null
-     and content = 'Both providers agreed to cancel this trade.';
+     and content like 'Both providers agreed to cancel the trade for %';
   perform pg_temp.chk('cancellation', 'a repeated assent writes no duplicate either',
     '1', v_n::text);
   select count(*) into v_n from public.messages
@@ -926,4 +926,124 @@ begin
   -- Back to service_role BEFORE recording: anon cannot write the harness result table either.
   perform pg_temp.act_service();
   perform pg_temp.chk('cancellation', 'and anon is refused the table outright', '42501', v_txt);
+end $$;
+
+-- ── 20261008000000 / 20261009000000: the signal is addressed, and it can never
+--    veto the act it announces ──────────────────────────────────────────────
+-- Every property below was dropped by the first draft of the signal, which was hand-copied
+-- from the SUPERSEDED release-signal body instead of the live one. They are asserted rather
+-- than commented because a comment is exactly what failed to preserve them.
+do $$
+declare
+  ou uuid := current_setting('b5b.cx_ou')::uuid;
+  ru uuid := current_setting('b5b.cx_ru')::uuid;
+  v_conv uuid; v_g uuid; v_h uuid; v_n integer; v_code text; v_res text;
+  v_recipients text;
+begin
+  perform pg_temp.act_service();
+  select id into v_conv from public.conversation
+   where provider_pair_key = public.provider_pair_key(
+     (select id from public.providers where user_id = ou),
+     (select id from public.providers where user_id = ru));
+
+  -- ADDRESSED TO THE COUNTERPARTY. Left null, system_recipient_id means "addressed to both",
+  -- and lib/messageAuthorship.ts then counts the notice as unread FOR THE ACTOR — so the
+  -- provider who cancelled is badged and in-app-notified about their own act.
+  select string_agg(distinct
+           case when system_recipient_id = ou then 'owner'
+                when system_recipient_id = ru then 'responder'
+                when system_recipient_id is null then 'BOTH'
+                else 'OTHER' end, ',' order by
+           case when system_recipient_id = ou then 'owner'
+                when system_recipient_id = ru then 'responder'
+                when system_recipient_id is null then 'BOTH'
+                else 'OTHER' end)
+    into v_recipients
+    from public.messages where conversation_id = v_conv and sender_id is null;
+  -- Agreement f: owner cancelled first (-> addressed to the responder), responder assented
+  -- (-> addressed to the owner). One of each, and never null.
+  perform pg_temp.chk('cancellation', 'each notice is addressed to the one who did NOT act',
+    'owner,responder', v_recipients);
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null and system_recipient_id is null;
+  perform pg_temp.chk('cancellation', 'and no notice is addressed to both', '0', v_n::text);
+
+  -- THE NOTICE NAMES WHICH TRADE. One conversation carries a pair's whole relationship, so a
+  -- context-free sentence cannot say which of several trades was cancelled.
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null and content like '%cx offering f%';
+  perform pg_temp.chk('cancellation', 'and says which trade it was about', '2', v_n::text);
+
+  -- A CLIENT CANNOT AUTHOR ONE. The claim the whole mechanism rests on, asserted directly
+  -- rather than inferred from the absence of forged rows.
+  perform pg_temp.act(ou);
+  begin
+    insert into public.messages (conversation_id, sender_id, content)
+    values (v_conv, null, 'The trade for "x" for "y" was cancelled by one provider.');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('cancellation', 'a participant cannot author a platform notice',
+    '42501', v_code);
+  begin
+    perform pg_temp.act(ou);
+    insert into public.messages (conversation_id, sender_id, content)
+    values (v_conv, ru, 'posing as the other provider');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('cancellation', 'nor post as the other provider', '42501', v_code);
+
+  -- THE SIGNAL NEVER VETOES THE ACT. A thread the message trigger refuses must suppress the
+  -- NOTICE and leave the cancellation recorded. Before 20261008000000 the trigger's
+  -- check_violation aborted the whole RPC, so a participant could be permanently denied
+  -- PD-046's only ordinary exit by a condition on a MESSAGING row they cannot see or fix --
+  -- and lib/barterErrors.ts answered it with "That trade is no longer available", which was
+  -- false.
+  v_g := pg_temp.cx_agreement(ou, ru, 'g');
+  perform pg_temp.act_service();
+  update public.conversation set request_status = 'declined' where id = v_conv;
+  perform pg_temp.act(ou);
+  select public.cancel_barter_agreement(v_g, 'thread is closed') into v_res;
+  perform pg_temp.chk('cancellation',
+    'a refusing thread does not stop the cancellation', 'cancelled_by_participant', v_res);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('cancellation', 'and the act is recorded', '1', pg_temp.cx_acts(v_g)::text);
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null and content like '%cx offering g%';
+  perform pg_temp.chk('cancellation', 'while the notice is suppressed, not forced', '0',
+    v_n::text);
+
+  -- Same for a pending thread, the other status the trigger refuses.
+  v_h := pg_temp.cx_agreement(ou, ru, 'h');
+  perform pg_temp.act_service();
+  update public.conversation set request_status = 'pending' where id = v_conv;
+  perform pg_temp.act(ru);
+  select public.cancel_barter_agreement(v_h) into v_res;
+  perform pg_temp.chk('cancellation', 'a pending thread does not stop it either',
+    'cancelled_by_participant', v_res);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('cancellation', 'and that act is recorded too', '1',
+    pg_temp.cx_acts(v_h)::text);
+  update public.conversation set request_status = 'accepted' where id = v_conv;
+
+  -- NO THREAD AT ALL is not an error either. Made explicit so a reordering cannot silently
+  -- lose it: agreements a-e were all cancelled before the thread above existed.
+  perform pg_temp.chk('cancellation', 'and a pair with no thread cancelled fine earlier',
+    'true', (pg_temp.cx_acts(current_setting('b5b.cx_a')::uuid) > 0)::text);
+
+  -- THE NOTICE WRITER IS NOT CALLABLE BY A CLIENT. It writes a message nobody authored.
+  perform pg_temp.chk('cancellation', 'anon cannot execute the notice writer', 'false',
+    has_function_privilege('anon',
+      'public.pair_conversation_notice(uuid,uuid,uuid,uuid,text,uuid)', 'execute')::text);
+  perform pg_temp.chk('cancellation', 'nor can authenticated', 'false',
+    has_function_privilege('authenticated',
+      'public.pair_conversation_notice(uuid,uuid,uuid,uuid,text,uuid)', 'execute')::text);
+  perform pg_temp.chk('cancellation', 'and it is postgres-owned, definer, search_path pinned',
+    '1', (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'pair_conversation_notice'
+             and p.prosecdef and pg_get_userbyid(p.proowner) = 'postgres'
+             and array_to_string(p.proconfig, ',') like '%search_path=%'));
 end $$;

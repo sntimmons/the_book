@@ -158,8 +158,17 @@ export interface CancelActionCopy {
   cancelLabel: string
 }
 
-// Says what is lost and what is not. It does NOT promise the other provider is told: nothing
-// in the app notifies them, and they see this the next time they open the trade (PD-059).
+// Says what is lost and what is not.
+//
+// The other provider IS told, as of 20261007000000/20261008000000: cancelling writes a durable
+// platform notice into the pair's existing conversation, which raises their unread count and
+// appears in the in-app notifications list. No push, device notification or email is sent —
+// PD-059 is unchanged — and the free-text reason is NOT in that notice.
+//
+// The copy below still does not PROMISE any of this, deliberately: the notice is best-effort
+// by construction (it may be suppressed if the thread cannot take it, and must never veto the
+// cancellation), so promising delivery at the moment of an irreversible act would be a
+// guarantee the server does not make.
 export const CANCEL_TRADE_COPY: CancelActionCopy = {
   title: 'Cancel this trade?',
   body:

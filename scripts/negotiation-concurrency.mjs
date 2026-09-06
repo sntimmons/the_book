@@ -858,14 +858,25 @@ select count(*) as n,
 // Two independent acts must BOTH be recorded. If one were lost the trade would read as
 // "cancelled by one participant" when both had in fact agreed — and the second act is the
 // only evidence of the counterparty's assent.
-// System messages of one exact wording in the pair's thread. Counted by content because every
+// Declared once. The copy is server-authored and carries a bounded, server-derived post label
+// (barter_terms_label), so these match the stable stems rather than a whole sentence -- a
+// harness that pinned the label would break on an unrelated offer-title change.
+const FIRST_ACT_NOTICE = 'The trade for %was cancelled by one provider.'
+const MUTUAL_NOTICE = 'Both providers agreed to cancel the trade for %'
+
+// SQL string literal, escaped the way Postgres actually wants it. The previous spelling was
+// JSON.stringify(...).replace(/"/g, "'"), which turns any apostrophe in the copy into a syntax
+// error -- and the product's cancellation copy already contains one elsewhere.
+const sqlLit = (v) => `'${String(v).replace(/'/g, "''")}'`
+
+// Platform notices of one wording in the pair's thread. Counted by content because every
 // cancellation scenario in this run shares the one canonical conversation, so a bare total
 // would drift as later scenarios cancel their own trades.
-async function systemMessages(content) {
+async function systemMessages(pattern) {
   const q = await runSql(
     `select count(*) as n from public.messages
       where conversation_id = '${ids.conv}' and sender_id is null
-        and content = ${JSON.stringify(content).replace(/"/g, "'")};`)
+        and content like ${sqlLit(pattern)};`)
   return scalar(q.out, 'n')
 }
 
@@ -901,9 +912,9 @@ async function raceBothCancel() {
   // when they count. If the count were read outside the lock, both could report the same
   // classification and write the same message twice.
   chk('the simultaneous mutual cancellation announced the first act exactly once',
-    '1', await systemMessages('This trade was cancelled by one provider.'))
+    '1', await systemMessages(FIRST_ACT_NOTICE))
   chk('and the mutual outcome exactly once',
-    '1', await systemMessages('Both providers agreed to cancel this trade.'))
+    '1', await systemMessages(MUTUAL_NOTICE))
   const leak = await runSql(
     `select count(*) as n from public.messages
       where conversation_id = '${ids.conv}'
@@ -929,6 +940,22 @@ async function raceSameParticipantCancels() {
   const rows = await cancellationRows(ids.interest14)
   chk('and records exactly one act', '1', rows.n)
   chk('by exactly one participant', '1', rows.actors)
+  // The no-duplicate-notice property proven under a REAL race, not only sequentially. This is
+  // the race where a duplicate is most plausible: both calls are the same participant, so both
+  // would write the SAME sentence if the already-acted branch were read outside the lock.
+  const before = Number(await systemMessages(FIRST_ACT_NOTICE))
+  chk('a concurrent double tap announced the cancellation exactly once', 'true',
+    String(before >= 1))
+  const q = await runSql(
+    `select count(*) as n from public.messages
+      where conversation_id = '${ids.conv}' and sender_id is null
+        and content like '%conc offering14%';`)
+  chk('exactly one notice for that trade', '1', scalar(q.out, 'n'))
+  const addressed = await runSql(
+    `select count(*) as n from public.messages
+      where conversation_id = '${ids.conv}' and sender_id is null
+        and content like '%conc offering14%' and system_recipient_id = '${ids.ru}';`)
+  chk('and it is addressed to the participant who did not act', '1', scalar(addressed.out, 'n'))
 }
 
 // ── 15. Cancel racing the deliverer's own mark-delivered ───────────────────
