@@ -830,7 +830,7 @@ begin
   perform pg_temp.act_service();
   select count(*) into v_n from public.messages
    where conversation_id = v_conv and sender_id is null
-     and content like 'Both providers agreed to cancel the trade for %';
+     and content like 'Both providers cancelled the trade for %';
   perform pg_temp.chk('cancellation',
     'the second act writes exactly one mutual-cancellation message', '1', v_n::text);
 
@@ -840,7 +840,7 @@ begin
   perform pg_temp.act_service();
   select count(*) into v_n from public.messages
    where conversation_id = v_conv and sender_id is null
-     and content like 'Both providers agreed to cancel the trade for %';
+     and content like 'Both providers cancelled the trade for %';
   perform pg_temp.chk('cancellation', 'a repeated assent writes no duplicate either',
     '1', v_n::text);
   select count(*) into v_n from public.messages
@@ -1046,4 +1046,68 @@ begin
            where n.nspname = 'public' and p.proname = 'pair_conversation_notice'
              and p.prosecdef and pg_get_userbyid(p.proowner) = 'postgres'
              and array_to_string(p.proconfig, ',') like '%search_path=%'));
+end $$;
+
+-- ── 20261010000000: no notice claims a meeting of minds that never happened ─
+-- The second notice used to read "Both providers agreed to cancel …". True of one sequence
+-- (A cancels, B reads it and taps "Agree to cancel"), FALSE of the other the server allows
+-- (A and B cancel concurrently, neither having seen the other's act). Both reach two acts, so
+-- both reached that sentence. The neutral form states only what the two acts PROVE.
+--
+-- The CLASSIFICATION is unchanged and still asserted above as 'mutually_cancelled': two
+-- explicit acts is still Mutually Cancelled. Only the durable sentence changed.
+do $$
+declare
+  ou uuid := current_setting('b5b.cx_ou')::uuid;
+  ru uuid := current_setting('b5b.cx_ru')::uuid;
+  v_conv uuid; v_i uuid; v_n integer; v_res text;
+begin
+  perform pg_temp.act_service();
+  select id into v_conv from public.conversation
+   where provider_pair_key = public.provider_pair_key(
+     (select id from public.providers where user_id = ou),
+     (select id from public.providers where user_id = ru));
+
+  -- Agreement f above went A-cancels-then-B-assents, the sequence the old copy was written
+  -- for. Even there the notice must not assert agreement, because the thread record cannot
+  -- distinguish it from the concurrent case a reader is entitled to assume it might be.
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null
+     and (content ilike '%agreed%' or content ilike '%consent%'
+          or content ilike '%mutual%' or content ilike '%both of you%');
+  perform pg_temp.chk('cancellation', 'no notice claims the providers agreed', '0', v_n::text);
+
+  -- The neutral sentence, on a trade cancelled from the OTHER order (responder first), so the
+  -- copy is proven independent of who moved first.
+  v_i := pg_temp.cx_agreement(ou, ru, 'i');
+  perform pg_temp.act(ru);
+  perform public.cancel_barter_agreement(v_i, 'responder went first');
+  perform pg_temp.act(ou);
+  select public.cancel_barter_agreement(v_i) into v_res;
+  perform pg_temp.chk('cancellation', 'two acts still classify as mutually cancelled',
+    'mutually_cancelled', v_res);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null
+     and content = 'Both providers cancelled the trade for "cx offering i" for "cx seeking i".';
+  perform pg_temp.chk('cancellation',
+    'the second notice states the fact, verbatim and with its trade context', '1', v_n::text);
+
+  -- EXACTLY ONCE survives the copy change, in both directions.
+  perform pg_temp.act(ou);
+  perform public.cancel_barter_agreement(v_i, 'repeat after mutual');
+  perform pg_temp.act(ru);
+  perform public.cancel_barter_agreement(v_i);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null and content like '%cx offering i%';
+  perform pg_temp.chk('cancellation', 'and repeats by either participant add no notice',
+    '2', v_n::text);
+
+  -- The reason still never reaches the thread.
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv
+     and (content like '%responder went first%' or content like '%repeat after mutual%');
+  perform pg_temp.chk('cancellation', 'and no reason leaked through the new copy', '0',
+    v_n::text);
 end $$;

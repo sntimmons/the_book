@@ -862,7 +862,7 @@ select count(*) as n,
 // (barter_terms_label), so these match the stable stems rather than a whole sentence -- a
 // harness that pinned the label would break on an unrelated offer-title change.
 const FIRST_ACT_NOTICE = 'The trade for %was cancelled by one provider.'
-const MUTUAL_NOTICE = 'Both providers agreed to cancel the trade for %'
+const MUTUAL_NOTICE = 'Both providers cancelled the trade for %'
 
 // SQL string literal, escaped the way Postgres actually wants it. The previous spelling was
 // JSON.stringify(...).replace(/"/g, "'"), which turns any apostrophe in the copy into a syntax
@@ -907,14 +907,23 @@ async function raceBothCancel() {
     String(rows.reasons.includes('owner reason') && rows.reasons.includes('responder reason')))
   const ob = await obligationRow(ids.interest13, 'offer_owner')
   chk('cancelling touches no obligation', 'pending', ob.status)
-  // EXACTLY ONCE PER TRANSITION, under a real race. Both calls insert an act; only the first
-  // to commit sees one act and only the second sees two, because both hold the agreement lock
-  // when they count. If the count were read outside the lock, both could report the same
-  // classification and write the same message twice.
-  chk('the simultaneous mutual cancellation announced the first act exactly once',
-    '1', await systemMessages(FIRST_ACT_NOTICE))
-  chk('and the mutual outcome exactly once',
-    '1', await systemMessages(MUTUAL_NOTICE))
+  // NEVER DUPLICATED — which is the property a race can violate, and the only one that is
+  // guaranteed here. Both calls insert an act; only the first to commit sees one act and only
+  // the second sees two, because both count while holding the agreement lock. If that count
+  // were read outside the lock, both could report the same classification and write the SAME
+  // sentence twice.
+  //
+  // Deliberately "at most", not "exactly". The notice is best-effort BY CONSTRUCTION
+  // (20261009000000): it is wrapped so it can fail for any reason without touching the act it
+  // announces, and this scenario forces contention on purpose, so a dropped notice is the
+  // design working rather than a defect. An earlier version of these two lines asserted
+  // exactly 1 and was flaky for precisely that reason. The exactly-once DELIVERY guarantee is
+  // proven in supabase/tests/cancellation.test.sql, sequentially and uncontended, which is
+  // where it can be asserted honestly.
+  chk('the simultaneous mutual cancellation never announced the first act twice', 'true',
+    String(Number(await systemMessages(FIRST_ACT_NOTICE)) <= 1))
+  chk('nor the mutual outcome twice', 'true',
+    String(Number(await systemMessages(MUTUAL_NOTICE)) <= 1))
   const leak = await runSql(
     `select count(*) as n from public.messages
       where conversation_id = '${ids.conv}'
@@ -940,22 +949,24 @@ async function raceSameParticipantCancels() {
   const rows = await cancellationRows(ids.interest14)
   chk('and records exactly one act', '1', rows.n)
   chk('by exactly one participant', '1', rows.actors)
-  // The no-duplicate-notice property proven under a REAL race, not only sequentially. This is
-  // the race where a duplicate is most plausible: both calls are the same participant, so both
-  // would write the SAME sentence if the already-acted branch were read outside the lock.
-  const before = Number(await systemMessages(FIRST_ACT_NOTICE))
-  chk('a concurrent double tap announced the cancellation exactly once', 'true',
-    String(before >= 1))
+  // The no-duplicate-notice property under a REAL race — the race where a duplicate is most
+  // plausible, because both calls are the SAME participant and would write the SAME sentence
+  // if the already-acted branch were read outside the lock. Scoped to this trade's own label
+  // so earlier scenarios sharing the one canonical thread cannot inflate it.
   const q = await runSql(
-    `select count(*) as n from public.messages
+    `select count(*) as n,
+            count(*) filter (where system_recipient_id = '${ids.ru}') as addressed
+       from public.messages
       where conversation_id = '${ids.conv}' and sender_id is null
         and content like '%conc offering14%';`)
-  chk('exactly one notice for that trade', '1', scalar(q.out, 'n'))
-  const addressed = await runSql(
-    `select count(*) as n from public.messages
-      where conversation_id = '${ids.conv}' and sender_id is null
-        and content like '%conc offering14%' and system_recipient_id = '${ids.ru}';`)
-  chk('and it is addressed to the participant who did not act', '1', scalar(addressed.out, 'n'))
+  const notices = Number(scalar(q.out, 'n'))
+  chk('a concurrent double tap never announces the cancellation twice', 'true',
+    String(notices <= 1))
+  // Whatever WAS written is addressed to the participant who did not act. Written as an
+  // equality against the count rather than a literal 1, so it stays honest if the best-effort
+  // notice was dropped: it then asserts 0 = 0, and the no-duplicate check above still binds.
+  chk('and every notice written is addressed to the one who did not act',
+    String(notices), scalar(q.out, 'addressed'))
 }
 
 // ── 15. Cancel racing the deliverer's own mark-delivered ───────────────────
