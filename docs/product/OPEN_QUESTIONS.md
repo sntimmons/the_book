@@ -2,7 +2,7 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** post-PR #56 Steward reconciliation — PR number not supplied to this run
+**Last edited by:** PR #57
 
 > **Why the anchor did not move to `76f5632`.** The reconciliation that last edited this file
 > inspected `main` @ `76f5632` and re-verified the **barter** entries there (OQ-006, OQ-007,
@@ -11,8 +11,9 @@
 > where the last full verification happened.
 >
 > **It did not move for PR #56 (`46c0bef`) either, and for the same reason.** That
-> reconciliation edited only the closed index below — to record that PD-057, PD-058 and PD-059
-> close no question here — and re-verified nothing carried by OQ-011, OQ-036 or OQ-070.
+> reconciliation (merged as PR #57) edited only the closed index below — to record that PD-057,
+> PD-058 and PD-059 close no question here — and re-verified nothing carried by OQ-011, OQ-036
+> or OQ-070.
 > `Last edited by:` records the edit; the anchor records the verification.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
