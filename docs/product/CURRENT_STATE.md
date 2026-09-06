@@ -1,8 +1,8 @@
 # Current State — what is true on `main` today
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `4fd684e5a9554c47c078b6787753694c34cbb353` (2026-09-05)
-**Last edited by:** PR #53
+**Reconciled against:** `main` @ `b35ca1d4a1b71ac41af0f8103f17db0b7c797c31` (2026-09-05)
+**Last edited by:** PR #55
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -118,42 +118,43 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 Docs: **[supabase/tests/README.md](../../supabase/tests/README.md)**.
 
-**Migration ledger.** The repository holds **41 migration files** at `4fd684e` — counted from
-`supabase/migrations/*.sql`, newest `20261002000000_proposal_timing_expiry_guards.sql` — and
+**Migration ledger.** The repository holds **42 migration files** at `b35ca1d` — counted from
+`supabase/migrations/*.sql`, newest `20261003000000_barter_obligations_foundation.sql` — and
 that part is repository-provable. Ten files, `20260917000000` … `20260926000000`, are Slice 3a
 (PR #49); four files, `20260927000000` … `20260930000000`, are Agreement Finalization (PR #50);
-and two files, `20261001000000` … `20261002000000`, are Proposal Timing Extension (PR #52).
+two files, `20261001000000` … `20261002000000`, are Proposal Timing Extension (PR #52); and
+`20261003000000` is the Barter Obligations Foundation (PR #54).
 The ledger's § Prevention records why these features landed as forward correction chains:
 after a migration is applied to non-production, fixes go into a new migration rather than an
-edited historical file. Its dated record now runs through `20261002000000`, with proposal
-term timing and expiry guards recorded separately. Process and the dated record:
+edited historical file. Its dated record now runs through `20261003000000`, with barter
+obligations recorded separately. Process and the dated record:
 **[docs/operations/MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md)**.
 
 **Latest recorded runs.** Rather than restate counts that change with ordinary PRs, this
 records *which runs* to look at. Two different things are recorded, and they are not
 interchangeable:
 
-- **The latest `main` CI run this reconciliation could cite** is **34001853047** on
-  `4fd684e` — `check` and `db-security` both green. The `check` job ran typecheck, lint and
+- **The latest `main` CI run this reconciliation could cite** is **34004083272** on
+  `b35ca1d` — `check` and `db-security` both green. The `check` job ran typecheck, lint and
   unit tests; the `db-security` job ran the non-production B5B harness.
 - **The last recorded local B5B execution** is the post-apply run logged against
-  `20261002000000` in
-  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) (2026-09-05): **608/608 passed,
+  `20261003000000` in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) (2026-09-05): **637/637 passed,
   0 failed**, zero residue. The same entry records the **non-B5B concurrency proof**,
-  `scripts/negotiation-concurrency.mjs`, at **30/30**, including finalize × finalize,
-  finalize vs counter, and finalize vs release with per-session interval overlap asserted.
+  `scripts/negotiation-concurrency.mjs`, at **37/37**, including finalize × finalize,
+  finalize vs counter, finalize vs release and concurrent obligation-pair creation with
+  per-session interval overlap asserted.
 
-The suite grew enormously between them — 88 → 608 assertions as the barter slices landed —
+The suite grew enormously between them — 88 → 637 assertions as the barter slices landed —
 which is exactly why the count is read from a run rather than from this document. The
 authoritative description of the harness lives in
 [supabase/tests/README.md](../../supabase/tests/README.md).
 
-**Why this document's anchor is now `4fd684e`.** The previous anchor was `e3fa169` (PR #50).
-PR #52 changed facts *this document* asserts: the migration chain went from 39 files to 41,
-proposal terms gained required `due_at` and optional `scheduled_at`, proposal/counter RPC
-signatures now carry timing, timing must still be future-valid when accepted and finalized, and
-the recorded B5B execution moved from 574/574 to 608/608. Those are facts asserted above, so
-the anchor moves to PR #52's squash-merge commit, `4fd684e`.
+**Why this document's anchor is now `b35ca1d`.** The previous anchor was `4fd684e` (PR #52).
+PR #54 changed facts *this document* asserts: the migration chain went from 41 files to 42,
+`barter_obligations` now exists, confirmed agreements now have two derived directed obligations,
+and the recorded B5B/concurrency executions moved from 608/608 and 30/30 to 637/637 and 37/37.
+Those are facts asserted above, so the anchor moves to PR #54's squash-merge commit, `b35ca1d`.
 
 [ROADMAP.md](ROADMAP.md) remains authoritative for **which** merge delivered **which**
 capability — it carries a Completed row per delivered capability, each citing its merge,
@@ -181,19 +182,19 @@ barter surface as **REAL (beta)** (line 57) — offers, interests and the commun
 What was undecided when that classification was written was the barter **product model**: how a
 trade binds to bookings, messaging, reviews and completion. For the first Houston closed beta
 that model is now locked in **[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md)**, which is
-authoritative for it; the decisions behind it are **PD-030 … PD-055** in
+authoritative for it; the decisions behind it are **PD-030 … PD-056** in
 [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md). Neither is restated here.
 
 This section records **what is built on `main`** and **what is not**.
 
 ### What is built
 
-Verified against the migration chain on `main` at `4fd684e` — **41 migrations**, newest
-`supabase/migrations/20261002000000_proposal_timing_expiry_guards.sql`.
+Verified against the migration chain on `main` at `b35ca1d` — **42 migrations**, newest
+`supabase/migrations/20261003000000_barter_obligations_foundation.sql`.
 
 | Capability | What is actually enforced | Where |
 |---|---|---|
-| Data model | **Seven barter tables.** `barter_offers` and `barter_interests` (the post and its responses), Slice 3a's `barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms` and `barter_version_acceptances` (the negotiated terms), plus PR #50's `barter_agreements` for the finalized trade. **No obligation, fulfilment, delivery, cancellation-after-agreement or adjudication table exists.** | Origin: `20260829000000_canonical_live_baseline.sql`; proposal tables in `20260917000000_barter_proposal_versions.sql` §§ 1–4, narrowed by `20260925000000_negotiation_directed_terms.sql` § 1; agreement table in `20260927000000_barter_agreement_finalization.sql` |
+| Data model | **Eight barter tables.** `barter_offers` and `barter_interests` (the post and its responses), Slice 3a's `barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms` and `barter_version_acceptances` (the negotiated terms), PR #50's `barter_agreements` for the finalized trade, plus PR #54's `barter_obligations`. **No fulfilment, delivery, cancellation-after-agreement, no-show, adjudication or terminal-outcome table exists.** | Origin: `20260829000000_canonical_live_baseline.sql`; proposal tables in `20260917000000_barter_proposal_versions.sql` §§ 1–4, narrowed by `20260925000000_negotiation_directed_terms.sql` § 1; agreement table in `20260927000000_barter_agreement_finalization.sql`; obligation table in `20261003000000_barter_obligations_foundation.sql` |
 | Response vocabulary | `pending → accepted \| declined \| released`, with `released_at`, `released_by` and `release_reason` required together and null together. | `20260909000000_barter_interest_release.sql` (status + completeness check constraints) |
 | Write identity | `caller_provider_id()` derives the provider from `auth.uid()`; nothing client-supplied enters the comparison. Foreign-field writes are governed by an **allow-list** trigger, `created_at` is server-stamped, delete guards preserve counterparty history (PD-043), and `anon` holds nothing on either table. | `20260906000000_barter_integrity_slice1.sql` §§ 1–7, 10 |
 | Interest rate limit | 15 new interests per provider per rolling 24h, counted from `rate_limit_log` so delete-and-resend cannot reset the window (PD-045). | `20260906000000` § 9 (`enforce_barter_interest_rate_limit`) |
@@ -208,7 +209,8 @@ Verified against the migration chain on `main` at `4fd684e` — **41 migrations*
 | Exactly two directed terms | A version holds **exactly two terms, one per fixed side** — `offer_owner` and `responder` — enforced by a unique index on `(version_id, provided_by)` plus a statement-level guard (`enforce_barter_terms_written_once`) that refuses any count other than two, a missing side, or a second write to a version. **Participant identity is server-derived**: the client submits only the two descriptions and timing fields; `write_barter_proposal_terms(uuid, text, timestamptz, timestamptz, text, timestamptz, timestamptz)` derives each side's `provider_id` / `provider_user_id` from the accepted interest, and the guard asserts they match the offer and interest rows. **No value field** — `estimated_value` was dropped. Terms can be written only from inside a negotiation RPC (a transaction-local marker checked by `enforce_barter_terms_write`), and the helper's EXECUTE is revoked from `authenticated`. PD-053, PD-056. | `20260925000000` §§ 1–3; `20260921000000_negotiation_write_boundary.sql`; `20260924000000_negotiation_written_once.sql`; `20261001000000_proposal_term_timing.sql` |
 | Timing validity | For both directed terms, `due_at` must be future-valid and `scheduled_at` must be either null or future-valid when the version is authored, when a participant accepts that version, and when the official agreement is finalized. Expired timing raises SQLSTATE `PT410` and does not mutate or extend the historical version; participants must send a new proposal version with updated timing. | Author-time validation in `20261001000000`; acceptance/finalization-time guards in `20261002000000_proposal_timing_expiry_guards.sql`; client stale handling in `lib/barterErrors.ts` and `lib/negotiationState.ts` |
 | Version acceptance | `accept_barter_version(uuid)` records **one acceptance per participant per version** (`unique (version_id, participant_user_id)`, so a repeat is idempotent). It refuses a non-participant (`42501`), a dead negotiation (`55000`), a version that is no longer current (`40001`, "these terms have been replaced"), and a current version whose timing has expired (`PT410`). Advancing to a new version does **not** delete earlier acceptances; they stop counting. **Authoring is not acceptance; countering is not acceptance** (PD-053, PD-056). | `20260917000000` §§ 4, 10; `20260919000000_negotiation_stale_terms_code.sql`; current body is `20260921000000`'s per the ledger's redefinition table; expiry trigger in `20261002000000` |
-| Both accepted — ready to confirm | `my_barter_proposals.both_accepted` is **derived** in the view from acceptance rows on the *current* version and stored nowhere. It is a readiness fact. `finalize_barter_agreement(uuid)` turns that fact into one immutable `barter_agreements` row, makes the accepted version authoritative, and closes the sourcing post permanently, but only if the accepted version's timing is still future-valid. No obligation, fulfilment, delivery, confirmation-window, cancellation-after-agreement or adjudication schema exists. PD-054, PD-056. | `20260917000000` § 11; `20260927000000_barter_agreement_finalization.sql`; SQLSTATE correction in `20260930000000_confirmed_trade_sqlstate.sql`; expiry trigger in `20261002000000` |
+| Both accepted — ready to confirm | `my_barter_proposals.both_accepted` is **derived** in the view from acceptance rows on the *current* version and stored nowhere. It is a readiness fact. `finalize_barter_agreement(uuid)` turns that fact into one immutable `barter_agreements` row, makes the accepted version authoritative, and closes the sourcing post permanently, but only if the accepted version's timing is still future-valid. PD-054, PD-056. | `20260917000000` § 11; `20260927000000_barter_agreement_finalization.sql`; SQLSTATE correction in `20260930000000_confirmed_trade_sqlstate.sql`; expiry trigger in `20261002000000` |
+| Obligations foundation | Every official agreement now gets **exactly two directed obligations**, one for each accepted proposal term: `offer_owner` means the offer owner delivers to the responder, and `responder` means the responder delivers to the offer owner. Obligations are derived server-side from the agreement's `accepted_version_id` and the two authoritative proposal terms. The client does **not** supply deliverer, receiver, side, source term, description, `due_at` or `scheduled_at`. `agreed_description`, `due_at` and `scheduled_at` are immutable copies from the accepted version; both agreement participants can read both obligations. There is still **no delivery / fulfilment lifecycle, receiver confirmation, cancellation, no-show, adjudication, terminal obligation outcome or terminal agreement outcome**. | `20261003000000_barter_obligations_foundation.sql`; read surface in `lib/negotiation.ts` and `app/community/negotiation/[id].tsx`; B5B assertions in `supabase/tests/agreement.test.sql` |
 
 **The RLS policies on `barter_offers` and `barter_interests` are still the Slice 1 set.**
 `barter_offers_provider_read` and `barter_interests_offer_owner_read` on reads;
@@ -221,7 +223,9 @@ carry **participant-read policies only** (`*_participant_read`, `select` to `aut
 **no write policy at all**; at the grant layer `authenticated` holds `SELECT` and nothing else,
 so every write goes through one of the three `SECURITY DEFINER` RPCs
 (`20260917000000` § 6, with the `authenticated` revoke completed by
-`20260918000000_negotiation_grant_tighten.sql`).
+`20260918000000_negotiation_grant_tighten.sql`). `barter_obligations` follows the same
+participant-read / no-write-policy posture, with ordinary creation handled by the
+agreement insert trigger rather than by a client-executable RPC (`20261003000000`).
 
 **Client surfaces.** `lib/barter.ts` is the data layer; `lib/tradeActivity.ts` holds the
 per-row capability and copy rules (`tradeRowState`) that **both** barter surfaces consume, and
@@ -232,8 +236,9 @@ per-row capability and copy rules (`tradeRowState`) that **both** barter surface
 [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 10 requires.
 
 For the negotiation itself: `lib/negotiation.ts` is the data layer (reads come from
-`my_barter_proposals` and the three participant-scoped tables; every write is one of the three
-RPCs), `lib/negotiationState.ts` holds the pure state and copy rules (`negotiationView`,
+`my_barter_proposals`, the proposal tables and, after agreement finalization,
+`barter_obligations`; every write is one of the three negotiation RPCs or the finalization RPC),
+`lib/negotiationState.ts` holds the pure state and copy rules (`negotiationView`,
 `validateDraft`, `draftPayload`), and the screen is `app/community/negotiation/[id].tsx`,
 keyed on the **interest** id and reached from an active row in Trade Activity
 (`app/community/trade-activity.tsx`, the `/community/negotiation/` push). The viewer's side is
@@ -245,9 +250,11 @@ and `supabase/tests/agreement.test.sql`, all registered in the B5B runner at
 `scripts/db-security-test.mjs` (lines 47–49), plus `__tests__/lib/tradeActivity.test.ts` and
 `__tests__/lib/negotiationState.test.ts` for the pure client rules. Those tests distinguish
 ready-to-confirm from confirmed, and pin that confirmed trade copy does not promise booking,
-completion, fulfilment, delivery or a guarantee. Races a single-transaction harness cannot stage
+completion, fulfilment, delivery or a guarantee. B5B now also pins the derived obligation pair,
+participant read, direct-write refusal, immutable content/timing and no-write grant posture.
+Races a single-transaction harness cannot stage
 are covered by `scripts/negotiation-concurrency.mjs`, a non-B5B script. The last recorded local
-B5B execution is **608/608 passed, 0 failed** — see § Foundation & security above for what that
+B5B execution is **637/637 passed, 0 failed** — see § Foundation & security above for what that
 figure does and does not establish.
 
 ### What is not built
@@ -255,12 +262,12 @@ figure does and does not establish.
 **[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 is the authoritative gap list** and is
 not copied here. Two gaps matter most to anyone reading this document cold:
 
-- **There is agreement finalization, but no obligation or fulfilment schema.** PR #50 adds
-  `finalize_barter_agreement(uuid)`, an immutable `barter_agreements` row, and permanent
-  sourcing-post closure once both participants have accepted the same current version. PD-046
-  (cancellation / no-show) and § 6 and § 7 of the contract still describe later work with
-  **no tables behind it**: no obligations, no delivery or receiver confirmation, no
-  adjudication, and no cancellation-after-agreement path in this beta slice.
+- **There is an obligation foundation, but no fulfilment lifecycle.** PR #54 adds the
+  immutable, server-derived `barter_obligations` pair for each official agreement. PD-046
+  (cancellation / no-show) and § 7 of the contract still describe later work with **no tables
+  or state behind it**: no delivery or receiver confirmation, no fulfilment states, no
+  adjudication, no cancellation-after-agreement path, no no-show path, no terminal obligation
+  outcome and no terminal agreement outcome in this beta slice.
 - **Offer creation is not server-limited.** The interest cap is server-authoritative; the
   offers-per-day cap is client-side only and its check fails open
   ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 10, `lib/rateLimit.ts`).
@@ -313,4 +320,4 @@ of scope), or anything about real user behaviour. Where a claim needed a run to 
 cites the recorded run rather than asserting it fresh.
 
 **One caveat about how this revision was verified.** This reconciliation inspected `main` after
-PR #50 merged. It does not establish live production state; production remains out of scope.
+PR #54 merged. It does not establish live production state; production remains out of scope.

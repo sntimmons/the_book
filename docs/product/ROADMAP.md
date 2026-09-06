@@ -1,8 +1,8 @@
 # Roadmap — session-based
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `4fd684e5a9554c47c078b6787753694c34cbb353` (2026-09-05)
-**Last edited by:** PR #53
+**Reconciled against:** `main` @ `b35ca1d4a1b71ac41af0f8103f17db0b7c797c31` (2026-09-05)
+**Last edited by:** PR #55
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -55,6 +55,7 @@ Sessions may merge, split, or reorder. A session is "complete" only when its wor
 | Barter **Slice 3a** — proposal / versioning foundation (PD-053, PD-054) | [#49](https://github.com/sntimmons/the_book/pull/49) (attested; see below) | `7713b56` (squash merge) | `supabase/migrations/20260917000000_barter_proposal_versions.sql` … `20260926000000_negotiation_stale_comment.sql` — ten files: four tables (`barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms`, `barter_version_acceptances`), three RPCs (`create_barter_proposal`, `submit_barter_counter`, `accept_barter_version`, current signatures `(uuid, text, text)` / `(uuid, text, text)` / `(uuid)`), view `my_barter_proposals` with **derived** `both_accepted`; the nine forward corrections are itemised in `MIGRATION_LEDGER.md`. `supabase/tests/negotiation.test.sql` registered at `scripts/db-security-test.mjs:48`; `scripts/negotiation-concurrency.mjs`; `lib/negotiation.ts`, `lib/negotiationState.ts` with `__tests__/lib/negotiationState.test.ts`; route `app/community/negotiation/[id].tsx`, reached from `app/community/trade-activity.tsx`. **No agreement, obligation or fulfilment schema** — that is the seam, not an omission (PD-054). |
 | Barter **Agreement Finalization** — one official agreement, atomic post closure (PD-055) | [#50](https://github.com/sntimmons/the_book/pull/50) | `e3fa169` (squash merge) | `supabase/migrations/20260927000000_barter_agreement_finalization.sql` … `20260930000000_confirmed_trade_sqlstate.sql` — four files: `barter_agreements`, `finalize_barter_agreement(uuid)`, agreement-facing read models, post-agreement write guards, SQLSTATE `PT409` for confirmed-trade refusals, and permanent source-post closure. `supabase/tests/agreement.test.sql` registered at `scripts/db-security-test.mjs:49`; `scripts/negotiation-concurrency.mjs` covers finalize × finalize, finalize vs counter and finalize vs release with real interval overlap; client states/copy in `lib/negotiationState.ts`, `lib/tradeActivity.ts`, `lib/barterErrors.ts` and community routes. **No obligation, fulfilment, delivery, cancellation-after-agreement, no-show, adjudication, barter reviews or reputation schema** — those stay later Session 7 work. |
 | Barter **Proposal Timing Extension** — version timing and expiry guard (PD-056) | [#52](https://github.com/sntimmons/the_book/pull/52) | `4fd684e` (squash merge) | `supabase/migrations/20261001000000_proposal_term_timing.sql` and `20261002000000_proposal_timing_expiry_guards.sql` — proposal terms now include required `due_at` and optional `scheduled_at`; timing is immutable per proposal version, so updates require a new version. Server validation requires both directed terms to remain future-valid when authored, accepted and finalized; expired timing raises `PT410` and cannot create an acceptance or official agreement. `supabase/tests/negotiation.test.sql` and `supabase/tests/agreement.test.sql` cover author/accept/finalize timing boundaries, direct-write bypass attempts and no obligation schema. Client stale copy/action handling lives in `lib/barterErrors.ts`, `lib/negotiationState.ts` and `app/community/negotiation/[id].tsx`. |
+| Barter **Obligations Foundation** — two directed obligations per official agreement | [#54](https://github.com/sntimmons/the_book/pull/54) | `b35ca1d` (squash merge) | `supabase/migrations/20261003000000_barter_obligations_foundation.sql` — `barter_obligations` plus an additive `barter_agreements` trigger and idempotent internal helper. Every official agreement gets exactly two immutable directed obligations derived from the accepted proposal terms; `due_at` and `scheduled_at` copy from the accepted version; both participants can read both obligations. `lib/negotiation.ts` and `app/community/negotiation/[id].tsx` expose the read-only confirmed-trade display. `supabase/tests/agreement.test.sql` and `scripts/negotiation-concurrency.mjs` pin cardinality, derivation, direct-write refusal, participant reads and idempotent concurrent creation. **No delivery, fulfilment, receiver confirmation, cancellation, no-show, adjudication, terminal obligation outcomes, terminal agreement outcomes, barter reviews or reputation schema** — those stay later Session 7 work. |
 
 **Row inclusion rule.** A PR earns a row here when it **materially delivers a product,
 architecture, security, governance, infrastructure or operating capability**. A routine
@@ -124,15 +125,16 @@ change — not something a reconciliation can do.
 
 ## Current
 
-**The barter proposal / versioning foundation, agreement finalization and proposal timing
-extension are complete and merged.** `main` @ `4fd684e` holds forty-one migrations, newest
-`20261002000000_proposal_timing_expiry_guards.sql`. Slices 2, 2B, 3a-0, 3a-0b and 3a-0c, the
+**The barter proposal / versioning foundation, proposal timing extension, agreement
+finalization and obligations foundation are complete and merged.** `main` @ `b35ca1d` holds
+forty-two migrations, newest `20261003000000_barter_obligations_foundation.sql`. Slices 2, 2B, 3a-0, 3a-0b and 3a-0c, the
 closed-post terminal cleanup, **Slice 3a**, **Agreement Finalization**, and **Proposal Timing
-Extension** are all on `main` and each has a Completed row above. What is on `main` is
+Extension**, and **Obligations Foundation** are all on `main` and each has a Completed row above. What is on `main` is
 authoritative in [CURRENT_STATE.md](CURRENT_STATE.md) § Barter. Both providers accepting the
 same current version is a **ready-to-confirm** fact; finalization creates the official
 `barter_agreements` row and closes the source post, but PR #52 now requires the accepted
-version's timing to remain future-valid through finalization.
+version's timing to remain future-valid through finalization, and PR #54 now creates the two
+server-derived directed obligations for the official agreement.
 
 The branch `chore/pre-proposal-closeout`, which the previous reconciliation recorded as in
 flight at `871eb2a`, now points at `ca84100` (`.git/refs/heads/chore/pre-proposal-closeout`).
@@ -148,8 +150,8 @@ tiebreak that resolved it), #36 and #37. Per the row inclusion rule above, #31,
 Session 4 (no in-repo artifact — see the note above), Slice 1 (**PR #38**, `feba568`), the
 slices and contract listed in the Completed table through **PR #47** (`76f5632`), and then
 **Slice 3a** (**PR #49**, `7713b56`), **Agreement Finalization** (**PR #50**, `e3fa169`) and
-**Proposal Timing Extension** (**PR #52**, `4fd684e`), which is where this document's anchor now
-sits.
+**Proposal Timing Extension** (**PR #52**, `4fd684e`) and **Obligations Foundation**
+(**PR #54**, `b35ca1d`), which is where this document's anchor now sits.
 
 ### What Sessions 4 and 5 left outstanding — mostly discharged
 
@@ -178,8 +180,9 @@ Agreement finalization is merged in PR #50, and proposal timing / expiry enforce
 in PR #52. The remaining barter work stays within **Session 7** until explicitly resequenced;
 this reconciliation does **not** start Session 8.
 
-Next work remains **Session 7 — Obligations Foundation**. Still not built: the obligation /
-fulfilment model that finalization makes possible
+Next work remains within **Session 7**. Still not built: delivery / fulfilment and receiver
+confirmation; cancellation-after-agreement; no-show; adjudication; terminal obligation
+outcomes; terminal agreement outcomes
 (**PD-046**, contract §§ 6–7);
 provider-eligibility gating of the barter surface (**PD-044**'s `is_approved` conjunct, whose
 seam is prepared but empty); the **Open to Trades** opt-in; the 3-post and 5-offers/day limits
