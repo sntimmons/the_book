@@ -1,6 +1,7 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
+**Last edited by:** PR #53
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -340,6 +341,32 @@ as locked decisions.
 - **Decision:** A barter agreement becomes **official** only when a proposal exists and is active, both participants have **explicitly accepted the same current version**, no newer version exists, the negotiation has not been released, and no agreement already exists for that negotiation or post. Authoring, proposing and countering are not acceptance. Finalization is **one server boundary** — `finalize_barter_agreement(p_proposal_id)` — that derives and re-verifies the caller, proposal, interest, offer, participants, current version, both acceptances and uniqueness under lock; it trusts no client-supplied version, participant, provider, offer, interest or acceptance state. It is **idempotent**: a repeat call returns the existing agreement. The agreement row stores **immutable references** — proposal, accepted version, sourcing offer and interest, both participants' provider and user ids, `officialized_at` — and duplicates no mutable proposal state; **the accepted version is authoritative for the agreed terms, and the public post is no longer authority.** Creating the agreement and **closing the sourcing post are atomic** (PD-049); the closure is permanent for normal users (PD-051). Once official, the negotiation is **closed to change** — no counter, no new acceptance — and **pre-agreement release is no longer available** (PD-049's exit ends before an agreement, not after one). Exactly **one agreement may ever exist per proposal, per accepted version, per sourcing post and per interest**. No obligation, delivery, confirmation-window, no-show, cancellation-after-agreement or adjudication model is created; the agreement preserves the accepted terms by reference for a later slice to derive obligations from.
 - **Rationale:** "Both accepted the same current terms" is a fact that can be undone by a counter the next second; an agreement must be a durable act the parties can rely on, so it is a separate, explicit step with its own row. Making the accepted version — not the post, not a copy — the authority is what keeps the agreed terms exactly what two people accepted: the post stays editable (PD-047) and a copy could drift. Atomic post closure is the only honest reading of PD-049's "an agreement consumes the post": an agreement with the post still on the board invites a second negotiation on a consumed post, and a closed post with no agreement strands a negotiation both parties had finished. Withdrawing release after agreement follows from what release means — the pre-agreement exit; letting it erase a confirmed trade's basis while the agreement row stood would leave the record contradicting itself. The post-agreement guards are **additive triggers** rather than rewrites of `submit_barter_counter`, `accept_barter_version` and `release_barter_interest`, for the reason the ledger records twice: a `create or replace` from a stale copy deletes corrections silently, and a trigger binds the rule to the transition so every path inherits it.
 - **Evidence:** Founder ruling, 2026-09-05. Implemented by `supabase/migrations/20260927000000_barter_agreement_finalization.sql` and forward-corrected by `20260928000000` (a field-reference bug in the post-agreement guard, caught by B5B on first run after apply), `20260929000000` (fail-closed unresolved guard dispatch and agreement-facing grant/owner hardening), and `20260930000000` (`PT409` for confirmed-trade terminal refusals). Asserted in `supabase/tests/agreement.test.sql` — zero/one/old-version acceptances refused, stranger refused, participant may finalize, idempotent, one per negotiation/post, accepted-version reference immutable, post closes atomically and cannot reopen, counter/new-acceptance/release refused after agreement, released negotiation cannot finalize, every new object's grants/RLS/definer posture pinned — and, for the races B5B cannot stage, `scripts/negotiation-concurrency.mjs` (finalize × finalize, finalize vs counter, finalize vs release, each with overlap proven). Client states in `lib/negotiationState.ts` (`agreed` = "Ready to confirm trade", `confirmed` = "Trade confirmed"), `lib/tradeActivity.ts` (a Confirmed trades section), and `lib/barterErrors.ts` (confirmed-trade copy keyed by `PT409`), tested.
+- **Status:** Locked
+
+---
+
+### PD-056 — Proposal timing must remain future-valid until agreement finalization
+- **Decided:** 2026-09-05
+- **Decision:** A barter proposal version's timing must be valid when the version is authored,
+  when a participant accepts that version, and when the official agreement is finalized. For
+  both directed terms, `due_at` must be greater than server current time and `scheduled_at` must
+  be null or greater than server current time. Timing belongs to the immutable proposal version:
+  if either side's timing expires, that version is no longer acceptable or finalizable, and the
+  participants must author a **new proposal version** with updated timing. The expired
+  historical version must not be mutated, automatically extended, or silently accepted. The user
+  outcome is a truthful stale/terminal-for-this-version message: "These trade terms have
+  expired. Update the timing before continuing."
+- **Rationale:** A version authored with future timing can become stale before the other
+  participant accepts or before either participant finalizes. Letting that version finalize would
+  create an official agreement that begins already overdue, and the obligation slice will derive
+  directly from the accepted version.
+- **Evidence:** Founder amendment, 2026-09-05. Implemented by PR #52:
+  `supabase/migrations/20261001000000_proposal_term_timing.sql` adds required `due_at` and
+  optional `scheduled_at` to proposal terms and validates them at author time;
+  `20261002000000_proposal_timing_expiry_guards.sql` adds additive acceptance/finalization
+  triggers that raise SQLSTATE `PT410` when timing has expired. Asserted in
+  `supabase/tests/negotiation.test.sql`, `supabase/tests/agreement.test.sql`,
+  `__tests__/lib/barterWriteFailure.test.ts` and `__tests__/lib/negotiationState.test.ts`.
 - **Status:** Locked
 
 ---

@@ -1,8 +1,8 @@
 # Current State — what is true on `main` today
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `e3fa1693875c5e508efe4df668fb415f6013375d` (2026-09-05)
-**Last edited by:** post-PR #50 Steward reconciliation — PR number not assigned yet
+**Reconciled against:** `main` @ `4fd684e5a9554c47c078b6787753694c34cbb353` (2026-09-05)
+**Last edited by:** PR #53
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -118,42 +118,42 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 Docs: **[supabase/tests/README.md](../../supabase/tests/README.md)**.
 
-**Migration ledger.** The repository holds **39 migration files** at `e3fa169` — counted from
-`supabase/migrations/*.sql`, newest `20260930000000_confirmed_trade_sqlstate.sql` — and that
-part is repository-provable. Ten files, `20260917000000` … `20260926000000`, are Slice 3a
-(PR #49); four files, `20260927000000` … `20260930000000`, are Agreement Finalization (PR #50).
+**Migration ledger.** The repository holds **41 migration files** at `4fd684e` — counted from
+`supabase/migrations/*.sql`, newest `20261002000000_proposal_timing_expiry_guards.sql` — and
+that part is repository-provable. Ten files, `20260917000000` … `20260926000000`, are Slice 3a
+(PR #49); four files, `20260927000000` … `20260930000000`, are Agreement Finalization (PR #50);
+and two files, `20261001000000` … `20261002000000`, are Proposal Timing Extension (PR #52).
 The ledger's § Prevention records why these features landed as forward correction chains:
 after a migration is applied to non-production, fixes go into a new migration rather than an
-edited historical file. Its dated record now runs through `20260930000000`, with the count
-corrected to **39** and the confirmed-trade SQLSTATE correction recorded separately. Process and
-the dated record:
+edited historical file. Its dated record now runs through `20261002000000`, with proposal
+term timing and expiry guards recorded separately. Process and the dated record:
 **[docs/operations/MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md)**.
 
 **Latest recorded runs.** Rather than restate counts that change with ordinary PRs, this
 records *which runs* to look at. Two different things are recorded, and they are not
 interchangeable:
 
-- **The latest `main` CI run this reconciliation could cite** is **33995133742** on
-  `e3fa169` — `check` and `db-security` both green. The `check` job ran typecheck, lint and
+- **The latest `main` CI run this reconciliation could cite** is **34001853047** on
+  `4fd684e` — `check` and `db-security` both green. The `check` job ran typecheck, lint and
   unit tests; the `db-security` job ran the non-production B5B harness.
 - **The last recorded local B5B execution** is the post-apply run logged against
-  `20260930000000` in
-  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) (2026-09-05): **574/574 passed,
+  `20261002000000` in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) (2026-09-05): **608/608 passed,
   0 failed**, zero residue. The same entry records the **non-B5B concurrency proof**,
   `scripts/negotiation-concurrency.mjs`, at **30/30**, including finalize × finalize,
   finalize vs counter, and finalize vs release with per-session interval overlap asserted.
 
-The suite grew enormously between them — 88 → 574 assertions as the barter slices landed —
+The suite grew enormously between them — 88 → 608 assertions as the barter slices landed —
 which is exactly why the count is read from a run rather than from this document. The
 authoritative description of the harness lives in
 [supabase/tests/README.md](../../supabase/tests/README.md).
 
-**Why this document's anchor is now `e3fa169`.** The previous anchor was `7713b56` (PR #49).
-PR #50 changed facts *this document* asserts: the migration chain went from 35 files to 39, the
-barter surface gained `barter_agreements`, `finalize_barter_agreement(uuid)`, post-agreement
-write guards, confirmed-trade client states/copy, and the recorded B5B execution moved from
-500/500 to 574/574. Those are facts asserted above, so the anchor moves to PR #50's squash-merge
-commit, `e3fa169`.
+**Why this document's anchor is now `4fd684e`.** The previous anchor was `e3fa169` (PR #50).
+PR #52 changed facts *this document* asserts: the migration chain went from 39 files to 41,
+proposal terms gained required `due_at` and optional `scheduled_at`, proposal/counter RPC
+signatures now carry timing, timing must still be future-valid when accepted and finalized, and
+the recorded B5B execution moved from 574/574 to 608/608. Those are facts asserted above, so
+the anchor moves to PR #52's squash-merge commit, `4fd684e`.
 
 [ROADMAP.md](ROADMAP.md) remains authoritative for **which** merge delivered **which**
 capability — it carries a Completed row per delivered capability, each citing its merge,
@@ -188,8 +188,8 @@ This section records **what is built on `main`** and **what is not**.
 
 ### What is built
 
-Verified against the migration chain on `main` at `e3fa169` — **39 migrations**, newest
-`supabase/migrations/20260930000000_confirmed_trade_sqlstate.sql`.
+Verified against the migration chain on `main` at `4fd684e` — **41 migrations**, newest
+`supabase/migrations/20261002000000_proposal_timing_expiry_guards.sql`.
 
 | Capability | What is actually enforced | Where |
 |---|---|---|
@@ -203,11 +203,12 @@ Verified against the migration chain on `main` at `e3fa169` — **39 migrations*
 | Ending a dead negotiation | `release_barter_interest` moves `accepted → released` and **derives the reason from the caller** (`responder_withdrew` / `owner_ended_negotiation`), so neither party can characterise the other's exit. The counterparty is told by a **server-authored** notice, and message authorship is pinned at the write boundary. | `20260909000000`; `20260910000000_barter_release_signal.sql`; `20260911000000_message_authorship_pin.sql` |
 | Durable access | The `my_trade_activity` view (`security_invoker`, `select` to `authenticated` only, revoked from `anon`) backs the route `/community/trade-activity`, so an accepted negotiation stays reachable after its post closes or ages out of the newest-50 discovery feed. | `20260912000000_trade_activity.sql`, hardened by `20260913000000` and `20260914000000` |
 | Closed post is terminal | `is_active` is **one-way** for authenticated writers (`enforce_barter_offer_active_one_way`, trigger `barter_offers_zy_active_one_way`), and a closed post's pending responses can be **neither accepted nor declined** (`enforce_barter_answer_open_offer`, trigger `barter_interests_zy_answer_open_offer`). Both raise SQLSTATE `55000`; both exempt `service_role` and the null-`auth.uid()` (no-JWT) path. `released` stays permitted, because a negotiation outlives its post. PD-051, PD-052. | `20260915000000` §§ 1–2, bodies refreshed by `20260916000000` |
-| Proposal | **One proposal per accepted interest** (`barter_proposals.interest_id` is `unique`), and it may be opened **only** on an interest whose status is `accepted` — pending, declined and released are refused (SQLSTATE `55000`). No cold proposals. The proposal row is the negotiation's durable identity; it has no `status` column of its own — liveness is read from `barter_interests.status`, so `release_barter_interest` remains the one way to end a negotiation (PD-049, PD-053). | `20260917000000` § 1; `create_barter_proposal(uuid, text, text)` as redefined by `20260925000000` § 4 |
-| Versioned terms | Every proposal or counter is a **new immutable version** (`barter_proposal_versions`, unique `(proposal_id, version_no)`). Versions, terms and acceptances are **append-only by trigger** (`enforce_barter_negotiation_append_only`); the only mutable field on a proposal is `current_version_no`, which may only advance (`enforce_barter_proposal_immutable`). Each version carries a `post_snapshot` of the public post as it stood when authored — historical context, never authority for the terms (PD-047). Counters are capped at **20 versions per participant, per negotiation, per rolling 24 h** (SQLSTATE `54000`); the cap is not applied to the opening proposal, which is bounded by the one-per-interest constraint instead. | `20260917000000` §§ 2, 5, 7; `20260920000000_negotiation_budget_code.sql`; `submit_barter_counter(uuid, text, text)` in `20260925000000` § 4 |
-| Exactly two directed terms | A version holds **exactly two terms, one per fixed side** — `offer_owner` and `responder` — enforced by a unique index on `(version_id, provided_by)` plus a statement-level guard (`enforce_barter_terms_written_once`) that refuses any count other than two, a missing side, or a second write to a version. **Participant identity is server-derived**: the client submits only the two descriptions; `write_barter_proposal_terms(uuid, text, text)` derives each side's `provider_id` / `provider_user_id` from the accepted interest, and the guard asserts they match the offer and interest rows. **No value field** — `estimated_value` was dropped. Terms can be written only from inside a negotiation RPC (a transaction-local marker checked by `enforce_barter_terms_write`), and the helper's EXECUTE is revoked from `authenticated`. PD-053. | `20260925000000` §§ 1–3; `20260921000000_negotiation_write_boundary.sql`; `20260924000000_negotiation_written_once.sql`; `20260926000000` (comment-only refresh of the marker guard) |
-| Version acceptance | `accept_barter_version(uuid)` records **one acceptance per participant per version** (`unique (version_id, participant_user_id)`, so a repeat is idempotent). It refuses a non-participant (`42501`), a dead negotiation (`55000`) and — checked under the proposal row lock — a version that is no longer current (`40001`, "these terms have been replaced"). Advancing to a new version does **not** delete earlier acceptances; they stop counting. **Authoring is not acceptance; countering is not acceptance** (PD-053). | `20260917000000` §§ 4, 10; `20260919000000_negotiation_stale_terms_code.sql`; current body is `20260921000000`'s per the ledger's redefinition table |
-| Both accepted — ready to confirm | `my_barter_proposals.both_accepted` is **derived** in the view from acceptance rows on the *current* version and stored nowhere. It is a readiness fact. `finalize_barter_agreement(uuid)` turns that fact into one immutable `barter_agreements` row, makes the accepted version authoritative, and closes the sourcing post permanently. No obligation, fulfilment, delivery, confirmation-window, cancellation-after-agreement or adjudication schema exists. PD-054. | `20260917000000` § 11; `20260927000000_barter_agreement_finalization.sql`; SQLSTATE correction in `20260930000000_confirmed_trade_sqlstate.sql` |
+| Proposal | **One proposal per accepted interest** (`barter_proposals.interest_id` is `unique`), and it may be opened **only** on an interest whose status is `accepted` — pending, declined and released are refused (SQLSTATE `55000`). No cold proposals. The proposal row is the negotiation's durable identity; it has no `status` column of its own — liveness is read from `barter_interests.status`, so `release_barter_interest` remains the one way to end a negotiation (PD-049, PD-053). | `20260917000000` § 1; current `create_barter_proposal` signature is from `20261001000000_proposal_term_timing.sql` |
+| Versioned terms | Every proposal or counter is a **new immutable version** (`barter_proposal_versions`, unique `(proposal_id, version_no)`). Versions, terms and acceptances are **append-only by trigger** (`enforce_barter_negotiation_append_only`); the only mutable field on a proposal is `current_version_no`, which may only advance (`enforce_barter_proposal_immutable`). Each version carries a `post_snapshot` of the public post as it stood when authored — historical context, never authority for the terms (PD-047). Terms now include a required `due_at` and optional `scheduled_at` for each directed side. Timing belongs to the immutable proposal version, so changing timing requires a **new version**. Counters are capped at **20 versions per participant, per negotiation, per rolling 24 h** (SQLSTATE `54000`); the cap is not applied to the opening proposal, which is bounded by the one-per-interest constraint instead. | `20260917000000` §§ 2, 5, 7; `20260920000000_negotiation_budget_code.sql`; `20261001000000_proposal_term_timing.sql` |
+| Exactly two directed terms | A version holds **exactly two terms, one per fixed side** — `offer_owner` and `responder` — enforced by a unique index on `(version_id, provided_by)` plus a statement-level guard (`enforce_barter_terms_written_once`) that refuses any count other than two, a missing side, or a second write to a version. **Participant identity is server-derived**: the client submits only the two descriptions and timing fields; `write_barter_proposal_terms(uuid, text, timestamptz, timestamptz, text, timestamptz, timestamptz)` derives each side's `provider_id` / `provider_user_id` from the accepted interest, and the guard asserts they match the offer and interest rows. **No value field** — `estimated_value` was dropped. Terms can be written only from inside a negotiation RPC (a transaction-local marker checked by `enforce_barter_terms_write`), and the helper's EXECUTE is revoked from `authenticated`. PD-053, PD-056. | `20260925000000` §§ 1–3; `20260921000000_negotiation_write_boundary.sql`; `20260924000000_negotiation_written_once.sql`; `20261001000000_proposal_term_timing.sql` |
+| Timing validity | For both directed terms, `due_at` must be future-valid and `scheduled_at` must be either null or future-valid when the version is authored, when a participant accepts that version, and when the official agreement is finalized. Expired timing raises SQLSTATE `PT410` and does not mutate or extend the historical version; participants must send a new proposal version with updated timing. | Author-time validation in `20261001000000`; acceptance/finalization-time guards in `20261002000000_proposal_timing_expiry_guards.sql`; client stale handling in `lib/barterErrors.ts` and `lib/negotiationState.ts` |
+| Version acceptance | `accept_barter_version(uuid)` records **one acceptance per participant per version** (`unique (version_id, participant_user_id)`, so a repeat is idempotent). It refuses a non-participant (`42501`), a dead negotiation (`55000`), a version that is no longer current (`40001`, "these terms have been replaced"), and a current version whose timing has expired (`PT410`). Advancing to a new version does **not** delete earlier acceptances; they stop counting. **Authoring is not acceptance; countering is not acceptance** (PD-053, PD-056). | `20260917000000` §§ 4, 10; `20260919000000_negotiation_stale_terms_code.sql`; current body is `20260921000000`'s per the ledger's redefinition table; expiry trigger in `20261002000000` |
+| Both accepted — ready to confirm | `my_barter_proposals.both_accepted` is **derived** in the view from acceptance rows on the *current* version and stored nowhere. It is a readiness fact. `finalize_barter_agreement(uuid)` turns that fact into one immutable `barter_agreements` row, makes the accepted version authoritative, and closes the sourcing post permanently, but only if the accepted version's timing is still future-valid. No obligation, fulfilment, delivery, confirmation-window, cancellation-after-agreement or adjudication schema exists. PD-054, PD-056. | `20260917000000` § 11; `20260927000000_barter_agreement_finalization.sql`; SQLSTATE correction in `20260930000000_confirmed_trade_sqlstate.sql`; expiry trigger in `20261002000000` |
 
 **The RLS policies on `barter_offers` and `barter_interests` are still the Slice 1 set.**
 `barter_offers_provider_read` and `barter_interests_offer_owner_read` on reads;
@@ -246,7 +247,7 @@ and `supabase/tests/agreement.test.sql`, all registered in the B5B runner at
 ready-to-confirm from confirmed, and pin that confirmed trade copy does not promise booking,
 completion, fulfilment, delivery or a guarantee. Races a single-transaction harness cannot stage
 are covered by `scripts/negotiation-concurrency.mjs`, a non-B5B script. The last recorded local
-B5B execution is **574/574 passed, 0 failed** — see § Foundation & security above for what that
+B5B execution is **608/608 passed, 0 failed** — see § Foundation & security above for what that
 figure does and does not establish.
 
 ### What is not built
