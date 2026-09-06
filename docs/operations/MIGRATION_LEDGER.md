@@ -655,6 +655,103 @@ Hand-applied SQL requires a `migration repair` in the same sitting, or the drift
 Out of scope for this note. Production has never been reconciled by this process and must
 not be, without a separate, explicitly approved change.
 
+## 2026-09-06 — `20261011000000` **AUTHORED, NOT YET APPLIED** (Receiver Window + Needs Attention, PR #62)
+
+> **APPLICATION STATUS: NOT APPLIED. This entry records an authored migration, not a completed
+> apply, and it is the first entry in this ledger to do so.** The session that wrote it had **no
+> database access of any kind** — no `psql` binary, no local Postgres, no Docker for
+> `supabase start`, and no `TEST_SUPABASE_DB_URL` — so it could neither apply the migration nor
+> execute the B5B suite. Every claim below describes what the SQL says, verified by reading it and
+> by static checks; **none of it is a claim about observed database behaviour.** Before this is
+> treated as applied: run the migration against non-production, run
+> `node scripts/db-security-test.mjs`, then replace this banner with the apply date, the
+> `supabase migration list` confirmation and the real B5B counts. Until then the correct reading of
+> the entries below is "intended and reviewed, unproven at runtime".
+
+**One migration, and it is the smallest kind this repo has added to the barter chain: it creates
+no column, no table, no trigger, no RPC, no job and no write path.** Everything it exposes is
+DERIVED from timestamps already stored, plus the server's clock. There is therefore no persisted
+transition that can fall out of step with the facts it was derived from, and no background job
+flipping rows at a deadline.
+
+**PD-057, spelled once.** `public.barter_confirmation_anchor(delivered_at, scheduled_at, due_at)`
+returns `max(delivered_at, coalesce(scheduled_at, due_at))` and NULL before delivery;
+`public.barter_confirmation_deadline(...)` is that plus 7 days and is the **only place the 7-day
+interval is written**; `public.barter_receiver_window(status, delivered_at, scheduled_at, due_at,
+trade_cancelled, as_of)` returns `none | awaiting_receiver | needs_attention`. All three are
+IMMUTABLE, invoker-rights (not definer), `search_path` pinned, read no table and take no id — so
+none is an existence oracle. `EXECUTE` is granted to `authenticated` and revoked from `anon` and
+`public`; the grant to `authenticated` is **required**, not incidental, because both consuming
+views are `security_invoker` and therefore run these functions as the caller.
+
+**A COMMENT IS SUPERSEDED, AND THE APPLIED MIGRATION IS NOT EDITED.**
+`20261004000000_barter_obligation_delivery.sql` line 25 says *"`delivered_at` is the only fact the
+future 7-day window needs, so the deadline is DERIVED from it and no redundant deadline column is
+stored."* Half of that is right and is honoured exactly: the deadline **is** derived and **no
+deadline column exists**. The other half is **narrower than PD-057**, which anchors on the LATER
+of delivery and the agreed time and therefore also needs `due_at` and `scheduled_at`. That file is
+applied and is **not edited** (forward-only); the correction lives in `20261011000000`'s header and
+here. PD-057 flagged this divergence on 2026-09-05 and left it for a code owner — this is that
+reconciliation. **No schema consequence followed**, because `due_at` and `scheduled_at` have been
+immutable columns on `barter_obligations` since `20261003000000`.
+
+**Why the later of the two.** Anchoring on `delivered_at` alone would let a deliverer who marks
+delivered a month early expire the receiver's window before the service was even due to happen —
+putting the receiver in Needs Attention for not confirming something they had not been given.
+
+**Needs Attention is not an outcome.** It is an unresolved operational state. The four-value
+`status` vocabulary is UNCHANGED and Needs Attention is deliberately **not** a status value: no
+Fulfilled, Unfulfilled, Completed, Closed Without Resolution, Under Review, no-show or
+adjudication exists, and elapsed time creates none of them. Asserted directly in B5B.
+
+**The receiver can still answer after the deadline** (Founder ruling). The three obligation RPCs
+are **untouched by this migration** and none of them consults a deadline — pinned by a B5B
+assertion over `prosrc`, so a later edit that added an expiry guard would fail the suite rather
+than silently closing the door.
+
+**Two views redefined.** `public.my_barter_obligations` is new: `security_invoker = true`, adding
+no `WHERE` clause of its own precisely so it cannot become a second, weaker copy of
+`barter_obligations_participant_read`. It uses `now()` (transaction_timestamp), **not**
+`clock_timestamp()`, so every row in one read is judged against the same instant and a caller
+cannot see a self-inconsistent pair; `server_now` is returned so a client renders against the
+clock that decided the state. `public.my_trade_activity` is **recreated in full** — its live
+definition was `20261005000000` — and the body was diffed against that file before writing: the
+only changes are four added columns and two `left join lateral`s. It reads
+`my_barter_obligations` rather than the table, so the window rule is applied in exactly one place.
+Both views are postgres-owned, `select`-only to `authenticated`, revoked from `anon` and `public`,
+and have `insert, update, delete` explicitly revoked — a simple view is auto-updatable, and
+neither may become a write path. B5B proves all four refusals plus the table's own.
+
+**Trade Activity is role-relative.** Each agreement has exactly two obligations and each
+participant is the deliverer of exactly one and the receiver of the other, so `my_response_*` (the
+one they receive — their action) and `their_response_*` (the one they deliver) are **scalar reads,
+not aggregates**. No display-priority rule is encoded in SQL; that is a copy decision and lives in
+`lib/tradeActivity.ts`.
+
+**Concurrency.** No new race scenario was added to the concurrency harness, and this is a
+statement rather than an omission: **this migration adds no write**, so there is no new
+contended path to stage. The one interleaving that matters — a receiver answering around the
+deadline — is proven instead by showing the state is a pure function of the row: an answered
+obligation returns `none` at **every** instant from ten days before the deadline to ten days
+after, so no ordering of "answer commits" against "another session reads" can produce a row that
+is simultaneously answered and needing attention.
+
+**How B5B reaches a past deadline.** `due_at` must be in the future when a proposal is written, so
+a naturally elapsed window cannot occur inside the harness's single transaction. The suite AGES a
+trade as `service_role`, which is permitted **by design** rather than by accident:
+`enforce_barter_obligations_immutable` returns early for `service_role` (`20261004000000` line 96)
+and `enforce_barter_obligation_consistent` is a `BEFORE INSERT` trigger only. Every CHECK
+constraint still applies. This is what lets all three boundaries — just before, exactly at, just
+after — be proven against the **real view**, not only against the calculator.
+
+**The boundary is inclusive:** Needs Attention begins at `server_now >= confirmation_deadline`,
+per Founder ruling, spelled once in `barter_receiver_window`.
+
+Ledger after apply, expected: **50 entries** — **unverified**, because `supabase migration list`
+could not be run from this environment. Production untouched, never targeted and never queried; no
+credential for it was read, and the only Supabase values present in the environment were the
+non-production `TEST_SUPABASE_*` keys, which were not used.
+
 ## Functions redefined across migrations
 
 A `create or replace function` in a later migration silently supersedes an earlier one. The

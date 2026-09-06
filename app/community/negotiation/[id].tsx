@@ -514,7 +514,17 @@ export default function NegotiationScreen() {
     // screen ends up labelling an obligation "You agreed to provide" while offering the
     // receiver's controls beside it.
     const role = obligationRole(obligation.side, myRole)
-    const o = obligationView(role, obligation.status, tradeCancelled)
+    // The PD-057 window comes from the SERVER on the obligation row — the deadline comparison
+    // happened there, against the server's clock. Nothing on this screen recomputes it, so a
+    // device with a wrong clock cannot put this obligation into, or out of, Needs Attention, and
+    // both participants are looking at the same answer.
+    const o = obligationView(
+      role,
+      obligation.status,
+      tradeCancelled,
+      obligation.receiverWindowState,
+      obligation.confirmationDeadline,
+    )
     return (
       <View style={styles.term}>
         <Text style={styles.termSide}>{o.title}</Text>
@@ -524,6 +534,15 @@ export default function NegotiationScreen() {
           <Text style={styles.termTiming}>
             Scheduled for {formatTermTime(obligation.scheduledAt)}
           </Text>
+        ) : null}
+        {/* Above the state sentence, so an obligation that has run out of window is marked
+            before it is described. Never a verdict: `attention` is only ever
+            NEEDS_ATTENTION_LABEL, which names an unresolved condition, and the sentence beneath
+            says what is still possible. */}
+        {o.attention ? (
+          <View style={styles.attentionChip}>
+            <Text style={styles.attentionChipText}>{o.attention}</Text>
+          </View>
         ) : null}
         <Text style={styles.obligationState}>{o.state}</Text>
         {obligationTimeline(obligation.deliveredAt, obligation.receiptRespondedAt).map((t) => (
@@ -536,6 +555,15 @@ export default function NegotiationScreen() {
           </Text>
         ))}
         {o.note ? <Text style={styles.obligationNote}>{o.note}</Text> : null}
+        {/* The deadline, labelled for THIS viewer by lib/obligationState.ts — "Please respond by"
+            for the receiver, "They have until" for the deliverer. Formatted with the SAME
+            formatter as every other time on the card, and read from the server's
+            `confirmation_deadline`; the client contributes the locale, nothing more. */}
+        {o.deadline ? (
+          <Text style={styles.termTiming}>
+            {o.deadline.label} {formatTermTime(o.deadline.at)}
+          </Text>
+        ) : null}
         {o.canMarkDelivered ? (
           <View style={styles.actions}>
             <TouchableOpacity
@@ -945,6 +973,20 @@ const styles = StyleSheet.create({
   },
   cancelBlock: { marginTop: 16 },
   obligationState: { color: '#F0E8D5', fontSize: 13, lineHeight: 19, marginTop: 8 },
+  // Same chip as Trade Activity uses, and deliberately NOT red: an elapsed response window is an
+  // unresolved condition, not a failure, a dispute or a review, and an alarm colour would say
+  // something the product cannot support.
+  attentionChip: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(214,124,79,0.18)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(214,124,79,0.5)',
+  },
+  attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
   obligationNote: {
     color: 'rgba(240,232,213,0.6)',
     fontSize: 12.5,

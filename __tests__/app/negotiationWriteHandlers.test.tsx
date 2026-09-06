@@ -144,6 +144,10 @@ function makeObligation(
     status: 'pending',
     deliveredAt: null,
     receiptRespondedAt: null,
+    // No delivery, so no PD-057 window exists yet. Overridden per case where one does.
+    confirmationAnchor: null,
+    confirmationDeadline: null,
+    receiverWindowState: 'none',
     ...over,
   }
 }

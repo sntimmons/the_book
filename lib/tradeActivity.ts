@@ -16,6 +16,9 @@ import type { CancellationState } from './tradeCancellation'
  *
  * `released` — the pre-agreement negotiation ended (either party). History, never actionable.
  */
+import type { ReceiverWindowState } from './obligationState'
+import { NEEDS_ATTENTION_LABEL } from './obligationState'
+
 export type BarterInterestStatus = 'pending' | 'accepted' | 'declined' | 'released'
 
 export type TradeActivitySection = 'confirmed' | 'active' | 'pending' | 'ended' | 'notSelected'
@@ -91,12 +94,36 @@ export interface TradeRowFacts {
   iCancelled: boolean
   /** The other participant recorded theirs. Both true is "mutually cancelled". */
   theyCancelled: boolean
+  /**
+   * The window state of the obligation this viewer RECEIVES — i.e. their own action.
+   *
+   * Server-computed (`my_trade_activity.my_response_state`, itself derived from
+   * `my_barter_obligations`). Each agreement has exactly two obligations and each participant
+   * receives exactly one, so this is a single state, not a roll-up.
+   *
+   * Defaulted rather than required, unlike `iCancelled`/`theyCancelled`: a caller that has not
+   * selected the column reports NO attention state, which is the fail-closed direction. Claiming
+   * "Action needed" from a missing field would put a demand in front of a provider with nothing
+   * behind it.
+   */
+  myResponseState?: ReceiverWindowState
+  /** The window state of the obligation this viewer DELIVERS — i.e. waiting on the other side. */
+  theirResponseState?: ReceiverWindowState
 }
 
 export interface TradeRowState {
   action: TradeRowAction
   /** The state of the row in the viewer's own terms. Never empty except on an active row. */
   note: string
+  /**
+   * A short badge for a row that needs someone's attention, or null.
+   *
+   * Separate from `note` so a screen can highlight the row without parsing prose, and so the
+   * forbidden-vocabulary sweep has one string per state to check. Never set on a cancelled,
+   * pending, released or declined row — only on a confirmed trade with a live or elapsed
+   * response window.
+   */
+  attention: string | null
 }
 
 /**
@@ -196,12 +223,98 @@ const CONFIRMED_TRADE_NOTE: Record<CancellationState, string> = {
   mutual: 'Trade cancelled by both of you.',
 }
 
+/**
+ * What a confirmed, UNCANCELLED trade's row says about the receiver-response windows (PD-059).
+ *
+ * TOTAL over mine × theirs — nine explicit cells, no ternary chain. Every combination is
+ * reachable: an obligation the viewer receives can be past its deadline while the one they
+ * deliver has not been delivered at all, and each participant receives exactly one obligation
+ * and delivers exactly one, so there is no roll-up to resolve.
+ *
+ * PRIORITY, read down the rows and across: **Needs Attention outranks Action needed, and the
+ * viewer's OWN state outranks the counterparty's within the same rank.** So
+ * `mine: needs_attention` always speaks, and `theirs: needs_attention` speaks only when the
+ * viewer's own side is not itself past its deadline. That ordering is the brief's: a state
+ * requiring this provider's action wins, and one truthful agreement-level label is enough even
+ * when both sides need attention.
+ *
+ * VOCABULARY. No cell says failed, dispute, review, no-show, fulfilled, unfulfilled, complete or
+ * resolved — none of those exist, and an elapsed window is a fact about a missing answer, not a
+ * finding about a person. `Needs attention` is the only new label, and it is stated as an
+ * unresolved condition with the action that is still available.
+ */
+/**
+ * The row badge for "the counterparty delivered and this viewer owes an answer, still in time".
+ *
+ * Lives here rather than in lib/obligationState.ts because it is a LIST label about an
+ * agreement, not a sentence about one obligation. `NEEDS_ATTENTION_LABEL` is imported from that
+ * module instead of respelled, because the elapsed-window state is the same product state on
+ * both surfaces and two spellings of it would drift.
+ */
+export const ACTION_NEEDED_LABEL = 'Action needed'
+
+const ACTION_NEEDED_NOTE =
+  'Action needed. The other provider marked their side delivered — open this to say whether you '
+  + 'received it.'
+const MY_ATTENTION_NOTE =
+  'Needs attention. The response window has passed and you have not yet said whether you '
+  + 'received the other provider’s delivery. You still can.'
+const THEIR_ATTENTION_NOTE =
+  'Needs attention. The response window has passed and the other provider has not said whether '
+  + 'they received your delivery. Nothing has been decided.'
+const WAITING_NOTE =
+  'Waiting for confirmation. The other provider has not yet said whether they received your '
+  + 'delivery.'
+const CONFIRMED_NOTE = CONFIRMED_TRADE_NOTE.none
+
+const WINDOW_NOTE: Record<ReceiverWindowState, Record<ReceiverWindowState, string>> = {
+  //                       theirs: none          awaiting_receiver     needs_attention
+  none: {
+    none: CONFIRMED_NOTE,
+    awaiting_receiver: WAITING_NOTE,
+    needs_attention: THEIR_ATTENTION_NOTE,
+  },
+  awaiting_receiver: {
+    none: ACTION_NEEDED_NOTE,
+    awaiting_receiver: ACTION_NEEDED_NOTE,
+    // The viewer's own answer is still inside its window, but the counterparty's is not. The
+    // trade is unresolved, which outranks a request that is not yet late.
+    needs_attention: THEIR_ATTENTION_NOTE,
+  },
+  needs_attention: {
+    none: MY_ATTENTION_NOTE,
+    awaiting_receiver: MY_ATTENTION_NOTE,
+    // Both past their deadlines. ONE truthful label, and it is the one naming what this provider
+    // can still do — telling them about the other side's silence first would bury their own
+    // available action.
+    needs_attention: MY_ATTENTION_NOTE,
+  },
+}
+
+/** The row's short badge, or null. Derived from the same two states as the note. */
+function windowAttention(
+  mine: ReceiverWindowState,
+  theirs: ReceiverWindowState,
+): string | null {
+  return mine === 'needs_attention' || theirs === 'needs_attention'
+    ? NEEDS_ATTENTION_LABEL
+    : mine === 'awaiting_receiver'
+      ? ACTION_NEEDED_LABEL
+      : null
+}
+
 function confirmedTradeNote(f: TradeRowFacts): string {
   // The CLASSIFICATION comes from lib/tradeCancellation.ts, which owns it and is total over the
   // vocabulary; only the wording is local, because a list row and a detail banner are different
   // products. An if-chain here would have been a second, uncheckable copy of the truth table in
   // the module that documents total Records as its defence against exactly that.
-  return CONFIRMED_TRADE_NOTE[cancellationState(f)]
+  const cancelled = cancellationState(f)
+  // CANCELLATION STAYS DOMINANT. A cancelled trade has no live response window — the server
+  // returns `none` for both sides — but the rule is spelled here as well, because a row reading
+  // "Needs attention: say whether you received it" on a trade that was cancelled before anything
+  // could be delivered would be the worst sentence this list could produce.
+  if (cancelled !== 'none') return CONFIRMED_TRADE_NOTE[cancelled]
+  return WINDOW_NOTE[f.myResponseState ?? 'none'][f.theirResponseState ?? 'none']
 }
 
 /**
@@ -219,12 +332,20 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
       ? {
           action: 'none',
           note: confirmedTradeNote(f),
+          // Only a confirmed trade can have a response window at all, and a cancelled one has
+          // none — the same dominance `confirmedTradeNote` applies to the sentence.
+          attention:
+            cancellationState(f) !== 'none'
+              ? null
+              : windowAttention(f.myResponseState ?? 'none', f.theirResponseState ?? 'none'),
         }
       : {
           action: 'end',
           note: f.offerIsActive
             ? ''
             : 'This post is no longer on the board. The negotiation is still open.',
+          // No agreement means no obligations, so nothing can be awaiting a receiver.
+          attention: null,
         },
 
   pending: (f) => {
@@ -236,12 +357,14 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
         return {
           action: 'declineOnly',
           note: 'You are already in negotiation on this post, so this response cannot be accepted.',
+          attention: null,
         }
       }
       return f.offerIsActive
-        ? { action: 'answer', note: 'Waiting on you to accept or decline.' }
+        ? { action: 'answer', note: 'Waiting on you to accept or decline.', attention: null }
         : {
             action: 'none',
+            attention: null,
             // Says WHY it cannot be answered, and names BOTH refusals: PD-052 withdraws
             // decline as well as accept, so copy mentioning only accept explains half the rule
             // and makes the missing Decline control read as a bug.
@@ -250,9 +373,10 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
           }
     }
     return f.offerIsActive
-      ? { action: 'none', note: 'Waiting on the other provider.' }
+      ? { action: 'none', note: 'Waiting on the other provider.', attention: null }
       : {
           action: 'none',
+          attention: null,
           // The responder is otherwise left waiting forever on a post that is gone.
           note: 'This post has been closed without your response being accepted.',
         }
@@ -263,11 +387,12 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
       ? RELEASE_ACTOR[f.releaseReason](f.myRole)
       : 'This negotiation ended.'
     const when = formatTradeDate(f.releasedAt)
-    return { action: 'none', note: when ? `${who} ${when}.` : who }
+    return { action: 'none', note: when ? `${who} ${when}.` : who, attention: null }
   },
 
   declined: (f) => ({
     action: 'none',
+    attention: null,
     note:
       f.myRole === 'owner'
         ? 'You declined this response. Kept as history.'
