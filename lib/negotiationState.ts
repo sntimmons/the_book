@@ -106,6 +106,15 @@ export interface NegotiationView {
   state: NegotiationState
   headline: string
   detail: string
+  /**
+   * What to call the terms card on this screen.
+   *
+   * IN the total Record, never a ternary beside the JSX. The ternary this replaced was total
+   * over only two of the seven states, so `cancelled` fell through to the pre-agreement label
+   * and told a provider the terms of a dead trade were "On the table now". A new state is now
+   * a compile error here, which is the whole reason this module exists.
+   */
+  termsTitle: string
   /** May the viewer send new terms? */
   canPropose: boolean
   /** May the viewer accept the terms currently on the table? */
@@ -146,15 +155,24 @@ export const TERMS_EXPIRED_NOTE =
  * fallthrough to whatever the last branch said — the defect class that produced every copy
  * finding on the Trade Activity surface.
  */
-const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }> = {
+const STATE_COPY: Record<
+  NegotiationState,
+  { headline: string; detail: string; termsTitle: string }
+> = {
   ended: {
     headline: 'This negotiation ended',
+    termsTitle: 'The last terms proposed',
     // Filled in by negotiationView, because what is true here depends on whether the two of
     // you ever accepted the same terms.
     detail: '',
   },
   cancelled: {
     headline: 'Trade cancelled',
+    // NOT 'On the table now'. Nothing is on the table: the terms card on a cancelled trade
+    // carries the "Cancelled <time>" stamp three lines below this title, and the pre-agreement
+    // label directly contradicted it on the one screen that must be unambiguous about whether
+    // a commitment is live. The terms themselves are kept, so they are named as history.
+    termsTitle: 'The terms that were agreed',
     // Deliberately EMPTY. Which participant cancelled, and whether both did, is per-viewer copy
     // owned by `lib/tradeCancellation.ts`; duplicating a second version of it here is how the
     // two would drift and start contradicting each other on the same screen.
@@ -162,6 +180,7 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
   },
   confirmed: {
     headline: 'Trade confirmed',
+    termsTitle: 'The agreed terms',
     // Beta-safe: confirmed, not booked / complete / fulfilled / guaranteed. This is the
     // AGREEMENT's state and it stays "Trade confirmed" for the whole life of the trade.
     //
@@ -174,6 +193,7 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
       + ' in your conversation.',
   },
   agreed: {
+    termsTitle: 'On the table now',
     headline: 'Ready to confirm trade',
     detail:
       // Deliberately NOT "your trade is booked" or "agreement complete". Both providers
@@ -184,14 +204,17 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
       + ' what you have both accepted.',
   },
   awaitingThem: {
+    termsTitle: 'On the table now',
     headline: 'Waiting on the other provider',
     detail: 'You have accepted these terms. They have not yet.',
   },
   awaitingYou: {
+    termsTitle: 'On the table now',
     headline: 'Waiting on you',
     detail: 'The other provider has accepted these terms. Accept to agree, or send changes.',
   },
   awaitingBoth: {
+    termsTitle: 'On the table now',
     headline: 'These terms are on the table',
     detail: 'Neither of you has accepted them yet.',
   },
@@ -226,6 +249,7 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
   return {
     state,
     headline: STATE_COPY[state].headline,
+    termsTitle: STATE_COPY[state].termsTitle,
     detail: timingExpired
       ? 'The timing on these terms has passed. Send different terms with updated timing to continue.'
       : detail,

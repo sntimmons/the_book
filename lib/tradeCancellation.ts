@@ -187,14 +187,20 @@ export const CANCEL_REASON_PLACEHOLDER = 'Reason (optional)'
 /**
  * What actually happens to the reason, said plainly.
  *
- * It is stored on the cancellation act and is NOT shown to the other provider anywhere in the
- * app today — no surface reads it. Saying so is describing current behaviour, not deciding a
- * policy: whether the counterparty should see it is an open product question. Without this
- * line a provider may write an explanation believing it will be read, or withhold one
- * believing it will.
+ * This deliberately makes NO confidentiality promise, because the data boundary does not keep
+ * one. The read policy on `barter_agreement_cancellations` is agreement-scoped, not
+ * actor-scoped: both participants can read both acts, `reason` included. No screen renders it
+ * today, so an earlier version of this line said "The other provider is not shown this" — true
+ * of the app, false of the boundary, and printed directly above the input as if it were an
+ * assurance. A privacy guarantee a provider is given at the moment of authorship must be
+ * enforced by the boundary, not by which surfaces happen to read the column.
+ *
+ * Whether the counterparty SHOULD see it is an open product question. This line answers
+ * neither way; it tells the writer what is true now so they can decide what to write.
  */
 export const CANCEL_REASON_NOTE =
-  'Kept with your cancellation. The other provider is not shown this.'
+  'Kept with your cancellation. No screen shows it to the other provider today — but do not'
+  + ' treat it as private to you.'
 
 /**
  * Mirror of the server's only rule about the reason, so the UI can refuse with a sentence a

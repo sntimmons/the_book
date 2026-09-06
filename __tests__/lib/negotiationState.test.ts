@@ -74,6 +74,53 @@ describe('totality', () => {
   })
 })
 
+describe('the terms card is named for the state it is in', () => {
+  // The title used to be a ternary in the negotiation screen's JSX, total over 'ended' and
+  // 'confirmed' only. Every other state — including 'cancelled' — fell through to the
+  // pre-agreement label, so a cancelled trade read "On the table now" directly above its own
+  // "Cancelled" stamp. Asserted here, exhaustively, because a title chosen in JSX cannot be.
+  const ALL_STATES: { state: NegotiationState; f: NegotiationFacts }[] = [
+    { state: 'ended', f: facts({ interestStatus: 'released' }) },
+    { state: 'cancelled', f: facts({ agreementId: 'ag', tradeCancelled: true }) },
+    { state: 'confirmed', f: facts({ agreementId: 'ag' }) },
+    { state: 'agreed', f: facts({ bothAccepted: true }) },
+    { state: 'awaitingThem', f: facts({ iAcceptedCurrent: true }) },
+    { state: 'awaitingYou', f: facts({ theyAcceptedCurrent: true }) },
+    { state: 'awaitingBoth', f: facts() },
+  ]
+
+  it('covers every state exactly once, so nothing below is vacuous', () => {
+    const seen = ALL_STATES.map(({ state, f }) => {
+      expect(negotiationView(f).state).toBe(state)
+      return state
+    })
+    expect(new Set(seen).size).toBe(ALL_STATES.length)
+  })
+
+  it('always says something', () => {
+    for (const { f } of ALL_STATES) {
+      expect(negotiationView(f).termsTitle.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('never calls a dead trade live', () => {
+    for (const state of ['ended', 'cancelled', 'confirmed'] as NegotiationState[]) {
+      const { f } = ALL_STATES.find((e) => e.state === state)!
+      expect(negotiationView(f).termsTitle).not.toBe('On the table now')
+    }
+  })
+
+  it('does not describe a cancelled trade as still on the table, or as confirmed', () => {
+    const title = negotiationView(facts({ agreementId: 'ag', tradeCancelled: true })).termsTitle
+    expect(title).not.toContain('on the table')
+    expect(title.toLowerCase()).not.toContain('now')
+    // And it does not invent an outcome the product has not decided.
+    for (const banned of ['fulfilled', 'unfulfilled', 'complete', 'dispute', 'resolved']) {
+      expect(title.toLowerCase()).not.toContain(banned)
+    }
+  })
+})
+
 describe('a dead negotiation offers nothing', () => {
   it('withholds both controls whenever the interest is not accepted', () => {
     for (const interestStatus of STATUSES.filter((s) => s !== 'accepted')) {

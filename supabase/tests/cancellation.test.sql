@@ -718,3 +718,61 @@ begin
   perform pg_temp.chk('cancellation', 'and cancellation carries no review or reputation field',
     '0', v_n::text);
 end $$;
+
+-- ── 20261006000000: the act is bound to the caller, and its time is the server's ──
+-- Both properties are invisible to `authenticated`, which holds no INSERT on the table, so
+-- they are asserted with grants bypassed and a real JWT subject — the only shape in which the
+-- triggers, rather than the grants, are the authority.
+do $$
+declare
+  ou uuid := current_setting('b5b.cx_ou')::uuid;
+  ru uuid := current_setting('b5b.cx_ru')::uuid;
+  v_e uuid := current_setting('b5b.cx_e')::uuid;
+  v_code text; v_at timestamptz; v_n integer;
+begin
+  perform pg_temp.act_service();
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ou::text, 'role', 'authenticated')::text, true);
+
+  -- SEC-TRIGGER-001. `ru` IS a participant of this agreement and this IS ru's provider, so
+  -- the participant-pair check alone admitted this row. The caller is `ou`. Recording it
+  -- would have fabricated ru's assent and turned a one-sided cancellation into a mutual one
+  -- without ru ever acting — the one thing the product says can never be inferred.
+  begin
+    insert into public.barter_agreement_cancellations
+      (agreement_id, actor_user_id, actor_provider_id)
+    values (v_e, ru, (select responder_provider_id from public.barter_agreements where id = v_e));
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('cancellation',
+    'a participant cannot record the COUNTERPARTY''s cancellation', '42501', v_code);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('cancellation', 'so the trade is still cancelled by one side only',
+    '1', pg_temp.cx_acts(v_e)::text);
+
+  -- SEC-DATA-001. A supplied created_at is discarded in favour of the server clock. Asserted
+  -- before any slice measures a deadline from `cancelled_at`, where a backdatable timestamp
+  -- would become an authorization boundary rather than a display fact.
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ru::text, 'role', 'authenticated')::text, true);
+  insert into public.barter_agreement_cancellations
+    (agreement_id, actor_user_id, actor_provider_id, created_at)
+  values (v_e, ru, (select responder_provider_id from public.barter_agreements where id = v_e),
+          timestamptz '2020-01-01 00:00:00+00');
+  perform pg_temp.act_service();
+  select created_at into v_at from public.barter_agreement_cancellations
+   where agreement_id = v_e and actor_user_id = ru;
+  perform pg_temp.chk('cancellation', 'a supplied created_at is replaced by the server clock',
+    'true', (v_at > now() - interval '5 minutes')::text);
+
+  -- And the act that was legitimately recorded still counts, so the guard refuses forgeries
+  -- without refusing the participant's own second act.
+  perform pg_temp.chk('cancellation', 'the counterparty''s OWN act is still accepted', '2',
+    pg_temp.cx_acts(v_e)::text);
+  select count(*) into v_n from public.barter_agreement_cancellations
+   where agreement_id = v_e and actor_user_id = ou;
+  perform pg_temp.chk('cancellation', 'and the first act was not disturbed', '1', v_n::text);
+end $$;

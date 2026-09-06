@@ -322,3 +322,49 @@ describe('post-agreement refusals are terminal and specific', () => {
     expect(f.body).not.toMatch(/try again/i)
   })
 })
+
+describe('PT409 means exactly one thing per operation', () => {
+  // lib/barterErrors.ts defines TWO constants on the same wire value: CONFIRMED_TRADE and
+  // TRADE_CANCELLED are both 'PT409'. That is deliberate — the code is a post-agreement state
+  // conflict whose meaning depends on the operation — but the constraint that keeps it safe
+  // ("they can never both key the SAME operation's map") is stated in a comment and enforced
+  // by nothing: the inner map is Record<string, …>, so a duplicate COMPUTED key is not the
+  // reliable compile error a duplicate literal key would be. It would silently drop the first
+  // entry and show the wrong copy for an irreversible action, with npm run check still green.
+  const PT409 = 'PT409'
+
+  it('resolves to a terminal, non-empty message wherever it is mapped', () => {
+    for (const op of ALL_OPS) {
+      const f = barterWriteFailure(op, pgErr(PT409))
+      expect(f.title.length).toBeGreaterThan(0)
+      expect(f.body.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('never tells a provider a cancelled trade is merely "already confirmed"', () => {
+    // The three obligation writes are the ones the cancellation guard raises PT409 for. If a
+    // future edit let CONFIRMED_TRADE win in one of their maps, the user would be told the
+    // trade is confirmed and unchangeable — true, but it hides that it was cancelled.
+    for (const op of ['markDelivered', 'confirmReceived', 'reportNotReceived'] as const) {
+      const f = barterWriteFailure(op, pgErr(PT409))
+      expect(f.title.toLowerCase()).toContain('cancelled')
+      expect(f.terminal).toBe(true)
+      expect(f.stale).toBe(true)
+    }
+  })
+
+  it('keeps the negotiation writes on the confirmed-trade meaning', () => {
+    for (const op of ['release', 'proposeTerms', 'acceptTerms'] as const) {
+      const f = barterWriteFailure(op, pgErr(PT409))
+      expect(f.title.toLowerCase()).not.toContain('cancelled')
+      expect(f.terminal).toBe(true)
+    }
+  })
+
+  it('keeps the two meanings distinct, so neither map can have absorbed the other', () => {
+    const cancelled = barterWriteFailure('markDelivered', pgErr(PT409))
+    const confirmed = barterWriteFailure('proposeTerms', pgErr(PT409))
+    expect(cancelled.title).not.toBe(confirmed.title)
+    expect(cancelled.body).not.toBe(confirmed.body)
+  })
+})

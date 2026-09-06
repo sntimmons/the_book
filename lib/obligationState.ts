@@ -235,3 +235,24 @@ export function obligationTimeline(
   }
   return out
 }
+
+/**
+ * Has EITHER obligation of an agreement been marked delivered?
+ *
+ * The PD-046 precondition that decides whether the ordinary exit is still offered. It lives
+ * here, not in the negotiation screen, for the reason this module exists: computed in JSX it
+ * was the one link in the cancellation chain no unit test could reach, while
+ * `cancellationView` — which consumes it — was exhaustively tested for every value of it.
+ *
+ * Asks about `deliveredAt`, not about `status`, deliberately: PD-058 makes a receiver's answer
+ * move the status off `delivered` while the delivery itself remains a fact, and cancellation is
+ * closed by the DELIVERY, not by the answer. `mark_barter_obligation_delivered` sets both in
+ * one statement, so the timestamp is the narrower and more durable of the two.
+ *
+ * An EMPTY list returns false, which reads as "nothing delivered" and is indistinguishable
+ * from the truth. That is why callers must check the rows actually loaded — the database
+ * guarantees exactly two per agreement — before trusting this to gate an irreversible control.
+ */
+export function anyDelivered(obligations: { deliveredAt: string | null }[]): boolean {
+  return obligations.some((o) => o.deliveredAt !== null)
+}

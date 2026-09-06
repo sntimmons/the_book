@@ -48,6 +48,7 @@ import {
   validateDraft,
 } from '@/lib/negotiationState'
 import {
+  anyDelivered,
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
   NOT_RECEIVED_COPY,
@@ -197,13 +198,23 @@ export default function NegotiationScreen() {
   // Both obligations present is the precondition for trusting `anyDelivered` at all: the
   // database guarantees exactly two, so anything else means the read did not land.
   const obligationsLoaded = obligations.length === 2
-  const anyDelivered = obligations.some((o) => o.deliveredAt !== null)
+  // Derived by lib/obligationState.ts, not here: this is the PD-046 precondition that decides
+  // whether an irreversible control is rendered, and a rule computed in JSX cannot be tested.
+  const delivered = anyDelivered(obligations)
   const cancellationFacts = {
     iCancelled: row?.iCancelled ?? false,
     theyCancelled: row?.theyCancelled ?? false,
     cancelledAt: row?.cancelledAt ?? null,
   }
-  const cancel = cancellationView(cancellationFacts, anyDelivered)
+  const cancel = cancellationView(cancellationFacts, delivered)
+  // ONE predicate for "is this trade cancelled". The JSX below also branches on
+  // `view.state === 'cancelled'`, and the two are equivalent only because `negotiationView`
+  // returns that state exactly when `live && agreementId !== null && tradeCancelled` — and a
+  // confirmed interest cannot leave `accepted`, which is enforced two migrations away by
+  // `enforce_no_change_after_agreement` (20260930000000). If a later slice ever gives a
+  // confirmed interest another status, `live` goes false, `view.state` becomes 'ended', and
+  // this screen splits: the banner below renders while the obligations do not. Keep the two
+  // spellings in step, or collapse them, when that day comes.
   const tradeCancelled = isCancelled(cancellationFacts)
   // Live only when the underlying interest is accepted. A released negotiation with no terms
   // must not be offered a compose control the server will always refuse.
@@ -663,13 +674,10 @@ export default function NegotiationScreen() {
             ) : null}
 
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>
-                {view.state === 'ended'
-                  ? 'The last terms proposed'
-                  : view.state === 'confirmed'
-                    ? 'The agreed terms'
-                    : 'On the table now'}
-              </Text>
+              {/* Read from the view, not chosen here. This title used to be a ternary total
+                  over only 'ended' and 'confirmed', so a cancelled trade fell through to
+                  'On the table now' directly above its own "Cancelled" stamp. */}
+              <Text style={styles.cardTitle}>{view.termsTitle}</Text>
               <Text style={styles.cardMeta}>
                 {row.currentVersionAuthorId === user?.id ? 'You proposed these' : 'They proposed these'}
                 {' · '}
