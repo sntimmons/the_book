@@ -115,8 +115,11 @@ begin
   ${body}
 end $$;`
 
-// Content for the two sides. The RPCs bind each to its participant; nothing here names one.
-const TERMS = (a, b) => `'${a}', '${b}'`
+// Content and timing for the two sides. The RPCs bind each to its participant; nothing here
+// names provider ids, participant ids, sides or version numbers.
+const TERMS = (a, b) =>
+  `'${a}', clock_timestamp() + interval '7 days', null, `
+  + `'${b}', clock_timestamp() + interval '8 days', null`
 
 const results = []
 const chk = (name, expected, actual) => {

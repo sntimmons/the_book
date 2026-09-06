@@ -411,6 +411,32 @@ three agreement scenarios (finalize × finalize, finalize vs counter, finalize v
 capture per-session start/end timestamps immediately around the RPC call and prove interval
 intersection before claiming genuine overlap.
 
+## 2026-09-05 — `20261001000000`…`20261002000000` applied to non-production
+
+Proposal timing extension for barter negotiations.
+
+`20261001000000` adds `created_at`, required `due_at` and optional `scheduled_at` to each
+directed proposal term. It replaces the proposal creation/counter RPC signatures so clients
+send only content + timing for the two fixed sides; provider ids, participant ids, side labels
+and version numbers remain server-derived. Authored-time validation is server-side:
+`due_at > clock_timestamp()`, `scheduled_at is null or scheduled_at > clock_timestamp()`, and
+`scheduled_at is null or scheduled_at <= due_at`.
+
+`20261002000000` adds an explicit expiry guard without rewriting the existing high-value
+accept/finalize RPCs. A shared helper,
+`assert_barter_proposal_version_timing_current(uuid)`, is called by additive `BEFORE INSERT`
+triggers on `barter_version_acceptances` and `barter_agreements`. If either directed term's
+`due_at` or `scheduled_at` has expired at acceptance/finalization time, the write raises
+SQLSTATE `PT410` with: "These trade terms have expired. Update the timing before continuing."
+The expired historical proposal version is not mutated or auto-extended; participants must
+author a new version with future-valid timing.
+
+Ledger after: **41 entries**, `local == remote` for every row. Production untouched, and never
+queried.
+
+Post-apply B5B: **608/608 passed, 0 failed**, zero residue. Concurrency proof: **30/30
+passed, 0 failed**, zero residue.
+
 ## Prevention
 
 **Do not apply a slice to non-production before its security review and Founder rulings have
@@ -447,9 +473,10 @@ NOT in the migration that created it.
 | `public.enforce_barter_accept_open_offer` → **`public.enforce_barter_answer_open_offer`** | `20260914000000_trade_activity_corrections.sql` | **`20260916000000_barter_guard_admin_escape.sql`** (RENAMED by `20260915000000`, which dropped the old function and trigger; body refreshed by `20260916000000`) | Now refuses the transition into `declined` as well as `accepted` when the parent offer is closed (PD-052), and gains the `service_role` exemption every sibling trigger on this table has — without it the INSERT arm bound *only* service_role, since `enforce_barter_interest_write` clamps every authenticated insert to `pending`. Renamed because "accept" understated what it refuses. Trigger `barter_interests_zy_accept_open_offer` → `barter_interests_zy_answer_open_offer`. `20260916000000` then added the null-`auth.uid()` half of the admin exemption, which `20260915000000` omitted. |
 | `public.accept_barter_version` | `20260917000000_barter_proposal_versions.sql` | **`20260921000000_negotiation_write_boundary.sql`** | `20260919000000` gave "these terms were replaced" its own SQLSTATE (`40001`) so it is distinguishable from "this negotiation ended"; `20260921000000` added fail-closed `not found` branches and moved the offer lock ahead of the interest lock. |
 | `public.assert_barter_version_budget` | `20260917000000_barter_proposal_versions.sql` | **`20260920000000_negotiation_budget_code.sql`** | The 20-per-24h cap raised `check_violation`, the same code as a malformed proposal and reachable from the same button; now `54000`. Note `create_barter_proposal` no longer calls it — the call sat after the proposal insert and always counted zero. |
-| `public.write_barter_proposal_terms` (signature changed) | `20260917000000` as `(uuid, jsonb)` | **`20260925000000_negotiation_directed_terms.sql`** as `(uuid, text, text)`; the old signature is DROPPED | Takes content for the two sides and derives each side's provider/user from the accepted interest in one place. Nothing is passed in that a caller could get wrong, and there is no parameter a caller could forge. |
+| `public.write_barter_proposal_terms` (signature changed) | `20260917000000` as `(uuid, jsonb)` | **`20261001000000_proposal_term_timing.sql`** as `(uuid, text, timestamptz, timestamptz, text, timestamptz, timestamptz)`; old signatures DROPPED | Takes content and timing for the two sides and derives each side's provider/user from the accepted interest in one place. Nothing is passed in that a caller could get wrong, and there is no parameter a caller could forge. |
 | `public.enforce_barter_terms_written_once` | `20260924000000` | **`20260925000000_negotiation_directed_terms.sql`** | Now also asserts exactly two terms, one per side, and that each side's stored identity matches the offer/interest — a backstop against a future writer that derives them wrongly or is handed them. |
-| `public.create_barter_proposal` / `public.submit_barter_counter` (signatures changed) | `20260917000000` as `(uuid, jsonb)` | **`20260925000000`** as `(uuid, text, text)`; old signatures DROPPED | Only the signature and the helper call changed — verified by diff, 4 lines each. |
+| `public.create_barter_proposal` / `public.submit_barter_counter` (signatures changed) | `20260917000000` as `(uuid, jsonb)` | **`20261001000000_proposal_term_timing.sql`** as `(uuid, text, timestamptz, timestamptz, text, timestamptz, timestamptz)`; old signatures DROPPED | Clients now send content + timing only. Provider ids, participant ids, side identities and version numbers remain server-derived. |
+| `public.assert_barter_proposal_version_timing_current` | `20261002000000_proposal_timing_expiry_guards.sql` | **`20261002000000_proposal_timing_expiry_guards.sql`** | Shared acceptance/finalization-time expiry check for proposal term timing. Raises `PT410` when a version's due/scheduled timing is no longer future-valid; additive triggers call this rather than duplicating timing interpretation. |
 | `public.enforce_no_change_after_agreement` | `20260927000000_barter_agreement_finalization.sql` | **`20260928000000_agreement_guard_field_ref.sql`** | Referenced `new.version_id` inside a CASE branch meant for `barter_version_acceptances`; PL/pgSQL resolves NEW's fields regardless of branch, so on a `barter_proposal_versions` row it raised 42703 and blocked EVERY version insert. Caught by B5B on the first run after apply. Now reads the row through `to_jsonb(new)`. |
 | `public.enforce_barter_terms_write` | `20260921000000_negotiation_write_boundary.sql` | **`20260926000000_negotiation_stale_comment.sql`** | `20260923000000` removed a per-row write-once count that tripped on the second row of the RPC's own insert; the trigger keeps only the marker check. Write-once now rests on the statement-level `enforce_barter_terms_written_once` (`20260924000000`), and `20260926000000` refreshed a body comment that still cited a since-dropped index. |
 | `public.enforce_barter_offer_active_one_way` | `20260915000000_barter_closed_post_terminal.sql` | **`20260916000000_barter_guard_admin_escape.sql`** | Makes `is_active` one-way for authenticated writers (PD-051). `20260915000000` exempted only `auth.role() = 'service_role'`, which covers the PostgREST service path but NOT a psql / SQL-console / migration session, where there is no JWT and `auth.role()` is NULL — so it silently excluded the sessions an operator actually recovers from, and would abort any future migration touching `is_active`. `20260916000000` adds `or (select auth.uid()) is null`, matching `enforce_barter_offer_delete`. |

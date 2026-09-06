@@ -255,11 +255,22 @@ describe('negotiation refusals advise the right next action', () => {
     expect(malformed.title).toMatch(/check these terms/i)
     // Two directed sides, not a list.
     expect(malformed.body).not.toMatch(/\b(item|items|list|at least one)\b/i)
-    expect(malformed.body).toMatch(/one line per side/i)
+    expect(malformed.body).toMatch(/future due date/i)
 
     const gone = barterWriteFailure('proposeTerms', pgErr('23514'))
     expect(gone.terminal).toBe(true)
     expect(gone).not.toEqual(malformed)
+  })
+
+  it('expired timing is stale/updateable, not retry or ended-negotiation copy', () => {
+    for (const op of ['acceptTerms', 'confirmTrade'] as const) {
+      const f = barterWriteFailure(op, pgErr('PT410'))
+      expect(f.terminal).toBe(false)
+      expect(f.stale).toBe(true)
+      expect(f.title).toMatch(/timing expired/i)
+      expect(f.body).toMatch(/Update the timing/i)
+      expect(f.body).not.toMatch(/try again|ended|permission|confirmed/i)
+    }
   })
 
   it('a non-participant is told that, not that the negotiation is over', () => {

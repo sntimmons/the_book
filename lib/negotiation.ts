@@ -36,6 +36,8 @@ export interface ProposalTerm {
   /** Server-assigned side. Never sent by the client. */
   providedBy: ProposalSide
   serviceDescription: string
+  dueAt: string
+  scheduledAt: string | null
 }
 
 export interface ProposalVersion {
@@ -176,7 +178,7 @@ export async function fetchNegotiation(proposalId: string): Promise<{
   const [termRes, acceptRes] = await Promise.all([
     supabase
       .from('barter_proposal_terms')
-      .select('id, version_id, provided_by, service_description')
+      .select('id, version_id, provided_by, service_description, due_at, scheduled_at')
       .in('version_id', versionIds)
       // Owner side first: 'offer_owner' sorts before 'responder', and there are exactly two.
       .order('provided_by', { ascending: true }),
@@ -192,6 +194,8 @@ export async function fetchNegotiation(proposalId: string): Promise<{
     version_id: string
     provided_by: ProposalSide
     service_description: string
+    due_at: string
+    scheduled_at: string | null
   }[] | null) ?? []
   const accepts = (acceptRes.data as unknown as {
     version_id: string
@@ -210,6 +214,8 @@ export async function fetchNegotiation(proposalId: string): Promise<{
         versionId: t.version_id,
         providedBy: t.provided_by,
         serviceDescription: t.service_description,
+        dueAt: t.due_at,
+        scheduledAt: t.scheduled_at,
       })),
     acceptedBy: accepts.filter((a) => a.version_id === v.id).map((a) => a.participant_user_id),
   }))

@@ -38,7 +38,11 @@ export function sideForRole(role: TradeSide): ProposalSide {
  */
 export interface ProposalDraft {
   ownerGives: string
+  ownerDueAt: string
+  ownerScheduledAt: string
   responderGives: string
+  responderDueAt: string
+  responderScheduledAt: string
 }
 
 /**
@@ -70,6 +74,12 @@ export interface NegotiationFacts {
    * treat the first as the second.
    */
   agreementId: string | null
+  /**
+   * Client-side display fact for the terms currently on screen. The database remains the
+   * authority and re-checks this at accept/finalize time; this only prevents a stale screen
+   * from inviting an action the server will permanently refuse.
+   */
+  currentTermsStillValid?: boolean
 }
 
 export type NegotiationState =
@@ -90,6 +100,8 @@ export interface NegotiationView {
   canAccept: boolean
   /** May the viewer make the agreement official? Only when both accepted the current terms. */
   canConfirm: boolean
+  /** The current terms need updated timing before accept/confirm can continue. */
+  timingExpired: boolean
 }
 
 export interface ConfirmTradeCopy {
@@ -108,6 +120,9 @@ export const CONFIRM_TRADE_COPY: ConfirmTradeCopy = {
   confirmLabel: 'Confirm trade',
   cancelLabel: 'Not yet',
 }
+
+export const TERMS_EXPIRED_NOTE =
+  'These trade terms have expired. Update the timing before continuing.'
 
 /**
  * TOTAL over the state vocabulary. A sixth state is a compile error rather than a silent
@@ -157,6 +172,7 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
 export function negotiationView(f: NegotiationFacts): NegotiationView {
   const live = f.interestStatus === 'accepted'
   const confirmed = f.agreementId !== null
+  const timingExpired = live && !confirmed && f.currentTermsStillValid === false
   const state: NegotiationState = !live
     ? 'ended'
     : confirmed
@@ -180,14 +196,30 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
   return {
     state,
     headline: STATE_COPY[state].headline,
-    detail,
+    detail: timingExpired
+      ? 'The timing on these terms has passed. Send different terms with updated timing to continue.'
+      : detail,
     // A dead negotiation accepts nothing. The server refuses both independently; this only
     // decides whether to render a control that would otherwise be refused.
     // A confirmed trade's terms are frozen; the server refuses a counter or acceptance too.
     canPropose: live && !confirmed,
-    canAccept: live && !confirmed && !f.iAcceptedCurrent,
-    canConfirm: live && !confirmed && f.bothAccepted,
+    canAccept: live && !confirmed && !timingExpired && !f.iAcceptedCurrent,
+    canConfirm: live && !confirmed && !timingExpired && f.bothAccepted,
+    timingExpired,
   }
+}
+
+export function termsTimingStillValid(
+  terms: { dueAt: string; scheduledAt: string | null }[],
+  now = Date.now(),
+): boolean {
+  return terms.every((t) => {
+    const dueAt = Date.parse(t.dueAt)
+    if (!Number.isFinite(dueAt) || dueAt <= now) return false
+    if (t.scheduledAt === null) return true
+    const scheduledAt = Date.parse(t.scheduledAt)
+    return Number.isFinite(scheduledAt) && scheduledAt > now
+  })
 }
 
 /**
@@ -231,6 +263,18 @@ export const TERMS_CHANGED_NOTE =
 
 export const MAX_DESCRIPTION = 200
 
+function parseDraftTime(value: string): number | null {
+  const trimmed = value.trim()
+  if (!trimmed) return null
+  const time = Date.parse(trimmed)
+  return Number.isFinite(time) ? time : null
+}
+
+function toIsoOrNull(value: string): string | null {
+  const time = parseDraftTime(value)
+  return time === null ? null : new Date(time).toISOString()
+}
+
 /**
  * Mirror of the server's rules, so the UI can refuse early with a sentence a provider can act
  * on rather than surfacing a database refusal. The server remains the authority.
@@ -239,6 +283,11 @@ export const MAX_DESCRIPTION = 200
 export function validateDraft(d: ProposalDraft): string | null {
   const owner = d.ownerGives.trim()
   const responder = d.responderGives.trim()
+  const ownerDue = parseDraftTime(d.ownerDueAt)
+  const responderDue = parseDraftTime(d.responderDueAt)
+  const ownerScheduled = parseDraftTime(d.ownerScheduledAt)
+  const responderScheduled = parseDraftTime(d.responderScheduledAt)
+  const now = Date.now()
   if (owner.length === 0 && responder.length === 0) {
     return 'Say what each of you is giving.'
   }
@@ -249,12 +298,43 @@ export function validateDraft(d: ProposalDraft): string | null {
   if (owner.length > MAX_DESCRIPTION || responder.length > MAX_DESCRIPTION) {
     return `Keep each side under ${MAX_DESCRIPTION} characters.`
   }
+  if (ownerDue === null || responderDue === null) {
+    return 'Add a due date for each side.'
+  }
+  if (ownerDue <= now || responderDue <= now) {
+    return 'Due dates must be in the future.'
+  }
+  if (d.ownerScheduledAt.trim() && ownerScheduled === null) {
+    return 'Use a valid scheduled time for the provider who posted the offer.'
+  }
+  if (d.responderScheduledAt.trim() && responderScheduled === null) {
+    return 'Use a valid scheduled time for the responding provider.'
+  }
+  if (
+    (ownerScheduled !== null && ownerScheduled <= now)
+    || (responderScheduled !== null && responderScheduled <= now)
+  ) {
+    return 'Scheduled times must be in the future.'
+  }
+  if (
+    (ownerScheduled !== null && ownerScheduled > ownerDue)
+    || (responderScheduled !== null && responderScheduled > responderDue)
+  ) {
+    return 'Scheduled times must be on or before the due date.'
+  }
   return null
 }
 
 /** Trimmed here so the stored term is what the reader saw. */
 export function draftPayload(d: ProposalDraft) {
-  return { p_owner_gives: d.ownerGives.trim(), p_responder_gives: d.responderGives.trim() }
+  return {
+    p_owner_gives: d.ownerGives.trim(),
+    p_owner_due_at: toIsoOrNull(d.ownerDueAt),
+    p_owner_scheduled_at: toIsoOrNull(d.ownerScheduledAt),
+    p_responder_gives: d.responderGives.trim(),
+    p_responder_due_at: toIsoOrNull(d.responderDueAt),
+    p_responder_scheduled_at: toIsoOrNull(d.responderScheduledAt),
+  }
 }
 
 /** Whose side a term is on, in the viewer's own terms. */

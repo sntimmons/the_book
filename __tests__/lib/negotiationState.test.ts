@@ -11,6 +11,8 @@ import {
   sideForRole,
   sideLabel,
   TERMS_CHANGED_NOTE,
+  TERMS_EXPIRED_NOTE,
+  termsTimingStillValid,
   validateDraft,
 } from '@/lib/negotiationState'
 
@@ -37,7 +39,16 @@ function facts(over: Partial<NegotiationFacts> = {}): NegotiationFacts {
   }
 }
 
-const BOTH_SIDES: ProposalDraft = { ownerGives: 'a photo session', responderGives: 'four PT sessions' }
+const futureIso = (days: number) => new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString()
+const pastIso = () => new Date(Date.now() - 60 * 60 * 1000).toISOString()
+const BOTH_SIDES: ProposalDraft = {
+  ownerGives: 'a photo session',
+  ownerDueAt: futureIso(7),
+  ownerScheduledAt: '',
+  responderGives: 'four PT sessions',
+  responderDueAt: futureIso(8),
+  responderScheduledAt: '',
+}
 
 describe('totality', () => {
   it('resolves a view for every status and acceptance combination', () => {
@@ -104,6 +115,15 @@ describe('accepting is once, and only what is on the table', () => {
     expect(v.canAccept).toBe(true)
   })
 
+  it('does not offer accept for expired current timing', () => {
+    const v = negotiationView(facts({ theyAcceptedCurrent: true, currentTermsStillValid: false }))
+    expect(v.state).toBe('awaitingYou')
+    expect(v.canAccept).toBe(false)
+    expect(v.canPropose).toBe(true)
+    expect(v.timingExpired).toBe(true)
+    expect(v.detail).toMatch(/updated timing/i)
+  })
+
   it('lets either party send new terms right up until the negotiation ends', () => {
     for (const bothAccepted of [true, false]) {
       expect(negotiationView(facts({ bothAccepted })).canPropose).toBe(true)
@@ -130,6 +150,22 @@ describe('ready to confirm is not confirmed', () => {
     ]) {
       expect(negotiationView(f).canConfirm).toBe(false)
     }
+  })
+
+  it('does not offer confirm for expired current timing after both accepted', () => {
+    const v = negotiationView(
+      facts({
+        bothAccepted: true,
+        iAcceptedCurrent: true,
+        theyAcceptedCurrent: true,
+        currentTermsStillValid: false,
+      }),
+    )
+    expect(v.state).toBe('agreed')
+    expect(v.canConfirm).toBe(false)
+    expect(v.canPropose).toBe(true)
+    expect(v.timingExpired).toBe(true)
+    expect(v.detail).toMatch(/updated timing/i)
   })
 
   it('freezes everything once confirmed', () => {
@@ -188,7 +224,7 @@ describe('copy is negotiation language, not database language', () => {
         const v = negotiationView(facts({ interestStatus, bothAccepted: b }))
         return [v.headline, v.detail]
       }),
-    ).concat(TERMS_CHANGED_NOTE)
+    ).concat(TERMS_CHANGED_NOTE, TERMS_EXPIRED_NOTE)
     for (const line of all) {
       const l = line.toLowerCase()
       for (const word of ['version', 'row', 'rpc', 'superseded', 'record id', 'null']) {
@@ -203,6 +239,31 @@ describe('copy is negotiation language, not database language', () => {
   })
 })
 
+describe('current term timing display guard', () => {
+  it('treats future due and scheduled timing as still valid', () => {
+    expect(
+      termsTimingStillValid([
+        { dueAt: futureIso(7), scheduledAt: null },
+        { dueAt: futureIso(8), scheduledAt: futureIso(3) },
+      ]),
+    ).toBe(true)
+  })
+
+  it('treats expired due or scheduled timing as stale', () => {
+    expect(termsTimingStillValid([{ dueAt: pastIso(), scheduledAt: null }])).toBe(false)
+    expect(
+      termsTimingStillValid([{ dueAt: futureIso(8), scheduledAt: pastIso() }]),
+    ).toBe(false)
+  })
+
+  it('treats malformed timing as stale', () => {
+    expect(termsTimingStillValid([{ dueAt: 'not a date', scheduledAt: null }])).toBe(false)
+    expect(
+      termsTimingStillValid([{ dueAt: futureIso(8), scheduledAt: 'not a date' }]),
+    ).toBe(false)
+  })
+})
+
 describe('validateDraft mirrors the server rules', () => {
   // Exactly two directed terms, content only. There is no side, provider or value field for
   // the client to get wrong — the server binds each side to its participant.
@@ -211,12 +272,18 @@ describe('validateDraft mirrors the server rules', () => {
   })
 
   it('names the missing side', () => {
-    expect(validateDraft({ ownerGives: 'x', responderGives: '' })).toMatch(/responding provider/i)
-    expect(validateDraft({ ownerGives: '', responderGives: 'y' })).toMatch(/provider who posted/i)
+    expect(validateDraft({ ...BOTH_SIDES, ownerGives: 'x', responderGives: '' })).toMatch(
+      /responding provider/i,
+    )
+    expect(validateDraft({ ...BOTH_SIDES, ownerGives: '', responderGives: 'y' })).toMatch(
+      /provider who posted/i,
+    )
   })
 
   it('asks for both when both are blank', () => {
-    expect(validateDraft({ ownerGives: '  ', responderGives: '' })).toMatch(/each of you/i)
+    expect(validateDraft({ ...BOTH_SIDES, ownerGives: '  ', responderGives: '' })).toMatch(
+      /each of you/i,
+    )
   })
 
   it('refuses an over-long side', () => {
@@ -225,11 +292,59 @@ describe('validateDraft mirrors the server rules', () => {
     )
   })
 
-  it('sends content only, trimmed, under the names the server expects', () => {
-    const p = draftPayload({ ownerGives: '  a photo session  ', responderGives: ' four PT ' })
-    expect(p).toEqual({ p_owner_gives: 'a photo session', p_responder_gives: 'four PT' })
-    // No side, no provider id, no value: nothing about identity crosses the boundary.
-    expect(Object.keys(p).sort()).toEqual(['p_owner_gives', 'p_responder_gives'])
+  it('requires a due date for each side', () => {
+    expect(validateDraft({ ...BOTH_SIDES, ownerDueAt: '' })).toMatch(/due date/i)
+    expect(validateDraft({ ...BOTH_SIDES, responderDueAt: '' })).toMatch(/due date/i)
+  })
+
+  it('refuses past due dates', () => {
+    expect(validateDraft({ ...BOTH_SIDES, ownerDueAt: pastIso() })).toMatch(/future/i)
+  })
+
+  it('allows scheduled times to be omitted', () => {
+    expect(validateDraft({ ...BOTH_SIDES, ownerScheduledAt: '', responderScheduledAt: '' })).toBeNull()
+  })
+
+  it('refuses past scheduled times', () => {
+    expect(validateDraft({ ...BOTH_SIDES, ownerScheduledAt: pastIso() })).toMatch(/future/i)
+  })
+
+  it('refuses scheduled times after the due date', () => {
+    expect(
+      validateDraft({
+        ...BOTH_SIDES,
+        ownerDueAt: futureIso(3),
+        ownerScheduledAt: futureIso(4),
+      }),
+    ).toMatch(/on or before/i)
+  })
+
+  it('sends content and timing only, trimmed, under the names the server expects', () => {
+    const p = draftPayload({
+      ...BOTH_SIDES,
+      ownerGives: '  a photo session  ',
+      ownerDueAt: '2026-10-15T22:00:00.000Z',
+      ownerScheduledAt: '2026-10-10T19:00:00.000Z',
+      responderGives: ' four PT ',
+      responderDueAt: '2026-10-16T22:00:00.000Z',
+    })
+    expect(p).toEqual({
+      p_owner_gives: 'a photo session',
+      p_owner_due_at: '2026-10-15T22:00:00.000Z',
+      p_owner_scheduled_at: '2026-10-10T19:00:00.000Z',
+      p_responder_gives: 'four PT',
+      p_responder_due_at: '2026-10-16T22:00:00.000Z',
+      p_responder_scheduled_at: null,
+    })
+    // No side, provider id, participant id, value or version number crosses the boundary.
+    expect(Object.keys(p).sort()).toEqual([
+      'p_owner_due_at',
+      'p_owner_gives',
+      'p_owner_scheduled_at',
+      'p_responder_due_at',
+      'p_responder_gives',
+      'p_responder_scheduled_at',
+    ])
   })
 })
 
@@ -357,10 +472,10 @@ describe('term copy describes two sides, not a list', () => {
   // The 2-6-term list model was removed by ruling. Copy that still said "item" or "at least
   // one" would invite exactly the input the server now refuses.
   const drafts: ProposalDraft[] = [
-    { ownerGives: '', responderGives: '' },
-    { ownerGives: 'x', responderGives: '' },
-    { ownerGives: '', responderGives: 'y' },
-    { ownerGives: 'x'.repeat(MAX_DESCRIPTION + 1), responderGives: 'y' },
+    { ...BOTH_SIDES, ownerGives: '', responderGives: '' },
+    { ...BOTH_SIDES, ownerGives: 'x', responderGives: '' },
+    { ...BOTH_SIDES, ownerGives: '', responderGives: 'y' },
+    { ...BOTH_SIDES, ownerGives: 'x'.repeat(MAX_DESCRIPTION + 1), responderGives: 'y' },
   ]
   it('never uses list-model words', () => {
     for (const d of drafts) {
