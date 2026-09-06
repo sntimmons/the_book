@@ -43,6 +43,18 @@ as $$
   )
 $$;
 
+create or replace function pg_temp.expire_agreement_term_due(p_version_id uuid, p_side text)
+returns void
+language sql
+as $$
+  update public.barter_proposal_terms
+     set created_at = clock_timestamp() - interval '2 days',
+         due_at = clock_timestamp() - interval '1 minute',
+         scheduled_at = null
+   where version_id = p_version_id
+     and provided_by = p_side
+$$;
+
 do $$
 declare
   ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid(); xu uuid := gen_random_uuid();
@@ -334,6 +346,81 @@ begin
   perform pg_temp.chk('agreement', 'and no agreement was created', '0', v_n::text);
 end $$;
 
+-- ── Timing must still be current when an agreement is created ─────────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; pid uuid; vid uuid; ag uuid; v_code text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Final Time Owner', 'agto_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Final Time Resp', 'agtr_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'final timing offering', 'final timing seeking') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.create_barter_proposal(
+    i,
+    'owner gives', pg_temp.ag_due(7), pg_temp.ag_due(6),
+    'responder gives', pg_temp.ag_due(8), null
+  ) into pid;
+  perform pg_temp.act_service();
+  select id into vid from public.barter_proposal_versions where proposal_id = pid and version_no = 1;
+  perform pg_temp.act(ou); perform public.accept_barter_version(vid);
+  perform pg_temp.act(ru); perform public.accept_barter_version(vid);
+
+  perform pg_temp.act_service();
+  perform pg_temp.expire_agreement_term_due(vid, 'offer_owner');
+  perform pg_temp.act(ru);
+  begin
+    perform public.finalize_barter_agreement(pid);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement',
+    'two valid acceptances do not finalize after timing expires', 'PT410', v_code);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_agreements where proposal_id = pid;
+  perform pg_temp.chk('agreement', 'expired terms cannot create an official agreement',
+    '0', v_n::text);
+
+  -- Direct insert with grants bypassed must still hit the agreement boundary. This proves
+  -- expiry is not only inside finalize_barter_agreement.
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ru::text, 'role', 'authenticated')::text, true);
+  begin
+    insert into public.barter_agreements(proposal_id, accepted_version_id, offer_id, interest_id,
+      owner_provider_id, owner_user_id, responder_provider_id, responder_user_id)
+    values (pid, vid, o, i, opid, ou, rpid, ru);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement', 'direct agreement insert cannot bypass expired timing',
+    'PT410', v_code);
+
+  -- A separate still-future negotiation proves the guard is not deny-all.
+  perform pg_temp.act_service();
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'valid final offering', 'valid final seeking') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+  perform pg_temp.act(ou);
+  select pg_temp.create_barter_proposal_timed(i, 'a', 'b') into pid;
+  perform pg_temp.act_service();
+  select id into vid from public.barter_proposal_versions where proposal_id = pid and version_no = 1;
+  perform pg_temp.act(ou); perform public.accept_barter_version(vid);
+  perform pg_temp.act(ru); perform public.accept_barter_version(vid);
+  select public.finalize_barter_agreement(pid) into ag;
+  perform pg_temp.chk('agreement', 'finalization with still-valid timing succeeds',
+    'true', (ag is not null)::text);
+end $$;
+
 -- ── Security posture of every object 20260927000000 created ────────────────
 do $$
 declare
@@ -343,6 +430,9 @@ begin
   foreach fn in array array[
     'public.enforce_barter_agreement_immutable()',
     'public.enforce_barter_agreement_consistent()',
+    'public.enforce_barter_agreement_timing_current()',
+    'public.enforce_barter_acceptance_timing_current()',
+    'public.assert_barter_proposal_version_timing_current(uuid)',
     'public.enforce_no_change_after_agreement()',
     'public.enforce_no_release_after_agreement()'
   ] loop
@@ -361,7 +451,10 @@ begin
    where n.nspname = 'public'
      and p.proname in ('finalize_barter_agreement', 'enforce_barter_agreement_immutable',
                        'enforce_barter_agreement_consistent', 'enforce_no_change_after_agreement',
-                       'enforce_no_release_after_agreement')
+                       'enforce_no_release_after_agreement',
+                       'enforce_barter_agreement_timing_current',
+                       'enforce_barter_acceptance_timing_current',
+                       'assert_barter_proposal_version_timing_current')
      and (not p.prosecdef or pg_get_userbyid(p.proowner) <> 'postgres'
           or coalesce(array_to_string(p.proconfig, ','), '') not like '%search_path=%');
   perform pg_temp.chk('agreement', 'every new function is definer, postgres-owned, search_path pinned',

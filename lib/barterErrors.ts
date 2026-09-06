@@ -110,6 +110,11 @@ const NOT_IN_PREREQUISITE_STATE = '55000'
 // Raised only by the post-agreement barter guards. Distinct from 55000, which still means a
 // pre-agreement negotiation is not in the required state.
 const CONFIRMED_TRADE = 'PT409'
+// Raised when a proposal version's due/scheduled timing was valid when authored but is no
+// longer future-valid at acceptance or finalization time. Not terminal: the negotiation can
+// continue by sending a new version with updated timing, but retrying the same accept/confirm
+// cannot work.
+const EXPIRED_TERMS = 'PT410'
 
 const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   respond: { terminal: false, title: 'Could not send', body: 'Please try again.' },
@@ -298,7 +303,7 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
     [MALFORMED_TERMS]: {
       terminal: false,
       title: 'Check these terms',
-      body: 'Say what each of you is giving — one line per side, 200 characters or fewer.',
+      body: 'Say what each of you is giving, with a future due date and valid scheduled time.',
     },
     [UNIQUE_VIOLATION]: {
       // The other provider opened the negotiation first. NOT terminal, and emphatically not
@@ -342,6 +347,12 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       title: 'The terms changed',
       body: 'The other provider sent new terms while you were reading. Take a look and accept again if you agree.',
     },
+    [EXPIRED_TERMS]: {
+      terminal: false,
+      stale: true,
+      title: 'The timing expired',
+      body: 'These trade terms have expired. Update the timing before continuing.',
+    },
   },
   confirmTrade: {
     [INSUFFICIENT_PRIVILEGE]: {
@@ -360,6 +371,12 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       stale: true,
       title: 'The terms changed',
       body: 'Both providers need to accept the current terms before the trade can be confirmed. Take a look at what is on the table now.',
+    },
+    [EXPIRED_TERMS]: {
+      terminal: false,
+      stale: true,
+      title: 'The timing expired',
+      body: 'These trade terms have expired. Update the timing before continuing.',
     },
     [CHECK_VIOLATION]: {
       terminal: true,

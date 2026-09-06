@@ -74,6 +74,12 @@ export interface NegotiationFacts {
    * treat the first as the second.
    */
   agreementId: string | null
+  /**
+   * Client-side display fact for the terms currently on screen. The database remains the
+   * authority and re-checks this at accept/finalize time; this only prevents a stale screen
+   * from inviting an action the server will permanently refuse.
+   */
+  currentTermsStillValid?: boolean
 }
 
 export type NegotiationState =
@@ -94,6 +100,8 @@ export interface NegotiationView {
   canAccept: boolean
   /** May the viewer make the agreement official? Only when both accepted the current terms. */
   canConfirm: boolean
+  /** The current terms need updated timing before accept/confirm can continue. */
+  timingExpired: boolean
 }
 
 export interface ConfirmTradeCopy {
@@ -112,6 +120,9 @@ export const CONFIRM_TRADE_COPY: ConfirmTradeCopy = {
   confirmLabel: 'Confirm trade',
   cancelLabel: 'Not yet',
 }
+
+export const TERMS_EXPIRED_NOTE =
+  'These trade terms have expired. Update the timing before continuing.'
 
 /**
  * TOTAL over the state vocabulary. A sixth state is a compile error rather than a silent
@@ -161,6 +172,7 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
 export function negotiationView(f: NegotiationFacts): NegotiationView {
   const live = f.interestStatus === 'accepted'
   const confirmed = f.agreementId !== null
+  const timingExpired = live && !confirmed && f.currentTermsStillValid === false
   const state: NegotiationState = !live
     ? 'ended'
     : confirmed
@@ -184,14 +196,30 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
   return {
     state,
     headline: STATE_COPY[state].headline,
-    detail,
+    detail: timingExpired
+      ? 'The timing on these terms has passed. Send different terms with updated timing to continue.'
+      : detail,
     // A dead negotiation accepts nothing. The server refuses both independently; this only
     // decides whether to render a control that would otherwise be refused.
     // A confirmed trade's terms are frozen; the server refuses a counter or acceptance too.
     canPropose: live && !confirmed,
-    canAccept: live && !confirmed && !f.iAcceptedCurrent,
-    canConfirm: live && !confirmed && f.bothAccepted,
+    canAccept: live && !confirmed && !timingExpired && !f.iAcceptedCurrent,
+    canConfirm: live && !confirmed && !timingExpired && f.bothAccepted,
+    timingExpired,
   }
+}
+
+export function termsTimingStillValid(
+  terms: { dueAt: string; scheduledAt: string | null }[],
+  now = Date.now(),
+): boolean {
+  return terms.every((t) => {
+    const dueAt = Date.parse(t.dueAt)
+    if (!Number.isFinite(dueAt) || dueAt <= now) return false
+    if (t.scheduledAt === null) return true
+    const scheduledAt = Date.parse(t.scheduledAt)
+    return Number.isFinite(scheduledAt) && scheduledAt > now
+  })
 }
 
 /**

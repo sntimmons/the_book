@@ -81,6 +81,30 @@ as $$
   )
 $$;
 
+create or replace function pg_temp.expire_term_due(p_version_id uuid, p_side text)
+returns void
+language sql
+as $$
+  update public.barter_proposal_terms
+     set created_at = clock_timestamp() - interval '2 days',
+         due_at = clock_timestamp() - interval '1 minute',
+         scheduled_at = null
+   where version_id = p_version_id
+     and provided_by = p_side
+$$;
+
+create or replace function pg_temp.expire_term_scheduled(p_version_id uuid, p_side text)
+returns void
+language sql
+as $$
+  update public.barter_proposal_terms
+     set created_at = clock_timestamp() - interval '2 days',
+         due_at = clock_timestamp() + interval '7 days',
+         scheduled_at = clock_timestamp() - interval '1 minute'
+   where version_id = p_version_id
+     and provided_by = p_side
+$$;
+
 -- ── Who may open a negotiation ─────────────────────────────────────────────
 do $$
 declare
@@ -299,6 +323,133 @@ begin
   select both_accepted into v_both from public.my_barter_proposals where proposal_id = pid;
   perform pg_temp.chk('negotiation', 'prior acceptance does not satisfy changed timing',
     'false', v_both::text);
+end $$;
+
+-- ── Timing must still be current when terms are accepted ──────────────────
+do $$
+declare
+  ou uuid := gen_random_uuid(); ru uuid := gen_random_uuid();
+  opid uuid; rpid uuid; o uuid; i uuid; pid uuid; v1 uuid; v2 uuid;
+  v_code text; v_both boolean; v_n integer; v_old_due timestamptz; v_after_scheduled timestamptz;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (ou), (ru);
+  insert into public.providers(user_id, display_name, username)
+    values (ou, 'Accept Time Owner', 'ngao_'||substr(ou::text,1,8)) returning id into opid;
+  insert into public.providers(user_id, display_name, username)
+    values (ru, 'Accept Time Resp', 'ngar_'||substr(ru::text,1,8)) returning id into rpid;
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (opid, ou, 'accept timing offering', 'accept timing seeking') returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status) values (o, rpid, ru, 'x', 'accepted') returning id into i;
+
+  perform pg_temp.act(ou);
+  select public.create_barter_proposal(
+    i,
+    'owner gives', pg_temp.ng_due(7), pg_temp.ng_due(6),
+    'responder gives', pg_temp.ng_due(8), pg_temp.ng_due(6)
+  ) into pid;
+  perform pg_temp.act_service();
+  select id into v1 from public.barter_proposal_versions where proposal_id = pid and version_no = 1;
+
+  perform pg_temp.act(ru);
+  select public.accept_barter_version(v1) into v_both;
+  perform pg_temp.chk('negotiation', 'future due/scheduled timing can be accepted',
+    'false', v_both::text);
+
+  perform pg_temp.act_service();
+  select due_at into v_old_due from public.barter_proposal_terms
+   where version_id = v1 and provided_by = 'offer_owner';
+  delete from public.barter_version_acceptances where version_id = v1 and participant_user_id = ru;
+  perform pg_temp.expire_term_due(v1, 'offer_owner');
+  perform pg_temp.act(ru);
+  begin
+    perform public.accept_barter_version(v1);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'expired owner due_at cannot be accepted', 'PT410', v_code);
+
+  perform pg_temp.act_service();
+  perform pg_temp.expire_term_due(v1, 'responder');
+  perform pg_temp.act(ru);
+  begin
+    perform public.accept_barter_version(v1);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'expired responder due_at cannot be accepted', 'PT410', v_code);
+
+  perform pg_temp.act_service();
+  update public.barter_proposal_terms
+     set created_at = clock_timestamp() - interval '2 days',
+         due_at = clock_timestamp() + interval '7 days',
+         scheduled_at = null
+   where version_id = v1;
+  perform pg_temp.expire_term_scheduled(v1, 'offer_owner');
+  perform pg_temp.act(ru);
+  begin
+    perform public.accept_barter_version(v1);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'expired owner scheduled_at cannot be accepted',
+    'PT410', v_code);
+
+  perform pg_temp.act_service();
+  update public.barter_proposal_terms
+     set created_at = clock_timestamp() - interval '2 days',
+         due_at = clock_timestamp() + interval '7 days',
+         scheduled_at = null
+   where version_id = v1;
+  perform pg_temp.expire_term_scheduled(v1, 'responder');
+  perform pg_temp.act(ru);
+  begin
+    perform public.accept_barter_version(v1);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'expired responder scheduled_at cannot be accepted',
+    'PT410', v_code);
+
+  perform pg_temp.act_service();
+  select scheduled_at into v_after_scheduled from public.barter_proposal_terms
+   where version_id = v1 and provided_by = 'responder';
+  perform pg_temp.chk('negotiation', 'expired historical timing is not auto-extended',
+    'true', (v_after_scheduled is not null and v_after_scheduled < clock_timestamp())::text);
+
+  -- Direct insert with grants bypassed must still hit the same expiry guard, proving the rule
+  -- is on the acceptance row boundary and not only inside the RPC.
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ru::text, 'role', 'authenticated')::text, true);
+  begin
+    insert into public.barter_version_acceptances(version_id, participant_user_id)
+    values (v1, ru);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'direct acceptance insert cannot bypass expired timing',
+    'PT410', v_code);
+
+  perform pg_temp.act(ou);
+  select public.submit_barter_counter(
+    pid,
+    'owner gives', pg_temp.ng_due(9), null,
+    'responder gives', pg_temp.ng_due(10), null
+  ) into v_n;
+  perform pg_temp.chk('negotiation', 'a new version with future timing restores acceptability',
+    '2', v_n::text);
+  perform pg_temp.act_service();
+  select id into v2 from public.barter_proposal_versions where proposal_id = pid and version_no = 2;
+  perform pg_temp.act(ru);
+  begin
+    perform public.accept_barter_version(v2);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('negotiation', 'the future-timed replacement can be accepted',
+    'NO ERROR', v_code);
 end $$;
 
 -- ── History is append-only, and version numbers cannot be forged ───────────
@@ -1095,6 +1246,8 @@ begin
     'public.assert_barter_version_budget(uuid, uuid)',
     'public.barter_post_snapshot(public.barter_offers)',
     'public.barter_negotiation_role(public.barter_interests, public.barter_offers, uuid)',
+    'public.assert_barter_proposal_version_timing_current(uuid)',
+    'public.enforce_barter_acceptance_timing_current()',
     'public.enforce_barter_negotiation_append_only()',
     'public.enforce_barter_proposal_immutable()',
     'public.enforce_barter_terms_write()'

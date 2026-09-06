@@ -36,6 +36,8 @@ import {
   ProposalSide,
   shouldShowTermsChangedNote,
   sideLabel,
+  termsTimingStillValid,
+  TERMS_EXPIRED_NOTE,
   TERMS_CHANGED_NOTE,
   TradeSide,
   validateDraft,
@@ -160,6 +162,7 @@ export default function NegotiationScreen() {
         bothAccepted: row.bothAccepted,
         everBothAccepted: versions.some((v) => v.acceptedBy.length >= 2),
         agreementId: row.agreementId,
+        currentTermsStillValid: current ? termsTimingStillValid(current.terms) : true,
       })
     : null
 
@@ -434,6 +437,9 @@ export default function NegotiationScreen() {
               iAcceptedCurrent: row.iAcceptedCurrent,
             }) ? (
               <Text style={styles.changedNote}>{TERMS_CHANGED_NOTE}</Text>
+            ) : null}
+            {view.timingExpired ? (
+              <Text style={styles.changedNote}>{TERMS_EXPIRED_NOTE}</Text>
             ) : null}
 
             <View style={styles.card}>

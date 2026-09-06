@@ -11,6 +11,8 @@ import {
   sideForRole,
   sideLabel,
   TERMS_CHANGED_NOTE,
+  TERMS_EXPIRED_NOTE,
+  termsTimingStillValid,
   validateDraft,
 } from '@/lib/negotiationState'
 
@@ -113,6 +115,15 @@ describe('accepting is once, and only what is on the table', () => {
     expect(v.canAccept).toBe(true)
   })
 
+  it('does not offer accept for expired current timing', () => {
+    const v = negotiationView(facts({ theyAcceptedCurrent: true, currentTermsStillValid: false }))
+    expect(v.state).toBe('awaitingYou')
+    expect(v.canAccept).toBe(false)
+    expect(v.canPropose).toBe(true)
+    expect(v.timingExpired).toBe(true)
+    expect(v.detail).toMatch(/updated timing/i)
+  })
+
   it('lets either party send new terms right up until the negotiation ends', () => {
     for (const bothAccepted of [true, false]) {
       expect(negotiationView(facts({ bothAccepted })).canPropose).toBe(true)
@@ -139,6 +150,22 @@ describe('ready to confirm is not confirmed', () => {
     ]) {
       expect(negotiationView(f).canConfirm).toBe(false)
     }
+  })
+
+  it('does not offer confirm for expired current timing after both accepted', () => {
+    const v = negotiationView(
+      facts({
+        bothAccepted: true,
+        iAcceptedCurrent: true,
+        theyAcceptedCurrent: true,
+        currentTermsStillValid: false,
+      }),
+    )
+    expect(v.state).toBe('agreed')
+    expect(v.canConfirm).toBe(false)
+    expect(v.canPropose).toBe(true)
+    expect(v.timingExpired).toBe(true)
+    expect(v.detail).toMatch(/updated timing/i)
   })
 
   it('freezes everything once confirmed', () => {
@@ -197,7 +224,7 @@ describe('copy is negotiation language, not database language', () => {
         const v = negotiationView(facts({ interestStatus, bothAccepted: b }))
         return [v.headline, v.detail]
       }),
-    ).concat(TERMS_CHANGED_NOTE)
+    ).concat(TERMS_CHANGED_NOTE, TERMS_EXPIRED_NOTE)
     for (const line of all) {
       const l = line.toLowerCase()
       for (const word of ['version', 'row', 'rpc', 'superseded', 'record id', 'null']) {
@@ -209,6 +236,31 @@ describe('copy is negotiation language, not database language', () => {
   it('explains a lost acceptance in terms of what the other person did', () => {
     expect(TERMS_CHANGED_NOTE).toMatch(/terms changed/i)
     expect(TERMS_CHANGED_NOTE).toMatch(/accept again/i)
+  })
+})
+
+describe('current term timing display guard', () => {
+  it('treats future due and scheduled timing as still valid', () => {
+    expect(
+      termsTimingStillValid([
+        { dueAt: futureIso(7), scheduledAt: null },
+        { dueAt: futureIso(8), scheduledAt: futureIso(3) },
+      ]),
+    ).toBe(true)
+  })
+
+  it('treats expired due or scheduled timing as stale', () => {
+    expect(termsTimingStillValid([{ dueAt: pastIso(), scheduledAt: null }])).toBe(false)
+    expect(
+      termsTimingStillValid([{ dueAt: futureIso(8), scheduledAt: pastIso() }]),
+    ).toBe(false)
+  })
+
+  it('treats malformed timing as stale', () => {
+    expect(termsTimingStillValid([{ dueAt: 'not a date', scheduledAt: null }])).toBe(false)
+    expect(
+      termsTimingStillValid([{ dueAt: futureIso(8), scheduledAt: 'not a date' }]),
+    ).toBe(false)
   })
 })
 
