@@ -1,7 +1,7 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** PR #53
+**Last edited by:** PR #55
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -246,7 +246,7 @@ as locked decisions.
 - **Decided:** 2026-09-04
 - **Decision:** Three regimes, by the counterparty's exposure. **Before an official agreement** (both providers accepting the same current agreement version): withdrawal, decline and walking away are permitted, are **not** cancellations, and carry no penalty, review or reliability judgment. **After agreement, before any delivery:** either participant may cancel **unilaterally** — the other party's permission is **not** required — recording `cancelled_at`, the cancelling participant and an optional reason; both agreeing is **Mutually Cancelled**, one exiting is **Cancelled by Participant**. **After any obligation is marked delivered:** ordinary cancellation is unavailable and disagreement routes Needs Attention → Under Review → manual adjudication. **No-show is not cancellation** — it is failing to perform at the agreed time without having recorded a cancellation first; it routes to Needs Attention, and if established the obligation is **Unfulfilled**. For the first Houston beta none of these produce a normal review, an automatic reputation penalty, or a ranking effect; actor and timing are retained for a future reliability model. Terminal overall states: Completed, Partially Fulfilled, Cancelled, Not Completed, Under Review, and **Closed Without Resolution** (terminal, with **no** reliability judgment assigned). **Individual obligation truth survives independently of the overall agreement state.**
 - **Rationale:** Nobody should be held inside a service commitment by a counterparty who will not release them, but the cost of leaving must rise once the other side has actually given something up. Keeping obligation truth separate from the rolled-up verdict preserves the only record of who did their part.
-- **Evidence:** Founder ruling, 2026-09-04. Closes OQ-004. Stated in `BARTER_BETA_CONTRACT.md` § 7. **Not yet implemented** — no agreement or obligation schema exists.
+- **Evidence:** Founder ruling, 2026-09-04. Closes OQ-004. Stated in `BARTER_BETA_CONTRACT.md` § 7. PR #50 later implemented the official agreement row and PR #54 later implemented the two directed obligation rows, but this cancellation / no-show / adjudication model is still **not implemented**: no delivery mark, receiver confirmation, cancellation-after-agreement, no-show, adjudication, terminal obligation outcome or terminal agreement outcome schema exists.
 - **Status:** Locked
 
 ### PD-047 — The barter post stays editable; the proposal snapshots it
