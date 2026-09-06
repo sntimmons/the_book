@@ -48,6 +48,10 @@ export interface BarterInterest {
   releaseReason: BarterReleaseReason | null
   /** Set when this response has become a confirmed trade. */
   agreementId: string | null
+  /** This viewer recorded their own pre-delivery cancellation of that trade. */
+  iCancelled: boolean
+  /** The other participant recorded theirs. */
+  theyCancelled: boolean
   provider: CommunityProviderInfo
 }
 
@@ -132,6 +136,10 @@ export interface MyInterest {
   id: string
   status: BarterInterestStatus
   agreementId: string | null
+  /** This viewer recorded their own pre-delivery cancellation of the agreement. */
+  iCancelled: boolean
+  /** The other participant recorded theirs. */
+  theyCancelled: boolean
 }
 
 /**
@@ -146,7 +154,7 @@ export async function fetchMyInterests(userId: string): Promise<Map<string, MyIn
   if (!userId) return map
   const { data } = await supabase
     .from('my_trade_activity')
-    .select('interest_id, offer_id, status, my_role, agreement_id')
+    .select('interest_id, offer_id, status, my_role, agreement_id, i_cancelled, they_cancelled')
     .eq('my_role', 'responder')
   const rows =
     (data as unknown as {
@@ -155,12 +163,16 @@ export async function fetchMyInterests(userId: string): Promise<Map<string, MyIn
       status: BarterInterestStatus
       my_role: 'owner' | 'responder'
       agreement_id: string | null
+      i_cancelled: boolean
+      they_cancelled: boolean
     }[] | null) ?? []
   for (const r of rows) {
     map.set(r.offer_id, {
       id: r.interest_id,
       status: r.status,
       agreementId: r.agreement_id,
+      iCancelled: r.i_cancelled,
+      theyCancelled: r.they_cancelled,
     })
   }
   return map
@@ -203,7 +215,7 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
     fetchProviderInfoMap(rows.map((r) => r.interested_provider_id)),
     supabase
       .from('my_trade_activity')
-      .select('interest_id, agreement_id')
+      .select('interest_id, agreement_id, i_cancelled, they_cancelled')
       .eq('offer_id', offerId),
   ])
   if (activityRes.error) {
@@ -211,11 +223,15 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
     return []
   }
   const agreementByInterest = new Map<string, string>()
+  const cancelByInterest = new Map<string, { i: boolean; they: boolean }>()
   for (const a of (activityRes.data as unknown as {
     interest_id: string
     agreement_id: string | null
+    i_cancelled: boolean
+    they_cancelled: boolean
   }[] | null) ?? []) {
     if (a.agreement_id) agreementByInterest.set(a.interest_id, a.agreement_id)
+    cancelByInterest.set(a.interest_id, { i: a.i_cancelled, they: a.they_cancelled })
   }
   return rows.map((r) => ({
     id: r.id,
@@ -231,6 +247,8 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
     releasedAt: r.released_at,
     releaseReason: r.release_reason,
     agreementId: agreementByInterest.get(r.id) ?? null,
+    iCancelled: cancelByInterest.get(r.id)?.i ?? false,
+    theyCancelled: cancelByInterest.get(r.id)?.they ?? false,
     provider: infoMap.get(r.interested_provider_id) ?? {
       name: 'Provider',
       photo: null,
@@ -263,6 +281,10 @@ export interface TradeActivityRow {
   conversationId: string | null
   /** An official agreement exists: this row is a confirmed trade, not a live negotiation. */
   agreementId: string | null
+  /** This viewer recorded their own pre-delivery cancellation of that agreement. */
+  iCancelled: boolean
+  /** The other participant recorded theirs. Both true is "mutually cancelled". */
+  theyCancelled: boolean
   provider: CommunityProviderInfo
 }
 
@@ -283,7 +305,8 @@ export async function fetchTradeActivity(): Promise<{
     .select(
       'interest_id, offer_id, status, created_at, released_at, release_reason, ' +
         'offering_service, seeking_service, offer_is_active, my_role, ' +
-        'counterparty_provider_id, conversation_id, agreement_id',
+        'counterparty_provider_id, conversation_id, agreement_id, ' +
+        'i_cancelled, they_cancelled',
     )
     .order('created_at', { ascending: false })
   // A failure is NOT an empty list. Collapsing the two let the screen say "No trade activity
@@ -308,6 +331,8 @@ export async function fetchTradeActivity(): Promise<{
           counterparty_provider_id: string
           conversation_id: string | null
           agreement_id: string | null
+          i_cancelled: boolean
+          they_cancelled: boolean
         }[]
       | null) ?? []
   const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
@@ -327,6 +352,8 @@ export async function fetchTradeActivity(): Promise<{
     counterpartyProviderId: r.counterparty_provider_id,
     conversationId: r.conversation_id,
     agreementId: r.agreement_id,
+    iCancelled: r.i_cancelled,
+    theyCancelled: r.they_cancelled,
       provider: infoMap.get(r.counterparty_provider_id) ?? {
         name: 'Provider',
         photo: null,

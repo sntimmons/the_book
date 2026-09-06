@@ -76,6 +76,16 @@ export interface NegotiationFacts {
    */
   agreementId: string | null
   /**
+   * Has either participant cancelled the confirmed trade?
+   *
+   * REQUIRED, not optional. This module is total over its state vocabulary precisely so a new
+   * state cannot fall through silently — and an optional flag defaulting to false would
+   * reintroduce exactly that: a caller who forgot to thread it would get "Trade confirmed" on
+   * a cancelled trade with no type error. Who cancelled, and what to say about it, belong to
+   * `lib/tradeCancellation.ts`; this only decides that the trade is no longer live.
+   */
+  tradeCancelled: boolean
+  /**
    * Client-side display fact for the terms currently on screen. The database remains the
    * authority and re-checks this at accept/finalize time; this only prevents a stale screen
    * from inviting an action the server will permanently refuse.
@@ -85,6 +95,7 @@ export interface NegotiationFacts {
 
 export type NegotiationState =
   | 'ended'
+  | 'cancelled'
   | 'confirmed'
   | 'agreed'
   | 'awaitingThem'
@@ -95,6 +106,15 @@ export interface NegotiationView {
   state: NegotiationState
   headline: string
   detail: string
+  /**
+   * What to call the terms card on this screen.
+   *
+   * IN the total Record, never a ternary beside the JSX. The ternary this replaced was total
+   * over only two of the seven states, so `cancelled` fell through to the pre-agreement label
+   * and told a provider the terms of a dead trade were "On the table now". A new state is now
+   * a compile error here, which is the whole reason this module exists.
+   */
+  termsTitle: string
   /** May the viewer send new terms? */
   canPropose: boolean
   /** May the viewer accept the terms currently on the table? */
@@ -114,10 +134,15 @@ export interface ConfirmTradeCopy {
 
 export const CONFIRM_TRADE_COPY: ConfirmTradeCopy = {
   title: 'Confirm this trade?',
+  // The last clause used to read "The current beta does not yet include an in-app way to cancel
+  // or end a trade after this step." Pre-delivery cancellation now exists, so that sentence had
+  // become the opposite of the truth — told to a provider at the moment they take an
+  // irreversible action, which is the worst place in the product to be wrong. What replaces it
+  // states the rule that IS true, including where the exit stops (PD-046 § 7.2/7.3).
   body:
     'This makes the terms you both accepted official. They can no longer be changed, and the'
-    + ' post comes off the board for good. The current beta does not yet include an in-app'
-    + ' way to cancel or end a trade after this step.',
+    + ' post comes off the board for good. Either of you can still cancel the trade until one'
+    + ' of you marks something delivered — after that, cancelling is no longer available.',
   confirmLabel: 'Confirm trade',
   cancelLabel: 'Not yet',
 }
@@ -130,15 +155,32 @@ export const TERMS_EXPIRED_NOTE =
  * fallthrough to whatever the last branch said — the defect class that produced every copy
  * finding on the Trade Activity surface.
  */
-const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }> = {
+const STATE_COPY: Record<
+  NegotiationState,
+  { headline: string; detail: string; termsTitle: string }
+> = {
   ended: {
     headline: 'This negotiation ended',
+    termsTitle: 'The last terms proposed',
     // Filled in by negotiationView, because what is true here depends on whether the two of
     // you ever accepted the same terms.
     detail: '',
   },
+  cancelled: {
+    headline: 'Trade cancelled',
+    // NOT 'On the table now'. Nothing is on the table: the terms card on a cancelled trade
+    // carries the "Cancelled <time>" stamp three lines below this title, and the pre-agreement
+    // label directly contradicted it on the one screen that must be unambiguous about whether
+    // a commitment is live. The terms themselves are kept, so they are named as history.
+    termsTitle: 'The terms that were agreed',
+    // Deliberately EMPTY. Which participant cancelled, and whether both did, is per-viewer copy
+    // owned by `lib/tradeCancellation.ts`; duplicating a second version of it here is how the
+    // two would drift and start contradicting each other on the same screen.
+    detail: '',
+  },
   confirmed: {
     headline: 'Trade confirmed',
+    termsTitle: 'The agreed terms',
     // Beta-safe: confirmed, not booked / complete / fulfilled / guaranteed. This is the
     // AGREEMENT's state and it stays "Trade confirmed" for the whole life of the trade.
     //
@@ -151,6 +193,7 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
       + ' in your conversation.',
   },
   agreed: {
+    termsTitle: 'On the table now',
     headline: 'Ready to confirm trade',
     detail:
       // Deliberately NOT "your trade is booked" or "agreement complete". Both providers
@@ -161,14 +204,17 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
       + ' what you have both accepted.',
   },
   awaitingThem: {
+    termsTitle: 'On the table now',
     headline: 'Waiting on the other provider',
     detail: 'You have accepted these terms. They have not yet.',
   },
   awaitingYou: {
+    termsTitle: 'On the table now',
     headline: 'Waiting on you',
     detail: 'The other provider has accepted these terms. Accept to agree, or send changes.',
   },
   awaitingBoth: {
+    termsTitle: 'On the table now',
     headline: 'These terms are on the table',
     detail: 'Neither of you has accepted them yet.',
   },
@@ -181,7 +227,9 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
   const state: NegotiationState = !live
     ? 'ended'
     : confirmed
-      ? 'confirmed'
+      ? f.tradeCancelled
+        ? 'cancelled'
+        : 'confirmed'
       : f.bothAccepted
       ? 'agreed'
       : f.iAcceptedCurrent
@@ -201,12 +249,15 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
   return {
     state,
     headline: STATE_COPY[state].headline,
+    termsTitle: STATE_COPY[state].termsTitle,
     detail: timingExpired
       ? 'The timing on these terms has passed. Send different terms with updated timing to continue.'
       : detail,
     // A dead negotiation accepts nothing. The server refuses both independently; this only
     // decides whether to render a control that would otherwise be refused.
     // A confirmed trade's terms are frozen; the server refuses a counter or acceptance too.
+    // A cancelled trade is confirmed too, so `confirmed` already closes all three. Spelled
+    // against `confirmed` rather than the state so a future state cannot quietly reopen them.
     canPropose: live && !confirmed,
     canAccept: live && !confirmed && !timingExpired && !f.iAcceptedCurrent,
     canConfirm: live && !confirmed && !timingExpired && f.bothAccepted,

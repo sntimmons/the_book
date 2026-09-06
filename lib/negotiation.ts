@@ -3,6 +3,9 @@ import type { ProposalDraft, ProposalSide, TradeSide } from './negotiationState'
 import { draftPayload } from './negotiationState'
 import type { ObligationStatus } from './obligationState'
 
+/** What the server reports after a cancellation act. Derived there from the acts on record. */
+export type TradeCancellationResult = 'cancelled_by_participant' | 'mutually_cancelled'
+
 // Barter negotiation data layer (Slice 3a). Reads come from `my_barter_proposals` and the three
 // participant-scoped tables; every WRITE goes through a SECURITY DEFINER RPC, because the rules
 // that matter — who may propose, which terms are current, who accepted — are decided from
@@ -29,6 +32,22 @@ export interface NegotiationRow {
   /** Set once the agreement is official. Distinct from bothAccepted, which is "ready". */
   agreementId: string | null
   officializedAt: string | null
+  /** This viewer recorded their own pre-delivery cancellation. Server-derived. */
+  iCancelled: boolean
+  /** The other participant recorded theirs. Both true is "mutually cancelled". */
+  theyCancelled: boolean
+  /** When the FIRST of the two acts was recorded; null when neither has. */
+  cancelledAt: string | null
+  /**
+   * The reason THIS viewer gave, if any. Null when they have not cancelled or gave none.
+   *
+   * Founder ruling on PR #58: the reason is participant-visible context, shared with the other
+   * provider — not a private note, and not a verdict, a no-show determination, adjudication or
+   * proof of fault, none of which exist. The composer says so before submission.
+   */
+  myCancelReason: string | null
+  /** The reason the OTHER provider gave, if any. Same posture. */
+  theirCancelReason: string | null
 }
 
 export interface ProposalTerm {
@@ -68,7 +87,7 @@ export interface BarterObligation {
 }
 
 const ROW_COLUMNS =
-  'proposal_id, interest_id, offer_id, current_version_no, current_version_id, current_version_author_id, current_version_at, interest_status, offer_is_active, my_role, counterparty_user_id, i_accepted_current, they_accepted_current, both_accepted, agreement_id, officialized_at'
+  'proposal_id, interest_id, offer_id, current_version_no, current_version_id, current_version_author_id, current_version_at, interest_status, offer_is_active, my_role, counterparty_user_id, i_accepted_current, they_accepted_current, both_accepted, agreement_id, officialized_at, i_cancelled, they_cancelled, cancelled_at, my_cancel_reason, their_cancel_reason'
 
 interface RawRow {
   proposal_id: string
@@ -87,6 +106,11 @@ interface RawRow {
   both_accepted: boolean
   agreement_id: string | null
   officialized_at: string | null
+  i_cancelled: boolean
+  they_cancelled: boolean
+  cancelled_at: string | null
+  my_cancel_reason: string | null
+  their_cancel_reason: string | null
 }
 
 function mapRow(r: RawRow): NegotiationRow {
@@ -107,6 +131,11 @@ function mapRow(r: RawRow): NegotiationRow {
     bothAccepted: r.both_accepted,
     agreementId: r.agreement_id,
     officializedAt: r.officialized_at,
+    iCancelled: r.i_cancelled,
+    theyCancelled: r.they_cancelled,
+    cancelledAt: r.cancelled_at,
+    myCancelReason: r.my_cancel_reason,
+    theirCancelReason: r.their_cancel_reason,
   }
 }
 
@@ -400,6 +429,31 @@ export async function reportObligationNotReceived(
   })
   if (error) return { ok: false, status: null, error }
   return { ok: true, status: (data as ObligationStatus | null) ?? null, error: null }
+}
+
+/**
+ * Cancel a confirmed trade before either side has delivered, or record that you agree with a
+ * cancellation the other provider started.
+ *
+ * ONE call for both, because they are the same act: each participant records their own
+ * cancellation, and the server decides from how many exist whether the trade is cancelled by
+ * one participant or mutually cancelled. The client names the trade and, optionally, a reason;
+ * it cannot supply who is acting, which provider that is, when it happened, or whether the
+ * result is mutual.
+ *
+ * IDEMPOTENT per participant: a repeat returns the existing classification and overwrites
+ * neither the original time nor the original reason.
+ */
+export async function cancelTrade(
+  agreementId: string,
+  reason: string | null,
+): Promise<{ ok: boolean; state: TradeCancellationResult | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('cancel_barter_agreement', {
+    p_agreement_id: agreementId,
+    p_reason: reason,
+  })
+  if (error) return { ok: false, state: null, error }
+  return { ok: true, state: (data as TradeCancellationResult | null) ?? null, error: null }
 }
 
 // No `interpretWrite` here, deliberately. That helper exists for a PostgREST write FILTERED to

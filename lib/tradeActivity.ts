@@ -5,6 +5,9 @@
 // chosen when nobody had been). Those rules cannot be unit-tested while they live inside a
 // react-native component, so they live here instead.
 
+import { cancellationState, isCancelled } from './tradeCancellation'
+import type { CancellationState } from './tradeCancellation'
+
 /**
  * The complete response vocabulary. Defined HERE, not in lib/barter.ts, so it and the rules
  * derived from it can be imported by a unit test: lib/barter.ts imports the Supabase client,
@@ -78,6 +81,16 @@ export interface TradeRowFacts {
   offerHasAcceptedResponse: boolean
   /** An official agreement exists. The negotiation is a confirmed trade, not a live one. */
   agreementId: string | null
+  /**
+   * This viewer recorded their own pre-delivery cancellation of that agreement.
+   *
+   * REQUIRED, not optional. Optional here would mean a caller who forgets to thread it reports
+   * a cancelled trade as "Trade confirmed" with no type error — in the one module whose stated
+   * premise is that a missing case must be a compile error rather than a silent fallthrough.
+   */
+  iCancelled: boolean
+  /** The other participant recorded theirs. Both true is "mutually cancelled". */
+  theyCancelled: boolean
 }
 
 export interface TradeRowState {
@@ -100,8 +113,13 @@ export const SECTION_COPY: Record<
   { title: string; caption: string; rank: number }
 > = {
   confirmed: {
-    title: 'Confirmed trades',
-    caption: 'Terms both of you agreed to and confirmed.',
+    // 'Confirmed trades' was the heading over a MIXED group: a cancelled trade stays here as
+    // durable history, and the row's own note says so, but the section title above it said the
+    // opposite. A heading is read before the rows under it, so the group is named for what its
+    // members have in common — they were all made official — and the per-row state label is
+    // left to say which of them is still live.
+    title: 'Trades',
+    caption: 'Trades you both made official.',
     rank: 0,
   },
   active: {
@@ -164,16 +182,44 @@ export function formatTradeDate(iso: string | null): string {
 }
 
 /**
+ * What a confirmed trade's row says. A cancelled trade must NOT keep reading as "Trade
+ * confirmed": that row is the entry point to the trade, and describing a dead trade as a live
+ * one is the same product-truth defect the rest of this module exists to prevent.
+ *
+ * Deliberately says nothing about fulfilment, no-show, dispute or review — cancelling ends the
+ * trade and decides none of those, and none of them exist.
+ */
+const CONFIRMED_TRADE_NOTE: Record<CancellationState, string> = {
+  none: 'Trade confirmed. The agreed terms can no longer change.',
+  byYou: 'Trade cancelled. You cancelled this trade.',
+  byThem: 'Trade cancelled. The other provider cancelled this trade.',
+  mutual: 'Trade cancelled by both of you.',
+}
+
+function confirmedTradeNote(f: TradeRowFacts): string {
+  // The CLASSIFICATION comes from lib/tradeCancellation.ts, which owns it and is total over the
+  // vocabulary; only the wording is local, because a list row and a detail banner are different
+  // products. An if-chain here would have been a second, uncheckable copy of the truth table in
+  // the module that documents total Records as its defence against exactly that.
+  return CONFIRMED_TRADE_NOTE[cancellationState(f)]
+}
+
+/**
  * TOTAL over the status vocabulary — a fifth status is a compile error, not a silent fallthrough
  * to whatever the last ternary branch happened to say.
  */
 const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowState> = {
   // The negotiation outlives its post by design (PD-049), so a closed post does not end it.
-  // Once CONFIRMED, release is no longer available (the server refuses it): what ends a
-  // confirmed trade is a later slice.
+  // Once CONFIRMED, release is no longer available (the server refuses it). What ends a
+  // confirmed trade before either side has delivered is pre-delivery cancellation, which is
+  // taken on the trade's own screen — this list reports it rather than offering it, so the
+  // one place that can check the delivery precondition is the one place that can act.
   accepted: (f) =>
     f.agreementId !== null
-      ? { action: 'none', note: 'Trade confirmed. The agreed terms can no longer change.' }
+      ? {
+          action: 'none',
+          note: confirmedTradeNote(f),
+        }
       : {
           action: 'end',
           note: f.offerIsActive
@@ -347,6 +393,9 @@ export const RESPONDER_FEED_STATE: Record<BarterInterestStatus, ResponderFeedSta
 export function responderFeedState(
   status: BarterInterestStatus,
   agreementId: string | null,
+  // REQUIRED, for the same reason the row facts are: a default of "not cancelled" is a silent
+  // wrong answer, and this label is rendered verbatim on the discovery feed.
+  cancellation: { iCancelled: boolean; theyCancelled: boolean },
 ): ResponderFeedState {
   if (agreementId !== null && status === 'accepted') {
     const row = tradeRowState({
@@ -357,8 +406,22 @@ export function responderFeedState(
       releaseReason: null,
       offerHasAcceptedResponse: true,
       agreementId,
+      // Threaded so the feed cannot label a cancelled trade "Trade confirmed". It renders
+      // `row.note` verbatim, so any note this module gets wrong is shown to a provider on the
+      // surface where they first see the post again.
+      iCancelled: cancellation.iCancelled,
+      theyCancelled: cancellation.theyCancelled,
     })
-    return { label: row.note, action: row.action === 'end' ? 'end' : 'none', icon: 'check' }
+    // The icon is DERIVED, not hardcoded beside the label. A cancelled trade carried the
+    // affirmative 'check' glyph next to "Trade cancelled…" — and on a feed card the glyph is
+    // read before the sentence. This module's own rule: the icon belongs with the state, never
+    // chosen by a ternary beside it.
+    const cancelled = isCancelled(cancellation)
+    return {
+      label: row.note,
+      action: row.action === 'end' ? 'end' : 'none',
+      icon: cancelled ? 'x-circle' : 'check',
+    }
   }
   return RESPONDER_FEED_STATE[status]
 }

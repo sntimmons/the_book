@@ -1,4 +1,5 @@
 import {
+  anyDelivered,
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
   NOT_RECEIVED_COPY,
@@ -288,5 +289,38 @@ describe('delivery write failures', () => {
         }
       }
     }
+  })
+})
+
+describe('anyDelivered — the precondition that closes the ordinary exit', () => {
+  // PD-046: once ANY obligation has been marked delivered, pre-delivery cancellation is gone
+  // permanently. This derivation used to live in the negotiation screen's JSX, where nothing
+  // could reach it — while cancellationView, which consumes it, was exhaustively tested for
+  // every value of it. It gates an irreversible control, so it is asserted directly.
+  const d = (at: string | null) => ({ deliveredAt: at })
+  const T = '2026-10-05T12:00:00.000Z'
+
+  it('is false when neither side has delivered', () => {
+    expect(anyDelivered([d(null), d(null)])).toBe(false)
+  })
+
+  it('is true when either side has, whichever one it is', () => {
+    expect(anyDelivered([d(T), d(null)])).toBe(true)
+    expect(anyDelivered([d(null), d(T)])).toBe(true)
+    expect(anyDelivered([d(T), d(T)])).toBe(true)
+  })
+
+  it('reads an EMPTY list as nothing delivered, which callers must not trust alone', () => {
+    // Indistinguishable from the truth: a read that did not land looks exactly like a trade
+    // where nobody has delivered. Pinned so the screen's separate `obligations.length === 2`
+    // gate is never removed as redundant — it is the only thing that tells the two apart.
+    expect(anyDelivered([])).toBe(false)
+  })
+
+  it('asks about the delivery timestamp, not the status', () => {
+    // PD-058: a receiver's answer moves the status off 'delivered' while the delivery itself
+    // remains a fact, and it is the DELIVERY that closes cancellation — a later "didn't
+    // receive" does not reopen it. A status-based spelling would reopen the exit here.
+    expect(anyDelivered([d(T), d(null)])).toBe(true)
   })
 })

@@ -35,6 +35,7 @@ function facts(over: Partial<NegotiationFacts> = {}): NegotiationFacts {
     bothAccepted: false,
     everBothAccepted: false,
     agreementId: null,
+    tradeCancelled: false,
     ...over,
   }
 }
@@ -70,6 +71,53 @@ describe('totality', () => {
     // Every state is reachable, so the assertions below are not vacuous.
     seen.add(negotiationView(facts({ agreementId: 'ag' })).state)
     expect(seen.size).toBe(6)
+  })
+})
+
+describe('the terms card is named for the state it is in', () => {
+  // The title used to be a ternary in the negotiation screen's JSX, total over 'ended' and
+  // 'confirmed' only. Every other state — including 'cancelled' — fell through to the
+  // pre-agreement label, so a cancelled trade read "On the table now" directly above its own
+  // "Cancelled" stamp. Asserted here, exhaustively, because a title chosen in JSX cannot be.
+  const ALL_STATES: { state: NegotiationState; f: NegotiationFacts }[] = [
+    { state: 'ended', f: facts({ interestStatus: 'released' }) },
+    { state: 'cancelled', f: facts({ agreementId: 'ag', tradeCancelled: true }) },
+    { state: 'confirmed', f: facts({ agreementId: 'ag' }) },
+    { state: 'agreed', f: facts({ bothAccepted: true }) },
+    { state: 'awaitingThem', f: facts({ iAcceptedCurrent: true }) },
+    { state: 'awaitingYou', f: facts({ theyAcceptedCurrent: true }) },
+    { state: 'awaitingBoth', f: facts() },
+  ]
+
+  it('covers every state exactly once, so nothing below is vacuous', () => {
+    const seen = ALL_STATES.map(({ state, f }) => {
+      expect(negotiationView(f).state).toBe(state)
+      return state
+    })
+    expect(new Set(seen).size).toBe(ALL_STATES.length)
+  })
+
+  it('always says something', () => {
+    for (const { f } of ALL_STATES) {
+      expect(negotiationView(f).termsTitle.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('never calls a dead trade live', () => {
+    for (const state of ['ended', 'cancelled', 'confirmed'] as NegotiationState[]) {
+      const { f } = ALL_STATES.find((e) => e.state === state)!
+      expect(negotiationView(f).termsTitle).not.toBe('On the table now')
+    }
+  })
+
+  it('does not describe a cancelled trade as still on the table, or as confirmed', () => {
+    const title = negotiationView(facts({ agreementId: 'ag', tradeCancelled: true })).termsTitle
+    expect(title).not.toContain('on the table')
+    expect(title.toLowerCase()).not.toContain('now')
+    // And it does not invent an outcome the product has not decided.
+    for (const banned of ['fulfilled', 'unfulfilled', 'complete', 'dispute', 'resolved']) {
+      expect(title.toLowerCase()).not.toContain(banned)
+    }
   })
 })
 
@@ -185,14 +233,47 @@ describe('ready to confirm is not confirmed', () => {
     }
   })
 
-  it('the confirm dialog discloses the current post-agreement beta limit', () => {
+  it('the confirm dialog discloses the current post-agreement limit', () => {
     const text = `${CONFIRM_TRADE_COPY.title} ${CONFIRM_TRADE_COPY.body}`.toLowerCase()
     expect(text).toMatch(/official/i)
     expect(text).toMatch(/can no longer be changed/i)
-    expect(text).toMatch(/does not yet include an in-app way to cancel or end/i)
-    for (const word of ['booked', 'complete', 'fulfilled', 'delivered', 'guaranteed']) {
+    // It must state the exit that EXISTS and where it stops. This assertion previously pinned
+    // the sentence "does not yet include an in-app way to cancel or end", which pre-delivery
+    // cancellation made false — so the test was not merely failing to catch a stale claim, it
+    // was enforcing one, and CI stayed green on it.
+    expect(text).toMatch(/can still cancel the trade/i)
+    expect(text).toMatch(/marks something delivered/i)
+    expect(text).not.toMatch(/does not yet include an in-app way to cancel or end/i)
+    for (const word of ['booked', 'complete', 'fulfilled', 'guaranteed']) {
       expect(text).not.toContain(word)
     }
+  })
+
+  it('never reports a cancelled trade as confirmed', () => {
+    // The defect this state exists to prevent: the list surfaces were taught that a cancelled
+    // trade is not a confirmed one, and the trade's own screen was not.
+    const v = negotiationView(facts({ agreementId: 'ag', tradeCancelled: true }))
+    expect(v.state).toBe('cancelled')
+    expect(v.headline).toBe('Trade cancelled')
+    expect(v.headline).not.toContain('confirmed')
+    // The per-viewer sentence belongs to lib/tradeCancellation.ts, so this module says nothing.
+    expect(v.detail).toBe('')
+    // And nothing is actionable on it.
+    expect(v.canPropose).toBe(false)
+    expect(v.canAccept).toBe(false)
+    expect(v.canConfirm).toBe(false)
+  })
+
+  it('still reports an uncancelled confirmed trade as confirmed', () => {
+    const v = negotiationView(facts({ agreementId: 'ag', tradeCancelled: false }))
+    expect(v.state).toBe('confirmed')
+    expect(v.headline).toBe('Trade confirmed')
+  })
+
+  it('does not call an unconfirmed negotiation cancelled', () => {
+    // Cancellation is an AGREEMENT-level act; there is nothing to cancel before one exists.
+    const v = negotiationView(facts({ agreementId: null, tradeCancelled: true }))
+    expect(v.state).not.toBe('cancelled')
   })
 })
 

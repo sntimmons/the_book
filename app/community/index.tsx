@@ -371,7 +371,15 @@ export default function CommunityFeed() {
     // Mark this offer as interested and bump its local count.
     setMyInterests((prev) => {
       const next = new Map(prev)
-      next.set(offer.id, { id: 'pending-local', status: 'pending', agreementId: null })
+      next.set(offer.id, {
+        id: 'pending-local',
+        status: 'pending',
+        agreementId: null,
+        // An optimistic row for a response just sent: there is no agreement yet, so there is
+        // nothing to have cancelled.
+        iCancelled: false,
+        theyCancelled: false,
+      })
       return next
     })
     setOffers((prev) =>
@@ -885,7 +893,10 @@ function BarterCard({
   onViewInterests: () => void
 }) {
   const feedState = myInterest
-    ? responderFeedState(myInterest.status, myInterest.agreementId)
+    ? responderFeedState(myInterest.status, myInterest.agreementId, {
+        iCancelled: myInterest.iCancelled,
+        theyCancelled: myInterest.theyCancelled,
+      })
     : null
 
   return (

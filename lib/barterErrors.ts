@@ -21,6 +21,10 @@
 // Kept pure and out of the screens so it is testable without rendering anything — the seam
 // where the previous copy defects lived.
 
+// The one bound this module states in prose. Imported rather than re-typed so the number in
+// the sentence cannot drift from the number the UI and the server enforce.
+import { MAX_CANCEL_REASON } from './tradeCancellation'
+
 /**
  * The one interpretation of a PostgREST mutation outcome.
  *
@@ -62,6 +66,7 @@ export type BarterWriteOp =
   | 'markDelivered'
   | 'confirmReceived'
   | 'reportNotReceived'
+  | 'cancelTrade'
 
 export interface BarterWriteFailure {
   /** Terminal means retrying cannot succeed; the UI must not offer a retry. */
@@ -105,14 +110,30 @@ const VERSION_BUDGET = '54000'
 // mapping all five to "Check these terms" told a user with an expired session to edit terms
 // that were already valid, and (being non-terminal) never refreshed the screen to show why.
 const MALFORMED_TERMS = '22023'
+// The same class code, named for what it means where the parameter is not a set of terms:
+// cancel_barter_agreement raises it for an over-long optional reason. Aliased rather than
+// reused under the terms-specific name, so the next reader is not told a cancellation reason
+// is a proposal term.
+const INVALID_PARAMETER = '22023'
 // Raised by barter_interests_zy_answer_open_offer when the owner tries to ACCEPT OR DECLINE a
 // response to a post they have closed, and by barter_offers_zy_active_one_way when anyone tries
 // to reopen one. A distinct code exists because check_violation maps, for accept and decline, to
 // "already answered" -- which blames the responder for something the owner did.
 const NOT_IN_PREREQUISITE_STATE = '55000'
-// Raised only by the post-agreement barter guards. Distinct from 55000, which still means a
+// Raised by the post-agreement barter guards. Distinct from 55000, which still means a
 // pre-agreement negotiation is not in the required state.
+//
+// The code is a post-agreement STATE CONFLICT, and which conflict it is depends on the
+// operation — which is exactly what this (operation, code) map is for. For the negotiation
+// operations it means the trade is already confirmed and its terms are frozen; for the three
+// obligation operations, whose confirmed-trade guards live on other tables and cannot fire,
+// it means the trade was cancelled.
 const CONFIRMED_TRADE = 'PT409'
+const TRADE_CANCELLED = 'PT409'
+// The two names above share a wire value on purpose, and that carries one constraint: because
+// they are the same string, they can never both key the SAME operation's map — the second entry
+// would collide with the first. If a future slice makes one operation able to produce both
+// meanings of PT409, split the SQLSTATE on the server rather than the constant here.
 // Raised when a proposal version's due/scheduled timing was valid when authored but is no
 // longer future-valid at acceptance or finalization time. Not terminal: the negotiation can
 // continue by sending a new version with updated timing, but retrying the same accept/confirm
@@ -144,6 +165,7 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
     title: 'Could not record your answer',
     body: 'Please try again.',
   },
+  cancelTrade: { terminal: false, title: 'Could not cancel', body: 'Please try again.' },
 }
 
 // A write that affected ZERO rows. Authorization on these tables is expressed as an RLS
@@ -213,6 +235,11 @@ const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
     body: 'It may have been removed. The details have been updated.',
   },
   reportNotReceived: {
+    terminal: true,
+    title: 'That trade is no longer available',
+    body: 'It may have been removed. The details have been updated.',
+  },
+  cancelTrade: {
     terminal: true,
     title: 'That trade is no longer available',
     body: 'It may have been removed. The details have been updated.',
@@ -427,6 +454,12 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
     },
   },
   markDelivered: {
+    [TRADE_CANCELLED]: {
+      terminal: true,
+      stale: true,
+      title: 'This trade was cancelled',
+      body: 'This trade was cancelled, so it can no longer be delivered. The details have been updated.',
+    },
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,
       // Names the rule, not the caller's mistake: only the provider who owes something can
@@ -442,6 +475,12 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
     },
   },
   confirmReceived: {
+    [TRADE_CANCELLED]: {
+      terminal: true,
+      stale: true,
+      title: 'This trade was cancelled',
+      body: 'This trade was cancelled, so there is nothing to confirm. The details have been updated.',
+    },
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,
       title: 'Not yours to answer',
@@ -468,6 +507,12 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
     },
   },
   reportNotReceived: {
+    [TRADE_CANCELLED]: {
+      terminal: true,
+      stale: true,
+      title: 'This trade was cancelled',
+      body: 'This trade was cancelled, so there is nothing to answer for. The details have been updated.',
+    },
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,
       title: 'Not yours to answer',
@@ -489,6 +534,34 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       terminal: true,
       title: 'That trade is no longer available',
       body: 'It may have been removed. The details have been updated.',
+    },
+  },
+  cancelTrade: {
+    [NOT_IN_PREREQUISITE_STATE]: {
+      // PD-046: once ANY obligation has been marked delivered the ordinary exit is gone, and
+      // it does not come back — a later "didn't receive" is not a route to cancellation.
+      // Terminal, and the screen re-reads so the control disappears.
+      terminal: true,
+      stale: true,
+      title: 'This trade can no longer be cancelled',
+      body:
+        'Something has already been delivered, so cancelling is no longer available. The'
+        + ' details have been updated.',
+    },
+    [INVALID_PARAMETER]: {
+      terminal: false,
+      title: 'Check that reason',
+      body: `Keep the reason under ${MAX_CANCEL_REASON} characters.`,
+    },
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That trade is no longer available',
+      body: 'It may have been removed. The details have been updated.',
+    },
+    [INTERNAL_ERROR]: {
+      terminal: true,
+      title: 'This trade needs support',
+      body: 'The app could not safely cancel this trade. Please contact support so the record can be checked.',
     },
   },
   deleteOffer: {
