@@ -32,6 +32,13 @@
 //      must be idempotent under real overlap: final result exactly two, never a partial pair or
 //      duplicate four-row pair.
 //
+//   6. Delivery and receipt races. `delivered_at` and the receiver's answer are each written
+//      ONCE and never moved, exactly one receiver outcome becomes authoritative, an
+//      unauthorized caller loses to the real deliverer rather than racing them, and the two
+//      obligations of one agreement progress independently. These are the transitions where a
+//      lost race would either reset the clock the future 7-day window is measured from, or let
+//      both "received" and "didn't receive" be true of the same obligation.
+//
 // Everything it writes is deleted at the end and the counts are re-asserted at zero.
 //
 // Usage:  node scripts/negotiation-concurrency.mjs
@@ -152,6 +159,26 @@ select pg_sleep(8);
 commit;`)
 }
 
+// Holds the OBLIGATION row itself, so the two racers below queue on the same lock the RPC
+// takes. Without it a delivery race can serialize by luck and the scenario proves nothing.
+//
+// Passing no side locks BOTH obligations of the agreement — needed when the two racers act on
+// DIFFERENT obligations. Locking the agreement row instead does not work: the delivery RPCs
+// never touch `barter_agreements`, so nothing would queue and the scenario would report a
+// false overlap failure (it did, once).
+async function blockObligation(interest, side = null) {
+  return runSql(`
+begin;
+select bo.id
+  from public.barter_obligations bo
+  join public.barter_agreements ag on ag.id = bo.agreement_id
+ where ag.interest_id = '${interest}'
+   ${side === null ? '' : `and bo.side = '${side}'`}
+ for update;
+select pg_sleep(8);
+commit;`)
+}
+
 async function blockAgreementForInterest(interest) {
   return runSql(`
 begin;
@@ -229,7 +256,34 @@ const ids = {
   interest6: randomUUID(),
   offer7: randomUUID(),
   interest7: randomUUID(),
+  offer8: randomUUID(),
+  interest8: randomUUID(),
+  offer9: randomUUID(),
+  interest9: randomUUID(),
+  offer10: randomUUID(),
+  interest10: randomUUID(),
+  offer11: randomUUID(),
+  interest11: randomUUID(),
+  offer12: randomUUID(),
+  interest12: randomUUID(),
 }
+
+// Every interest this harness creates, in one place: the cleanup and the residue assertions
+// both read it, so adding a scenario cannot leave rows behind by forgetting one list.
+const ALL_INTERESTS = [
+  ids.interest, ids.interest2, ids.interest3, ids.interest4, ids.interest5, ids.interest6,
+  ids.interest7, ids.interest8, ids.interest9, ids.interest10, ids.interest11, ids.interest12,
+]
+const ALL_OFFERS = [
+  ids.offer, ids.offer2, ids.offer3, ids.offer4, ids.offer5, ids.offer6, ids.offer7,
+  ids.offer8, ids.offer9, ids.offer10, ids.offer11, ids.offer12,
+]
+// The interests that reach an official agreement, and therefore have obligations.
+const AGREEMENT_INTERESTS = [
+  ids.interest4, ids.interest5, ids.interest6, ids.interest7, ids.interest8, ids.interest9,
+  ids.interest10, ids.interest11, ids.interest12,
+]
+const quoted = (list) => list.map((v) => `'${v}'`).join(',')
 
 async function seed() {
   const r = await runSql(`
@@ -265,13 +319,23 @@ begin
     values ('${ids.offer4}', opid, '${ids.ou}', 'conc offering4 ${tag}', 'conc seeking'),
            ('${ids.offer5}', opid, '${ids.ou}', 'conc offering5 ${tag}', 'conc seeking'),
            ('${ids.offer6}', opid, '${ids.ou}', 'conc offering6 ${tag}', 'conc seeking'),
-           ('${ids.offer7}', opid, '${ids.ou}', 'conc offering7 ${tag}', 'conc seeking');
+           ('${ids.offer7}', opid, '${ids.ou}', 'conc offering7 ${tag}', 'conc seeking'),
+           ('${ids.offer8}', opid, '${ids.ou}', 'conc offering8 ${tag}', 'conc seeking'),
+           ('${ids.offer9}', opid, '${ids.ou}', 'conc offering9 ${tag}', 'conc seeking'),
+           ('${ids.offer10}', opid, '${ids.ou}', 'conc offering10 ${tag}', 'conc seeking'),
+           ('${ids.offer11}', opid, '${ids.ou}', 'conc offering11 ${tag}', 'conc seeking'),
+           ('${ids.offer12}', opid, '${ids.ou}', 'conc offering12 ${tag}', 'conc seeking');
   insert into public.barter_interests(id, offer_id, interested_provider_id, interested_user_id,
     message, status) values
     ('${ids.interest4}', '${ids.offer4}', rpid, '${ids.ru}', 'x', 'accepted'),
     ('${ids.interest5}', '${ids.offer5}', rpid, '${ids.ru}', 'x', 'accepted'),
     ('${ids.interest6}', '${ids.offer6}', rpid, '${ids.ru}', 'x', 'accepted'),
-    ('${ids.interest7}', '${ids.offer7}', rpid, '${ids.ru}', 'x', 'accepted');
+    ('${ids.interest7}', '${ids.offer7}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest8}', '${ids.offer8}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest9}', '${ids.offer9}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest10}', '${ids.offer10}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest11}', '${ids.offer11}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest12}', '${ids.offer12}', rpid, '${ids.ru}', 'x', 'accepted');
 end $$;`)
   if (!r.ok) {
     console.error('seed failed:', r.out)
@@ -522,30 +586,208 @@ select count(*) as n, count(distinct side) as sides
   chk('obligation-pair race leaves one per side', '2', scalar(q.out, 'sides'))
 }
 
+// Opens, accepts and finalizes, leaving a confirmed trade with its two obligations.
+async function confirmedTrade(interest) {
+  await readyToConfirm(interest)
+  await runSql(asUser(ids.ou, `perform public.finalize_barter_agreement(${proposalOf(interest)});`))
+}
+const obligationOf = (interest, side) =>
+  `(select bo.id from public.barter_obligations bo`
+  + ` join public.barter_agreements ag on ag.id = bo.agreement_id`
+  + ` where ag.interest_id = '${interest}' and bo.side = '${side}')`
+
+// A SQL NULL comes back from the CLI as the bare token `null`, which `scalar` returns as the
+// four-character STRING "null" — so `x === null` is false for a column that is genuinely
+// empty. That produced two false failures ("no receiver answer was invented") on a run where
+// the database was entirely correct. Normalised here rather than inside `scalar`, which the
+// pre-existing scenarios compare as raw text.
+const nullable = (v) => (v === null || v === 'null' ? null : v)
+
+async function obligationRow(interest, side) {
+  const r = await runSql(`
+select bo.status as status,
+       bo.delivered_at as delivered_at,
+       bo.receipt_responded_at as answered_at
+  from public.barter_obligations bo
+  join public.barter_agreements ag on ag.id = bo.agreement_id
+ where ag.interest_id = '${interest}' and bo.side = '${side}';`)
+  return {
+    status: scalar(r.out, 'status'),
+    deliveredAt: nullable(scalar(r.out, 'delivered_at')),
+    answeredAt: nullable(scalar(r.out, 'answered_at')),
+  }
+}
+
+// ── 8. Two mark-delivered attempts at once, twice ──────────────────────────
+// The double tap. Both must succeed (the second is a no-op returning the state that exists),
+// and `delivered_at` must be written ONCE. A second round proves it stays put: if a duplicate
+// mark could re-stamp it, the clock the future 7-day receiver window is measured from would be
+// pushed forward every time the deliverer tapped again.
+async function raceMarkDelivered() {
+  await confirmedTrade(ids.interest8)
+  const mark =
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest8, 'offer_owner')});`
+  const blocker = blockObligation(ids.interest8, 'offer_owner')
+  await delay(2000)
+  const [a, b] = await Promise.all([runTimedUser(ids.ou, mark), runTimedUser(ids.ou, mark)])
+  await blocker
+  chk('the two mark-delivered RPC intervals genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('both simultaneous mark-delivered attempts succeed', 'true', String(a.opOk && b.opOk))
+  const first = await obligationRow(ids.interest8, 'offer_owner')
+  chk('a concurrent double mark leaves exactly one delivered obligation', 'delivered', first.status)
+  chk('and it carries a delivered_at', 'true', String(first.deliveredAt !== null))
+  chk('and no receiver answer was invented', 'true', String(first.answeredAt === null))
+
+  const blocker2 = blockObligation(ids.interest8, 'offer_owner')
+  await delay(2000)
+  const [c, d] = await Promise.all([runTimedUser(ids.ou, mark), runTimedUser(ids.ou, mark)])
+  await blocker2
+  chk('a second pair of mark-delivered attempts also overlapped',
+    'true', String(intervalsOverlap(c.timing, d.timing)))
+  const second = await obligationRow(ids.interest8, 'offer_owner')
+  chk('and re-marking under contention does NOT reset delivered_at',
+    first.deliveredAt, second.deliveredAt)
+
+  const other = await obligationRow(ids.interest8, 'responder')
+  chk('the counterparty obligation is untouched by the race', 'pending', other.status)
+}
+
+// ── 9. The deliverer racing someone with no authority over the obligation ──
+async function raceDelivererVsIntruder() {
+  await confirmedTrade(ids.interest9)
+  const mark =
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest9, 'offer_owner')});`
+  const blocker = blockObligation(ids.interest9, 'offer_owner')
+  await delay(2000)
+  // ids.ru is the RECEIVER of this obligation: a real participant, with no authority over
+  // this end of it. The race must be decided by the row, not by who arrived first.
+  const [deliverer, intruder] = await Promise.all([
+    runTimedUser(ids.ou, mark),
+    runTimedUser(ids.ru, mark),
+  ])
+  await blocker
+  chk('the deliverer and the receiver genuinely raced for the same obligation',
+    'true', String(intervalsOverlap(deliverer.timing, intruder.timing)))
+  chk('the deliverer wins', 'true', String(deliverer.opOk))
+  chk('and the receiver is refused whichever order they arrive in',
+    '42501', intruder.timing?.code)
+  const row = await obligationRow(ids.interest9, 'offer_owner')
+  chk('exactly the deliverer\'s mark stands', 'delivered', row.status)
+  chk('with a delivered_at written', 'true', String(row.deliveredAt !== null))
+}
+
+// ── 10. The two receiver answers racing each other ─────────────────────────
+// The one race where a lost decision would make both "received" and "didn't receive" true of
+// the same obligation. Exactly one must become authoritative; the other must be refused.
+async function raceOpposingReceiverAnswers() {
+  await confirmedTrade(ids.interest10)
+  await runSql(asUser(ids.ou,
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest10, 'offer_owner')});`))
+  const confirm =
+    `perform public.confirm_barter_obligation_received(${obligationOf(ids.interest10, 'offer_owner')});`
+  const deny =
+    `perform public.report_barter_obligation_not_received(${obligationOf(ids.interest10, 'offer_owner')});`
+  const blocker = blockObligation(ids.interest10, 'offer_owner')
+  await delay(2000)
+  const [yes, no] = await Promise.all([
+    runTimedUser(ids.ru, confirm),
+    runTimedUser(ids.ru, deny),
+  ])
+  await blocker
+  chk('the two opposing receiver answers genuinely overlapped',
+    'true', String(intervalsOverlap(yes.timing, no.timing)))
+  chk('exactly one receiver answer wins', 'true', String(yes.opOk !== no.opOk))
+  const loser = yes.opOk ? no : yes
+  chk('and the loser is told an answer is already recorded', 'PT412', loser.timing?.code)
+  const row = await obligationRow(ids.interest10, 'offer_owner')
+  chk('the obligation carries exactly one of the two answers', 'true',
+    String(row.status === 'received' || row.status === 'not_received'))
+  chk('the winning answer matches the RPC that succeeded', 'true',
+    String(row.status === (yes.opOk ? 'received' : 'not_received')))
+  chk('and a single answer time is stamped', 'true', String(row.answeredAt !== null))
+}
+
+// ── 11. The same receiver answer twice at once ─────────────────────────────
+async function raceSameReceiverAnswer() {
+  await confirmedTrade(ids.interest11)
+  await runSql(asUser(ids.ou,
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest11, 'offer_owner')});`))
+  const confirm =
+    `perform public.confirm_barter_obligation_received(${obligationOf(ids.interest11, 'offer_owner')});`
+  const blocker = blockObligation(ids.interest11, 'offer_owner')
+  await delay(2000)
+  const [a, b] = await Promise.all([runTimedUser(ids.ru, confirm), runTimedUser(ids.ru, confirm)])
+  await blocker
+  chk('the two identical receiver answers genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('repeating the same answer under contention is safe for both',
+    'true', String(a.opOk && b.opOk))
+  const first = await obligationRow(ids.interest11, 'offer_owner')
+  chk('and records the answer once', 'received', first.status)
+
+  await runSql(asUser(ids.ru, confirm))
+  const second = await obligationRow(ids.interest11, 'offer_owner')
+  chk('and a later repeat does not move the answer time', first.answeredAt, second.answeredAt)
+  chk('nor the delivery time', first.deliveredAt, second.deliveredAt)
+}
+
+// ── 12. Both sides of one agreement delivering at once ─────────────────────
+// Proves there is no cross-obligation authority OR cross-obligation interference: each
+// participant writes their own end, and neither touches the other's.
+async function raceBothSidesDeliver() {
+  await confirmedTrade(ids.interest12)
+  const markOwner =
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest12, 'offer_owner')});`
+  const markResponder =
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest12, 'responder')});`
+  // Both obligations, because the two racers act on different rows.
+  const blocker = blockObligation(ids.interest12)
+  await delay(2000)
+  const [a, b] = await Promise.all([
+    runTimedUser(ids.ou, markOwner),
+    runTimedUser(ids.ru, markResponder),
+  ])
+  await blocker
+  chk('both sides delivering genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('each participant can mark their own obligation delivered at the same time',
+    'true', String(a.opOk && b.opOk))
+  const owner = await obligationRow(ids.interest12, 'offer_owner')
+  const responder = await obligationRow(ids.interest12, 'responder')
+  chk('the owner side is delivered', 'delivered', owner.status)
+  chk('the responder side is delivered', 'delivered', responder.status)
+  chk('each side has its own delivery time', 'true',
+    String(owner.deliveredAt !== null && responder.deliveredAt !== null))
+  chk('and neither side recorded a receiver answer', 'true',
+    String(owner.answeredAt === null && responder.answeredAt === null))
+}
+
 async function cleanup() {
   const r = await runSql(`
 do $$
 begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  -- Obligations cascade with their agreement, and the immutability trigger early-returns for
+  -- service_role, so the agreement delete is what removes them.
   delete from public.barter_agreements
-   where interest_id in ('${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
+   where interest_id in (${quoted(AGREEMENT_INTERESTS)});
   delete from public.barter_version_acceptances a using public.barter_proposal_versions v,
     public.barter_proposals p
    where a.version_id = v.id and v.proposal_id = p.id
-     and p.interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
+     and p.interest_id in (${quoted(ALL_INTERESTS)});
   delete from public.barter_proposal_terms t using public.barter_proposal_versions v,
     public.barter_proposals p
    where t.version_id = v.id and v.proposal_id = p.id
-     and p.interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
+     and p.interest_id in (${quoted(ALL_INTERESTS)});
   delete from public.barter_proposal_versions v using public.barter_proposals p
    where v.proposal_id = p.id
-     and p.interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
+     and p.interest_id in (${quoted(ALL_INTERESTS)});
   delete from public.barter_proposals
-   where interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
+   where interest_id in (${quoted(ALL_INTERESTS)});
   delete from public.barter_interests
-   where id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
-  delete from public.barter_offers where id in ('${ids.offer}','${ids.offer2}','${ids.offer3}',
-    '${ids.offer4}','${ids.offer5}','${ids.offer6}','${ids.offer7}');
+   where id in (${quoted(ALL_INTERESTS)});
+  delete from public.barter_offers where id in (${quoted(ALL_OFFERS)});
   delete from public.providers where user_id in ('${ids.ou}','${ids.ru}');
   delete from auth.users where id in ('${ids.ou}','${ids.ru}');
 end $$;`)
@@ -556,15 +798,15 @@ end $$;`)
   // moment any real row exists on the target.
   const q = await runSql(`
 select (select count(*) from public.barter_offers where id in
-          ('${ids.offer}','${ids.offer2}','${ids.offer3}','${ids.offer4}','${ids.offer5}','${ids.offer6}','${ids.offer7}')) as offers,
+          (${quoted(ALL_OFFERS)})) as offers,
        (select count(*) from public.barter_interests where id in
-          ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}')) as interests,
+          (${quoted(ALL_INTERESTS)})) as interests,
        (select count(*) from public.barter_proposals where interest_id in
-          ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}')) as proposals,
+          (${quoted(ALL_INTERESTS)})) as proposals,
        (select count(*) from public.barter_obligations bo join public.barter_agreements ag on ag.id = bo.agreement_id
-          where ag.interest_id in ('${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}')) as obligations,
+          where ag.interest_id in (${quoted(AGREEMENT_INTERESTS)})) as obligations,
        (select count(*) from public.barter_agreements where interest_id in
-          ('${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}')) as agreements,
+          (${quoted(AGREEMENT_INTERESTS)})) as agreements,
        (select count(*) from public.providers where user_id in
           ('${ids.ou}','${ids.ru}')) as providers,
        (select count(*) from auth.users where id in ('${ids.ou}','${ids.ru}')) as users;`)
@@ -581,6 +823,11 @@ await raceFinalizeFinalize()
 await raceFinalizeCounter()
 await raceFinalizeRelease()
 await raceObligationPairCreation()
+await raceMarkDelivered()
+await raceDelivererVsIntruder()
+await raceOpposingReceiverAnswers()
+await raceSameReceiverAnswer()
+await raceBothSidesDeliver()
 await cleanup()
 
 const failed = results.filter((r) => !r.ok).length

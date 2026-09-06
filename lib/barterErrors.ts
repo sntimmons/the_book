@@ -59,6 +59,9 @@ export type BarterWriteOp =
   | 'proposeTerms'
   | 'acceptTerms'
   | 'confirmTrade'
+  | 'markDelivered'
+  | 'confirmReceived'
+  | 'reportNotReceived'
 
 export interface BarterWriteFailure {
   /** Terminal means retrying cannot succeed; the UI must not offer a retry. */
@@ -115,6 +118,10 @@ const CONFIRMED_TRADE = 'PT409'
 // continue by sending a new version with updated timing, but retrying the same accept/confirm
 // cannot work.
 const EXPIRED_TERMS = 'PT410'
+// Raised by record_barter_obligation_receipt when an answer is already recorded and this one
+// differs. Distinct from every code above because the caller IS the receiver, the obligation
+// IS delivered, and nothing is stale in a way a re-read can fix: their first answer stands.
+const ANSWER_ALREADY_RECORDED = 'PT412'
 
 const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   respond: { terminal: false, title: 'Could not send', body: 'Please try again.' },
@@ -126,6 +133,17 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   acceptTerms: { terminal: false, title: 'Could not accept', body: 'Please try again.' },
   confirmTrade: { terminal: false, title: 'Could not confirm', body: 'Please try again.' },
   deleteOffer: { terminal: false, title: 'Could not delete', body: 'Please try again.' },
+  markDelivered: {
+    terminal: false,
+    title: 'Could not mark this delivered',
+    body: 'Please try again.',
+  },
+  confirmReceived: { terminal: false, title: 'Could not confirm', body: 'Please try again.' },
+  reportNotReceived: {
+    terminal: false,
+    title: 'Could not record your answer',
+    body: 'Please try again.',
+  },
 }
 
 // A write that affected ZERO rows. Authorization on these tables is expressed as an RLS
@@ -179,6 +197,25 @@ const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
     terminal: true,
     title: 'That negotiation is no longer available',
     body: 'It may have ended. The details have been updated.',
+  },
+  // The three delivery operations are RPCs returning a scalar, so an RLS-filtered zero-row
+  // write cannot arise for them. The Record is TOTAL over the operation union rather than
+  // partial, so a future PostgREST write on this surface inherits true copy instead of an
+  // undefined lookup.
+  markDelivered: {
+    terminal: true,
+    title: 'That trade is no longer available',
+    body: 'It may have been removed. The details have been updated.',
+  },
+  confirmReceived: {
+    terminal: true,
+    title: 'That trade is no longer available',
+    body: 'It may have been removed. The details have been updated.',
+  },
+  reportNotReceived: {
+    terminal: true,
+    title: 'That trade is no longer available',
+    body: 'It may have been removed. The details have been updated.',
   },
 }
 
@@ -387,6 +424,71 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       terminal: true,
       title: 'This trade needs support',
       body: 'The app could not safely confirm this trade. Please contact support so the record can be checked.',
+    },
+  },
+  markDelivered: {
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      // Names the rule, not the caller's mistake: only the provider who owes something can
+      // say they delivered it, and the receiver confirming on their behalf is exactly what
+      // the whole surface exists to prevent.
+      title: 'Not yours to mark',
+      body: 'Only the provider who agreed to provide this can mark it delivered.',
+    },
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That trade is no longer available',
+      body: 'It may have been removed. The details have been updated.',
+    },
+  },
+  confirmReceived: {
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not yours to answer',
+      body: 'Only the provider receiving this can say whether they received it.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      // NOT terminal: the other provider can still mark it delivered, and then this action
+      // becomes available. The screen re-reads so the controls match what is actually true.
+      terminal: false,
+      stale: true,
+      title: 'Not delivered yet',
+      body: 'The other provider has not marked this delivered. The details have been updated.',
+    },
+    [ANSWER_ALREADY_RECORDED]: {
+      terminal: true,
+      stale: true,
+      title: 'You already answered this',
+      body: 'Your answer was recorded and cannot be changed. The details have been updated.',
+    },
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That trade is no longer available',
+      body: 'It may have been removed. The details have been updated.',
+    },
+  },
+  reportNotReceived: {
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not yours to answer',
+      body: 'Only the provider receiving this can say whether they received it.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      terminal: false,
+      stale: true,
+      title: 'Not delivered yet',
+      body: 'The other provider has not marked this delivered. The details have been updated.',
+    },
+    [ANSWER_ALREADY_RECORDED]: {
+      terminal: true,
+      stale: true,
+      title: 'You already answered this',
+      body: 'Your answer was recorded and cannot be changed. The details have been updated.',
+    },
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That trade is no longer available',
+      body: 'It may have been removed. The details have been updated.',
     },
   },
   deleteOffer: {

@@ -5,22 +5,34 @@ import { barterWriteFailure, BarterWriteOp, interpretWrite } from '../../lib/bar
 // SAME code means different things for different operations, and that anything unrecognised
 // stays retryable rather than being force-fitted to a terminal message.
 
-// DRIVEN FROM THE UNION, not hand-listed. Both safety suites below previously enumerated five
-// operations by hand, so the two added by the negotiation slice were silently excluded — and
-// the most consequential mappings in that slice (40001 must be NON-terminal or a provider is
-// stranded on a live negotiation; 54000 must be terminal-for-today or they loop for a day) had
-// no client test at all. A hand-written list cannot fail when the union grows.
-const ALL_OPS: BarterWriteOp[] = [
-  'respond',
-  'accept',
-  'decline',
-  'release',
-  'closeOffer',
-  'deleteOffer',
-  'proposeTerms',
-  'acceptTerms',
-  'confirmTrade',
-]
+// DRIVEN FROM THE UNION, not hand-listed — and now actually enforced.
+//
+// This was a `BarterWriteOp[]` literal, which TypeScript accepts when it holds a SUBSET of the
+// union. So the list silently fell behind twice: the negotiation slice's two operations were
+// excluded, the comment was rewritten to say the list was union-driven, and the array stayed a
+// hand-written literal — which then excluded the delivery slice's three as well. Nine entries
+// against a twelve-member union, compiling green.
+//
+// A total `Record<BarterWriteOp, true>` cannot do that: omit a member and it is a COMPILE
+// error, so a thirteenth operation must be added here before `npm run check` will pass. The
+// keys are then the whole union, which is what both safety suites below need — one asserts
+// that an unrecognised SQLSTATE stays retryable, the other that a zero-row write is terminal,
+// and an operation missing from either is an operation whose refusals nothing checks.
+const OPS: Record<BarterWriteOp, true> = {
+  respond: true,
+  accept: true,
+  decline: true,
+  release: true,
+  closeOffer: true,
+  deleteOffer: true,
+  proposeTerms: true,
+  acceptTerms: true,
+  confirmTrade: true,
+  markDelivered: true,
+  confirmReceived: true,
+  reportNotReceived: true,
+}
+const ALL_OPS = Object.keys(OPS) as BarterWriteOp[]
 
 const pgErr = (code: string) => ({ code, message: 'raw db text', details: '', hint: '' })
 

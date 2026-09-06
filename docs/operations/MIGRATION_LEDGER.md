@@ -468,6 +468,57 @@ Post-apply B5B: **637/637 passed, 0 failed**, zero residue. Concurrency proof: *
 passed, 0 failed**, including concurrent idempotent obligation-pair creation and zero
 residue for obligations.
 
+## 2026-09-05 — `20261004000000` applied to non-production
+
+Obligation delivery and receiver confirmation, on top of the obligations foundation.
+
+`20261004000000` adds three lifecycle columns to `barter_obligations` — `status`
+(`pending` / `delivered` / `received` / `not_received`), `delivered_at` and
+`receipt_responded_at` — bound to each other by four CHECK constraints, and two participant
+actions: the obligation's **deliverer** may mark that obligation delivered
+(`mark_barter_obligation_delivered`), and its **receiver** may then answer, either
+`confirm_barter_obligation_received` or `report_barter_obligation_not_received`. Both answers
+route through one internal helper, `record_barter_obligation_receipt`, which is granted to no
+client role, so the receiver's vocabulary is closed by the API surface itself rather than by a
+validated parameter.
+
+`status` records **events, not verdicts**. `received` is deliberately not `fulfilled` and
+`not_received` is deliberately not `unfulfilled`, `disputed` or `needs_attention`: those are
+adjudicated outcomes under PD-046 and no adjudication exists. **Nothing terminal was added** —
+no 7-day timeout transition, automatic fulfilment or completion, cancellation, mutual
+cancellation, no-show, Needs Attention, Under Review, adjudication, obligation outcome or
+agreement outcome. The absence of each is *asserted* in the harness, not assumed. The future
+7-day receiver window derives from `delivered_at`, so no redundant deadline column is stored.
+
+The client supplies only an obligation id. Direction, both participant identities and every
+timestamp are read from the row; `delivered_at` and `receipt_responded_at` are server-stamped
+and write-once, so a duplicate mark or a repeated answer is a safe no-op that cannot move
+either clock, and neither `received` nor `not_received` can flip to the other. A
+non-participant and a non-existent obligation are refused identically, so neither RPC is an
+existence oracle, and authorization is decided on an unlocked read so a stranger never
+contends for a row they have no right to.
+
+`enforce_barter_obligations_immutable` was **redefined**, from the blanket refusal
+`20261003000000` created to a transition-aware guard. Content, timing, direction and
+participant identity remain frozen — now **denied by default**, by comparing the whole row
+minus the three lifecycle keys, so a column added later is frozen automatically rather than
+becoming mutable in silence. Lifecycle writes are accepted only from inside a delivery RPC,
+proven by a transaction-local marker carrying that obligation's id (the `app.barter_terms_write`
+shape from `20260923000000`), and only along the two legal transitions. A new
+`enforce_barter_obligation_starts_pending` BEFORE INSERT trigger, with no `service_role`
+bypass, keeps every obligation entering the lifecycle at the beginning. `authenticated` gains
+no INSERT, UPDATE or DELETE and no write policy was added; the table stays participant
+SELECT-only.
+
+Ledger after: **43 entries**, `local == remote` for every row through `20261004000000`.
+Production untouched, and never queried.
+
+Post-apply B5B: **730/730 passed, 0 failed**, zero residue. Concurrency proof: **67/67
+passed, 0 failed**, including concurrent double mark-delivered (twice, proving `delivered_at`
+is not re-stamped under contention), deliverer versus an unauthorized caller, the two opposing
+receiver answers racing each other, the same answer twice at once, and both sides of one
+agreement delivering simultaneously — with zero residue for obligations.
+
 ## Prevention
 
 **Do not apply a slice to non-production before its security review and Founder rulings have

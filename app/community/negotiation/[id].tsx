@@ -18,13 +18,16 @@ import { useAuth } from '@/context/AuthContext'
 import {
   acceptVersion,
   BarterObligation,
+  confirmObligationReceived,
   createProposal,
   fetchInterestContext,
   finalizeAgreement,
   fetchNegotiation,
   fetchNegotiationForInterest,
+  markObligationDelivered,
   NegotiationRow,
   ProposalVersion,
+  reportObligationNotReceived,
   submitCounter,
 } from '@/lib/negotiation'
 import { barterWriteFailure } from '@/lib/barterErrors'
@@ -37,13 +40,22 @@ import {
   ProposalSide,
   shouldShowTermsChangedNote,
   sideLabel,
-  sideForRole,
   termsTimingStillValid,
   TERMS_EXPIRED_NOTE,
   TERMS_CHANGED_NOTE,
   TradeSide,
   validateDraft,
 } from '@/lib/negotiationState'
+import {
+  CONFIRM_RECEIVED_COPY,
+  MARK_DELIVERED_COPY,
+  NOT_RECEIVED_COPY,
+  ObligationActionCopy,
+  obligationRole,
+  obligationTimeline,
+  obligationView,
+  RESPOND_LABELS,
+} from '@/lib/obligationState'
 import { formatTradeDate } from '@/lib/tradeActivity'
 
 // NEGOTIATION — the terms of one barter trade, and their history.
@@ -52,9 +64,15 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // happen; this is where the terms live, and the two are deliberately separate: a provider pair
 // may trade more than once over time while keeping one conversation.
 //
-// Finalization records an official agreement and creates two directed obligations. There is
-// still no fulfilment, delivery, cancellation-after-agreement or adjudication model, so no copy
-// on this screen may say a trade is booked, complete or safely cancelable.
+// Finalization records an official agreement and creates two directed obligations. Each
+// obligation can now be marked delivered by ITS deliverer and answered by ITS receiver.
+//
+// That is all it can do. There is still no timeout, automatic fulfilment or completion,
+// cancellation-after-agreement, no-show, Needs Attention, Under Review, adjudication or
+// terminal outcome — for the obligation or for the agreement — so no copy on this screen may
+// say a trade is booked, complete, fulfilled, unfulfilled, cancelled, disputed, resolved,
+// under review or safely cancelable. The agreement stays "Trade confirmed" while its
+// obligations progress.
 
 const EMPTY_DRAFT: ProposalDraft = {
   ownerGives: '',
@@ -148,9 +166,14 @@ export default function NegotiationScreen() {
   // which side of the trade a first proposal is written against.
   const myRole: TradeSide =
     row?.myRole ?? context.myRole ?? (params.role === 'owner' ? 'owner' : 'responder')
-  const myObligationSide = sideForRole(myRole)
-  const myObligation = obligations.find((o) => o.side === myObligationSide) ?? null
-  const theirObligation = obligations.find((o) => o.side !== myObligationSide) ?? null
+  // Which obligation is whose comes from `obligationRole`, the same predicate the card itself
+  // uses. Re-spelling it here as `side === sideForRole(myRole)` was a second copy of a rule
+  // that module owns: the two agree today, but only the module's copy is tested, so a change
+  // there would not follow here.
+  const myObligation =
+    obligations.find((o) => obligationRole(o.side, myRole) === 'deliverer') ?? null
+  const theirObligation =
+    obligations.find((o) => obligationRole(o.side, myRole) === 'receiver') ?? null
   // Live only when the underlying interest is accepted. A released negotiation with no terms
   // must not be offered a compose control the server will always refuse.
   const contextIsLive = (row?.interestStatus ?? context.status) === 'accepted'
@@ -247,6 +270,50 @@ export default function NegotiationScreen() {
         { text: CONFIRM_TRADE_COPY.confirmLabel, onPress: onConfirm },
       ],
     )
+  }
+
+  // ── Delivery and receipt ──────────────────────────────────────────────────
+  // One handler for all three obligation writes. The OBLIGATION ID is the only thing sent;
+  // the server derives who the caller is, which end of the obligation they are on, and every
+  // timestamp. This function cannot express "mark their obligation delivered" — there is no
+  // parameter for it here and no RPC for it there.
+  async function runObligationWrite(
+    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived',
+    obligationId: string,
+  ) {
+    if (busy) return
+    setBusy(true)
+    const { ok, error } =
+      op === 'markDelivered'
+        ? await markObligationDelivered(obligationId)
+        : op === 'confirmReceived'
+          ? await confirmObligationReceived(obligationId)
+          : await reportObligationNotReceived(obligationId)
+    setBusy(false)
+    if (!ok) {
+      const f = barterWriteFailure(op, error)
+      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+      // Re-read on terminal OR stale: every refusal here means the obligation moved under the
+      // button, and leaving the old controls on screen invites the same impossible tap again.
+      if (f.terminal || f.stale) {
+        setLoading(true)
+        load()
+      }
+      return
+    }
+    setLoading(true)
+    load()
+  }
+
+  function askThenWrite(
+    copy: ObligationActionCopy,
+    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived',
+    obligationId: string,
+  ) {
+    Alert.alert(copy.title, copy.body, [
+      { text: copy.cancelLabel, style: 'cancel' },
+      { text: copy.confirmLabel, onPress: () => runObligationWrite(op, obligationId) },
+    ])
   }
 
   async function onSend() {
@@ -362,17 +429,69 @@ export default function NegotiationScreen() {
     )
   }
 
-  function renderObligation(title: string, obligation: BarterObligation | null) {
+  function renderObligation(obligation: BarterObligation | null) {
     if (!obligation) return null
+    // Both inputs are server-derived: `myRole` from the negotiation row, `side` from the
+    // obligation row. The title is NOT chosen by the caller any more — passing it in is how a
+    // screen ends up labelling an obligation "You agreed to provide" while offering the
+    // receiver's controls beside it.
+    const role = obligationRole(obligation.side, myRole)
+    const o = obligationView(role, obligation.status)
     return (
       <View style={styles.term}>
-        <Text style={styles.termSide}>{title}</Text>
+        <Text style={styles.termSide}>{o.title}</Text>
         <Text style={styles.termText}>{obligation.agreedDescription}</Text>
         <Text style={styles.termTiming}>Due by {formatTermTime(obligation.dueAt)}</Text>
         {obligation.scheduledAt ? (
           <Text style={styles.termTiming}>
             Scheduled for {formatTermTime(obligation.scheduledAt)}
           </Text>
+        ) : null}
+        <Text style={styles.obligationState}>{o.state}</Text>
+        {obligationTimeline(obligation.deliveredAt, obligation.receiptRespondedAt).map((t) => (
+          // Labels come from the module, so they are covered by the same forbidden-vocabulary
+          // sweep as the rest of the card. Formatted with `formatTermTime`, the SAME formatter
+          // the due and scheduled lines above use — the date-only history formatter dropped the
+          // time of day, which is the part of a delivery time that actually matters.
+          <Text key={t.key} style={styles.termTiming}>
+            {t.label} {formatTermTime(t.at)}
+          </Text>
+        ))}
+        {o.note ? <Text style={styles.obligationNote}>{o.note}</Text> : null}
+        {o.canMarkDelivered ? (
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, busy && styles.btnDisabled]}
+              disabled={busy}
+              onPress={() =>
+                askThenWrite(MARK_DELIVERED_COPY, 'markDelivered', obligation.id)
+              }
+            >
+              <Text style={styles.primaryText}>{MARK_DELIVERED_COPY.confirmLabel}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {o.canRespond ? (
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, busy && styles.btnDisabled]}
+              disabled={busy}
+              onPress={() =>
+                askThenWrite(CONFIRM_RECEIVED_COPY, 'confirmReceived', obligation.id)
+              }
+            >
+              <Text style={styles.primaryText}>{RESPOND_LABELS.received}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+              disabled={busy}
+              onPress={() =>
+                askThenWrite(NOT_RECEIVED_COPY, 'reportNotReceived', obligation.id)
+              }
+            >
+              <Text style={styles.secondaryText}>{RESPOND_LABELS.notReceived}</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
       </View>
     )
@@ -479,11 +598,23 @@ export default function NegotiationScreen() {
                 {' · '}
                 {formatTradeDate(current.createdAt)}
               </Text>
-              {view.state === 'confirmed' && obligations.length === 2 ? (
-                <>
-                  {renderObligation('You agreed to provide', myObligation)}
-                  {renderObligation('You will receive', theirObligation)}
-                </>
+              {view.state === 'confirmed' ? (
+                obligations.length === 2 ? (
+                  <>
+                    {renderObligation(myObligation)}
+                    {renderObligation(theirObligation)}
+                  </>
+                ) : (
+                  // A confirmed trade whose two sides did not both arrive. The database
+                  // guarantees exactly two and both are readable by both participants, so this
+                  // should be unreachable — but the alternative fallback was the PRE-AGREEMENT
+                  // view, which would show a confirmed trade the acceptance checkmarks and no
+                  // delivery controls, and say nothing about why.
+                  <Text style={styles.obligationState}>
+                    This trade is confirmed, but its two sides could not be loaded just now. Go
+                    back and open it again.
+                  </Text>
+                )
               ) : (
                 <>
                   {current.terms.map((t) => (
@@ -661,6 +792,13 @@ const styles = StyleSheet.create({
   },
   termText: { color: '#F0E8D5', fontSize: 14, lineHeight: 20, marginTop: 2 },
   termTiming: { color: 'rgba(240,232,213,0.6)', fontSize: 12.5, lineHeight: 18, marginTop: 2 },
+  obligationState: { color: '#F0E8D5', fontSize: 13, lineHeight: 19, marginTop: 8 },
+  obligationNote: {
+    color: 'rgba(240,232,213,0.6)',
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 2,
+  },
   acceptRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14 },
   acceptText: { color: 'rgba(240,232,213,0.6)', fontSize: 12.5, marginRight: 10 },
   draftRow: { marginTop: 12 },

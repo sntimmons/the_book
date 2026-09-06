@@ -49,9 +49,10 @@ export interface ProposalDraft {
  * The negotiation as the viewer experiences it.
  *
  * `bothAccepted` records that both providers accepted the same current terms. It does not
- * itself mean an agreement exists: finalization creates `agreementId`, while obligation and
- * fulfilment remain later slices. Copy may call a trade confirmed only when `agreementId`
- * exists, and must still not call it booked, complete or fulfilled.
+ * itself mean an agreement exists: finalization creates `agreementId`, which in turn creates
+ * the two obligations that delivery and receipt then run against (see `lib/obligationState.ts`).
+ * Copy may call a trade confirmed only when `agreementId` exists, and must still not call it
+ * booked, complete or fulfilled — no completion model exists at either level.
  */
 export interface NegotiationFacts {
   /** From the underlying interest: 'accepted' is live, anything else has ended. */
@@ -138,9 +139,13 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
   },
   confirmed: {
     headline: 'Trade confirmed',
-    // Beta-safe: confirmed, not booked / complete / fulfilled / delivered / guaranteed. No
-    // obligation, delivery or completion model exists; this records that the agreement is
-    // official and that its terms can no longer change.
+    // Beta-safe: confirmed, not booked / complete / fulfilled / guaranteed. This is the
+    // AGREEMENT's state and it stays "Trade confirmed" for the whole life of the trade.
+    //
+    // Obligations underneath it now have their own delivery and receipt lifecycle, but that
+    // never rolls up to here: no completion, cancellation, no-show or adjudication model
+    // exists, so an agreement has no terminal outcome to report. What each side owes, has
+    // delivered, and has confirmed is said per obligation, by `lib/obligationState.ts`.
     detail:
       'These terms are now the agreed trade and can no longer be changed. Arrange the details'
       + ' in your conversation.',
