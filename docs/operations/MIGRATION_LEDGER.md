@@ -437,6 +437,37 @@ queried.
 Post-apply B5B: **608/608 passed, 0 failed**, zero residue. Concurrency proof: **30/30
 passed, 0 failed**, zero residue.
 
+## 2026-09-05 — `20261003000000` applied to non-production
+
+Barter obligations foundation for official agreements.
+
+`20261003000000` adds `barter_obligations`, with exactly two directed rows per
+`barter_agreements` row: the `offer_owner` term is delivered by the offer owner to the
+responder, and the `responder` term is delivered by the responder to the offer owner.
+Obligations are derived server-side from the agreement's `accepted_version_id` and the two
+authoritative `barter_proposal_terms`; the client does not provide direction, participant
+identity, source term, description, `due_at` or `scheduled_at`. Timing is copied exactly from
+the accepted proposal terms.
+
+The implementation is additive: an `AFTER INSERT` trigger on `barter_agreements` calls the
+internal `create_barter_obligation_pair(uuid)` helper in the same transaction as agreement
+finalization, without rewriting `finalize_barter_agreement(uuid)`. The helper is idempotent
+for existing agreements that already have the complete pair, and the insert guard rejects
+forged direct writes whose side, source term, participant identities, description or timing do
+not match the accepted version. Participant read is SELECT-only; no fulfilment, delivery,
+receipt, cancellation, no-show, adjudication, reviews, reputation or lifecycle status schema
+was added.
+
+The obligation table's foreign keys cascade with the existing agreement graph and account
+erasure behaviour. This migration does not introduce a new retention policy.
+
+Ledger after: **42 entries**, `local == remote` for every row through `20261003000000`.
+Production untouched, and never queried.
+
+Post-apply B5B: **637/637 passed, 0 failed**, zero residue. Concurrency proof: **37/37
+passed, 0 failed**, including concurrent idempotent obligation-pair creation and zero
+residue for obligations.
+
 ## Prevention
 
 **Do not apply a slice to non-production before its security review and Founder rulings have

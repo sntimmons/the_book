@@ -223,6 +223,165 @@ begin
   perform pg_temp.chk('agreement', 'the closed post cannot be reopened normally', '55000', v_code);
 end $$;
 
+-- ── Obligation pair: exactly two, derived from the accepted terms ──────────
+do $$
+declare
+  ou uuid := current_setting('b5b.ag_ou')::uuid;
+  ru uuid := current_setting('b5b.ag_ru')::uuid;
+  xu uuid := current_setting('b5b.ag_xu')::uuid;
+  v_ag uuid := current_setting('b5b.ag_id')::uuid;
+  opid uuid; rpid uuid; o uuid; i uuid; pid uuid; vid uuid;
+  v_n integer; v_code text;
+begin
+  perform pg_temp.act_service();
+
+  -- A live negotiation that has not been finalized has no obligations.
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+    values (
+      (select id from public.providers where user_id = ou),
+      ou,
+      'pre obligation offering',
+      'pre obligation seeking'
+    ) returning id into o;
+  insert into public.barter_interests(offer_id, interested_provider_id, interested_user_id,
+    message, status)
+    values (
+      o,
+      (select id from public.providers where user_id = ru),
+      ru,
+      'x',
+      'accepted'
+    ) returning id into i;
+  perform pg_temp.act(ou);
+  select pg_temp.create_barter_proposal_timed(i, 'pre owner gives', 'pre responder gives')
+    into pid;
+  perform pg_temp.act_service();
+  select count(*) into v_n
+    from public.barter_obligations bo
+    join public.barter_agreements ag on ag.id = bo.agreement_id
+   where ag.proposal_id = pid;
+  perform pg_temp.chk('agreement', 'no obligations without official agreement', '0', v_n::text);
+
+  -- The finalized fixture creates exactly two obligations in the same transaction.
+  select count(*) into v_n from public.barter_obligations where agreement_id = v_ag;
+  perform pg_temp.chk('agreement', 'exactly two obligations per agreement', '2', v_n::text);
+  select count(distinct side) into v_n from public.barter_obligations where agreement_id = v_ag;
+  perform pg_temp.chk('agreement', 'one obligation per side', '2', v_n::text);
+  select count(*) into v_n
+    from public.barter_obligations
+   where agreement_id = v_ag and side = 'offer_owner';
+  perform pg_temp.chk('agreement', 'one offer_owner obligation', '1', v_n::text);
+  select count(*) into v_n
+    from public.barter_obligations
+   where agreement_id = v_ag and side = 'responder';
+  perform pg_temp.chk('agreement', 'one responder obligation', '1', v_n::text);
+
+  select count(*) into v_n
+    from public.barter_obligations bo
+    join public.barter_agreements ag on ag.id = bo.agreement_id
+   where bo.agreement_id = v_ag
+     and (
+       (bo.side = 'offer_owner'
+        and bo.deliverer_provider_id = ag.owner_provider_id
+        and bo.deliverer_user_id = ag.owner_user_id
+        and bo.receiver_provider_id = ag.responder_provider_id
+        and bo.receiver_user_id = ag.responder_user_id)
+       or
+       (bo.side = 'responder'
+        and bo.deliverer_provider_id = ag.responder_provider_id
+        and bo.deliverer_user_id = ag.responder_user_id
+        and bo.receiver_provider_id = ag.owner_provider_id
+        and bo.receiver_user_id = ag.owner_user_id)
+     );
+  perform pg_temp.chk('agreement', 'deliverer and receiver identities match agreement sides',
+    '2', v_n::text);
+
+  select count(*) into v_n
+    from public.barter_obligations bo
+    join public.barter_agreements ag on ag.id = bo.agreement_id
+    join public.barter_proposal_terms t on t.id = bo.source_term_id
+   where bo.agreement_id = v_ag
+     and t.version_id = ag.accepted_version_id
+     and t.provided_by = bo.side
+     and t.service_description = bo.agreed_description
+     and t.due_at = bo.due_at
+     and t.scheduled_at is not distinct from bo.scheduled_at;
+  perform pg_temp.chk('agreement',
+    'source term, description and timing derive from accepted version', '2', v_n::text);
+
+  -- Re-running the internal creator is idempotent: it does not create duplicates or a partial.
+  perform public.create_barter_obligation_pair(v_ag);
+  select count(*) into v_n from public.barter_obligations where agreement_id = v_ag;
+  perform pg_temp.chk('agreement', 'duplicate obligation creation is safely idempotent',
+    '2', v_n::text);
+
+  -- Direct ordinary writes cannot create, forge or mutate obligation truth.
+  perform pg_temp.act(ou);
+  begin
+    insert into public.barter_obligations(agreement_id, source_term_id, side,
+      deliverer_provider_id, deliverer_user_id, receiver_provider_id, receiver_user_id,
+      agreed_description, due_at, scheduled_at)
+    values (v_ag, gen_random_uuid(), 'offer_owner', gen_random_uuid(), ou,
+      gen_random_uuid(), ru, 'forged', clock_timestamp() + interval '7 days', null);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement', 'ordinary authenticated cannot direct insert obligations',
+    '42501', v_code);
+
+  perform pg_temp.act_service();
+  select ag.owner_provider_id, ag.responder_provider_id, ag.accepted_version_id
+    into opid, rpid, vid
+    from public.barter_agreements ag where ag.id = v_ag;
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', ou::text, 'role', 'authenticated')::text, true);
+  begin
+    insert into public.barter_obligations(agreement_id, source_term_id, side,
+      deliverer_provider_id, deliverer_user_id, receiver_provider_id, receiver_user_id,
+      agreed_description, due_at, scheduled_at)
+    select v_ag, t.id, 'offer_owner', opid, ou, rpid, ru,
+           'forged description', t.due_at, t.scheduled_at
+      from public.barter_proposal_terms t
+     where t.version_id = vid and t.provided_by = 'offer_owner';
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement', 'privileged direct insert cannot forge content',
+    '42501', v_code);
+
+  perform pg_temp.act(ou);
+  begin
+    update public.barter_obligations set agreed_description = 'changed' where agreement_id = v_ag;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('agreement', 'ordinary authenticated cannot mutate obligations',
+    '42501', v_code);
+
+  -- Participants read both obligations; outsiders and anon read none.
+  select count(*) into v_n from public.barter_obligations where agreement_id = v_ag;
+  perform pg_temp.chk('agreement', 'participant A can read both obligations', '2', v_n::text);
+  perform pg_temp.act(ru);
+  select count(*) into v_n from public.barter_obligations where agreement_id = v_ag;
+  perform pg_temp.chk('agreement', 'participant B can read both obligations', '2', v_n::text);
+  perform pg_temp.act(xu);
+  select count(*) into v_n from public.barter_obligations where agreement_id = v_ag;
+  perform pg_temp.chk('agreement', 'unrelated authenticated user cannot read obligations',
+    '0', v_n::text);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('agreement', 'anon cannot read obligations', 'false',
+    has_table_privilege('anon', 'public.barter_obligations', 'select')::text);
+
+  -- Existing participants keep access even if provider approval changes later.
+  perform pg_temp.act_service();
+  update public.providers set is_approved = false where user_id in (ou, ru);
+  perform pg_temp.act(ou);
+  select count(*) into v_n from public.barter_obligations where agreement_id = v_ag;
+  perform pg_temp.chk('agreement', 'de-approved existing participant can still read obligations',
+    '2', v_n::text);
+end $$;
+
 -- ── After agreement: frozen terms, no release ──────────────────────────────
 do $$
 declare
@@ -433,6 +592,10 @@ begin
     'public.enforce_barter_agreement_timing_current()',
     'public.enforce_barter_acceptance_timing_current()',
     'public.assert_barter_proposal_version_timing_current(uuid)',
+    'public.create_barter_obligation_pair(uuid)',
+    'public.enforce_barter_agreement_obligations()',
+    'public.enforce_barter_obligation_consistent()',
+    'public.enforce_barter_obligations_immutable()',
     'public.enforce_no_change_after_agreement()',
     'public.enforce_no_release_after_agreement()'
   ] loop
@@ -454,7 +617,11 @@ begin
                        'enforce_no_release_after_agreement',
                        'enforce_barter_agreement_timing_current',
                        'enforce_barter_acceptance_timing_current',
-                       'assert_barter_proposal_version_timing_current')
+                       'assert_barter_proposal_version_timing_current',
+                       'create_barter_obligation_pair',
+                       'enforce_barter_agreement_obligations',
+                       'enforce_barter_obligation_consistent',
+                       'enforce_barter_obligations_immutable')
      and (not p.prosecdef or pg_get_userbyid(p.proowner) <> 'postgres'
           or coalesce(array_to_string(p.proconfig, ','), '') not like '%search_path=%');
   perform pg_temp.chk('agreement', 'every new function is definer, postgres-owned, search_path pinned',
@@ -475,6 +642,25 @@ begin
   select count(*) into v_n from pg_policies
    where schemaname = 'public' and tablename = 'barter_agreements' and cmd <> 'SELECT';
   perform pg_temp.chk('agreement', 'no write policy exists on barter_agreements', '0', v_n::text);
+
+  perform pg_temp.chk('agreement', 'barter_obligations is owned by postgres', 'postgres',
+    (select pg_get_userbyid(c.relowner) from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+     where c.relname = 'barter_obligations' and n.nspname = 'public'));
+  perform pg_temp.chk('agreement', 'authenticated may only read barter_obligations', 'true',
+    (has_table_privilege('authenticated', 'public.barter_obligations', 'select')
+     and not has_table_privilege('authenticated', 'public.barter_obligations', 'insert')
+     and not has_table_privilege('authenticated', 'public.barter_obligations', 'update')
+     and not has_table_privilege('authenticated', 'public.barter_obligations', 'delete'))::text);
+  perform pg_temp.chk('agreement', 'anon holds nothing on barter_obligations', 'false',
+    has_table_privilege('anon', 'public.barter_obligations', 'select')::text);
+  perform pg_temp.chk('agreement', 'RLS is enabled on barter_obligations', 'true',
+    (select c.relrowsecurity::text from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+     where c.relname = 'barter_obligations' and n.nspname = 'public'));
+  select count(*) into v_n from pg_policies
+   where schemaname = 'public' and tablename = 'barter_obligations' and cmd <> 'SELECT';
+  perform pg_temp.chk('agreement', 'no write policy exists on barter_obligations', '0', v_n::text);
 
   -- Views: security_invoker, anon nothing.
   foreach t in array array['my_barter_agreements', 'my_barter_proposals', 'my_trade_activity'] loop

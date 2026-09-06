@@ -50,6 +50,16 @@ export interface ProposalVersion {
   acceptedBy: string[]
 }
 
+export interface BarterObligation {
+  id: string
+  agreementId: string
+  /** Server-derived side from the accepted proposal term. */
+  side: ProposalSide
+  agreedDescription: string
+  dueAt: string
+  scheduledAt: string | null
+}
+
 const ROW_COLUMNS =
   'proposal_id, interest_id, offer_id, current_version_no, current_version_id, current_version_author_id, current_version_at, interest_status, offer_is_active, my_role, counterparty_user_id, i_accepted_current, they_accepted_current, both_accepted, agreement_id, officialized_at'
 
@@ -146,6 +156,7 @@ export async function fetchNegotiationForInterest(
 export async function fetchNegotiation(proposalId: string): Promise<{
   row: NegotiationRow | null
   versions: ProposalVersion[]
+  obligations: BarterObligation[]
   ok: boolean
 }> {
   const [rowRes, versionRes] = await Promise.all([
@@ -156,7 +167,9 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       .eq('proposal_id', proposalId)
       .order('version_no', { ascending: false }),
   ])
-  if (rowRes.error || versionRes.error) return { row: null, versions: [], ok: false }
+  if (rowRes.error || versionRes.error) {
+    return { row: null, versions: [], obligations: [], ok: false }
+  }
 
   const rawVersions =
     (versionRes.data as unknown as {
@@ -171,6 +184,7 @@ export async function fetchNegotiation(proposalId: string): Promise<{
     return {
       row: rowRes.data ? mapRow(rowRes.data as unknown as RawRow) : null,
       versions: [],
+      obligations: [],
       ok: true,
     }
   }
@@ -187,7 +201,9 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       .select('version_id, participant_user_id')
       .in('version_id', versionIds),
   ])
-  if (termRes.error || acceptRes.error) return { row: null, versions: [], ok: false }
+  if (termRes.error || acceptRes.error) {
+    return { row: null, versions: [], obligations: [], ok: false }
+  }
 
   const terms = (termRes.data as unknown as {
     id: string
@@ -219,10 +235,36 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       })),
     acceptedBy: accepts.filter((a) => a.version_id === v.id).map((a) => a.participant_user_id),
   }))
+  const row = rowRes.data ? mapRow(rowRes.data as unknown as RawRow) : null
+  let obligations: BarterObligation[] = []
+  if (row?.agreementId) {
+    const obligationRes = await supabase
+      .from('barter_obligations')
+      .select('id, agreement_id, side, agreed_description, due_at, scheduled_at')
+      .eq('agreement_id', row.agreementId)
+      .order('side', { ascending: true })
+    if (obligationRes.error) return { row: null, versions: [], obligations: [], ok: false }
+    obligations = ((obligationRes.data as unknown as {
+      id: string
+      agreement_id: string
+      side: ProposalSide
+      agreed_description: string
+      due_at: string
+      scheduled_at: string | null
+    }[] | null) ?? []).map((o) => ({
+      id: o.id,
+      agreementId: o.agreement_id,
+      side: o.side,
+      agreedDescription: o.agreed_description,
+      dueAt: o.due_at,
+      scheduledAt: o.scheduled_at,
+    }))
+  }
 
   return {
-    row: rowRes.data ? mapRow(rowRes.data as unknown as RawRow) : null,
+    row,
     versions,
+    obligations,
     ok: true,
   }
 }
