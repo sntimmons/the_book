@@ -31,7 +31,7 @@ import {
   reportObligationNotReceived,
   submitCounter,
 } from '@/lib/negotiation'
-import { barterWriteFailure } from '@/lib/barterErrors'
+import { BarterWriteRequest, runBarterWrite } from '@/lib/negotiationWrite'
 import {
   acceptedAnEarlierVersion,
   CONFIRM_TRADE_COPY,
@@ -249,21 +249,42 @@ export default function NegotiationScreen() {
       })
     : null
 
+  // ── One write path ────────────────────────────────────────────────────────
+  // Every write on this screen goes through lib/negotiationWrite.ts, which owns the ordering
+  // nothing may vary: busy on, write, busy off (in a `finally`), interpret the refusal, say it
+  // once, decide whether the screen is stale, re-read authoritative state. The differences
+  // between operations are declared per call — and the two that are NOT uniform are declared
+  // explicitly, because averaging them would change what the screen does:
+  //   • `refusalRefresh: 'always'` — accept and confirm re-read on any refusal, not only a
+  //     terminal or stale one.
+  //   • `refreshShowsLoading: false` — accept and counter re-read quietly, without the blocking
+  //     load state the other four show.
+  // Each caller keeps its own precondition guard, so a handler still cannot fire without the
+  // row, agreement or draft it needs, and the guard runs before any validation alert.
+  function runWrite(request: BarterWriteRequest) {
+    return runBarterWrite(
+      {
+        setBusy,
+        setLoading,
+        reportFailure: (title, body) => Alert.alert(title, body, [{ text: 'OK' }]),
+        reload: load,
+      },
+      request,
+    )
+  }
+
   async function onAccept() {
     if (!row || busy) return
-    setBusy(true)
-    const { ok, error } = await acceptVersion(row.currentVersionId)
-    setBusy(false)
-    if (!ok) {
-      const f = barterWriteFailure('acceptTerms', error)
-      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+    const versionId = row.currentVersionId
+    await runWrite({
+      op: 'acceptTerms',
+      write: () => acceptVersion(versionId),
       // Re-read on ANY refusal here, terminal or not: "the terms changed" is not terminal but
       // the screen is definitely stale, and leaving the old terms on screen invites a second
       // acceptance of something already replaced.
-      load()
-      return
-    }
-    load()
+      refusalRefresh: 'always',
+      refreshShowsLoading: false,
+    })
   }
 
   async function onOpen() {
@@ -273,43 +294,29 @@ export default function NegotiationScreen() {
       Alert.alert('Check these terms', problem, [{ text: 'OK' }])
       return
     }
-    setBusy(true)
-    const { ok, error } = await createProposal(interestId, draft)
-    setBusy(false)
-    if (!ok) {
-      const f = barterWriteFailure('proposeTerms', error)
-      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+    await runWrite({
+      op: 'proposeTerms',
+      write: () => createProposal(interestId, draft),
       // `stale` as well as `terminal`: "they proposed first" is recoverable, but the screen is
       // definitely out of date, and leaving it saying "No terms yet" made the alert tell the
       // user to read terms that were not on screen.
-      if (f.terminal || f.stale) {
+      onRefusalRefresh: () => setComposing(false),
+      onSuccess: () => {
         setComposing(false)
-        setLoading(true)
-        load()
-      }
-      return
-    }
-    setComposing(false)
-    setDraft(EMPTY_DRAFT)
-    setLoading(true)
-    load()
+        setDraft(EMPTY_DRAFT)
+      },
+    })
   }
 
   async function onConfirm() {
     if (!row || busy) return
-    setBusy(true)
-    const { ok, error } = await finalizeAgreement(row.proposalId)
-    setBusy(false)
-    if (!ok) {
-      const f = barterWriteFailure('confirmTrade', error)
-      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+    const proposalId = row.proposalId
+    await runWrite({
+      op: 'confirmTrade',
+      write: () => finalizeAgreement(proposalId),
       // Re-read on any refusal: whatever moved, the screen is now stale.
-      setLoading(true)
-      load()
-      return
-    }
-    setLoading(true)
-    load()
+      refusalRefresh: 'always',
+    })
   }
 
   function confirmTrade() {
@@ -334,27 +341,17 @@ export default function NegotiationScreen() {
     obligationId: string,
   ) {
     if (busy) return
-    setBusy(true)
-    const { ok, error } =
-      op === 'markDelivered'
-        ? await markObligationDelivered(obligationId)
-        : op === 'confirmReceived'
-          ? await confirmObligationReceived(obligationId)
-          : await reportObligationNotReceived(obligationId)
-    setBusy(false)
-    if (!ok) {
-      const f = barterWriteFailure(op, error)
-      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+    await runWrite({
+      op,
+      write: () =>
+        op === 'markDelivered'
+          ? markObligationDelivered(obligationId)
+          : op === 'confirmReceived'
+            ? confirmObligationReceived(obligationId)
+            : reportObligationNotReceived(obligationId),
       // Re-read on terminal OR stale: every refusal here means the obligation moved under the
       // button, and leaving the old controls on screen invites the same impossible tap again.
-      if (f.terminal || f.stale) {
-        setLoading(true)
-        load()
-      }
-      return
-    }
-    setLoading(true)
-    load()
+    })
   }
 
   function askThenWrite(
@@ -380,24 +377,15 @@ export default function NegotiationScreen() {
       Alert.alert('Check that reason', problem, [{ text: 'OK' }])
       return
     }
-    setBusy(true)
-    const { ok, error } = await cancelTrade(row.agreementId, cancelReasonPayload(cancelReason))
-    setBusy(false)
-    if (!ok) {
-      const f = barterWriteFailure('cancelTrade', error)
-      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+    const agreementId = row.agreementId
+    await runWrite({
+      op: 'cancelTrade',
+      write: () => cancelTrade(agreementId, cancelReasonPayload(cancelReason)),
       // Re-read on terminal OR stale: a refusal here means the trade moved under the button —
       // most likely because the counterparty delivered — and the control must not stay on
       // screen inviting the same impossible tap.
-      if (f.terminal || f.stale) {
-        setLoading(true)
-        load()
-      }
-      return
-    }
-    setCancelReason('')
-    setLoading(true)
-    load()
+      onSuccess: () => setCancelReason(''),
+    })
   }
 
   function askThenCancel(copy: CancelActionCopy) {
@@ -414,21 +402,17 @@ export default function NegotiationScreen() {
       Alert.alert('Check these terms', problem, [{ text: 'OK' }])
       return
     }
-    setBusy(true)
-    const { ok, error } = await submitCounter(row.proposalId, draft)
-    setBusy(false)
-    if (!ok) {
-      const f = barterWriteFailure('proposeTerms', error)
-      Alert.alert(f.title, f.body, [{ text: 'OK' }])
-      if (f.terminal || f.stale) {
+    const proposalId = row.proposalId
+    await runWrite({
+      op: 'proposeTerms',
+      write: () => submitCounter(proposalId, draft),
+      refreshShowsLoading: false,
+      onRefusalRefresh: () => setComposing(false),
+      onSuccess: () => {
         setComposing(false)
-        load()
-      }
-      return
-    }
-    setComposing(false)
-    setDraft(EMPTY_DRAFT)
-    load()
+        setDraft(EMPTY_DRAFT)
+      },
+    })
   }
 
   function startComposing() {

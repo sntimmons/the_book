@@ -88,6 +88,16 @@ an entry is self-describing when quoted alone.
   *partially*, and the Founder ruling of 2026-09-04 listed "cancellation rules" without
   supplying them. Closing it would mean inventing the rules.
 - **Status:** Closed by **PD-046** on 2026-09-04 — see [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7. Pre-agreement exit is not a cancellation; after agreement and before any delivery either participant may cancel **unilaterally**; after any delivery ordinary cancellation is unavailable and disagreement is adjudicated. No-show is distinct from cancellation and yields an **Unfulfilled** obligation. No review, reputation or ranking effect in the first beta; actor and timing retained for a future reliability model.
+- **Follow-on rulings (2026-09-06), recorded because they were previously undocumented:** PD-046
+  asked for "an optional reason" and named the classification, but said nothing about **who reads
+  the reason**, **what it means**, or **what the durable copy for two cancellations may claim**.
+  All three were answered in code during PR #58 with no decision to point at, which is a
+  documentation gap rather than a reopened question. Now closed by
+  **[PD-060](PRODUCT_DECISIONS.md)** — the reason is visible to both participants, is contextual
+  only, and the counterparty may get a durable best-effort in-thread notice — and
+  **[PD-061](PRODUCT_DECISIONS.md)** — two independent cancellations may be classified Mutually
+  Cancelled, but the durable notice states only that both providers cancelled and must not claim
+  they "agreed". **Nothing about OQ-004's own question is reopened.**
 
 ### OQ-005 — How should barter interact with reviews and reputation?
 - **Area:** Barter
