@@ -5,9 +5,11 @@
 -- scripts/negotiation-concurrency.mjs. What is pinned here is every invariant a race could
 -- violate, plus the security posture of every object 20261004000000 created or redefined.
 --
--- The suite also pins what this slice must NOT have added: no cancellation-after-agreement, no
--- no-show, no adjudication, and no vocabulary beyond the four states delivery and receipt can
--- actually produce.
+-- The suite also pins what the DELIVERY slice must NOT have added: no no-show, no adjudication,
+-- no obligation-level cancellation, and no vocabulary beyond the four states delivery and
+-- receipt can actually produce. Pre-delivery cancellation of the AGREEMENT arrived later, in
+-- 20261005000000, and is pinned by supabase/tests/cancellation.test.sql — see the note on the
+-- scope pin near the end of this file for how that assertion was aged.
 
 create or replace function pg_temp.ob_due(p_days integer)
 returns timestamptz
@@ -546,16 +548,18 @@ begin
   perform pg_temp.act_service();
   update public.providers set is_approved = true where user_id in (ou, ru);
 
-  -- CANCELLATION BOUNDARY. This slice adds none, and the pre-agreement exit stays closed
-  -- after an agreement — before and after a delivery alike.
+  -- The PRE-AGREEMENT exit (release) stays closed after an agreement — before and after a
+  -- delivery alike. This is not the post-agreement cancellation path, which is a separate RPC
+  -- added by 20261005000000 and asserted in supabase/tests/cancellation.test.sql; that one is
+  -- refused after a delivery too, permanently.
   perform pg_temp.act(ru);
   begin
     perform public.release_barter_interest(v_int_d);
     v_code := 'NO ERROR';
   exception when others then v_code := sqlstate;
   end;
-  perform pg_temp.chk('obligation', 'no cancellation path opens once an obligation is delivered',
-    'PT409', v_code);
+  perform pg_temp.chk('obligation',
+    'the pre-agreement release stays closed once an obligation is delivered', 'PT409', v_code);
   perform pg_temp.act_service();
   select status into v_status from public.barter_interests where id = v_int_d;
   perform pg_temp.chk('obligation', 'and the trade record is untouched', 'accepted', v_status);
@@ -676,14 +680,21 @@ begin
   perform pg_temp.chk('obligation',
     'no cancellation, no-show, adjudication or terminal-outcome column was added',
     '0', v_n::text);
+  -- `cancel_barter_agreement` was on this list until PRE-DELIVERY CANCELLATION landed
+  -- (20261005000000), which is the point: this assertion is a SCOPE PIN, and a later slice
+  -- adding a capability must edit it deliberately rather than have it pass by accident. What
+  -- that slice added is pinned by supabase/tests/cancellation.test.sql; what it did NOT add is
+  -- still pinned here. Obligation-level cancellation remains absent — cancelling is an
+  -- agreement-level act and decides nothing about either obligation.
   select count(*) into v_n from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
-     and p.proname in ('cancel_barter_agreement', 'cancel_barter_obligation',
+     and p.proname in ('cancel_barter_obligation',
                        'report_barter_no_show', 'adjudicate_barter_obligation',
                        'complete_barter_agreement', 'expire_barter_obligation');
   perform pg_temp.chk('obligation',
-    'no cancellation, no-show, adjudication or completion function was added', '0', v_n::text);
+    'no no-show, adjudication, completion or obligation-cancellation function was added',
+    '0', v_n::text);
   -- ANCHORED the same way: prove the table name matches something before asserting an absence
   -- against it.
   select count(*) into v_n from information_schema.columns

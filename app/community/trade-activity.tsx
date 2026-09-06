@@ -32,10 +32,14 @@ import {
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
 // Deliberately named for the durable activity surface rather than the future full lifecycle.
-// The agreement row and its two obligations exist, and each obligation can be marked delivered
-// and answered by its receiver — on the negotiation screen, not here. What does NOT exist is
-// any completion, cancellation, no-show or adjudication model, so a confirmed row on this list
-// has no outcome to report and offers no action.
+// The agreement row and its two obligations exist, each obligation can be marked delivered and
+// answered by its receiver, and either participant can cancel the trade before anything is
+// delivered — all on the negotiation screen, not here. This list REPORTS a cancellation (rows
+// say who cancelled) and offers no action on a confirmed row, because the one place that can
+// check the delivery precondition is the one place that can act.
+//
+// What does NOT exist is any completion, no-show or adjudication model, so a confirmed trade
+// still has no fulfilment outcome to report.
 //
 // The feed is discovery: it filters `is_active = true` and shows the newest 50. An accepted
 // negotiation is durable workflow state. Hanging the End-negotiation control off a feed card

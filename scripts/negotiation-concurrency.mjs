@@ -11,33 +11,43 @@
 // RPC. A `pg_sleep` before the call widens the window so the overlap is real rather than
 // hopeful.
 //
-//   1. Two counters at once. Both must succeed with DISTINCT, consecutive version numbers.
+// The numbered groups below are THEMES, not scenario numbers — the body runs seventeen
+// scenarios and each carries its own `── N. …` heading. The two indexes drifted apart once
+// cancellation was appended, so this one no longer pretends to be an ordered list.
+//
+//   A. Two counters at once. Both must succeed with DISTINCT, consecutive version numbers.
 //      Without the `for update` lock on the proposal both sessions read the same
 //      current_version_no, compute the same next number, and one dies on the unique index --
 //      turning a legitimate counter into an error the user cannot act on.
 //
-//   2. Two initial proposals at once on the same accepted response. Exactly ONE must exist
+//   B. Two initial proposals at once on the same accepted response. Exactly ONE must exist
 //      afterwards. This is the duplicate-creation race; the unique constraint on interest_id
 //      is what decides it.
 //
-//   3. Acceptance racing a counter. The acceptance must either land on the version it named
+//   C. Acceptance racing a counter. The acceptance must either land on the version it named
 //      while that version was still current, or be refused with 40001 -- never be recorded as
 //      agreement to terms that had already been replaced.
 //
-//   4. Agreement finalization races must create exactly one agreement and exactly two
+//   D. Agreement finalization races must create exactly one agreement and exactly two
 //      obligations. The obligation pair is created by an additive agreement trigger, so the
 //      finalize races prove the new table is included in the same atomic outcome.
 //
-//   5. Two direct maintenance attempts to create the obligation pair for an existing agreement
+//   E. Two direct maintenance attempts to create the obligation pair for an existing agreement
 //      must be idempotent under real overlap: final result exactly two, never a partial pair or
 //      duplicate four-row pair.
 //
-//   6. Delivery and receipt races. `delivered_at` and the receiver's answer are each written
+//   F. Delivery and receipt races. `delivered_at` and the receiver's answer are each written
 //      ONCE and never moved, exactly one receiver outcome becomes authoritative, an
 //      unauthorized caller loses to the real deliverer rather than racing them, and the two
 //      obligations of one agreement progress independently. These are the transitions where a
 //      lost race would either reset the clock the future 7-day window is measured from, or let
 //      both "received" and "didn't receive" be true of the same obligation.
+//
+//   G. Pre-delivery cancellation races. Cancelling and delivering are mutually exclusive and
+//      race each other directly: exactly one must win and the loser must be refused, never
+//      both landing. Two participants cancelling at once must record exactly two acts (and so
+//      report "mutually cancelled") without losing either; the same participant cancelling
+//      twice at once must record exactly one.
 //
 // Everything it writes is deleted at the end and the counts are re-asserted at zero.
 //
@@ -75,14 +85,22 @@ async function runSql(sql) {
   }
 }
 
+/**
+ * `rpcStatement` is a plpgsql STATEMENT, so a caller that needs the RPC's return value writes
+ * `v_result := f(...);` instead of `perform f(...);`. Most scenarios assert on end STATE rather
+ * than on what the call returned — the client re-reads the views anyway — but where the return
+ * value IS the contract (which classification a concurrent cancellation reports), asserting the
+ * state alone would leave that half untested.
+ */
 async function runTimedUser(uid, rpcStatement) {
   const r = await runSql(`
-create temp table _rpc_timing(started_at timestamptz, ended_at timestamptz, code text) on commit drop;
+create temp table _rpc_timing(started_at timestamptz, ended_at timestamptz, code text, result text) on commit drop;
 do $$
 declare
   v_started timestamptz;
   v_ended timestamptz;
   v_code text := '00000';
+  v_result text;
 begin
   perform set_config('request.jwt.claims',
     json_build_object('sub', '${uid}', 'role', 'authenticated')::text, true);
@@ -94,15 +112,16 @@ begin
     v_code := sqlstate;
   end;
   v_ended := clock_timestamp();
-  insert into _rpc_timing values (v_started, v_ended, v_code);
+  insert into _rpc_timing values (v_started, v_ended, v_code, v_result);
 end $$;
 select json_build_object(
   'started_at', started_at,
   'ended_at', ended_at,
-  'code', code
+  'code', code,
+  'result', coalesce(result, '')
 ) as timing from _rpc_timing;`)
   const timing = parseTiming(r.out)
-  return { ...r, timing, opOk: r.ok && timing?.code === '00000' }
+  return { ...r, timing, result: scalar(r.out, 'result'), opOk: r.ok && timing?.code === '00000' }
 }
 
 async function runTimedMaintenance(statement) {
@@ -175,7 +194,7 @@ select bo.id
  where ag.interest_id = '${interest}'
    ${side === null ? '' : `and bo.side = '${side}'`}
  for update;
-select pg_sleep(8);
+select pg_sleep(15);
 commit;`)
 }
 
@@ -231,6 +250,26 @@ function parseTiming(out) {
   }
 }
 
+/**
+ * The property an UNAUTHORIZED caller must have, now that both delivery RPCs and
+ * cancel_barter_agreement authorize on an unlocked read before taking any lock: they are
+ * refused WITHOUT ever contending for the row.
+ *
+ * Overlap is the wrong evidence for these scenarios — and asserting it was wrong. A caller who
+ * overlapped would be one who had waited on the lock, which is exactly the timing side channel
+ * ("exists but is busy" measurably different from "does not exist") that authorize-before-lock
+ * exists to close. So the proof is inverted: the intruder must finish quickly and finish
+ * BEFORE the blocked legitimate caller, i.e. while the lock it would have needed is still held
+ * by someone else.
+ */
+function refusedWithoutWaiting(intruder, blocked) {
+  if (!intruder || !blocked) return false
+  if (!Number.isFinite(intruder.startedAt) || !Number.isFinite(intruder.endedAt)) return false
+  if (!Number.isFinite(blocked.endedAt)) return false
+  const tookMs = intruder.endedAt - intruder.startedAt
+  return tookMs < 1500 && intruder.endedAt < blocked.endedAt
+}
+
 function intervalsOverlap(a, b) {
   if (!a || !b) return false
   if (!Number.isFinite(a.startedAt) || !Number.isFinite(a.endedAt)) return false
@@ -266,6 +305,16 @@ const ids = {
   interest11: randomUUID(),
   offer12: randomUUID(),
   interest12: randomUUID(),
+  offer13: randomUUID(),
+  interest13: randomUUID(),
+  offer14: randomUUID(),
+  interest14: randomUUID(),
+  offer15: randomUUID(),
+  interest15: randomUUID(),
+  offer16: randomUUID(),
+  interest16: randomUUID(),
+  offer17: randomUUID(),
+  interest17: randomUUID(),
 }
 
 // Every interest this harness creates, in one place: the cleanup and the residue assertions
@@ -273,15 +322,18 @@ const ids = {
 const ALL_INTERESTS = [
   ids.interest, ids.interest2, ids.interest3, ids.interest4, ids.interest5, ids.interest6,
   ids.interest7, ids.interest8, ids.interest9, ids.interest10, ids.interest11, ids.interest12,
+  ids.interest13, ids.interest14, ids.interest15, ids.interest16, ids.interest17,
 ]
 const ALL_OFFERS = [
   ids.offer, ids.offer2, ids.offer3, ids.offer4, ids.offer5, ids.offer6, ids.offer7,
   ids.offer8, ids.offer9, ids.offer10, ids.offer11, ids.offer12,
+  ids.offer13, ids.offer14, ids.offer15, ids.offer16, ids.offer17,
 ]
 // The interests that reach an official agreement, and therefore have obligations.
 const AGREEMENT_INTERESTS = [
   ids.interest4, ids.interest5, ids.interest6, ids.interest7, ids.interest8, ids.interest9,
   ids.interest10, ids.interest11, ids.interest12,
+  ids.interest13, ids.interest14, ids.interest15, ids.interest16, ids.interest17,
 ]
 const quoted = (list) => list.map((v) => `'${v}'`).join(',')
 
@@ -324,7 +376,12 @@ begin
            ('${ids.offer9}', opid, '${ids.ou}', 'conc offering9 ${tag}', 'conc seeking'),
            ('${ids.offer10}', opid, '${ids.ou}', 'conc offering10 ${tag}', 'conc seeking'),
            ('${ids.offer11}', opid, '${ids.ou}', 'conc offering11 ${tag}', 'conc seeking'),
-           ('${ids.offer12}', opid, '${ids.ou}', 'conc offering12 ${tag}', 'conc seeking');
+           ('${ids.offer12}', opid, '${ids.ou}', 'conc offering12 ${tag}', 'conc seeking'),
+           ('${ids.offer13}', opid, '${ids.ou}', 'conc offering13 ${tag}', 'conc seeking'),
+           ('${ids.offer14}', opid, '${ids.ou}', 'conc offering14 ${tag}', 'conc seeking'),
+           ('${ids.offer15}', opid, '${ids.ou}', 'conc offering15 ${tag}', 'conc seeking'),
+           ('${ids.offer16}', opid, '${ids.ou}', 'conc offering16 ${tag}', 'conc seeking'),
+           ('${ids.offer17}', opid, '${ids.ou}', 'conc offering17 ${tag}', 'conc seeking');
   insert into public.barter_interests(id, offer_id, interested_provider_id, interested_user_id,
     message, status) values
     ('${ids.interest4}', '${ids.offer4}', rpid, '${ids.ru}', 'x', 'accepted'),
@@ -335,7 +392,12 @@ begin
     ('${ids.interest9}', '${ids.offer9}', rpid, '${ids.ru}', 'x', 'accepted'),
     ('${ids.interest10}', '${ids.offer10}', rpid, '${ids.ru}', 'x', 'accepted'),
     ('${ids.interest11}', '${ids.offer11}', rpid, '${ids.ru}', 'x', 'accepted'),
-    ('${ids.interest12}', '${ids.offer12}', rpid, '${ids.ru}', 'x', 'accepted');
+    ('${ids.interest12}', '${ids.offer12}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest13}', '${ids.offer13}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest14}', '${ids.offer14}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest15}', '${ids.offer15}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest16}', '${ids.offer16}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest17}', '${ids.offer17}', rpid, '${ids.ru}', 'x', 'accepted');
 end $$;`)
   if (!r.ok) {
     console.error('seed failed:', r.out)
@@ -667,8 +729,11 @@ async function raceDelivererVsIntruder() {
     runTimedUser(ids.ru, mark),
   ])
   await blocker
-  chk('the deliverer and the receiver genuinely raced for the same obligation',
-    'true', String(intervalsOverlap(deliverer.timing, intruder.timing)))
+  // The deliverer is blocked on the row lock for the whole window; the receiver must be
+  // refused without ever joining that queue. Asserting overlap here would assert the timing
+  // side channel authorize-before-lock deliberately removed.
+  chk('the receiver is refused without ever contending for the locked obligation',
+    'true', String(refusedWithoutWaiting(intruder.timing, deliverer.timing)))
   chk('the deliverer wins', 'true', String(deliverer.opOk))
   chk('and the receiver is refused whichever order they arrive in',
     '42501', intruder.timing?.code)
@@ -763,6 +828,171 @@ async function raceBothSidesDeliver() {
     String(owner.answeredAt === null && responder.answeredAt === null))
 }
 
+const agreementOf = (interest) =>
+  `(select ag.id from public.barter_agreements ag where ag.interest_id = '${interest}')`
+
+async function cancellationRows(interest) {
+  const r = await runSql(`
+select count(*) as n,
+       count(distinct c.actor_user_id) as actors,
+       coalesce(string_agg(coalesce(c.reason, '(none)'), ' | ' order by c.created_at), '') as reasons
+  from public.barter_agreement_cancellations c
+  join public.barter_agreements ag on ag.id = c.agreement_id
+ where ag.interest_id = '${interest}';`)
+  return {
+    n: scalar(r.out, 'n'),
+    actors: scalar(r.out, 'actors'),
+    reasons: scalar(r.out, 'reasons'),
+  }
+}
+
+// ── 13. Both participants cancel at once ───────────────────────────────────
+// Two independent acts must BOTH be recorded. If one were lost the trade would read as
+// "cancelled by one participant" when both had in fact agreed — and the second act is the
+// only evidence of the counterparty's assent.
+async function raceBothCancel() {
+  await confirmedTrade(ids.interest13)
+  const cancel = (who) =>
+    `v_result := public.cancel_barter_agreement(${agreementOf(ids.interest13)}, '${who}');`
+  const blocker = blockObligation(ids.interest13)
+  await delay(2000)
+  const [a, b] = await Promise.all([
+    runTimedUser(ids.ou, cancel('owner reason')),
+    runTimedUser(ids.ru, cancel('responder reason')),
+  ])
+  await blocker
+  chk('the two cancellations genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('both participants cancelling at once both succeed', 'true', String(a.opOk && b.opOk))
+  // The two RETURN values must be the two classifications, one each: whoever commits first is
+  // told "cancelled by participant" and the second "mutually cancelled". If the first act could
+  // report mutual, one participant would be told the other had agreed before they had.
+  const classifications = [a.result, b.result].sort().join(',')
+  chk('one call reports cancelled-by-participant and the other mutually-cancelled',
+    'cancelled_by_participant,mutually_cancelled', classifications)
+  const rows = await cancellationRows(ids.interest13)
+  chk('a simultaneous mutual cancellation records exactly two acts', '2', rows.n)
+  chk('one per participant', '2', rows.actors)
+  chk('and neither act loses its own reason', 'true',
+    String(rows.reasons.includes('owner reason') && rows.reasons.includes('responder reason')))
+  const ob = await obligationRow(ids.interest13, 'offer_owner')
+  chk('cancelling touches no obligation', 'pending', ob.status)
+}
+
+// ── 14. The same participant cancels twice at once ─────────────────────────
+async function raceSameParticipantCancels() {
+  await confirmedTrade(ids.interest14)
+  const cancel =
+    `perform public.cancel_barter_agreement(${agreementOf(ids.interest14)}, 'double tap');`
+  const blocker = blockObligation(ids.interest14)
+  await delay(2000)
+  const [a, b] = await Promise.all([
+    runTimedUser(ids.ou, cancel),
+    runTimedUser(ids.ou, cancel),
+  ])
+  await blocker
+  chk('the two identical cancellations genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('a concurrent double cancel is safe for both', 'true', String(a.opOk && b.opOk))
+  const rows = await cancellationRows(ids.interest14)
+  chk('and records exactly one act', '1', rows.n)
+  chk('by exactly one participant', '1', rows.actors)
+}
+
+// ── 15. Cancel racing the deliverer's own mark-delivered ───────────────────
+// THE boundary. Exactly one of the two must win, and the loser must be refused — never both.
+async function raceCancelVsDeliver() {
+  await confirmedTrade(ids.interest15)
+  const cancel =
+    `perform public.cancel_barter_agreement(${agreementOf(ids.interest15)}, 'racing delivery');`
+  const mark =
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest15, 'offer_owner')});`
+  const blocker = blockObligation(ids.interest15, 'offer_owner')
+  await delay(2000)
+  // Same participant on both sides: the owner is the deliverer of this obligation AND a
+  // participant who may cancel, so nothing but the state transition decides the winner.
+  const [c, d] = await Promise.all([
+    runTimedUser(ids.ou, cancel),
+    runTimedUser(ids.ou, mark),
+  ])
+  await blocker
+  chk('cancel and mark-delivered genuinely overlapped',
+    'true', String(intervalsOverlap(c.timing, d.timing)))
+  chk('exactly one of cancel / deliver wins', 'true', String(c.opOk !== d.opOk))
+  const rows = await cancellationRows(ids.interest15)
+  const ob = await obligationRow(ids.interest15, 'offer_owner')
+  // The two legal end states, and nothing else. A delivered obligation on a cancelled trade,
+  // or a trade that is neither delivered nor cancelled, would both be corruption.
+  const deliveryWon = rows.n === '0' && ob.status === 'delivered' && ob.deliveredAt !== null
+  const cancelWon = rows.n === '1' && ob.status === 'pending' && ob.deliveredAt === null
+  chk('the end state is exactly one of (delivered, uncancelled) or (pending, cancelled)',
+    'true', String(deliveryWon || cancelWon))
+  chk('the winner matches the RPC that succeeded', 'true',
+    String(d.opOk ? deliveryWon : cancelWon))
+  chk('and the loser was refused with a code the UI maps', 'true',
+    String(d.opOk ? c.timing?.code === '55000' : d.timing?.code === 'PT409'))
+}
+
+// ── 16. Cancel racing the COUNTERPARTY's delivery ──────────────────────────
+// Same boundary, opposite participants: the responder delivers their own obligation while the
+// owner tries to cancel the trade out from under them.
+async function raceCancelVsCounterpartyDeliver() {
+  await confirmedTrade(ids.interest16)
+  const cancel =
+    `perform public.cancel_barter_agreement(${agreementOf(ids.interest16)}, 'while they deliver');`
+  const mark =
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest16, 'responder')});`
+  const blocker = blockObligation(ids.interest16, 'responder')
+  await delay(2000)
+  const [c, d] = await Promise.all([
+    runTimedUser(ids.ou, cancel),
+    runTimedUser(ids.ru, mark),
+  ])
+  await blocker
+  chk('cancel and the counterparty delivery genuinely overlapped',
+    'true', String(intervalsOverlap(c.timing, d.timing)))
+  chk('exactly one of cancel / counterparty delivery wins', 'true', String(c.opOk !== d.opOk))
+  const rows = await cancellationRows(ids.interest16)
+  const ob = await obligationRow(ids.interest16, 'responder')
+  const deliveryWon = rows.n === '0' && ob.status === 'delivered'
+  const cancelWon = rows.n === '1' && ob.status === 'pending' && ob.deliveredAt === null
+  chk('the end state is consistent from the other side too', 'true',
+    String(deliveryWon || cancelWon))
+  chk('and it matches the RPC that succeeded', 'true', String(d.opOk ? deliveryWon : cancelWon))
+  const other = await obligationRow(ids.interest16, 'offer_owner')
+  chk('the obligation nobody touched is still pending', 'pending', other.status)
+}
+
+// ── 17. Cancel racing an unauthorized caller, and cancel after a delivery ──
+async function raceCancelUnauthorizedAndLate() {
+  await confirmedTrade(ids.interest17)
+  const cancel =
+    `perform public.cancel_barter_agreement(${agreementOf(ids.interest17)}, 'legitimate');`
+  const blocker = blockObligation(ids.interest17)
+  await delay(2000)
+  // A genuinely unrelated caller: a random uuid that is on neither side of this agreement.
+  // It must be answered exactly as a non-existent trade would be, and without waiting.
+  const [ok, intruder] = await Promise.all([
+    runTimedUser(ids.ou, cancel),
+    runTimedUser(randomUUID(), cancel),
+  ])
+  await blocker
+  chk('the unrelated caller is refused without ever contending for the locked rows',
+    'true', String(refusedWithoutWaiting(intruder.timing, ok.timing)))
+  chk('the participant wins', 'true', String(ok.opOk))
+  chk('and the unrelated user is refused', '23514', intruder.timing?.code)
+  const rows = await cancellationRows(ids.interest17)
+  chk('exactly one act is recorded', '1', rows.n)
+
+  // With the trade cancelled, delivery is closed for good — proven sequentially, because the
+  // race that matters was scenario 15.
+  const late = await runTimedUser(ids.ou,
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest17, 'offer_owner')});`)
+  chk('delivery after a cancellation is refused', 'PT409', late.timing?.code)
+  const ob = await obligationRow(ids.interest17, 'offer_owner')
+  chk('and the obligation is untouched', 'pending', ob.status)
+}
+
 async function cleanup() {
   const r = await runSql(`
 do $$
@@ -770,6 +1000,9 @@ begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
   -- Obligations cascade with their agreement, and the immutability trigger early-returns for
   -- service_role, so the agreement delete is what removes them.
+  delete from public.barter_agreement_cancellations c
+   using public.barter_agreements ag
+   where c.agreement_id = ag.id and ag.interest_id in (${quoted(AGREEMENT_INTERESTS)});
   delete from public.barter_agreements
    where interest_id in (${quoted(AGREEMENT_INTERESTS)});
   delete from public.barter_version_acceptances a using public.barter_proposal_versions v,
@@ -807,10 +1040,14 @@ select (select count(*) from public.barter_offers where id in
           where ag.interest_id in (${quoted(AGREEMENT_INTERESTS)})) as obligations,
        (select count(*) from public.barter_agreements where interest_id in
           (${quoted(AGREEMENT_INTERESTS)})) as agreements,
+       (select count(*) from public.barter_agreement_cancellations c
+          join public.barter_agreements ag on ag.id = c.agreement_id
+          where ag.interest_id in (${quoted(AGREEMENT_INTERESTS)})) as cancellations,
        (select count(*) from public.providers where user_id in
           ('${ids.ou}','${ids.ru}')) as providers,
        (select count(*) from auth.users where id in ('${ids.ou}','${ids.ru}')) as users;`)
-  for (const k of ['offers', 'interests', 'proposals', 'obligations', 'agreements', 'providers', 'users']) {
+  for (const k of ['offers', 'interests', 'proposals', 'obligations', 'agreements',
+    'cancellations', 'providers', 'users']) {
     chk(`zero residue: ${k}`, '0', scalar(q.out, k))
   }
 }
@@ -828,6 +1065,11 @@ await raceDelivererVsIntruder()
 await raceOpposingReceiverAnswers()
 await raceSameReceiverAnswer()
 await raceBothSidesDeliver()
+await raceBothCancel()
+await raceSameParticipantCancels()
+await raceCancelVsDeliver()
+await raceCancelVsCounterpartyDeliver()
+await raceCancelUnauthorizedAndLate()
 await cleanup()
 
 const failed = results.filter((r) => !r.ok).length

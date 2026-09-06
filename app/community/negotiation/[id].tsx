@@ -18,6 +18,7 @@ import { useAuth } from '@/context/AuthContext'
 import {
   acceptVersion,
   BarterObligation,
+  cancelTrade,
   confirmObligationReceived,
   createProposal,
   fetchInterestContext,
@@ -56,6 +57,18 @@ import {
   obligationView,
   RESPOND_LABELS,
 } from '@/lib/obligationState'
+import {
+  AGREE_TO_CANCEL_COPY,
+  CancelActionCopy,
+  CANCEL_REASON_NOTE,
+  CANCEL_REASON_PLACEHOLDER,
+  CANCEL_TRADE_COPY,
+  cancellationView,
+  cancelReasonPayload,
+  isCancelled,
+  MAX_CANCEL_REASON,
+  validateCancelReason,
+} from '@/lib/tradeCancellation'
 import { formatTradeDate } from '@/lib/tradeActivity'
 
 // NEGOTIATION — the terms of one barter trade, and their history.
@@ -67,12 +80,16 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // Finalization records an official agreement and creates two directed obligations. Each
 // obligation can now be marked delivered by ITS deliverer and answered by ITS receiver.
 //
+// Before either side has delivered, either participant may also CANCEL the trade, and the
+// counterparty may separately record that they agree — two explicit acts, which is the only
+// route to "mutually cancelled". Cancelling ends the trade; it decides nothing about whether
+// anyone fulfilled anything.
+//
 // That is all it can do. There is still no timeout, automatic fulfilment or completion,
-// cancellation-after-agreement, no-show, Needs Attention, Under Review, adjudication or
-// terminal outcome — for the obligation or for the agreement — so no copy on this screen may
-// say a trade is booked, complete, fulfilled, unfulfilled, cancelled, disputed, resolved,
-// under review or safely cancelable. The agreement stays "Trade confirmed" while its
-// obligations progress.
+// no-show, Needs Attention, Under Review, adjudication or terminal outcome — for the
+// obligation or for the agreement — so no copy on this screen may say a trade is booked,
+// complete, fulfilled, unfulfilled, disputed, resolved or under review. Until it is cancelled
+// the agreement stays "Trade confirmed" while its obligations progress.
 
 const EMPTY_DRAFT: ProposalDraft = {
   ownerGives: '',
@@ -108,6 +125,7 @@ export default function NegotiationScreen() {
   const [composing, setComposing] = useState(false)
   const [draft, setDraft] = useState<ProposalDraft>(EMPTY_DRAFT)
   const [showHistory, setShowHistory] = useState(false)
+  const [cancelReason, setCancelReason] = useState('')
   // The interest's own state, used only when no negotiation exists yet. Without it this screen
   // cannot tell "nobody has proposed yet" from "this ended before anyone proposed".
   const [context, setContext] = useState<{
@@ -174,6 +192,19 @@ export default function NegotiationScreen() {
     obligations.find((o) => obligationRole(o.side, myRole) === 'deliverer') ?? null
   const theirObligation =
     obligations.find((o) => obligationRole(o.side, myRole) === 'receiver') ?? null
+  // Cancellation is an AGREEMENT-level fact, so it is derived once here and said once, above
+  // both obligations — not repeated inside each of them.
+  // Both obligations present is the precondition for trusting `anyDelivered` at all: the
+  // database guarantees exactly two, so anything else means the read did not land.
+  const obligationsLoaded = obligations.length === 2
+  const anyDelivered = obligations.some((o) => o.deliveredAt !== null)
+  const cancellationFacts = {
+    iCancelled: row?.iCancelled ?? false,
+    theyCancelled: row?.theyCancelled ?? false,
+    cancelledAt: row?.cancelledAt ?? null,
+  }
+  const cancel = cancellationView(cancellationFacts, anyDelivered)
+  const tradeCancelled = isCancelled(cancellationFacts)
   // Live only when the underlying interest is accepted. A released negotiation with no terms
   // must not be offered a compose control the server will always refuse.
   const contextIsLive = (row?.interestStatus ?? context.status) === 'accepted'
@@ -193,6 +224,7 @@ export default function NegotiationScreen() {
         bothAccepted: row.bothAccepted,
         everBothAccepted: versions.some((v) => v.acceptedBy.length >= 2),
         agreementId: row.agreementId,
+        tradeCancelled,
         currentTermsStillValid: current ? termsTimingStillValid(current.terms) : true,
       })
     : null
@@ -316,6 +348,45 @@ export default function NegotiationScreen() {
     ])
   }
 
+  // ── Pre-delivery cancellation ─────────────────────────────────────────────
+  // ONE handler for both "Cancel trade" and "Agree to cancel": they are the same act on the
+  // server — this participant records their own cancellation — and only the number of acts
+  // decides whether the result is cancelled-by-one or mutual. The client sends the trade and
+  // an optional reason and nothing else; it cannot name the actor, the time, or the outcome.
+  async function onCancelTrade() {
+    if (!row?.agreementId || busy) return
+    const problem = validateCancelReason(cancelReason)
+    if (problem) {
+      Alert.alert('Check that reason', problem, [{ text: 'OK' }])
+      return
+    }
+    setBusy(true)
+    const { ok, error } = await cancelTrade(row.agreementId, cancelReasonPayload(cancelReason))
+    setBusy(false)
+    if (!ok) {
+      const f = barterWriteFailure('cancelTrade', error)
+      Alert.alert(f.title, f.body, [{ text: 'OK' }])
+      // Re-read on terminal OR stale: a refusal here means the trade moved under the button —
+      // most likely because the counterparty delivered — and the control must not stay on
+      // screen inviting the same impossible tap.
+      if (f.terminal || f.stale) {
+        setLoading(true)
+        load()
+      }
+      return
+    }
+    setCancelReason('')
+    setLoading(true)
+    load()
+  }
+
+  function askThenCancel(copy: CancelActionCopy) {
+    Alert.alert(copy.title, copy.body, [
+      { text: copy.cancelLabel, style: 'cancel' },
+      { text: copy.confirmLabel, style: 'destructive', onPress: onCancelTrade },
+    ])
+  }
+
   async function onSend() {
     if (!row || busy) return
     const problem = validateDraft(draft)
@@ -436,7 +507,7 @@ export default function NegotiationScreen() {
     // screen ends up labelling an obligation "You agreed to provide" while offering the
     // receiver's controls beside it.
     const role = obligationRole(obligation.side, myRole)
-    const o = obligationView(role, obligation.status)
+    const o = obligationView(role, obligation.status, tradeCancelled)
     return (
       <View style={styles.term}>
         <Text style={styles.termSide}>{o.title}</Text>
@@ -568,7 +639,13 @@ export default function NegotiationScreen() {
         >
           <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 32 }}>
             <Text style={styles.state}>{view.headline}</Text>
-            <Text style={styles.stateDetail}>{view.detail}</Text>
+            {/* ONE composition point for the page-level sentence. `negotiationView` owns the
+                headline for every state including `cancelled`, but deliberately returns an empty
+                detail there, because which participant cancelled is per-viewer copy owned by
+                lib/tradeCancellation.ts. Reading both in one place is what stops this screen
+                saying "Trade confirmed … arrange the details in your conversation" directly
+                above a banner saying the trade is cancelled. */}
+            <Text style={styles.stateDetail}>{view.detail || cancel.detail}</Text>
 
             {/* The one moment where an acceptance silently stopped counting. Keyed on whether
                 THIS viewer accepted an earlier set — the inline condition it replaced fired for
@@ -598,8 +675,15 @@ export default function NegotiationScreen() {
                 {' · '}
                 {formatTradeDate(current.createdAt)}
               </Text>
-              {view.state === 'confirmed' ? (
-                obligations.length === 2 ? (
+              {tradeCancelled && cancel.timeLabel ? (
+                <View style={styles.cancelBanner}>
+                  <Text style={styles.cancelDetail}>
+                    {cancel.timeLabel} {formatTermTime(cancel.cancelledAt)}
+                  </Text>
+                </View>
+              ) : null}
+              {view.state === 'confirmed' || view.state === 'cancelled' ? (
+                obligationsLoaded ? (
                   <>
                     {renderObligation(myObligation)}
                     {renderObligation(theirObligation)}
@@ -615,7 +699,48 @@ export default function NegotiationScreen() {
                     back and open it again.
                   </Text>
                 )
-              ) : (
+              ) : null}
+
+              {/* The ordinary exit, available only while nothing has been delivered. Once
+                  either obligation is delivered the control disappears for good — PD-046
+                  removes it permanently, and a later "didn't receive" does not bring it back,
+                  so this must never reappear on that state.
+                  Gated on `obligationsLoaded` as well: `anyDelivered` is derived from the
+                  obligation rows, and an EMPTY list reads as "nothing delivered" — which is
+                  indistinguishable from the truth. Offering an irreversible action off a
+                  precondition computed from data the screen has just said it could not load is
+                  exactly the case the message above warns about. */}
+              {obligationsLoaded && (cancel.canCancel || cancel.canAgree) ? (
+                <View style={styles.cancelBlock}>
+                  <Text style={styles.cancelDetail}>{CANCEL_REASON_NOTE}</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder={CANCEL_REASON_PLACEHOLDER}
+                    placeholderTextColor="rgba(240,232,213,0.35)"
+                    value={cancelReason}
+                    onChangeText={setCancelReason}
+                    maxLength={MAX_CANCEL_REASON}
+                    multiline
+                  />
+                  <View style={styles.actions}>
+                    <TouchableOpacity
+                      style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+                      disabled={busy}
+                      onPress={() =>
+                        askThenCancel(cancel.canAgree ? AGREE_TO_CANCEL_COPY : CANCEL_TRADE_COPY)
+                      }
+                    >
+                      <Text style={styles.secondaryText}>
+                        {cancel.canAgree
+                          ? AGREE_TO_CANCEL_COPY.confirmLabel
+                          : CANCEL_TRADE_COPY.confirmLabel}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : null}
+
+              {view.state !== 'confirmed' && view.state !== 'cancelled' ? (
                 <>
                   {current.terms.map((t) => (
                     <View key={t.id} style={styles.term}>
@@ -644,7 +769,7 @@ export default function NegotiationScreen() {
                     <Text style={styles.acceptText}>Them</Text>
                   </View>
                 </>
-              )}
+              ) : null}
             </View>
 
             {composing ? (
@@ -792,6 +917,21 @@ const styles = StyleSheet.create({
   },
   termText: { color: '#F0E8D5', fontSize: 14, lineHeight: 20, marginTop: 2 },
   termTiming: { color: 'rgba(240,232,213,0.6)', fontSize: 12.5, lineHeight: 18, marginTop: 2 },
+  cancelBanner: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(232,196,104,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(232,196,104,0.3)',
+  },
+  cancelDetail: {
+    color: 'rgba(240,232,213,0.75)',
+    fontSize: 12.5,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  cancelBlock: { marginTop: 16 },
   obligationState: { color: '#F0E8D5', fontSize: 13, lineHeight: 19, marginTop: 8 },
   obligationNote: {
     color: 'rgba(240,232,213,0.6)',

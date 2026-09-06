@@ -76,6 +76,16 @@ export interface NegotiationFacts {
    */
   agreementId: string | null
   /**
+   * Has either participant cancelled the confirmed trade?
+   *
+   * REQUIRED, not optional. This module is total over its state vocabulary precisely so a new
+   * state cannot fall through silently — and an optional flag defaulting to false would
+   * reintroduce exactly that: a caller who forgot to thread it would get "Trade confirmed" on
+   * a cancelled trade with no type error. Who cancelled, and what to say about it, belong to
+   * `lib/tradeCancellation.ts`; this only decides that the trade is no longer live.
+   */
+  tradeCancelled: boolean
+  /**
    * Client-side display fact for the terms currently on screen. The database remains the
    * authority and re-checks this at accept/finalize time; this only prevents a stale screen
    * from inviting an action the server will permanently refuse.
@@ -85,6 +95,7 @@ export interface NegotiationFacts {
 
 export type NegotiationState =
   | 'ended'
+  | 'cancelled'
   | 'confirmed'
   | 'agreed'
   | 'awaitingThem'
@@ -114,10 +125,15 @@ export interface ConfirmTradeCopy {
 
 export const CONFIRM_TRADE_COPY: ConfirmTradeCopy = {
   title: 'Confirm this trade?',
+  // The last clause used to read "The current beta does not yet include an in-app way to cancel
+  // or end a trade after this step." Pre-delivery cancellation now exists, so that sentence had
+  // become the opposite of the truth — told to a provider at the moment they take an
+  // irreversible action, which is the worst place in the product to be wrong. What replaces it
+  // states the rule that IS true, including where the exit stops (PD-046 § 7.2/7.3).
   body:
     'This makes the terms you both accepted official. They can no longer be changed, and the'
-    + ' post comes off the board for good. The current beta does not yet include an in-app'
-    + ' way to cancel or end a trade after this step.',
+    + ' post comes off the board for good. Either of you can still cancel the trade until one'
+    + ' of you marks something delivered — after that, cancelling is no longer available.',
   confirmLabel: 'Confirm trade',
   cancelLabel: 'Not yet',
 }
@@ -135,6 +151,13 @@ const STATE_COPY: Record<NegotiationState, { headline: string; detail: string }>
     headline: 'This negotiation ended',
     // Filled in by negotiationView, because what is true here depends on whether the two of
     // you ever accepted the same terms.
+    detail: '',
+  },
+  cancelled: {
+    headline: 'Trade cancelled',
+    // Deliberately EMPTY. Which participant cancelled, and whether both did, is per-viewer copy
+    // owned by `lib/tradeCancellation.ts`; duplicating a second version of it here is how the
+    // two would drift and start contradicting each other on the same screen.
     detail: '',
   },
   confirmed: {
@@ -181,7 +204,9 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
   const state: NegotiationState = !live
     ? 'ended'
     : confirmed
-      ? 'confirmed'
+      ? f.tradeCancelled
+        ? 'cancelled'
+        : 'confirmed'
       : f.bothAccepted
       ? 'agreed'
       : f.iAcceptedCurrent
@@ -207,6 +232,8 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
     // A dead negotiation accepts nothing. The server refuses both independently; this only
     // decides whether to render a control that would otherwise be refused.
     // A confirmed trade's terms are frozen; the server refuses a counter or acceptance too.
+    // A cancelled trade is confirmed too, so `confirmed` already closes all three. Spelled
+    // against `confirmed` rather than the state so a future state cannot quietly reopen them.
     canPropose: live && !confirmed,
     canAccept: live && !confirmed && !timingExpired && !f.iAcceptedCurrent,
     canConfirm: live && !confirmed && !timingExpired && f.bothAccepted,

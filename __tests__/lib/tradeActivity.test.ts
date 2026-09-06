@@ -34,6 +34,8 @@ function facts(over: Partial<TradeRowFacts> = {}): TradeRowFacts {
     status: 'pending',
     myRole: 'owner',
     offerIsActive: true,
+    iCancelled: false,
+    theyCancelled: false,
     releasedAt: null,
     releaseReason: null,
     offerHasAcceptedResponse: false,
@@ -287,7 +289,10 @@ describe('the responder feed accounts for every status', () => {
   })
 
   it('withdraws the end control from an accepted response that is already confirmed', () => {
-    const state = responderFeedState('accepted', 'ag')
+    const state = responderFeedState('accepted', 'ag', {
+      iCancelled: false,
+      theyCancelled: false,
+    })
     expect(state.action).toBe('none')
     expect(state.label).toMatch(/confirmed/i)
     expect(state.label).not.toMatch(/end negotiation/i)

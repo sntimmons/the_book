@@ -35,6 +35,7 @@ function facts(over: Partial<NegotiationFacts> = {}): NegotiationFacts {
     bothAccepted: false,
     everBothAccepted: false,
     agreementId: null,
+    tradeCancelled: false,
     ...over,
   }
 }
@@ -185,14 +186,47 @@ describe('ready to confirm is not confirmed', () => {
     }
   })
 
-  it('the confirm dialog discloses the current post-agreement beta limit', () => {
+  it('the confirm dialog discloses the current post-agreement limit', () => {
     const text = `${CONFIRM_TRADE_COPY.title} ${CONFIRM_TRADE_COPY.body}`.toLowerCase()
     expect(text).toMatch(/official/i)
     expect(text).toMatch(/can no longer be changed/i)
-    expect(text).toMatch(/does not yet include an in-app way to cancel or end/i)
-    for (const word of ['booked', 'complete', 'fulfilled', 'delivered', 'guaranteed']) {
+    // It must state the exit that EXISTS and where it stops. This assertion previously pinned
+    // the sentence "does not yet include an in-app way to cancel or end", which pre-delivery
+    // cancellation made false — so the test was not merely failing to catch a stale claim, it
+    // was enforcing one, and CI stayed green on it.
+    expect(text).toMatch(/can still cancel the trade/i)
+    expect(text).toMatch(/marks something delivered/i)
+    expect(text).not.toMatch(/does not yet include an in-app way to cancel or end/i)
+    for (const word of ['booked', 'complete', 'fulfilled', 'guaranteed']) {
       expect(text).not.toContain(word)
     }
+  })
+
+  it('never reports a cancelled trade as confirmed', () => {
+    // The defect this state exists to prevent: the list surfaces were taught that a cancelled
+    // trade is not a confirmed one, and the trade's own screen was not.
+    const v = negotiationView(facts({ agreementId: 'ag', tradeCancelled: true }))
+    expect(v.state).toBe('cancelled')
+    expect(v.headline).toBe('Trade cancelled')
+    expect(v.headline).not.toContain('confirmed')
+    // The per-viewer sentence belongs to lib/tradeCancellation.ts, so this module says nothing.
+    expect(v.detail).toBe('')
+    // And nothing is actionable on it.
+    expect(v.canPropose).toBe(false)
+    expect(v.canAccept).toBe(false)
+    expect(v.canConfirm).toBe(false)
+  })
+
+  it('still reports an uncancelled confirmed trade as confirmed', () => {
+    const v = negotiationView(facts({ agreementId: 'ag', tradeCancelled: false }))
+    expect(v.state).toBe('confirmed')
+    expect(v.headline).toBe('Trade confirmed')
+  })
+
+  it('does not call an unconfirmed negotiation cancelled', () => {
+    // Cancellation is an AGREEMENT-level act; there is nothing to cancel before one exists.
+    const v = negotiationView(facts({ agreementId: null, tradeCancelled: true }))
+    expect(v.state).not.toBe('cancelled')
   })
 })
 

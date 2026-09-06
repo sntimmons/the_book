@@ -31,6 +31,7 @@ const OPS: Record<BarterWriteOp, true> = {
   markDelivered: true,
   confirmReceived: true,
   reportNotReceived: true,
+  cancelTrade: true,
 }
 const ALL_OPS = Object.keys(OPS) as BarterWriteOp[]
 

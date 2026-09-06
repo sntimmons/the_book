@@ -5,10 +5,14 @@
 //
 // USER LANGUAGE, NOT SCHEMA LANGUAGE. Nothing here says status, enum, row or transition.
 //
-// TRUTHFUL AND NON-FINAL. There is no timeout, no automatic fulfilment, no cancellation,
-// no-show, Needs Attention, Under Review or adjudication in the product yet, so no copy in
-// this module may say a trade is complete, fulfilled, unfulfilled, cancelled, disputed,
-// resolved or under review. "Didn't receive" records what the receiver said and nothing more.
+// TRUTHFUL AND NON-FINAL. There is no timeout, no automatic fulfilment, no-show, Needs
+// Attention, Under Review or adjudication in the product yet, so no copy in this module may say
+// an obligation is complete, fulfilled, unfulfilled, disputed, resolved or under review.
+//
+// Pre-delivery cancellation DOES exist, but it is an AGREEMENT-level act: it is said once, by
+// lib/tradeCancellation.ts, above both obligations. This module only takes `tradeCancelled` as
+// an input that freezes the controls and drops the what-happens-next notes. "Didn't receive"
+// records what the receiver said and nothing more.
 
 import type { ProposalSide, TradeRole } from './negotiationState'
 import { sideForRole } from './negotiationState'
@@ -129,14 +133,34 @@ const TITLE: Record<ObligationRole, string> = {
   receiver: 'You will receive',
 }
 
-export function obligationView(role: ObligationRole, status: ObligationStatus): ObligationView {
+/**
+ * @param tradeCancelled has the AGREEMENT been cancelled by either participant? A cancelled
+ * trade freezes both controls: the server refuses a delivery or an answer on one (`PT409`),
+ * and rendering a button that can only fail is the capability-contradicts-caption defect this
+ * module exists to prevent. The rule lives here, not in the screen, so it is covered by the
+ * same exhaustive role × status sweep as the copy.
+ *
+ * The state sentence is unchanged when cancelled — "You have not marked this delivered yet."
+ * stays true — because the cancellation itself is said once, by `lib/tradeCancellation.ts`,
+ * above both obligations rather than repeated inside each.
+ */
+export function obligationView(
+  role: ObligationRole,
+  status: ObligationStatus,
+  tradeCancelled = false,
+): ObligationView {
   const c = COPY[role][status]
   return {
     title: TITLE[role],
     state: c.state,
-    note: c.note,
-    canMarkDelivered: c.canMarkDelivered,
-    canRespond: c.canRespond,
+    // DROPPED when the trade is cancelled. Every note here is about what happens next —
+    // "Waiting for the other provider to mark this delivered" — and on a cancelled trade
+    // nothing happens next. Suppressing both controls while leaving the sentence that promises
+    // one was the screen telling a receiver to wait for a delivery it had just said could never
+    // arrive. The `state` sentence stays: "Not marked delivered yet." is still true.
+    note: tradeCancelled ? null : c.note,
+    canMarkDelivered: c.canMarkDelivered && !tradeCancelled,
+    canRespond: c.canRespond && !tradeCancelled,
   }
 }
 
