@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import {
   acceptVersion,
+  BarterObligation,
   createProposal,
   fetchInterestContext,
   finalizeAgreement,
@@ -36,6 +37,7 @@ import {
   ProposalSide,
   shouldShowTermsChangedNote,
   sideLabel,
+  sideForRole,
   termsTimingStillValid,
   TERMS_EXPIRED_NOTE,
   TERMS_CHANGED_NOTE,
@@ -50,9 +52,9 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // happen; this is where the terms live, and the two are deliberately separate: a provider pair
 // may trade more than once over time while keeping one conversation.
 //
-// Finalization records an official agreement and freezes the accepted terms. There is still no
-// obligation, fulfilment, delivery, cancellation-after-agreement or adjudication model, so no
-// copy on this screen may say a trade is booked, owed, complete or safely cancelable.
+// Finalization records an official agreement and creates two directed obligations. There is
+// still no fulfilment, delivery, cancellation-after-agreement or adjudication model, so no copy
+// on this screen may say a trade is booked, complete or safely cancelable.
 
 const EMPTY_DRAFT: ProposalDraft = {
   ownerGives: '',
@@ -81,6 +83,7 @@ export default function NegotiationScreen() {
 
   const [row, setRow] = useState<NegotiationRow | null>(null)
   const [versions, setVersions] = useState<ProposalVersion[]>([])
+  const [obligations, setObligations] = useState<BarterObligation[]>([])
   const [loading, setLoading] = useState(true)
   const [failed, setFailed] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -112,14 +115,16 @@ export default function NegotiationScreen() {
       const ctx = await fetchInterestContext(interestId)
       setRow(null)
       setVersions([])
+      setObligations([])
       setContext({ status: ctx.status, myRole: ctx.myRole })
       setFailed(!ctx.ok)
       setLoading(false)
       return
     }
-    const { row: r, versions: v, ok } = await fetchNegotiation(found.row.proposalId)
+    const { row: r, versions: v, obligations: o, ok } = await fetchNegotiation(found.row.proposalId)
     setRow(r)
     setVersions(v)
+    setObligations(o)
     setFailed(!ok)
     setLoading(false)
   }, [interestId])
@@ -143,6 +148,9 @@ export default function NegotiationScreen() {
   // which side of the trade a first proposal is written against.
   const myRole: TradeSide =
     row?.myRole ?? context.myRole ?? (params.role === 'owner' ? 'owner' : 'responder')
+  const myObligationSide = sideForRole(myRole)
+  const myObligation = obligations.find((o) => o.side === myObligationSide) ?? null
+  const theirObligation = obligations.find((o) => o.side !== myObligationSide) ?? null
   // Live only when the underlying interest is accepted. A released negotiation with no terms
   // must not be offered a compose control the server will always refuse.
   const contextIsLive = (row?.interestStatus ?? context.status) === 'accepted'
@@ -354,6 +362,22 @@ export default function NegotiationScreen() {
     )
   }
 
+  function renderObligation(title: string, obligation: BarterObligation | null) {
+    if (!obligation) return null
+    return (
+      <View style={styles.term}>
+        <Text style={styles.termSide}>{title}</Text>
+        <Text style={styles.termText}>{obligation.agreedDescription}</Text>
+        <Text style={styles.termTiming}>Due by {formatTermTime(obligation.dueAt)}</Text>
+        {obligation.scheduledAt ? (
+          <Text style={styles.termTiming}>
+            Scheduled for {formatTermTime(obligation.scheduledAt)}
+          </Text>
+        ) : null}
+      </View>
+    )
+  }
+
   return (
     <View style={[styles.screen, { paddingTop: insets.top }]}>
       <View style={styles.header}>
@@ -455,32 +479,41 @@ export default function NegotiationScreen() {
                 {' · '}
                 {formatTradeDate(current.createdAt)}
               </Text>
-              {current.terms.map((t) => (
-                <View key={t.id} style={styles.term}>
-                  <Text style={styles.termSide}>{sideLabel(t.providedBy, row.myRole)}</Text>
-                  <Text style={styles.termText}>{t.serviceDescription}</Text>
-                  <Text style={styles.termTiming}>Due by {formatTermTime(t.dueAt)}</Text>
-                  {t.scheduledAt ? (
-                    <Text style={styles.termTiming}>
-                      Scheduled for {formatTermTime(t.scheduledAt)}
-                    </Text>
-                  ) : null}
-                </View>
-              ))}
-              <View style={styles.acceptRow}>
-                <Feather
-                  name={row.iAcceptedCurrent ? 'check-circle' : 'circle'}
-                  size={14}
-                  color={row.iAcceptedCurrent ? '#4CAF50' : 'rgba(240,232,213,0.4)'}
-                />
-                <Text style={styles.acceptText}>You</Text>
-                <Feather
-                  name={row.theyAcceptedCurrent ? 'check-circle' : 'circle'}
-                  size={14}
-                  color={row.theyAcceptedCurrent ? '#4CAF50' : 'rgba(240,232,213,0.4)'}
-                />
-                <Text style={styles.acceptText}>Them</Text>
-              </View>
+              {view.state === 'confirmed' && obligations.length === 2 ? (
+                <>
+                  {renderObligation('You agreed to provide', myObligation)}
+                  {renderObligation('You will receive', theirObligation)}
+                </>
+              ) : (
+                <>
+                  {current.terms.map((t) => (
+                    <View key={t.id} style={styles.term}>
+                      <Text style={styles.termSide}>{sideLabel(t.providedBy, row.myRole)}</Text>
+                      <Text style={styles.termText}>{t.serviceDescription}</Text>
+                      <Text style={styles.termTiming}>Due by {formatTermTime(t.dueAt)}</Text>
+                      {t.scheduledAt ? (
+                        <Text style={styles.termTiming}>
+                          Scheduled for {formatTermTime(t.scheduledAt)}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ))}
+                  <View style={styles.acceptRow}>
+                    <Feather
+                      name={row.iAcceptedCurrent ? 'check-circle' : 'circle'}
+                      size={14}
+                      color={row.iAcceptedCurrent ? '#4CAF50' : 'rgba(240,232,213,0.4)'}
+                    />
+                    <Text style={styles.acceptText}>You</Text>
+                    <Feather
+                      name={row.theyAcceptedCurrent ? 'check-circle' : 'circle'}
+                      size={14}
+                      color={row.theyAcceptedCurrent ? '#4CAF50' : 'rgba(240,232,213,0.4)'}
+                    />
+                    <Text style={styles.acceptText}>Them</Text>
+                  </View>
+                </>
+              )}
             </View>
 
             {composing ? (

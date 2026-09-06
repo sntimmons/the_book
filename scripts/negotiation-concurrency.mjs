@@ -24,6 +24,14 @@
 //      while that version was still current, or be refused with 40001 -- never be recorded as
 //      agreement to terms that had already been replaced.
 //
+//   4. Agreement finalization races must create exactly one agreement and exactly two
+//      obligations. The obligation pair is created by an additive agreement trigger, so the
+//      finalize races prove the new table is included in the same atomic outcome.
+//
+//   5. Two direct maintenance attempts to create the obligation pair for an existing agreement
+//      must be idempotent under real overlap: final result exactly two, never a partial pair or
+//      duplicate four-row pair.
+//
 // Everything it writes is deleted at the end and the counts are re-asserted at zero.
 //
 // Usage:  node scripts/negotiation-concurrency.mjs
@@ -90,6 +98,35 @@ select json_build_object(
   return { ...r, timing, opOk: r.ok && timing?.code === '00000' }
 }
 
+async function runTimedMaintenance(statement) {
+  const r = await runSql(`
+create temp table _rpc_timing(started_at timestamptz, ended_at timestamptz, code text) on commit drop;
+do $$
+declare
+  v_started timestamptz;
+  v_ended timestamptz;
+  v_code text := '00000';
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  perform pg_sleep(2);
+  v_started := clock_timestamp();
+  begin
+    ${statement}
+  exception when others then
+    v_code := sqlstate;
+  end;
+  v_ended := clock_timestamp();
+  insert into _rpc_timing values (v_started, v_ended, v_code);
+end $$;
+select json_build_object(
+  'started_at', started_at,
+  'ended_at', ended_at,
+  'code', code
+) as timing from _rpc_timing;`)
+  const timing = parseTiming(r.out)
+  return { ...r, timing, opOk: r.ok && timing?.code === '00000' }
+}
+
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function blockOfferForInterest(interest) {
@@ -100,7 +137,29 @@ select o.id
   join public.barter_interests i on i.offer_id = o.id
  where i.id = '${interest}'
  for update;
-select pg_sleep(5);
+select pg_sleep(8);
+commit;`)
+}
+
+async function blockProposalForInterest(interest) {
+  return runSql(`
+begin;
+select p.id
+  from public.barter_proposals p
+ where p.interest_id = '${interest}'
+ for update;
+select pg_sleep(8);
+commit;`)
+}
+
+async function blockAgreementForInterest(interest) {
+  return runSql(`
+begin;
+select ag.id
+  from public.barter_agreements ag
+ where ag.interest_id = '${interest}'
+ for update;
+select pg_sleep(8);
 commit;`)
 }
 
@@ -168,6 +227,8 @@ const ids = {
   interest5: randomUUID(),
   offer6: randomUUID(),
   interest6: randomUUID(),
+  offer7: randomUUID(),
+  interest7: randomUUID(),
 }
 
 async function seed() {
@@ -203,12 +264,14 @@ begin
   insert into public.barter_offers(id, provider_id, user_id, offering_service, seeking_service)
     values ('${ids.offer4}', opid, '${ids.ou}', 'conc offering4 ${tag}', 'conc seeking'),
            ('${ids.offer5}', opid, '${ids.ou}', 'conc offering5 ${tag}', 'conc seeking'),
-           ('${ids.offer6}', opid, '${ids.ou}', 'conc offering6 ${tag}', 'conc seeking');
+           ('${ids.offer6}', opid, '${ids.ou}', 'conc offering6 ${tag}', 'conc seeking'),
+           ('${ids.offer7}', opid, '${ids.ou}', 'conc offering7 ${tag}', 'conc seeking');
   insert into public.barter_interests(id, offer_id, interested_provider_id, interested_user_id,
     message, status) values
     ('${ids.interest4}', '${ids.offer4}', rpid, '${ids.ru}', 'x', 'accepted'),
     ('${ids.interest5}', '${ids.offer5}', rpid, '${ids.ru}', 'x', 'accepted'),
-    ('${ids.interest6}', '${ids.offer6}', rpid, '${ids.ru}', 'x', 'accepted');
+    ('${ids.interest6}', '${ids.offer6}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest7}', '${ids.offer7}', rpid, '${ids.ru}', 'x', 'accepted');
 end $$;`)
   if (!r.ok) {
     console.error('seed failed:', r.out)
@@ -355,17 +418,21 @@ const proposalOf = (interest) =>
 async function raceFinalizeFinalize() {
   await readyToConfirm(ids.interest4)
   const fin = `perform public.finalize_barter_agreement(${proposalOf(ids.interest4)});`
-  const blocker = blockOfferForInterest(ids.interest4)
-  await delay(1000)
+  const blocker = blockProposalForInterest(ids.interest4)
+  await delay(2000)
   const [a, b] = await Promise.all([runTimedUser(ids.ou, fin), runTimedUser(ids.ru, fin)])
   await blocker
   chk('both simultaneous finalizations succeed (second returns the first)', 'true', String(a.opOk && b.opOk))
   chk('the two finalization RPC intervals genuinely overlapped',
     'true', String(intervalsOverlap(a.timing, b.timing)))
   const q = await runSql(`
-select count(*) as n
+select count(*) as n,
+       (select count(*) from public.barter_obligations bo
+         join public.barter_agreements ag on ag.id = bo.agreement_id
+        where ag.interest_id = '${ids.interest4}') as obligations
   from public.barter_agreements where interest_id = '${ids.interest4}';`)
   chk('exactly ONE agreement exists', '1', scalar(q.out, 'n'))
+  chk('and exactly TWO obligations exist', '2', scalar(q.out, 'obligations'))
   const p = await runSql(`select is_active as a from public.barter_offers where id = '${ids.offer4}';`)
   chk('and the post is closed', 'false', scalar(p.out, 'a'))
 }
@@ -379,8 +446,8 @@ async function raceFinalizeCounter() {
   const fin = `perform public.finalize_barter_agreement(${proposalOf(ids.interest5)});`
   const cnt =
     `perform public.submit_barter_counter(${proposalOf(ids.interest5)}, ${TERMS('late own', 'late theirs')});`
-  const blocker = blockOfferForInterest(ids.interest5)
-  await delay(1000)
+  const blocker = blockProposalForInterest(ids.interest5)
+  await delay(2000)
   const [f, c] = await Promise.all([runTimedUser(ids.ou, fin), runTimedUser(ids.ru, cnt)])
   await blocker
   chk('finalize and counter RPC intervals genuinely overlapped',
@@ -391,9 +458,14 @@ select coalesce((select count(*) from public.barter_agreements ag
   join public.barter_proposal_versions v on v.id = ag.accepted_version_id
   join public.barter_proposals p on p.id = ag.proposal_id
  where ag.interest_id = '${ids.interest5}' and v.version_no <> p.current_version_no), 0) as stale,
+ (select count(*) from public.barter_obligations bo join public.barter_agreements ag on ag.id = bo.agreement_id
+   where ag.interest_id = '${ids.interest5}') as obligations,
  (select count(*) from public.barter_proposal_versions v join public.barter_proposals p on p.id = v.proposal_id
    where p.interest_id = '${ids.interest5}') as versions;`)
   chk('no agreement references a version that is no longer current', '0', scalar(q.out, 'stale'))
+  const obligations = scalar(q.out, 'obligations')
+  chk('finalize vs counter leaves either zero or two obligations',
+    'true', String(obligations === '0' || obligations === '2'))
 }
 
 // ── 6. Finalize races a release ─────────────────────────────────────────────
@@ -403,7 +475,7 @@ async function raceFinalizeRelease() {
   const fin = `perform public.finalize_barter_agreement(${proposalOf(ids.interest6)});`
   const rel = `perform public.release_barter_interest('${ids.interest6}');`
   const blocker = blockOfferForInterest(ids.interest6)
-  await delay(1000)
+  await delay(2000)
   const [f, r] = await Promise.all([runTimedUser(ids.ou, fin), runTimedUser(ids.ru, rel)])
   await blocker
   chk('finalize and release RPC intervals genuinely overlapped',
@@ -411,10 +483,43 @@ async function raceFinalizeRelease() {
   chk('exactly one of finalize / release wins', 'true', String(f.opOk !== r.opOk))
   const q = await runSql(`
 select (select count(*) from public.barter_agreements where interest_id = '${ids.interest6}') as agreements,
+       (select count(*) from public.barter_obligations bo join public.barter_agreements ag on ag.id = bo.agreement_id
+         where ag.interest_id = '${ids.interest6}') as obligations,
        (select status from public.barter_interests where id = '${ids.interest6}') as status;`)
-  const agreements = scalar(q.out, 'agreements'), status = scalar(q.out, 'status')
-  const consistent = (agreements === '1' && status === 'accepted') || (agreements === '0' && status === 'released')
+  const agreements = scalar(q.out, 'agreements'), obligations = scalar(q.out, 'obligations'), status = scalar(q.out, 'status')
+  const consistent =
+    (agreements === '1' && obligations === '2' && status === 'accepted')
+    || (agreements === '0' && obligations === '0' && status === 'released')
   chk('the end state is consistent: (agreement, accepted) or (none, released)', 'true', String(consistent))
+}
+
+// ── 7. Two obligation-pair creation attempts at once ───────────────────────
+async function raceObligationPairCreation() {
+  await readyToConfirm(ids.interest7)
+  await runSql(asUser(ids.ou, `perform public.finalize_barter_agreement(${proposalOf(ids.interest7)});`))
+  await runSql(`
+do $$
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  delete from public.barter_obligations
+   where agreement_id = (select id from public.barter_agreements where interest_id = '${ids.interest7}');
+end $$;`)
+  const statement =
+    `perform public.create_barter_obligation_pair((select id from public.barter_agreements where interest_id = '${ids.interest7}'));`
+  const blocker = blockAgreementForInterest(ids.interest7)
+  await delay(2000)
+  const [a, b] = await Promise.all([runTimedMaintenance(statement), runTimedMaintenance(statement)])
+  await blocker
+  chk('two obligation-pair creation attempts genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('both obligation-pair creation attempts are idempotent',
+    'true', String(a.opOk && b.opOk))
+  const q = await runSql(`
+select count(*) as n, count(distinct side) as sides
+  from public.barter_obligations
+ where agreement_id = (select id from public.barter_agreements where interest_id = '${ids.interest7}');`)
+  chk('obligation-pair race leaves exactly two obligations', '2', scalar(q.out, 'n'))
+  chk('obligation-pair race leaves one per side', '2', scalar(q.out, 'sides'))
 }
 
 async function cleanup() {
@@ -423,24 +528,24 @@ do $$
 begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
   delete from public.barter_agreements
-   where interest_id in ('${ids.interest4}','${ids.interest5}','${ids.interest6}');
+   where interest_id in ('${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
   delete from public.barter_version_acceptances a using public.barter_proposal_versions v,
     public.barter_proposals p
    where a.version_id = v.id and v.proposal_id = p.id
-     and p.interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}');
+     and p.interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
   delete from public.barter_proposal_terms t using public.barter_proposal_versions v,
     public.barter_proposals p
    where t.version_id = v.id and v.proposal_id = p.id
-     and p.interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}');
+     and p.interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
   delete from public.barter_proposal_versions v using public.barter_proposals p
    where v.proposal_id = p.id
-     and p.interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}');
+     and p.interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
   delete from public.barter_proposals
-   where interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}');
+   where interest_id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
   delete from public.barter_interests
-   where id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}');
+   where id in ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}');
   delete from public.barter_offers where id in ('${ids.offer}','${ids.offer2}','${ids.offer3}',
-    '${ids.offer4}','${ids.offer5}','${ids.offer6}');
+    '${ids.offer4}','${ids.offer5}','${ids.offer6}','${ids.offer7}');
   delete from public.providers where user_id in ('${ids.ou}','${ids.ru}');
   delete from auth.users where id in ('${ids.ou}','${ids.ru}');
 end $$;`)
@@ -451,17 +556,19 @@ end $$;`)
   // moment any real row exists on the target.
   const q = await runSql(`
 select (select count(*) from public.barter_offers where id in
-          ('${ids.offer}','${ids.offer2}','${ids.offer3}','${ids.offer4}','${ids.offer5}','${ids.offer6}')) as offers,
+          ('${ids.offer}','${ids.offer2}','${ids.offer3}','${ids.offer4}','${ids.offer5}','${ids.offer6}','${ids.offer7}')) as offers,
        (select count(*) from public.barter_interests where id in
-          ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}')) as interests,
+          ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}')) as interests,
        (select count(*) from public.barter_proposals where interest_id in
-          ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}')) as proposals,
+          ('${ids.interest}','${ids.interest2}','${ids.interest3}','${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}')) as proposals,
+       (select count(*) from public.barter_obligations bo join public.barter_agreements ag on ag.id = bo.agreement_id
+          where ag.interest_id in ('${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}')) as obligations,
        (select count(*) from public.barter_agreements where interest_id in
-          ('${ids.interest4}','${ids.interest5}','${ids.interest6}')) as agreements,
+          ('${ids.interest4}','${ids.interest5}','${ids.interest6}','${ids.interest7}')) as agreements,
        (select count(*) from public.providers where user_id in
           ('${ids.ou}','${ids.ru}')) as providers,
        (select count(*) from auth.users where id in ('${ids.ou}','${ids.ru}')) as users;`)
-  for (const k of ['offers', 'interests', 'proposals', 'agreements', 'providers', 'users']) {
+  for (const k of ['offers', 'interests', 'proposals', 'obligations', 'agreements', 'providers', 'users']) {
     chk(`zero residue: ${k}`, '0', scalar(q.out, k))
   }
 }
@@ -473,6 +580,7 @@ await raceAcceptVsCounter()
 await raceFinalizeFinalize()
 await raceFinalizeCounter()
 await raceFinalizeRelease()
+await raceObligationPairCreation()
 await cleanup()
 
 const failed = results.filter((r) => !r.ok).length
