@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import type { ProposalDraft, ProposalSide, TradeSide } from './negotiationState'
 import { draftPayload } from './negotiationState'
+import type { ObligationStatus } from './obligationState'
 
 // Barter negotiation data layer (Slice 3a). Reads come from `my_barter_proposals` and the three
 // participant-scoped tables; every WRITE goes through a SECURITY DEFINER RPC, because the rules
@@ -58,6 +59,12 @@ export interface BarterObligation {
   agreedDescription: string
   dueAt: string
   scheduledAt: string | null
+  /** What has happened to it. Server-owned; every transition goes through an RPC. */
+  status: ObligationStatus
+  /** Server-stamped when the deliverer marked it delivered. Never client-supplied. */
+  deliveredAt: string | null
+  /** Server-stamped when the receiver answered. */
+  receiptRespondedAt: string | null
 }
 
 const ROW_COLUMNS =
@@ -240,7 +247,10 @@ export async function fetchNegotiation(proposalId: string): Promise<{
   if (row?.agreementId) {
     const obligationRes = await supabase
       .from('barter_obligations')
-      .select('id, agreement_id, side, agreed_description, due_at, scheduled_at')
+      .select(
+        'id, agreement_id, side, agreed_description, due_at, scheduled_at, status,'
+        + ' delivered_at, receipt_responded_at',
+      )
       .eq('agreement_id', row.agreementId)
       .order('side', { ascending: true })
     if (obligationRes.error) return { row: null, versions: [], obligations: [], ok: false }
@@ -251,6 +261,9 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       agreed_description: string
       due_at: string
       scheduled_at: string | null
+      status: ObligationStatus
+      delivered_at: string | null
+      receipt_responded_at: string | null
     }[] | null) ?? []).map((o) => ({
       id: o.id,
       agreementId: o.agreement_id,
@@ -258,6 +271,9 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       agreedDescription: o.agreed_description,
       dueAt: o.due_at,
       scheduledAt: o.scheduled_at,
+      status: o.status,
+      deliveredAt: o.delivered_at,
+      receiptRespondedAt: o.receipt_responded_at,
     }))
   }
 
@@ -337,6 +353,53 @@ export async function finalizeAgreement(
   })
   if (error) return { ok: false, agreementId: null, error }
   return { ok: true, agreementId: (data as string | null) ?? null, error: null }
+}
+
+/**
+ * Mark an obligation delivered. Only the obligation is named: the server derives that the
+ * caller is its deliverer and stamps the time itself, so a client cannot mark the
+ * counterparty's obligation delivered or supply its own `delivered_at`.
+ *
+ * IDEMPOTENT. A second attempt returns the state that already exists and re-stamps nothing.
+ */
+export async function markObligationDelivered(
+  obligationId: string,
+): Promise<{ ok: boolean; status: ObligationStatus | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('mark_barter_obligation_delivered', {
+    p_obligation_id: obligationId,
+  })
+  if (error) return { ok: false, status: null, error }
+  return { ok: true, status: (data as ObligationStatus | null) ?? null, error: null }
+}
+
+/**
+ * The receiver confirms they received the delivery. Refused before delivery, refused for
+ * anyone but the receiver, and refused if a different answer is already recorded.
+ */
+export async function confirmObligationReceived(
+  obligationId: string,
+): Promise<{ ok: boolean; status: ObligationStatus | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('confirm_barter_obligation_received', {
+    p_obligation_id: obligationId,
+  })
+  if (error) return { ok: false, status: null, error }
+  return { ok: true, status: (data as ObligationStatus | null) ?? null, error: null }
+}
+
+/**
+ * The receiver records that they did not receive the delivery.
+ *
+ * This records a STATEMENT and nothing else. It does not cancel, adjudicate, mark the
+ * obligation unfulfilled or change the agreement — none of which exist yet.
+ */
+export async function reportObligationNotReceived(
+  obligationId: string,
+): Promise<{ ok: boolean; status: ObligationStatus | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('report_barter_obligation_not_received', {
+    p_obligation_id: obligationId,
+  })
+  if (error) return { ok: false, status: null, error }
+  return { ok: true, status: (data as ObligationStatus | null) ?? null, error: null }
 }
 
 // No `interpretWrite` here, deliberately. That helper exists for a PostgREST write FILTERED to

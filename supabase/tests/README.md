@@ -78,6 +78,7 @@ the command line, so the password never appears in process `argv`.
 | `barter.test.sql` | Barter identity binding, foreign-field immutability, state transitions, counterparty-history retention, and the write-path response limit |
 | `negotiation.test.sql` | Proposal / versioning foundation (Slice 3a): RPC authorization, two directed terms, server-owned identity, write boundary, immutability, budget, source pins. |
 | `agreement.test.sql` | Agreement finalization: acceptance requirements, idempotence, atomic post closure, post-agreement freeze, release unavailable, security posture of every new object. |
+| `obligation.test.sql` | Obligation delivery and receiver confirmation: who may mark delivered, who may answer, server-owned and write-once timestamps, idempotence, one authoritative receiver outcome, frozen terms, the write-marker boundary, and the asserted ABSENCE of cancellation / no-show / adjudication / terminal outcomes. |
 | `_report.sql` | Aggregates results into one JSON column; the runner reads it and sets the exit code |
 | `../../scripts/db-security-test.mjs` | Production guard, execution, reporting |
 | `../../scripts/b5bExec.mjs` | Pure helpers: `PG*` env derivation and report parsing |
@@ -119,6 +120,24 @@ booking-linked conversations bypassing the pending gate; a participant CAN read 
 conversation (so a dropped SELECT policy fails rather than passing); and
 `conversation.booking_id` having no column DEFAULT — the DDL invariant the entire request gate
 keys on.
+
+**Obligation delivery and receipt** — only the deliverer may mark their own obligation
+delivered and only the receiver may answer it, each refused for the other party and for a
+non-participant; a non-participant and a non-existent obligation are refused identically, so
+the RPCs are not an existence oracle; a null `auth.uid()` fails closed on every path;
+`delivered_at` and the receiver's answer are server-stamped and write-once, so a duplicate
+mark or a repeated answer is a safe no-op that does not move either clock; exactly one of
+"received" / "didn't receive" can become authoritative and neither can flip; the agreed
+description, timing, direction and participant identities stay frozen and an obligation still
+cannot be deleted; lifecycle writes are refused unless they come from a delivery RPC, and a
+marker published for one obligation cannot write another; the four lifecycle CHECK constraints
+are asserted by name AND exercised on the `service_role` path where the immutability trigger
+does not fire, so a missing constraint cannot hide behind a trigger raising the same SQLSTATE;
+an obligation cannot be INSERTed already delivered or answered; EXECUTE on the internal
+receipt helper is pinned to exactly `postgres` and `service_role`; both participants keep read
+access and a de-approved participant can still finish an existing trade; and the absence of
+cancellation, no-show, adjudication and terminal outcome columns and functions is asserted
+rather than assumed, including that the pre-agreement release stays refused after a delivery.
 
 ## Out of scope (deliberately)
 

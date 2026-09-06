@@ -197,7 +197,7 @@ describe('ready to confirm is not confirmed', () => {
 })
 
 describe('agreement copy promises nothing the app cannot do', () => {
-  // No agreement, obligation or fulfilment model exists. Copy that called a trade booked, owed
+  // The agreement and its obligations exist; no fulfilment or completion model does. Copy that called a trade booked, owed
   // or complete would be a promise with no schema behind it.
   const v = negotiationView(facts({ bothAccepted: true, iAcceptedCurrent: true, theyAcceptedCurrent: true }))
 
