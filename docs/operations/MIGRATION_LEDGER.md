@@ -519,6 +519,125 @@ is not re-stamped under contention), deliverer versus an unauthorized caller, th
 receiver answers racing each other, the same answer twice at once, and both sides of one
 agreement delivering simultaneously — with zero residue for obligations.
 
+## 2026-09-06 — `20261005000000`…`20261010000000` applied to non-production (Pre-Delivery Cancellation, PR #58)
+
+Six migrations, applied in order over the course of PR #58. Five of them redefine
+`public.cancel_barter_agreement`; **read the Functions-redefined table below before touching
+it.**
+
+`20261005000000` creates the feature. `barter_agreement_cancellations` is an **append-only act
+table**, one row per participant per agreement (`unique (agreement_id, actor_user_id)`), and the
+classification is **derived from the row count and stored nowhere** — no `cancelled` flag, no
+`cancelled_at` column, no `mutual` boolean, so a derived answer cannot disagree with the rows it
+comes from. One act is *Cancelled by Participant*; two are *Mutually Cancelled*, and that second
+act must be **explicit** — it is never inferred from silence, a timeout or inactivity. The one
+writer is `cancel_barter_agreement(uuid, text)`. The client supplies only an agreement id and an
+optional reason; caller, participant role, provider identity, delivery state, prior-act state and
+classification are all derived server-side. There is **no `providers.is_approved` gate**: a
+de-approved participant must still be able to leave a trade they are already in. The first act
+closes delivery and receipt — `mark_barter_obligation_delivered` and
+`record_barter_obligation_receipt` were redefined to re-check for a cancellation **after** taking
+the obligation row lock and refuse with `PT409`. Conversely, once any obligation has
+`delivered_at` the ordinary exit is gone **permanently**, and a later `not_received` does not
+restore it. **Nothing is deleted**: the agreement, both obligations, the proposal, its versions,
+their terms and the acceptances all survive and stay readable by both participants.
+
+The delivery/cancel race is decided by lock order, not by hope. Cancel locks the agreement, then
+**all** its obligations `order by o.id for update`, and only then reads `delivered_at`; it refuses
+outright if it did not lock exactly two rows, so the decision is never made on an unlocked read.
+`mark_barter_obligation_delivered` takes the same obligation lock before checking for a
+cancellation. Neither side reads its decision variable until it holds the lock the other must take
+to change it, so exactly one wins.
+
+`20261006000000` hardens it after review. The RPC did not re-check `FOUND` after its locking
+re-read, so an agreement erased between the authorization read and the lock produced
+`internal_error` — surfaced to a provider as "contact support" about a trade that had simply
+ceased to exist. `enforce_barter_cancellation_consistent` validated that the actor pair was **one
+of** the agreement's two participants but never that it was **the caller**, so a privileged insert
+could attribute an act to the counterparty and fabricate a mutual cancellation — a false record of
+someone else's assent. And `created_at` was documented as server-stamped but was only a column
+DEFAULT, which an explicit insert overrides; it is now stamped in the trigger on every insert
+path, before any later slice measures a deadline from it.
+
+`20261007000000` implements two Founder rulings: the counterparty is told (a durable in-thread
+notice), and the optional reason is **participant-visible context**, exposed per viewer as
+`my_cancel_reason` / `their_cancel_reason` on `my_barter_proposals`. The reason is shared with the
+other provider and shown to both in trade details; it is **not** a private note, a reliability
+verdict, a no-show determination, adjudication or proof of fault, and none of those exist.
+
+`20261008000000` fixes what `20261007000000` got wrong, and the failure is the one this document
+exists to prevent: **its body was written from `20260910000000` — a superseded definition of
+`release_barter_interest` — rather than from the live `20260913000000`**, so four properties were
+silently dropped. The worst was best-effort isolation. The message insert sat bare inside the
+cancellation transaction with no handler covering it, and `enforce_prebooking_message_rules` raises
+`check_violation` for a `pending` or `declined` thread (SECURITY DEFINER does not change
+`auth.role()`, so that trigger does fire). Any such failure aborted the RPC and rolled the
+cancellation act back with it, while `lib/barterErrors.ts` reported "That trade is no longer
+available" — false, since the trade existed and was uncancelled. A provider could be denied
+PD-046's **only** ordinary exit, and told a lie about why, by a condition on a messaging row they
+cannot see or fix. The same omission produced a second defect: a PL/pgSQL block with an `EXCEPTION`
+clause is a subtransaction, so a `unique_violation` from the message write would have rolled back
+the act and still returned a success classification. The restored inner handler contains those
+failures so they can never reach the outer one. Also restored: the open-conversation predicate,
+the provider-identity re-check, and `system_recipient_id` — left null it means "addressed to
+both", so the provider who cancelled was being badged and in-app-notified about their own act.
+
+`20261009000000` fixes the cause rather than the symptoms. Hand-copying the shape of a mechanism
+is not reuse, and that was the **fifth** live copy of "resolve the pair thread, then post to it" —
+the first that diverged. `public.pair_conversation_notice(uuid, uuid, uuid, uuid, text, uuid)` is
+now the **one writer** for platform notices into a provider pair's thread: it resolves the
+canonical thread, re-checks provider identity, skips a thread that cannot take a message,
+addresses the notice, and is best-effort by construction. It **creates no conversation** and is
+**callable by no client role** — a client that could call it could author a message nobody wrote.
+`cancel_barter_agreement` now calls it, and derives its classification once so the sentence the
+counterparty reads cannot disagree with the answer the caller got.
+
+`20261010000000` is a **copy-only** correction, on a Founder ruling. The second notice read "Both
+providers agreed to cancel…", which is true of one sequence — A cancels, B reads it and taps
+*Agree to cancel* — and **false** of the other the server allows: A and B cancelling concurrently,
+neither having seen the other's act. Both reach two acts, so both reached that sentence. Recording
+in a durable thread message that two providers *agreed*, when neither assented, attributes a
+meeting of minds that never happened. The function body was diffed against `20261009000000` before
+commit: **the only executable difference is that string literal.** The classification is unchanged
+and still `mutually_cancelled`; *"Agree to cancel"* remains the UI action for a counterparty
+responding to an existing cancellation, where the viewer **has** seen the other act and the word is
+accurate.
+
+The live notice copy is therefore:
+
+- first act — `The trade for "X" for "Y" was cancelled by one provider.`
+- second act — `Both providers cancelled the trade for "X" for "Y".`
+
+`"X" for "Y"` is rendered by `barter_terms_label`: server-derived, quoted, control-stripped and
+capped at 40 characters per side, and the sentence closes with the platform's own words so there
+is no trailing position for owner-authored text to pose as ours. The free-text reason is
+deliberately **not** in either notice.
+
+**Nothing terminal was added.** No 7-day timeout, Needs Attention, Under Review, no-show,
+adjudication, terminal obligation outcome, terminal agreement outcome, barter review, reputation
+or push notification exists. The absence of each is *asserted* in the harness — as both columns
+and functions — not assumed. Cancellation is an agreement-level event that decides nothing about
+whether either side fulfilled anything.
+
+The act table's foreign keys cascade with the existing agreement graph and account-erasure
+behaviour. **This migration set introduces no new retention policy.** Note for a later slice: this
+is the first per-participant conduct record in the barter graph, so whether an anonymised trace
+must survive erasure for PD-046's future reliability model is an open product question — flagged
+in `20261005000000`, deliberately not decided there.
+
+Ledger after: **49 entries**, `local == remote` for every row through `20261010000000`, confirmed
+with `supabase migration list`. Production untouched, and never queried.
+
+Post-apply B5B: **872/872 passed, 0 failed**, zero residue. Concurrency proof: **102/102 passed,
+0 failed**, including both participants cancelling simultaneously, the same participant cancelling
+twice at once, cancel racing the deliverer's own mark-delivered, cancel racing the counterparty's
+delivery, and cancel racing an unauthorized caller — with zero residue for cancellations, messages
+and conversations. The concurrency harness asserts that a contended notice is **never duplicated**
+and that whatever is written is correctly addressed; it deliberately does **not** assert delivery,
+because the notice is best-effort by construction and that scenario forces contention on purpose.
+Exactly-once *delivery* is proven in B5B, sequentially and uncontended, where it can be asserted
+honestly.
+
 ## Prevention
 
 **Do not apply a slice to non-production before its security review and Founder rulings have
@@ -545,6 +664,9 @@ NOT in the migration that created it.
 
 | Function | Created in | **Current definition** | Why it moved |
 |---|---|---|---|
+| `public.cancel_barter_agreement` | `20261005000000_barter_pre_delivery_cancellation.sql` | **`20261010000000_cancellation_notice_neutral_copy.sql`** | **Replaced FIVE times in one PR — the most-redefined function in this repo. Copying any earlier body forward deletes the in-thread signal and restores the untrue "Both providers agreed to cancel" wording.** `20261006000000` added the post-lock `FOUND` re-check, bound the actor to `auth.uid()` in the consistency trigger, and made `created_at` server-stamped on every insert path rather than by DEFAULT. `20261007000000` added the counterparty notice and the shared reason. `20261008000000` restored the four properties `20261007000000` dropped by copying `20260910000000` instead of the live `20260913000000` — best-effort isolation (**a notice failure must never veto the cancellation**), the open-conversation predicate, the provider-identity re-check, and `system_recipient_id`. `20261009000000` replaced the inlined notice block with a call to `public.pair_conversation_notice` and derives the classification once. `20261010000000` changed **one string literal** — the second notice now states a fact ("Both providers cancelled…") rather than an agreement, because two concurrent cancellations reach two acts without either participant assenting. |
+| `public.pair_conversation_notice` (new) | `20261009000000_pair_conversation_notice.sql` | **`20261009000000_pair_conversation_notice.sql`** | **The one writer for platform notices (`sender_id IS NULL`) into a provider pair's existing conversation.** Resolves the canonical thread by `provider_pair_key` with the stale-key fallback, re-checks that both `providers` rows still belong to the agreement's users, skips a thread that cannot take a message, addresses the notice via `system_recipient_id`, and wraps the write so it **can never veto the act it announces**. Creates no conversation. **EXECUTE revoked from `public`, `anon` and `authenticated`** — callers are other definer functions. A NEW signal writer must call this rather than hand-copy it; that hand-copying is exactly what produced the `20261008000000` correction. **`public.release_barter_interest` deliberately still carries its own body** (live definition `20260913000000`): replacing a shipped, authorization-adjacent function wholesale to remove a duplicate would risk a live path to tidy one. Migrate it onto this helper the next time it is opened for a reason of its own. |
+| `public.mark_barter_obligation_delivered` / `public.record_barter_obligation_receipt` | `20261004000000_barter_obligation_delivery.sql` | **`20261005000000_barter_pre_delivery_cancellation.sql`** | Both gained a cancellation check placed **after** the obligation row lock — the half of the delivery/cancel race contract that `cancel_barter_agreement` depends on. Every guard from `20261004000000` survives in order; the check precedes the idempotent no-op branch so a cancelled trade is never reported as a successful delivery. The two public receipt wrappers (`confirm_barter_obligation_received`, `report_barter_obligation_not_received`) are untouched and still resolve, because `create or replace` preserves the OID. |
 | `public.release_barter_interest` | `20260909000000_barter_interest_release.sql` | **`20260913000000_trade_activity_hardening.sql`** | `20260910000000` added the in-transaction counterparty signal; `20260911000000` made that signal unable to veto the release and added the provider-identity assertion. **`20260909000000`'s header instructs future slices to add the agreement guard "HERE, inside this function", and `20260911000000` repeats it saying "THIS definition, the live one". BOTH now point at DEAD definitions. Extend the current one.** `20260912000000` adds the post-context label and addresses the notice via `system_recipient_id`. |
 | `public.enforce_barter_interest_write` | `20260906000000_barter_integrity_slice1.sql` | **`20260909000000_barter_interest_release.sql`** | Adds the `accepted -> released` transition and the release-column allow-list, gated on a transaction-local marker **and** the transition itself. The trigger **derives** `released_at` / `released_by` / `release_reason` rather than trusting them, so attribution is non-forgeable independent of the caller — that clamp is the load-bearing part, not the marker. The INSERT path additionally null-clamps the three new release columns so they are never author-supplied. The pre-existing owner-only `pending -> accepted\|declined` rule and the pre-existing INSERT clamps are carried through unchanged. |
 | `public.enforce_message_immutability` (new) / policy `participants_mark_messages_read` | `20260829000000_canonical_live_baseline.sql` (policy) | **`20260911000000_message_authorship_pin.sql`** | The policy's `sender_id = sender_id` conjuncts were TAUTOLOGIES — an RLS policy cannot reference OLD — so they pinned nothing and were NULL for a null sender. The pin moved to a BEFORE UPDATE trigger, where it can compare to OLD; the policy now asserts only participation. |
