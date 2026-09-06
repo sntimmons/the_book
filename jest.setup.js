@@ -31,6 +31,10 @@ if (configuredTestUrl && configuredTestUrl.includes(PRODUCTION_SUPABASE_REF)) {
 // mocked globally so a screen module can be imported purely to reach its pure
 // helper exports, without executing native code or navigation. The pure helpers
 // under test never call these; the mocks only satisfy the import graph.
+//
+// A suite that RENDERS a screen needs more than an import graph — focus effects,
+// route params and a real router double — so it overrides these per file rather
+// than widening them here. Keep these minimal: they exist to let a module load.
 // AsyncStorage has no native module under Jest; use its official mock so modules
 // that import it (e.g. the real lib/supabase in the config test) can load.
 jest.mock('@react-native-async-storage/async-storage', () =>

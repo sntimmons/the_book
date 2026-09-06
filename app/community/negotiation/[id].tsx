@@ -41,6 +41,7 @@ import {
   ProposalSide,
   shouldShowTermsChangedNote,
   sideLabel,
+  TERMS_PLACEHOLDERS,
   termsTimingStillValid,
   TERMS_EXPIRED_NOTE,
   TERMS_CHANGED_NOTE,
@@ -297,9 +298,9 @@ export default function NegotiationScreen() {
     await runWrite({
       op: 'proposeTerms',
       write: () => createProposal(interestId, draft),
-      // `stale` as well as `terminal`: "they proposed first" is recoverable, but the screen is
-      // definitely out of date, and leaving it saying "No terms yet" made the alert tell the
-      // user to read terms that were not on screen.
+      // Gate left at the default — `stale` as well as `terminal`: "they proposed first" is
+      // recoverable, but the screen is definitely out of date, and leaving it saying "No terms
+      // yet" made the alert tell the user to read terms that were not on screen.
       onRefusalRefresh: () => setComposing(false),
       onSuccess: () => {
         setComposing(false)
@@ -341,6 +342,9 @@ export default function NegotiationScreen() {
     obligationId: string,
   ) {
     if (busy) return
+    // Gate left at the default — terminal OR stale: every refusal here means the obligation
+    // moved under the button, and leaving the old controls on screen invites the same
+    // impossible tap again. Nothing else to settle, so no callbacks.
     await runWrite({
       op,
       write: () =>
@@ -349,8 +353,6 @@ export default function NegotiationScreen() {
           : op === 'confirmReceived'
             ? confirmObligationReceived(obligationId)
             : reportObligationNotReceived(obligationId),
-      // Re-read on terminal OR stale: every refusal here means the obligation moved under the
-      // button, and leaving the old controls on screen invites the same impossible tap again.
     })
   }
 
@@ -381,9 +383,10 @@ export default function NegotiationScreen() {
     await runWrite({
       op: 'cancelTrade',
       write: () => cancelTrade(agreementId, cancelReasonPayload(cancelReason)),
-      // Re-read on terminal OR stale: a refusal here means the trade moved under the button —
-      // most likely because the counterparty delivered — and the control must not stay on
-      // screen inviting the same impossible tap.
+      // Gate left at the default — terminal OR stale: a refusal here means the trade moved
+      // under the button, most likely because the counterparty delivered, and the control must
+      // not stay on screen inviting the same impossible tap. A refusal deliberately does NOT
+      // clear the reason: `22023` means it was too long, and the user needs it to shorten.
       onSuccess: () => setCancelReason(''),
     })
   }
@@ -457,7 +460,7 @@ export default function NegotiationScreen() {
               style={styles.input}
               value={draft[f.givesKey]}
               onChangeText={(v) => setDraft((d) => ({ ...d, [f.givesKey]: v }))}
-              placeholder="What is provided"
+              placeholder={TERMS_PLACEHOLDERS.gives}
               placeholderTextColor="rgba(240,232,213,0.35)"
               maxLength={MAX_DESCRIPTION}
               multiline
@@ -467,7 +470,7 @@ export default function NegotiationScreen() {
               style={styles.input}
               value={draft[f.dueKey]}
               onChangeText={(v) => setDraft((d) => ({ ...d, [f.dueKey]: v }))}
-              placeholder="2026-10-15 5:00 PM"
+              placeholder={TERMS_PLACEHOLDERS.dueAt}
               placeholderTextColor="rgba(240,232,213,0.35)"
             />
             <Text style={styles.fieldLabel}>Optional scheduled time</Text>
@@ -475,7 +478,7 @@ export default function NegotiationScreen() {
               style={styles.input}
               value={draft[f.scheduledKey]}
               onChangeText={(v) => setDraft((d) => ({ ...d, [f.scheduledKey]: v }))}
-              placeholder="2026-10-10 2:00 PM"
+              placeholder={TERMS_PLACEHOLDERS.scheduledAt}
               placeholderTextColor="rgba(240,232,213,0.35)"
             />
           </View>

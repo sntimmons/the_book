@@ -515,7 +515,13 @@ as locked decisions.
   explicitly assenting to the other participant's prior cancellation. The canonical durable
   notice is the neutral factual form:
 
-  > "Both providers cancelled the trade for 'X' for 'Y'."
+  > Both providers cancelled the trade for "X" for "Y".
+
+  Quoted byte-exactly, including the double quotes: `barter_terms_label` wraps each side of the
+  post in `"` (`20260914000000_trade_activity_corrections.sql`), so `v_label` is itself
+  `"X" for "Y"` and the doubled "for" is correct rather than a typo. The exact string matters
+  because this entry's own rationale is that copying an earlier function body forward restores
+  the untrue wording — so this is the string a future contributor re-derives from.
 
   The classification is unchanged: two explicit acts is still what the product calls Mutually
   Cancelled. **"Agree to cancel" remains correct as the UI action** offered to a counterparty

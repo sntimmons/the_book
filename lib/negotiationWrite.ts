@@ -16,17 +16,18 @@
 // the caller supplies the thunk, so this module can never call a server boundary the screen did
 // not ask for.
 
-import { barterWriteFailure, BarterWriteOp } from './barterErrors'
+import { barterWriteFailure, BarterWriteOp, BarterWriteResult } from './barterErrors'
 
 /**
- * The shape every barter write wrapper in lib/negotiation.ts returns. Only `ok` and `error` are
- * read here — the operation-specific payload (`agreementId`, `status`, `versionNo`, …) belongs
- * to the caller, and reading it here would make this module know what each write means.
+ * What a write reports back. `BarterWriteResult` is reused rather than re-declared: a second
+ * interface with the same two fields would leave a reader unable to tell whether the difference
+ * was deliberate.
+ *
+ * Only `ok` and `error` are read here. Each wrapper in lib/negotiation.ts also returns an
+ * operation-specific payload (`agreementId`, `status`, `versionNo`, `state`, `bothAccepted`) and
+ * that belongs to the caller — reading it here would make this module know what each write
+ * means. No caller reads one today, which is why `onSuccess` takes no argument.
  */
-export interface BarterWriteOutcome {
-  ok: boolean
-  error: unknown
-}
 
 /**
  * When a refusal forces a re-read of authoritative server state.
@@ -57,7 +58,7 @@ export interface BarterWriteRequest {
   /** Which operation this is, for `barterWriteFailure`. Not used to pick an RPC. */
   op: BarterWriteOp
   /** The write itself, already bound to its payload by the caller. */
-  write: () => Promise<BarterWriteOutcome>
+  write: () => Promise<BarterWriteResult>
   /** Defaults to the general rule. */
   refusalRefresh?: RefusalRefresh
   /**
@@ -93,7 +94,7 @@ export async function runBarterWrite(
   } = request
 
   effects.setBusy(true)
-  let outcome: BarterWriteOutcome
+  let outcome: BarterWriteResult
   try {
     outcome = await write()
   } finally {

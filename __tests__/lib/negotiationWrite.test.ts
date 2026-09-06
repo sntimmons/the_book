@@ -8,6 +8,7 @@
 // every refusal, no success path on `ok: false`, and the server re-read last.
 
 import { runBarterWrite, BarterWriteEffects } from '@/lib/negotiationWrite'
+import { barterWriteFailure } from '@/lib/barterErrors'
 
 function recorder() {
   const calls: string[] = []
@@ -21,8 +22,16 @@ function recorder() {
 }
 
 const OK = { ok: true, error: null }
-/** `23514` on `acceptTerms` is the stale, NON-terminal "the terms changed" refusal. */
-const STALE = { ok: false, error: { code: '23514' } }
+/**
+ * A refusal that is STALE and NOT terminal — the half of the gate that exists only because
+ * conflating the two shipped a defect once (`lib/barterErrors.ts`, `BarterWriteFailure.stale`).
+ * `40001` on `acceptTerms` is "the terms changed under you": read the new terms and accept
+ * again, so retrying CAN succeed — but the screen must re-read first.
+ *
+ * Pinning a genuinely non-terminal code matters: `23514` on `proposeTerms`, the obvious-looking
+ * choice, is `terminal: true`, so a test using it would pass with `|| failure.stale` deleted.
+ */
+const STALE = { ok: false, error: { code: '40001' } }
 /** `no_rows` is terminal for every operation. */
 const TERMINAL = { ok: false, error: { barterClientCode: 'no_rows' } }
 /** An unmapped code falls through to RETRY: neither terminal nor stale. */
@@ -98,7 +107,26 @@ describe('runBarterWrite — the refusal-refresh gate', () => {
 
   it('re-reads on a stale, non-terminal refusal under the default gate', async () => {
     const { calls, effects } = recorder()
-    await runBarterWrite(effects, { op: 'proposeTerms', write: async () => STALE })
+    await runBarterWrite(effects, { op: 'acceptTerms', write: async () => STALE })
+    expect(calls).toContain('reload')
+    // The point of the case: it re-read even though retrying is legitimate advice.
+    expect(barterWriteFailure('acceptTerms', STALE.error)).toMatchObject({
+      terminal: false,
+      stale: true,
+    })
+  })
+
+  // `23505` on `proposeTerms` is the other stale-not-terminal outcome: "they proposed first".
+  it('re-reads when the counterparty proposed first — stale, not terminal', async () => {
+    const { calls, effects } = recorder()
+    await runBarterWrite(effects, {
+      op: 'proposeTerms',
+      write: async () => ({ ok: false, error: { code: '23505' } }),
+    })
+    expect(barterWriteFailure('proposeTerms', { code: '23505' })).toMatchObject({
+      terminal: false,
+      stale: true,
+    })
     expect(calls).toContain('reload')
   })
 

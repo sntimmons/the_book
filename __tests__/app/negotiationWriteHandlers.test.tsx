@@ -33,6 +33,7 @@ jest.mock('@/lib/negotiation', () => ({
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), replace: jest.fn(), back: jest.fn(), navigate: jest.fn() },
+  __esModule: true,
   useLocalSearchParams: () => ({ id: 'interest-1' }),
   // The real hook runs its callback when the screen gains focus; under test, once on mount and
   // again whenever `load` changes identity — which is what the screen relies on.
@@ -52,14 +53,19 @@ jest.mock('@/context/AuthContext', () => ({
 
 import * as negotiation from '@/lib/negotiation'
 import type { BarterObligation, NegotiationRow, ProposalVersion } from '@/lib/negotiation'
+import { router } from 'expo-router'
 import NegotiationScreen from '@/app/community/negotiation/[id]'
-import { CONFIRM_TRADE_COPY } from '@/lib/negotiationState'
+import { CONFIRM_TRADE_COPY, TERMS_PLACEHOLDERS } from '@/lib/negotiationState'
 import {
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
   NOT_RECEIVED_COPY,
 } from '@/lib/obligationState'
-import { CANCEL_TRADE_COPY } from '@/lib/tradeCancellation'
+import {
+  AGREE_TO_CANCEL_COPY,
+  CANCEL_REASON_PLACEHOLDER,
+  CANCEL_TRADE_COPY,
+} from '@/lib/tradeCancellation'
 
 const mocked = negotiation as jest.Mocked<typeof negotiation>
 
@@ -172,6 +178,10 @@ type AlertButton = { text?: string; onPress?: () => void; style?: string }
 let alertSpy: jest.SpyInstance
 
 beforeEach(() => {
+  // `clearMocks` in jest.config.js is mockClear, which does NOT drain a queued
+  // `mockImplementationOnce`. One left unconsumed by a test that never reached that read would
+  // hand the NEXT test a promise that never resolves, and it would fail somewhere unrelated.
+  jest.resetAllMocks()
   alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {})
 })
 
@@ -210,9 +220,37 @@ function reads() {
   return mocked.fetchNegotiationForInterest.mock.calls.length
 }
 
+/**
+ * No write on this screen navigates, and none of them speaks on success — the re-read is the
+ * whole feedback. Asserted per successful write because the shared helper gives `onSuccess` no
+ * payload and no router access, so a lost success alert or a lost navigation would be
+ * structurally invisible rather than merely absent.
+ */
+function expectSilentSuccess() {
+  expect(alerts()).toHaveLength(0)
+  expect(router.push).not.toHaveBeenCalled()
+  expect(router.replace).not.toHaveBeenCalled()
+  expect(router.navigate).not.toHaveBeenCalled()
+  expect(router.back).not.toHaveBeenCalled()
+}
+
+/**
+ * Hold the re-read open and report whether the screen went blank behind it. `true` means the
+ * blocking load state replaced the content; `false` means the re-read was quiet.
+ */
+function holdReload(row: NegotiationRow, versions: ProposalVersion[], obligations: BarterObligation[]) {
+  let release: () => void = () => {}
+  mocked.fetchNegotiation.mockImplementationOnce(
+    () => new Promise((resolve) => {
+      release = () => resolve({ row, versions, obligations, ok: true } as never)
+    }),
+  )
+  return () => release()
+}
+
 function fillComposer(utils: ReturnType<typeof render>) {
-  const gives = utils.getAllByPlaceholderText('What is provided')
-  const dues = utils.getAllByPlaceholderText('2026-10-15 5:00 PM')
+  const gives = utils.getAllByPlaceholderText(TERMS_PLACEHOLDERS.gives)
+  const dues = utils.getAllByPlaceholderText(TERMS_PLACEHOLDERS.dueAt)
   fireEvent.changeText(gives[0], 'A haircut')
   fireEvent.changeText(dues[0], FUTURE_DUE)
   fireEvent.changeText(gives[1], 'A photo session')
@@ -236,7 +274,7 @@ describe('accept these terms', () => {
     expect(mocked.acceptVersion).toHaveBeenCalledTimes(1)
     expect(mocked.acceptVersion).toHaveBeenCalledWith('version-1')
     await waitFor(() => expect(reads()).toBe(before + 1))
-    expect(alerts()).toHaveLength(0)
+    expectSilentSuccess()
   })
 
   it('re-reads on a NON-terminal, non-stale refusal — the accept-only gate', async () => {
@@ -294,6 +332,24 @@ describe('accept these terms', () => {
     await waitFor(() => expect(reads()).toBe(before + 1))
   })
 
+  it('re-reads QUIETLY on a refusal as well, not only on success', async () => {
+    mocked.acceptVersion.mockResolvedValue({
+      ok: false,
+      bothAccepted: false,
+      error: { code: '08006' },
+    } as never)
+    const utils = await renderScreen()
+    const release = holdReload(makeRow(), [makeVersion()], [])
+    await act(async () => {
+      fireEvent.press(await utils.findByText('Accept these terms'))
+    })
+    // The refused terms stay readable behind the alert rather than being replaced by a spinner.
+    expect(utils.getByText('A haircut')).toBeTruthy()
+    await act(async () => {
+      release()
+    })
+  })
+
   it('re-enables the control after a refusal', async () => {
     mocked.acceptVersion.mockResolvedValue({
       ok: false,
@@ -335,6 +391,34 @@ describe('propose terms on a negotiation with none', () => {
       responderGives: 'A photo session',
       responderDueAt: FUTURE_DUE,
       responderScheduledAt: '',
+    })
+    expectSilentSuccess()
+  })
+
+  // The counterpart to the counter's quiet re-read: opening a negotiation DOES block. The two
+  // differ on main and the difference is preserved, so both halves are pinned.
+  it('BLOCKS the screen while re-reading, unlike a counter', async () => {
+    mocked.createProposal.mockResolvedValue({ ok: true, proposalId: 'p', error: null } as never)
+    const utils = await renderScreen()
+    await act(async () => {
+      fireEvent.press(await utils.findByText('Propose terms'))
+    })
+    fillComposer(utils)
+    // On this path `load` stops at fetchNegotiationForInterest → fetchInterestContext, so that
+    // is the read to hold open — fetchNegotiation is never reached.
+    let release: () => void = () => {}
+    mocked.fetchInterestContext.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        release = () => resolve({ ok: true, status: 'accepted', myRole: 'owner' } as never)
+      }),
+    )
+    await act(async () => {
+      fireEvent.press(utils.getByText('Send terms'))
+    })
+    expect(utils.queryByText('No terms yet')).toBeNull()
+    expect(utils.queryByText('Send terms')).toBeNull()
+    await act(async () => {
+      release()
     })
   })
 
@@ -433,6 +517,26 @@ describe('confirm trade', () => {
     expect(mocked.finalizeAgreement).not.toHaveBeenCalled()
     await pressDialogButton(CONFIRM_TRADE_COPY.confirmLabel)
     expect(mocked.finalizeAgreement).toHaveBeenCalledWith('proposal-1')
+    expect(router.push).not.toHaveBeenCalled()
+    expect(router.replace).not.toHaveBeenCalled()
+    expect(router.navigate).not.toHaveBeenCalled()
+    expect(router.back).not.toHaveBeenCalled()
+    // Confirming a trade says nothing beyond its own dialog — the re-read is the feedback.
+    expect(alerts()).toHaveLength(1)
+  })
+
+  it('BLOCKS the screen while re-reading', async () => {
+    mocked.finalizeAgreement.mockResolvedValue({ ok: true, agreementId: 'a', error: null } as never)
+    const utils = await renderScreen()
+    const release = holdReload(makeRow(), [makeVersion()], [])
+    await act(async () => {
+      fireEvent.press(await utils.findByText('Confirm trade'))
+    })
+    await pressDialogButton(CONFIRM_TRADE_COPY.confirmLabel)
+    expect(utils.queryByText('A haircut')).toBeNull()
+    await act(async () => {
+      release()
+    })
   })
 
   it('re-reads on a NON-terminal, non-stale refusal — the confirm-only gate', async () => {
@@ -474,10 +578,19 @@ describe('obligation writes', () => {
     await act(async () => {
       fireEvent.press(await utils.findByText(MARK_DELIVERED_COPY.confirmLabel))
     })
-    expect(alerts()[0].title).toBe(MARK_DELIVERED_COPY.title)
+    expect(alerts()[0]).toEqual({
+      title: MARK_DELIVERED_COPY.title,
+      body: MARK_DELIVERED_COPY.body,
+      buttons: [
+        { text: MARK_DELIVERED_COPY.cancelLabel, style: 'cancel' },
+        { text: MARK_DELIVERED_COPY.confirmLabel, onPress: expect.any(Function) },
+      ],
+    })
     expect(mocked.markObligationDelivered).not.toHaveBeenCalled()
     await pressDialogButton(MARK_DELIVERED_COPY.confirmLabel)
     expect(mocked.markObligationDelivered).toHaveBeenCalledWith('obligation-offer_owner')
+    expect(router.push).not.toHaveBeenCalled()
+    expect(router.replace).not.toHaveBeenCalled()
   })
 
   it('confirms receipt on THEIR obligation only', async () => {
@@ -498,9 +611,19 @@ describe('obligation writes', () => {
     await act(async () => {
       fireEvent.press(await utils.findByText(CONFIRM_RECEIVED_COPY.confirmLabel))
     })
+    expect(alerts()[0]).toEqual({
+      title: CONFIRM_RECEIVED_COPY.title,
+      body: CONFIRM_RECEIVED_COPY.body,
+      buttons: [
+        { text: CONFIRM_RECEIVED_COPY.cancelLabel, style: 'cancel' },
+        { text: CONFIRM_RECEIVED_COPY.confirmLabel, onPress: expect.any(Function) },
+      ],
+    })
     await pressDialogButton(CONFIRM_RECEIVED_COPY.confirmLabel)
     expect(mocked.confirmObligationReceived).toHaveBeenCalledWith('obligation-responder')
+    // The receiver's answer cannot be routed to the wrong RPC or the wrong obligation.
     expect(mocked.markObligationDelivered).not.toHaveBeenCalled()
+    expect(mocked.reportObligationNotReceived).not.toHaveBeenCalled()
   })
 
   it('records "did not receive" and re-reads on a PT412 second answer', async () => {
@@ -522,8 +645,17 @@ describe('obligation writes', () => {
     await act(async () => {
       fireEvent.press(await utils.findByText(NOT_RECEIVED_COPY.confirmLabel))
     })
+    expect(alerts()[0]).toEqual({
+      title: NOT_RECEIVED_COPY.title,
+      body: NOT_RECEIVED_COPY.body,
+      buttons: [
+        { text: NOT_RECEIVED_COPY.cancelLabel, style: 'cancel' },
+        { text: NOT_RECEIVED_COPY.confirmLabel, onPress: expect.any(Function) },
+      ],
+    })
     await pressDialogButton(NOT_RECEIVED_COPY.confirmLabel)
     expect(mocked.reportObligationNotReceived).toHaveBeenCalledWith('obligation-responder')
+    expect(mocked.confirmObligationReceived).not.toHaveBeenCalled()
     await waitFor(() => expect(reads()).toBe(before + 1))
   })
 
@@ -619,9 +751,7 @@ describe('cancel trade', () => {
       error: null,
     } as never)
     const utils = await renderScreen()
-    const field = utils.getByPlaceholderText(
-      require('@/lib/tradeCancellation').CANCEL_REASON_PLACEHOLDER,
-    )
+    const field = utils.getByPlaceholderText(CANCEL_REASON_PLACEHOLDER)
     fireEvent.changeText(field, '  Something came up  ')
     await act(async () => {
       fireEvent.press(await utils.findByText(CANCEL_TRADE_COPY.confirmLabel))
@@ -633,6 +763,53 @@ describe('cancel trade', () => {
   // PD-046: `55000` is "something was already delivered, so the ordinary exit is gone". It is
   // terminal AND stale, so the control must disappear rather than stay on screen inviting the
   // same impossible tap.
+  // PD-061: "Agree to cancel" is the ONE place the word "agree" is accurate, because this
+  // participant has seen the other's cancellation and is assenting to it. It is the same act on
+  // the server — the same RPC, the same payload — and only the copy differs.
+  it('offers "Agree to cancel" when the counterparty cancelled first', async () => {
+    loads(
+      makeRow({
+        agreementId: 'agreement-1',
+        bothAccepted: true,
+        iAcceptedCurrent: true,
+        theyCancelled: true,
+        cancelledAt: '2026-09-05T12:00:00.000Z',
+        theirCancelReason: 'scheduling clash',
+      }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), makeObligation('responder')],
+    )
+    mocked.cancelTrade.mockResolvedValue({
+      ok: true,
+      state: 'mutually_cancelled',
+      error: null,
+    } as never)
+    const utils = await renderScreen()
+    // The unilateral wording must NOT be what a responding participant is shown.
+    expect(utils.queryByText(CANCEL_TRADE_COPY.confirmLabel)).toBeNull()
+    // Their stated reason is visible to this viewer, attributed to them (PD-060).
+    expect(utils.getByText('The other provider said: scheduling clash')).toBeTruthy()
+    await act(async () => {
+      fireEvent.press(await utils.findByText(AGREE_TO_CANCEL_COPY.confirmLabel))
+    })
+    expect(alerts()[0]).toEqual({
+      title: AGREE_TO_CANCEL_COPY.title,
+      body: AGREE_TO_CANCEL_COPY.body,
+      buttons: [
+        { text: AGREE_TO_CANCEL_COPY.cancelLabel, style: 'cancel' },
+        {
+          text: AGREE_TO_CANCEL_COPY.confirmLabel,
+          style: 'destructive',
+          onPress: expect.any(Function),
+        },
+      ],
+    })
+    await pressDialogButton(AGREE_TO_CANCEL_COPY.confirmLabel)
+    // Same RPC, same payload shape as a first cancellation: the client cannot name the actor,
+    // the time, or whether the result is mutual.
+    expect(mocked.cancelTrade).toHaveBeenCalledWith('agreement-1', null)
+  })
+
   it('re-reads on 55000 — the counterparty delivered under the button', async () => {
     loadPreDelivery()
     mocked.cancelTrade.mockResolvedValue({
@@ -667,8 +844,9 @@ describe('cancel trade', () => {
       error: { code: '22023' },
     } as never)
     const utils = await renderScreen()
-    const placeholder = require('@/lib/tradeCancellation').CANCEL_REASON_PLACEHOLDER
-    fireEvent.changeText(utils.getByPlaceholderText(placeholder), 'Something came up')
+    fireEvent.changeText(
+      utils.getByPlaceholderText(CANCEL_REASON_PLACEHOLDER), 'Something came up',
+    )
     const before = reads()
     await act(async () => {
       fireEvent.press(await utils.findByText(CANCEL_TRADE_COPY.confirmLabel))
@@ -676,7 +854,9 @@ describe('cancel trade', () => {
     await pressDialogButton(CANCEL_TRADE_COPY.confirmLabel)
     expect(alerts()[1].title).toBe('Check that reason')
     expect(reads()).toBe(before)
-    expect(utils.getByPlaceholderText(placeholder).props.value).toBe('Something came up')
+    expect(utils.getByPlaceholderText(CANCEL_REASON_PLACEHOLDER).props.value).toBe(
+      'Something came up',
+    )
   })
 
   it('does NOT re-read a transient cancellation refusal', async () => {
@@ -776,7 +956,7 @@ describe('send different terms', () => {
       },
     ])
     expect(reads()).toBe(before)
-    expect(utils.getAllByPlaceholderText('What is provided')[0].props.value).toBe('A haircut')
+    expect(utils.getAllByPlaceholderText(TERMS_PLACEHOLDERS.gives)[0].props.value).toBe('A haircut')
   })
 
   it('closes the composer and re-reads on a stale, non-terminal refusal', async () => {
@@ -819,10 +999,11 @@ describe('no write action beyond the six', () => {
     expect(utils.queryByText(NOT_RECEIVED_COPY.confirmLabel)).toBeNull()
   })
 
-  it('every write the screen can reach is one of the six known RPCs', async () => {
+  // NOT a proof that no seventh write path exists — a render cannot establish that. It pins the
+  // narrower, still-useful fact: opening this screen performs no write of any kind.
+  it('opening the screen performs no write at all', async () => {
     loads(makeRow(), [makeVersion()], [])
     await renderScreen()
-    // A read-only render writes nothing at all.
     expect(mocked.acceptVersion).not.toHaveBeenCalled()
     expect(mocked.createProposal).not.toHaveBeenCalled()
     expect(mocked.submitCounter).not.toHaveBeenCalled()

@@ -292,7 +292,11 @@ agreement id and an optional reason and cannot name the actor, the time or the o
 `lib/negotiationState.ts` holds the pure state and copy rules (`negotiationView`,
 `validateDraft`, `draftPayload`), `lib/obligationState.ts` holds the per-obligation role, state
 and copy rules (`obligationRole`, `obligationView`, `obligationTimeline`, plus `anyDelivered` —
-the PD-046 precondition, kept out of JSX so it can be tested) with no I/O, and the
+the PD-046 precondition, kept out of JSX so it can be tested) with no I/O,
+`lib/negotiationWrite.ts` owns the write-operation sequence every one of those writes shares —
+busy on, write, busy off in a `finally`, interpret the refusal via `lib/barterErrors.ts`, say it
+once, decide whether the screen is stale, re-read authoritative state — with the per-operation
+differences declared as options at the call site rather than hand-spelled six times, and the
 screen is `app/community/negotiation/[id].tsx`,
 keyed on the **interest** id and reached from an active row in Trade Activity
 (`app/community/trade-activity.tsx`, the `/community/negotiation/` push). The viewer's side is
@@ -301,14 +305,14 @@ exist; the route's `role` param is a last-resort label only.
 
 **The confirmed-trade detail** on that screen shows **both** obligations with **Mark
 delivered**, **Confirm received** and **Didn't receive** and both timestamps, each control
-gated by the server-derived role and status (`app/community/negotiation/[id].tsx:523-589`,
-`:710-727`). The **AGREEMENT reads "Trade confirmed" until it is cancelled, and gained no
+gated by the server-derived role and status (`app/community/negotiation/[id].tsx:510-576`,
+`:697-711`). The **AGREEMENT reads "Trade confirmed" until it is cancelled, and gained no
 terminal outcome** (`lib/negotiationState.ts:181-194`) — it stays that way for the whole life of
 the trade while its obligations progress. On a cancelled trade the page headline becomes "Trade
 cancelled", the terms card is retitled "The terms that were agreed", both obligation controls
 are frozen and their what-happens-next notes are dropped, and the cancellation is said **once**,
 above both obligations (`lib/negotiationState.ts:169-180`, `lib/obligationState.ts:147-165`,
-`app/community/negotiation/[id].tsx:695-709`). `lib/barterErrors.ts` interprets the new
+`app/community/negotiation/[id].tsx:682-696`). `lib/barterErrors.ts` interprets the new
 refusals, including `PT412` for an answer already recorded (`:142-145`) and `PT409` read as
 "this trade was cancelled" for the three obligation operations (`:124-136`).
 
@@ -328,7 +332,11 @@ Regression coverage: `supabase/tests/barter.test.sql`, `supabase/tests/negotiati
 the B5B runner at `scripts/db-security-test.mjs` (lines 47–51), plus
 `__tests__/lib/tradeActivity.test.ts`, `__tests__/lib/negotiationState.test.ts`,
 `__tests__/lib/obligationState.test.ts` and `__tests__/lib/tradeCancellation.test.ts` for the
-pure client rules. Those tests distinguish
+pure client rules, `__tests__/lib/negotiationWrite.test.ts` for the shared write sequence, and
+`__tests__/app/negotiationWriteHandlers.test.tsx` — the first suite here that RENDERS a screen —
+which drives all six negotiation write controls and pins, per control, the RPC called, the exact
+payload, the refusal copy, whether the screen re-reads and whether that re-read blocks. Those
+tests distinguish
 ready-to-confirm from confirmed, and pin that confirmed trade copy does not promise booking,
 completion, fulfilment, delivery or a guarantee. B5B pins the derived obligation pair,
 participant read, direct-write refusal, immutable content/timing and no-write grant posture,
