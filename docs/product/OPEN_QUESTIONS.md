@@ -2,7 +2,7 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** PR #57
+**Last edited by:** PR #59 (previous edit: PR #57)
 
 > **Why the anchor did not move to `76f5632`.** The reconciliation that last edited this file
 > inspected `main` @ `76f5632` and re-verified the **barter** entries there (OQ-006, OQ-007,
@@ -14,6 +14,11 @@
 > reconciliation (merged as PR #57) edited only the closed index below — to record that PD-057,
 > PD-058 and PD-059 close no question here — and re-verified nothing carried by OQ-011, OQ-036
 > or OQ-070.
+>
+> **It did not move for PR #58 (`5b1a7a9`) either.** That reconciliation edited only OQ-010's
+> "related, not closing" note and the closed index below, to record that pre-delivery
+> cancellation shipped; it re-verified nothing carried by OQ-011, OQ-036 or OQ-070, and it had no
+> shell with which to confirm that SHA in any case.
 > `Last edited by:` records the edit; the anchor records the verification.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
@@ -142,7 +147,11 @@ an entry is self-describing when quoted alone.
   asks for**; PD-048 itself records the work as an unimplemented follow-up. Barter accept also
   opens a provider-to-provider thread server-side (`accept_barter_interest`,
   `20260907000000`), but that is a consequence of a mutual accept, not provider-initiated
-  contact, and code does not close a question in any case.
+  contact, and code does not close a question in any case. **Nor does PR #58's cancellation
+  notice** (`20261009000000_pair_conversation_notice.sql`): it is **platform-authored**
+  (`sender_id is null`), written only into a conversation that **already exists** — it creates
+  none — and it is not a message from one provider to another. It bears on this question no more
+  than the release notice `20260910000000` already did.
 - **Blocks:** nothing yet.
 - **Status:** Open
 
@@ -398,3 +407,15 @@ pass; Trade Activity must surface an unanswered delivery before beta). None of t
 narrows an entry above — OQ-003's closure already recorded a 7-day receiver confirmation window
 ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 6), and PD-057 supplies the anchor that
 closure did not state.
+
+**PR #58 (`5b1a7a9`) closed no question here either, and did not reopen one.** It implements
+**PD-046 § 7.2** — the pre-delivery cancellation regime that already closed **OQ-004** on
+2026-09-04 — so OQ-004 stays Closed, cited to the decision rather than to the migration that
+followed it. Two Founder rulings are cited in that PR's migration headers (the counterparty is
+told, and the reason is shared with them:
+`supabase/migrations/20261007000000_barter_cancellation_signal.sql:1-32`; the second notice must
+state a fact rather than an agreement: `20261010000000_cancellation_notice_neutral_copy.sql:1-35`).
+**Neither has a `PD-NNN` entry**, because no approval text was supplied to this reconciliation
+and a migration header is an implementation record, not an approval. That is recorded here as a
+gap for the Founder to close or dismiss — it is **not** an open question, because nothing about
+it is undecided; only the durable recording of the decision is missing.
