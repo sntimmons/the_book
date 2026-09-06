@@ -1,8 +1,8 @@
 # Roadmap — session-based
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `b35ca1d4a1b71ac41af0f8103f17db0b7c797c31` (2026-09-05)
-**Last edited by:** PR #55
+**Reconciled against:** `main` @ `46c0befe09cef016e881254a94d530442a975fbb` (2026-09-05)
+**Last edited by:** PR #57
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -56,6 +56,7 @@ Sessions may merge, split, or reorder. A session is "complete" only when its wor
 | Barter **Agreement Finalization** — one official agreement, atomic post closure (PD-055) | [#50](https://github.com/sntimmons/the_book/pull/50) | `e3fa169` (squash merge) | `supabase/migrations/20260927000000_barter_agreement_finalization.sql` … `20260930000000_confirmed_trade_sqlstate.sql` — four files: `barter_agreements`, `finalize_barter_agreement(uuid)`, agreement-facing read models, post-agreement write guards, SQLSTATE `PT409` for confirmed-trade refusals, and permanent source-post closure. `supabase/tests/agreement.test.sql` registered at `scripts/db-security-test.mjs:49`; `scripts/negotiation-concurrency.mjs` covers finalize × finalize, finalize vs counter and finalize vs release with real interval overlap; client states/copy in `lib/negotiationState.ts`, `lib/tradeActivity.ts`, `lib/barterErrors.ts` and community routes. **No obligation, fulfilment, delivery, cancellation-after-agreement, no-show, adjudication, barter reviews or reputation schema** — those stay later Session 7 work. |
 | Barter **Proposal Timing Extension** — version timing and expiry guard (PD-056) | [#52](https://github.com/sntimmons/the_book/pull/52) | `4fd684e` (squash merge) | `supabase/migrations/20261001000000_proposal_term_timing.sql` and `20261002000000_proposal_timing_expiry_guards.sql` — proposal terms now include required `due_at` and optional `scheduled_at`; timing is immutable per proposal version, so updates require a new version. Server validation requires both directed terms to remain future-valid when authored, accepted and finalized; expired timing raises `PT410` and cannot create an acceptance or official agreement. `supabase/tests/negotiation.test.sql` and `supabase/tests/agreement.test.sql` cover author/accept/finalize timing boundaries, direct-write bypass attempts and no obligation schema. Client stale copy/action handling lives in `lib/barterErrors.ts`, `lib/negotiationState.ts` and `app/community/negotiation/[id].tsx`. |
 | Barter **Obligations Foundation** — two directed obligations per official agreement | [#54](https://github.com/sntimmons/the_book/pull/54) | `b35ca1d` (squash merge) | `supabase/migrations/20261003000000_barter_obligations_foundation.sql` — `barter_obligations` plus an additive `barter_agreements` trigger and idempotent internal helper. Every official agreement gets exactly two immutable directed obligations derived from the accepted proposal terms; `due_at` and `scheduled_at` copy from the accepted version; both participants can read both obligations. `lib/negotiation.ts` and `app/community/negotiation/[id].tsx` expose the read-only confirmed-trade display. `supabase/tests/agreement.test.sql` and `scripts/negotiation-concurrency.mjs` pin cardinality, derivation, direct-write refusal, participant reads and idempotent concurrent creation. **No delivery, fulfilment, receiver confirmation, cancellation, no-show, adjudication, terminal obligation outcomes, terminal agreement outcomes, barter reviews or reputation schema** — those stay later Session 7 work. |
+| Barter **Obligation Delivery and Receiver Confirmation** — the two participant actions (PD-057, PD-058, PD-059) | [#56](https://github.com/sntimmons/the_book/pull/56) | `46c0bef` (squash merge of `09fc8b1`; base `88670d1` — confirmed with `git`/`gh`, see below) | `supabase/migrations/20261004000000_barter_obligation_delivery.sql` — `barter_obligations` gains `status` (`pending` / `delivered` / `received` / `not_received`), `delivered_at` and `receipt_responded_at` under four CHECK constraints. The **deliverer** may mark their own obligation delivered (`mark_barter_obligation_delivered`, server-stamped, immutable, duplicate mark a safe no-op); the **receiver** may then answer exactly once (`confirm_barter_obligation_received` / `report_barter_obligation_not_received`), both routing through the internal `record_barter_obligation_receipt`, which no client role may execute. Refused before delivery (`55000`), refused for the deliverer and non-participants, and neither answer can flip to the other (`PT412`). `enforce_barter_obligations_immutable` redefined as a transition-aware deny-by-default guard; new `enforce_barter_obligation_starts_pending` BEFORE INSERT trigger. Client: `lib/obligationState.ts` (pure role/state/copy rules), the three RPC seams in `lib/negotiation.ts`, `PT412` copy in `lib/barterErrors.ts`, and the confirmed-trade detail on `app/community/negotiation/[id].tsx`. `supabase/tests/obligation.test.sql` registered at `scripts/db-security-test.mjs:50`; `scripts/negotiation-concurrency.mjs` proves the delivery and answer races. **`received` / `not_received` are events, not verdicts. No 7-day timeout transition, automatic fulfilment, automatic completion, cancellation, mutual cancellation, no-show, Needs Attention, Under Review, adjudication, terminal obligation outcome, terminal agreement outcome, barter reviews or reputation** — those stay later Session 7 work, and the AGREEMENT still reads "Trade confirmed" with no terminal outcome. |
 
 **Row inclusion rule.** A PR earns a row here when it **materially delivers a product,
 architecture, security, governance, infrastructure or operating capability**. A routine
@@ -101,6 +102,15 @@ that name PR #49 independently — `BETA_SCOPE.md` § Community / barter ("Slice
 rows have, and still short of proof. The reconciliation that wrote the row again had no shell,
 so the five "not established" cells above remain unfilled.
 
+The **Obligation Delivery** row is evidenced the same way, and its limits are stated rather than
+implied: **every artifact it names was read in the working tree on `main`** — the migration, the
+two client libraries, the screen, the B5B suite and its registration line. Its merge SHA
+`46c0bef`, the squashed commit `09fc8b1`, the base `88670d1` and the PR number #56 were supplied
+to the shell-less reconciliation that wrote the row, and were **confirmed with `git` and `gh`
+in the same session** (`gh pr view 56` before the merge; `git rev-parse` and
+`gh run view 34007334683` after it). Both the capability and its provenance are proven here —
+unlike the PR #49 row above, which remains attested only.
+
 **Existence is not evidence.** Where a row's artifact is a file that *pre-dates* its PR, the
 row says "modified by" and is evidenced by that PR's diff — not by the file being present.
 A path that existed before the work cannot prove the work happened.
@@ -126,15 +136,19 @@ change — not something a reconciliation can do.
 ## Current
 
 **The barter proposal / versioning foundation, proposal timing extension, agreement
-finalization and obligations foundation are complete and merged.** `main` @ `b35ca1d` holds
-forty-two migrations, newest `20261003000000_barter_obligations_foundation.sql`. Slices 2, 2B, 3a-0, 3a-0b and 3a-0c, the
-closed-post terminal cleanup, **Slice 3a**, **Agreement Finalization**, and **Proposal Timing
-Extension**, and **Obligations Foundation** are all on `main` and each has a Completed row above. What is on `main` is
+finalization, obligations foundation and obligation delivery / receiver confirmation are
+complete and merged.** `main` @ `46c0bef` holds
+forty-three migrations, newest `20261004000000_barter_obligation_delivery.sql`. Slices 2, 2B, 3a-0, 3a-0b and 3a-0c, the
+closed-post terminal cleanup, **Slice 3a**, **Agreement Finalization**, **Proposal Timing
+Extension**, **Obligations Foundation** and **Obligation Delivery** are all on `main` and each has a Completed row above. What is on `main` is
 authoritative in [CURRENT_STATE.md](CURRENT_STATE.md) § Barter. Both providers accepting the
 same current version is a **ready-to-confirm** fact; finalization creates the official
-`barter_agreements` row and closes the source post, but PR #52 now requires the accepted
-version's timing to remain future-valid through finalization, and PR #54 now creates the two
-server-derived directed obligations for the official agreement.
+`barter_agreements` row and closes the source post, but PR #52 requires the accepted
+version's timing to remain future-valid through finalization, PR #54 creates the two
+server-derived directed obligations for the official agreement, and PR #56 lets each
+obligation's deliverer mark it delivered and its receiver answer once. Those answers are
+**events, not verdicts**: no outcome, timeout, cancellation or adjudication follows from them
+yet (PD-057, PD-058).
 
 The branch `chore/pre-proposal-closeout`, which the previous reconciliation recorded as in
 flight at `871eb2a`, now points at `ca84100` (`.git/refs/heads/chore/pre-proposal-closeout`).
@@ -149,9 +163,10 @@ tiebreak that resolved it), #36 and #37. Per the row inclusion rule above, #31,
 #33 and #35 earned Completed rows; #30, #32, #34, #36 and #37 did not. Then the barter work:
 Session 4 (no in-repo artifact — see the note above), Slice 1 (**PR #38**, `feba568`), the
 slices and contract listed in the Completed table through **PR #47** (`76f5632`), and then
-**Slice 3a** (**PR #49**, `7713b56`), **Agreement Finalization** (**PR #50**, `e3fa169`) and
-**Proposal Timing Extension** (**PR #52**, `4fd684e`) and **Obligations Foundation**
-(**PR #54**, `b35ca1d`), which is where this document's anchor now sits.
+**Slice 3a** (**PR #49**, `7713b56`), **Agreement Finalization** (**PR #50**, `e3fa169`),
+**Proposal Timing Extension** (**PR #52**, `4fd684e`), **Obligations Foundation**
+(**PR #54**, `b35ca1d`) and **Obligation Delivery and Receiver Confirmation**
+(**PR #56**, `46c0bef`), which is where this document's anchor now sits.
 
 ### What Sessions 4 and 5 left outstanding — mostly discharged
 
@@ -160,7 +175,7 @@ The earlier version of this section recorded two gaps. Both have moved:
 1. ~~**OQ-001 … OQ-007 are all still Open**, and the decision ledger holds no barter `PD-NNN`
    beyond PD-030 … PD-033.~~ **Discharged.** OQ-001, OQ-002, OQ-003, OQ-005 and OQ-008 are
    closed against [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) or a `PD-NNN`, OQ-004 by
-   PD-046, and the ledger now runs to PD-055. **OQ-006 and OQ-007 remain Open** — deliberately,
+   PD-046, and the ledger now runs to PD-059. **OQ-006 and OQ-007 remain Open** — deliberately,
    each with its reason recorded in [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 2. ~~**The Slice 1 migration acts on rulings the ledger does not hold.**~~ **Discharged.** The
    ruling behind the delete guard is PD-043, "E-3" is PD-044, and the beta working limit
@@ -176,14 +191,20 @@ approval.**
 ## Next
 
 ### Session 7 — Barter beta readiness (continues)
-Agreement finalization is merged in PR #50, and proposal timing / expiry enforcement is merged
-in PR #52. The remaining barter work stays within **Session 7** until explicitly resequenced;
-this reconciliation does **not** start Session 8.
+Agreement finalization is merged in PR #50, proposal timing / expiry enforcement in PR #52, the
+obligations foundation in PR #54, and obligation delivery / receiver confirmation in PR #56. The
+remaining barter work stays within **Session 7** until explicitly resequenced; this
+reconciliation does **not** start Session 8, which **has not started**.
 
-Next work remains within **Session 7**. Still not built: delivery / fulfilment and receiver
-confirmation; cancellation-after-agreement; no-show; adjudication; terminal obligation
-outcomes; terminal agreement outcomes
-(**PD-046**, contract §§ 6–7);
+Next work remains within **Session 7**. Delivery and the receiver's one-time answer now exist
+(PR #56) — but they record events, not outcomes. Still not built: the **7-day receiver-response
+window** and its anchor (**PD-057**, whose expiry must never mean Fulfilled or Completed);
+automatic fulfilment or completion; cancellation-after-agreement; mutual cancellation; no-show;
+**Needs Attention** and **Under Review**; adjudication; terminal obligation outcomes
+(Fulfilled / Unfulfilled / Closed Without Resolution); terminal agreement outcomes
+(**PD-046**, contract §§ 6–7); the **attention UX that surfaces an unanswered delivered
+obligation in Trade Activity**, with no push-notification work planned in this pass
+(**PD-059**); barter reviews and reputation;
 provider-eligibility gating of the barter surface (**PD-044**'s `is_approved` conjunct, whose
 seam is prepared but empty); the **Open to Trades** opt-in; the 3-post and 5-offers/day limits
 as server rules; the post-decline reverse-contact episode (**PD-048**); and blocking and

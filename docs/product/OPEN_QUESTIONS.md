@@ -2,13 +2,19 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** post-PR #50 Steward reconciliation — PR number not assigned yet
+**Last edited by:** PR #57
 
 > **Why the anchor did not move to `76f5632`.** The reconciliation that last edited this file
 > inspected `main` @ `76f5632` and re-verified the **barter** entries there (OQ-006, OQ-007,
 > OQ-008), but did **not** re-verify the repository claims carried by OQ-011, OQ-036 or OQ-070.
 > An anchor asserts that *this document's* facts were verified at that commit, so it stays
 > where the last full verification happened.
+>
+> **It did not move for PR #56 (`46c0bef`) either, and for the same reason.** That
+> reconciliation (merged as PR #57) edited only the closed index below — to record that PD-057,
+> PD-058 and PD-059 close no question here — and re-verified nothing carried by OQ-011, OQ-036
+> or OQ-070.
+> `Last edited by:` records the edit; the anchor records the verification.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -384,4 +390,11 @@ say that was false.
 | **OQ-008** — May an offer's terms still be edited once providers have responded? | 2026-09-04 | **PD-047** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1) |
 
 Nothing here was closed by repository evidence. **OQ-006** and **OQ-007** remain Open, and
-PD-049 … PD-055 closed no question in this ledger — they answered questions nobody had filed.
+PD-049 … PD-059 closed no question in this ledger — they answered questions nobody had filed.
+That includes the three rulings recorded on 2026-09-05 alongside PR #56 (`46c0bef`): **PD-057**
+(the future receiver-confirmation window anchor), **PD-058** (`not_received` is immutable and is
+a receiver statement, not a verdict) and **PD-059** (no receiver push notifications in this
+pass; Trade Activity must surface an unanswered delivery before beta). None of them closes or
+narrows an entry above — OQ-003's closure already recorded a 7-day receiver confirmation window
+([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 6), and PD-057 supplies the anchor that
+closure did not state.

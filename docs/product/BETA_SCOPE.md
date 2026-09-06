@@ -54,7 +54,7 @@ create *trust*.
 | Analytics | **REAL (dev-data caveat)** | Client-side metrics; revenue = completed only (4A). |
 | Reels / content | **REAL** | Content feed + posts/reels. |
 | Follows | **REAL** | `provider_follows` / `saved_providers`. |
-| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, proposal/version negotiation, and PR #50 agreement finalization. No obligation, fulfilment, delivery, cancellation-after-agreement or adjudication model exists yet. See Community / barter. |
+| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, proposal/version negotiation, PR #50 agreement finalization, PR #54's two directed obligations per agreement, and PR #56's delivery mark and one-time receiver answer. Those answers are **events, not verdicts**: no fulfilment outcome, timeout, cancellation-after-agreement, no-show or adjudication model exists yet. See Community / barter. |
 | Care / reminders | **REAL (beta)** | Care reminders. |
 | Payments revenue / platform fee | **UNDECIDED — BUSINESS MODEL RESEARCH** | See Revenue model. |
 | Discovery ranking | **UNDECIDED — RESEARCH** | Fair-opportunity direction; weights undefined. |
@@ -98,9 +98,25 @@ detail lives in [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) and PD-043 �
 
 **Agreement finalization (PR #50) is built:** once both providers accept the same current
 version, a participant can finalize the trade, creating an immutable `barter_agreements` row
-and permanently closing the sourcing post. **What is NOT built:** obligation, fulfilment,
-delivery, cancellation-after-agreement, adjudication, barter reviews and reputation. See
-[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 for the authoritative gap list.
+and permanently closing the sourcing post.
+
+**Obligations (PR #54) and their delivery record (PR #56) are built:** each official agreement
+carries exactly two immutable, server-derived directed obligations, and each obligation now has
+a lifecycle — its **deliverer** may mark that obligation delivered (`delivered_at` is
+server-stamped and immutable; a duplicate mark is a safe no-op), and its **receiver** may then
+answer **exactly once**, *Confirm received* or *Didn't receive*. Neither answer can flip to the
+other.
+
+**Those answers are events, not verdicts.** `received` is deliberately not *Fulfilled* and
+`not_received` is deliberately not *Unfulfilled* or *disputed* (**PD-058**), and the agreement
+itself still reads "Trade confirmed" with no terminal outcome.
+
+**What is NOT built:** the 7-day receiver-window timeout (its future anchor is **PD-057**),
+automatic fulfilment, automatic completion, cancellation-after-agreement, mutual cancellation,
+no-show, Needs Attention, Under Review, adjudication, terminal obligation outcomes
+(Fulfilled / Unfulfilled / Closed Without Resolution), terminal agreement outcomes, barter
+reviews and reputation. Nothing yet signals a receiver that a delivery happened (**PD-059**).
+See [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 for the authoritative gap list.
 
 ---
 

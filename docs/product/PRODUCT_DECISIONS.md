@@ -1,7 +1,7 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** PR #55
+**Last edited by:** PR #57
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -246,7 +246,7 @@ as locked decisions.
 - **Decided:** 2026-09-04
 - **Decision:** Three regimes, by the counterparty's exposure. **Before an official agreement** (both providers accepting the same current agreement version): withdrawal, decline and walking away are permitted, are **not** cancellations, and carry no penalty, review or reliability judgment. **After agreement, before any delivery:** either participant may cancel **unilaterally** — the other party's permission is **not** required — recording `cancelled_at`, the cancelling participant and an optional reason; both agreeing is **Mutually Cancelled**, one exiting is **Cancelled by Participant**. **After any obligation is marked delivered:** ordinary cancellation is unavailable and disagreement routes Needs Attention → Under Review → manual adjudication. **No-show is not cancellation** — it is failing to perform at the agreed time without having recorded a cancellation first; it routes to Needs Attention, and if established the obligation is **Unfulfilled**. For the first Houston beta none of these produce a normal review, an automatic reputation penalty, or a ranking effect; actor and timing are retained for a future reliability model. Terminal overall states: Completed, Partially Fulfilled, Cancelled, Not Completed, Under Review, and **Closed Without Resolution** (terminal, with **no** reliability judgment assigned). **Individual obligation truth survives independently of the overall agreement state.**
 - **Rationale:** Nobody should be held inside a service commitment by a counterparty who will not release them, but the cost of leaving must rise once the other side has actually given something up. Keeping obligation truth separate from the rolled-up verdict preserves the only record of who did their part.
-- **Evidence:** Founder ruling, 2026-09-04. Closes OQ-004. Stated in `BARTER_BETA_CONTRACT.md` § 7. PR #50 later implemented the official agreement row and PR #54 later implemented the two directed obligation rows, but this cancellation / no-show / adjudication model is still **not implemented**: no delivery mark, receiver confirmation, cancellation-after-agreement, no-show, adjudication, terminal obligation outcome or terminal agreement outcome schema exists.
+- **Evidence:** Founder ruling, 2026-09-04. Closes OQ-004. Stated in `BARTER_BETA_CONTRACT.md` § 7. PR #50 later implemented the official agreement row, PR #54 the two directed obligation rows, and PR #56 (`46c0bef`) the **delivery mark and the receiver's one-time answer** — `mark_barter_obligation_delivered`, `confirm_barter_obligation_received` and `report_barter_obligation_not_received` in `supabase/migrations/20261004000000_barter_obligation_delivery.sql`. Those are **events, not verdicts**: `received` is deliberately not `fulfilled` and `not_received` is deliberately not `unfulfilled`, `disputed` or `needs_attention` (same file, lines 8–20). This cancellation / no-show / adjudication model is otherwise still **not implemented**: no 7-day timeout transition, automatic fulfilment or completion, cancellation-after-agreement, mutual cancellation, no-show, Needs Attention, Under Review, adjudication, terminal obligation outcome (Fulfilled / Unfulfilled / Closed Without Resolution) or terminal agreement outcome schema exists (same file, lines 22–26). Note the migrations are the *implementation*, not the approval.
 - **Status:** Locked
 
 ### PD-047 — The barter post stays editable; the proposal snapshots it
@@ -368,6 +368,81 @@ as locked decisions.
   `supabase/tests/negotiation.test.sql`, `supabase/tests/agreement.test.sql`,
   `__tests__/lib/barterWriteFailure.test.ts` and `__tests__/lib/negotiationState.test.ts`.
 - **Status:** Locked
+
+---
+
+### PD-057 — The future receiver-confirmation deadline is anchored on the later of delivery and the agreed time, and its expiry never means fulfilment
+
+- **Decided:** 2026-09-05
+- **Decision:** When the receiver-response window is built, its anchor is
+  **`confirmation_anchor` = the later of `delivered_at` and (`scheduled_at` when it exists,
+  otherwise `due_at`)** — conceptually `max(delivered_at, scheduled_at ?? due_at)`. The
+  receiver-response deadline is **`confirmation_anchor` + 7 days**. Expiry of that window
+  **must not** automatically mean **Fulfilled** or **Completed**; an unresolved expiry routes
+  to **Needs Attention**, and possibly onward to **Under Review**. This is a **future rule**:
+  no timeout implementation exists on `main`.
+- **Rationale:** Recorded as issued. The ruling states the anchor and its one prohibition —
+  elapsed time must not manufacture an outcome — and no fuller rationale was supplied, so none
+  has been invented here. The prohibition matches what `BARTER_BETA_CONTRACT.md` § 6 already
+  requires (line 146: "There is no timeout completion… Silence is not consent, and elapsed time
+  earns no credit").
+- **Evidence:** Founder ruling via PM, 2026-09-05, supplied to this reconciliation and recorded
+  in the Decision above. **Not implemented on `main` at `46c0bef`:**
+  `supabase/migrations/20261004000000_barter_obligation_delivery.sql` adds only `status`,
+  `delivered_at` and `receipt_responded_at`, nothing that expires, and its own header records
+  the 7-day timeout transition as deliberately absent (lines 22–26). One divergence is flagged
+  rather than resolved here: that comment (lines 25–26) describes the future window as derived
+  from `delivered_at` **alone**, which is narrower than the anchor this entry records. The
+  migration is outside the Steward's writable scope; reconciling the comment needs a code owner.
+  The two facts the wider anchor needs — `due_at` and `scheduled_at` — are already immutable
+  columns on `barter_obligations` (`20261003000000_barter_obligations_foundation.sql`), so no
+  schema consequence follows from either reading today.
+- **Status:** Locked as direction; **not implemented**
+
+---
+
+### PD-058 — `not_received` is an immutable receiver statement, not the obligation's final verdict
+
+- **Decided:** 2026-09-05
+- **Decision:** `not_received` **stays immutable**. It is a historical **receiver statement /
+  event**, not the final adjudicated obligation verdict. There is **no flipping in either
+  direction** — not `not_received → received`, and not `received → not_received`. A later
+  resolution workflow **may record a subsequent resolution or outcome separately**, while
+  **preserving the original receiver event**.
+- **Rationale:** As issued: the receiver's answer records what that participant said at a point
+  in time. An outcome that overwrote it would destroy the only record of the statement a later
+  resolution is meant to act on.
+- **Evidence:** Founder ruling via PM, 2026-09-05. Already enforced on `main` at `46c0bef` by
+  `supabase/migrations/20261004000000_barter_obligation_delivery.sql`: the transition guard
+  permits only `pending → delivered` and `delivered → received | not_received` and refuses
+  everything else, `received ↔ not_received` explicitly (lines 128–135); a second, differing
+  answer raises SQLSTATE `PT412` (line 347); `receipt_responded_at` and `delivered_at` are
+  write-once (lines 137–147); and four CHECK constraints bind each status to its stamp (lines
+  36–64). Client copy states the receiver's answer as theirs and adds "Nothing has been
+  decided." (`lib/obligationState.ts:84-95`, `:116-123`). Asserted in
+  `supabase/tests/obligation.test.sql`. The implementation **records** this decision; it is not
+  the approval of one.
+- **Status:** Locked
+
+---
+
+### PD-059 — No receiver push notifications in this pass; Trade Activity must surface an unanswered delivery before beta
+
+- **Decided:** 2026-09-05
+- **Decision:** **No push-notification work was done, and none is planned for this pass.**
+  Before beta, **Trade Activity must eventually surface an unanswered delivered obligation as
+  requiring receiver attention.** That belongs to the **subsequent Session 7 attention / timeout
+  UX** and is **not built**.
+- **Rationale:** As issued. Recorded so the absence of any receiver signal reads as a known,
+  scheduled gap rather than an oversight.
+- **Evidence:** Founder ruling via PM, 2026-09-05. Current state at `46c0bef`: nothing notifies
+  the receiver that a delivery happened —
+  `supabase/migrations/20261004000000_barter_obligation_delivery.sql` creates no notification
+  path, and `lib/tradeActivity.ts` contains no obligation awareness at all (no occurrence of
+  "obligation" in the file). The lifecycle is visible only on the negotiation screen,
+  `app/community/negotiation/[id].tsx`, which reloads on focus (`useFocusEffect`, lines
+  150–155).
+- **Status:** Locked as direction; **not implemented**
 
 ---
 
