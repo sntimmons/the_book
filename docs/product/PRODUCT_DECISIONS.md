@@ -1,7 +1,7 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** PR #59 (previous edit: PR #57)
+**Last edited by:** PR #60 (previous edit: PR #59)
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in

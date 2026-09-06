@@ -3,7 +3,7 @@
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `5b1a7a9` (2026-09-06) — squash-merge of PR #58, confirmed with
 `git rev-parse` against `origin/main`
-**Last edited by:** PR #59 (previous edit: PR #57)
+**Last edited by:** PR #60 (previous edit: PR #59)
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -245,7 +245,7 @@ recorded in the Slice 1 migration header as Session 6 scope.
 **Two engineering obligations carried into the next slice, before any of the above:**
 
 1. ~~**Consolidate the negotiation screen's write handlers first.**~~ **DISCHARGED** by the
-   write-handler consolidation PR (branch `chore/barter-negotiation-write-handler-consolidation`).
+   write-handler consolidation PR (PR #60).
    The requirement as supplied was: *"before the next Session 7 slice adds another
    negotiation-screen write action, the six write handlers in `app/community/negotiation/[id].tsx`
    must be consolidated into a shared behavior-preserving helper; no seventh hand-copied handler

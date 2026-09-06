@@ -3,7 +3,7 @@
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `5b1a7a9` (2026-09-06) — squash-merge of PR #58, confirmed with
 `git rev-parse` against `origin/main`
-**Last edited by:** PR #59 (previous edit: PR #57)
+**Last edited by:** PR #60 (previous edit: PR #59)
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
