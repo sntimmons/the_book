@@ -3,7 +3,7 @@
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `5b1a7a9` (2026-09-06) — squash-merge of PR #58, confirmed with
 `git rev-parse` against `origin/main`
-**Last edited by:** PR #59 (previous edit: PR #57)
+**Last edited by:** PR #60 (previous edit: PR #59)
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -244,15 +244,28 @@ recorded in the Slice 1 migration header as Session 6 scope.
 
 **Two engineering obligations carried into the next slice, before any of the above:**
 
-1. **Consolidate the negotiation screen's write handlers first.** Quoting the requirement as it
-   was supplied to this reconciliation: *"before the next Session 7 slice adds another
+1. ~~**Consolidate the negotiation screen's write handlers first.**~~ **DISCHARGED** by the
+   write-handler consolidation PR (PR #60).
+   The requirement as supplied was: *"before the next Session 7 slice adds another
    negotiation-screen write action, the six write handlers in `app/community/negotiation/[id].tsx`
    must be consolidated into a shared behavior-preserving helper; no seventh hand-copied handler
-   may be added."* The six are `onAccept`, `onOpen`, `onConfirm`, `runObligationWrite`,
-   `onCancelTrade` and `onSend` (`app/community/negotiation/[id].tsx:252-432`), each repeating the
-   same busy-guard → write → `barterWriteFailure` → alert → conditional reload shape. This is an
-   **engineering constraint recorded as supplied**, not a product decision, and it is deliberately
-   filed here rather than in `PRODUCT_DECISIONS.md`.
+   may be added."* The six — `onAccept`, `onOpen`, `onConfirm`, `runObligationWrite`,
+   `onCancelTrade`, `onSend` — each repeated the same busy-guard → write → `barterWriteFailure` →
+   alert → conditional reload shape and had already diverged. All six now route through
+   `lib/negotiationWrite.ts` (`app/community/negotiation/[id].tsx:253-419`), which owns the
+   ordering; the four real per-operation differences are declared as options at each call site.
+   **Two residual items, neither a gate on the next slice generally, both a gate on the next
+   write handler on this screen:** (a) the re-entrancy `busy` guard is still hand-copied at 6/6
+   call sites — `runBarterWrite` sets `busy` but does not check it, so a seventh handler written
+   without copying a neighbour would omit it; (b) `onOpen` and `onSend` remain near-copies that
+   differ only in whether their re-read blocks the screen: proposing the FIRST terms shows the
+   blocking spinner while countering does not. That difference predates the consolidation and was
+   **preserved as found**, because a behavior-preserving refactor may not resolve it — but nothing
+   records whether it is intended. **It needs a PM answer before those two handlers are merged**;
+   it is not recorded here as a decision, and no OQ has been opened for it. This was an
+   **engineering constraint
+   recorded as supplied**, not a product decision, and stays filed here rather than in
+   `PRODUCT_DECISIONS.md`.
 2. **`release_barter_interest` still carries its own notice body**, deliberately: `20261009000000`
    routes only **new** callers through `public.pair_conversation_notice` and records that the
    shipped, authorization-adjacent release path should be migrated **the next time it is opened
@@ -301,10 +314,10 @@ These hold across every session:
   `supabase/migrations/20261010000000_cancellation_notice_neutral_copy.sql`. Copying an earlier
   body forward would silently delete the in-thread cancellation signal and restore the untrue
   "Both providers agreed to cancel" wording.
-- **No seventh hand-copied write handler on the negotiation screen.** Before the next Session 7
-  slice adds another negotiation-screen write action, the six write handlers in
-  `app/community/negotiation/[id].tsx` must first be consolidated into a shared,
-  behavior-preserving helper. Recorded as supplied to the 2026-09-06 reconciliation; see
-  § Next → Session 7 for the verbatim requirement and the six handlers it names.
+- **No seventh hand-copied write handler on the negotiation screen.** The consolidation this
+  required is **done** — all six writes route through `lib/negotiationWrite.ts`. The constraint
+  itself still stands for the next write action, and two things must be settled first: the
+  re-entrancy `busy` guard is not yet owned by the helper, and `onOpen`/`onSend` are still two
+  near-copies. See § Next → Session 7 item 1 for both.
 - Agents 1–3 stay read-only; the Steward's writes stay inside its five-file allowlist.
 - No session marks its own work complete — evidence on `main` does.

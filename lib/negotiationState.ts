@@ -317,6 +317,17 @@ export const TERMS_CHANGED_NOTE =
   'The terms changed after you accepted, so your acceptance no longer applies. Read the new'
   + ' terms and accept again if you agree.'
 
+/**
+ * Composer field placeholders, exported for the same reason `CANCEL_REASON_PLACEHOLDER` is:
+ * a test that selects a field has to name it, and naming it by an inline example DATE means the
+ * test breaks — pointing at nothing useful — the day someone refreshes the example.
+ */
+export const TERMS_PLACEHOLDERS = {
+  gives: 'What is provided',
+  dueAt: '2026-10-15 5:00 PM',
+  scheduledAt: '2026-10-10 2:00 PM',
+} as const
+
 export const MAX_DESCRIPTION = 200
 
 function parseDraftTime(value: string): number | null {

@@ -54,7 +54,7 @@ create *trust*.
 | Analytics | **REAL (dev-data caveat)** | Client-side metrics; revenue = completed only (4A). |
 | Reels / content | **REAL** | Content feed + posts/reels. |
 | Follows | **REAL** | `provider_follows` / `saved_providers`. |
-| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, proposal/version negotiation, PR #50 agreement finalization, PR #54's two directed obligations per agreement, and PR #56's delivery mark and one-time receiver answer. Those answers are **events, not verdicts**: no fulfilment outcome, timeout, cancellation-after-agreement, no-show or adjudication model exists yet. See Community / barter. |
+| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, proposal/version negotiation, PR #50 agreement finalization, PR #54's two directed obligations per agreement, PR #56's delivery mark and one-time receiver answer, and PR #58's **pre-delivery cancellation** — either participant may cancel before anything is delivered, and two independent acts classify as mutually cancelled (**PD-046**, **PD-060**, **PD-061**). Those answers are **events, not verdicts**: no fulfilment outcome, timeout, no-show or adjudication model exists yet, and cancellation decides nothing about whether anyone fulfilled anything. See Community / barter. |
 | Care / reminders | **REAL (beta)** | Care reminders. |
 | Payments revenue / platform fee | **UNDECIDED — BUSINESS MODEL RESEARCH** | See Revenue model. |
 | Discovery ranking | **UNDECIDED — RESEARCH** | Fair-opportunity direction; weights undefined. |
@@ -111,8 +111,17 @@ other.
 `not_received` is deliberately not *Unfulfilled* or *disputed* (**PD-058**), and the agreement
 itself still reads "Trade confirmed" with no terminal outcome.
 
+**What IS built, as of PR #58 —** correcting this list, which said otherwise: **cancellation
+after agreement and before any delivery**, and **mutual cancellation**. Either participant may
+cancel a confirmed trade while nothing has been delivered; the counterparty may separately record
+that they agree; two independent acts classify the agreement as mutually cancelled. The optional
+reason is visible to both participants and is context, not a verdict (**PD-060**), and the durable
+in-thread notice states only that both providers cancelled — never that they agreed (**PD-061**).
+Once anything is delivered, ordinary cancellation is gone for good (**PD-046**). Cancelling ends
+the trade and **decides nothing** about whether anyone fulfilled anything.
+
 **What is NOT built:** the 7-day receiver-window timeout (its future anchor is **PD-057**),
-automatic fulfilment, automatic completion, cancellation-after-agreement, mutual cancellation,
+automatic fulfilment, automatic completion,
 no-show, Needs Attention, Under Review, adjudication, terminal obligation outcomes
 (Fulfilled / Unfulfilled / Closed Without Resolution), terminal agreement outcomes, barter
 reviews and reputation. Nothing yet signals a receiver that a delivery happened (**PD-059**).

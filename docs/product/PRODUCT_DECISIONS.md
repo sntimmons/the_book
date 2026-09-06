@@ -1,7 +1,7 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** PR #59 (previous edit: PR #57)
+**Last edited by:** PR #60 (previous edit: PR #59)
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -456,6 +456,101 @@ as locked decisions.
   attention UX this entry requires before beta remains **not built**.
 - **Status:** Locked as direction; **not implemented** (the cancellation in-thread notice is not
   a notification and does not discharge it)
+
+---
+
+### PD-060 — Cancellation communication and reason visibility
+
+- **Decided:** 2026-09-06
+- **Decision:** When one participant cancels an official barter agreement before delivery, the
+  counterparty **may receive a durable best-effort in-thread system notice**. The optional
+  cancellation reason is **visible to both agreement participants** — it is **not** private and
+  **not** admin-only. The reason is **contextual only**: it does not itself establish fault, a
+  no-show, a reliability impact, an adjudication, or any terminal outcome, none of which exist.
+- **Rationale:** As issued. PD-046 asked for "an optional reason" and stopped there, which left
+  two questions the implementation had to answer anyway: who reads it, and what it means. Both
+  were answered in code without a decision to point at. Sharing it is the honest default — a
+  provider whose counterparty walked away from a commitment is owed the stated reason, and a
+  reason held back from the person it concerns is a note about them rather than to them.
+  Bounding it to *context* is the other half: a free-text sentence typed at the moment of
+  abandoning a trade is evidence of nothing, and the moment the product treats it as a finding
+  it has built adjudication by accident.
+  **Best-effort** is a property of the notice, not a hedge: the notice must never be able to
+  veto the cancellation it announces, so a thread that cannot take a message loses the notice
+  and keeps the cancellation. That is why no copy at the moment of an irreversible act promises
+  the other provider will be told.
+- **Evidence:** Founder ruling via PM, recorded 2026-09-06; the rulings themselves were issued
+  during PR #58 and are already implemented on `main` at `d735b72`.
+  - The notice: `public.pair_conversation_notice`
+    (`supabase/migrations/20261009000000_pair_conversation_notice.sql`) writes one durable
+    platform message into the provider pair's existing canonical conversation, skips a thread
+    that cannot take it, and wraps the write so it cannot roll back the act. Called by
+    `cancel_barter_agreement` (live definition
+    `20261010000000_cancellation_notice_neutral_copy.sql`). **Not a notification** — no push, no
+    device notice, no email (PD-059).
+  - Participant-visible reason: `my_barter_proposals` exposes `my_cancel_reason` **and**
+    `their_cancel_reason` to each participant; `NegotiationRow` carries both
+    (`lib/negotiation.ts:35-50`), `cancellationReasons` attributes each to whoever said it
+    (`lib/tradeCancellation.ts`), and `app/community/negotiation/[id].tsx` renders both reasons
+    for both viewers.
+  - Reason is context, not verdict: the composer says so before submission —
+    `CANCEL_REASON_NOTE` is "Optional reason — shared with the other provider."
+    (`lib/tradeCancellation.ts:208`) — and the reason is deliberately **absent from the durable
+    notice**. No fault, no-show, reliability, adjudication or terminal-outcome model exists to
+    attach it to. There is no reason taxonomy, for the same reason.
+  - Asserted in `__tests__/lib/tradeCancellation.test.ts` and
+    `supabase/tests/cancellation.test.sql`.
+- **Status:** Locked; **implemented** (the implementation records this decision, it is not the
+  approval of one)
+
+---
+
+### PD-061 — Neutral mutual-cancellation notice wording
+
+- **Decided:** 2026-09-06
+- **Decision:** When both agreement participants have **independently recorded cancellation
+  actions**, the agreement **may be classified `Mutually Cancelled`** — but the durable
+  system-message copy must state **only the proven fact that both providers cancelled**. It must
+  **not** claim they "agreed" unless the UX context specifically represents one participant
+  explicitly assenting to the other participant's prior cancellation. The canonical durable
+  notice is the neutral factual form:
+
+  > Both providers cancelled the trade for "X" for "Y".
+
+  Quoted byte-exactly, including the double quotes: `barter_terms_label` wraps each side of the
+  post in `"` (`20260914000000_trade_activity_corrections.sql`), so `v_label` is itself
+  `"X" for "Y"` and the doubled "for" is correct rather than a typo. The exact string matters
+  because this entry's own rationale is that copying an earlier function body forward restores
+  the untrue wording — so this is the string a future contributor re-derives from.
+
+  The classification is unchanged: two explicit acts is still what the product calls Mutually
+  Cancelled. **"Agree to cancel" remains correct as the UI action** offered to a counterparty
+  responding to a cancellation they can see — there, that participant *is* assenting, and the
+  word is accurate about what they are doing.
+- **Rationale:** As issued. The classification is derived from a **row count**, and two
+  different sequences reach two acts: one where B reads A's cancellation and answers it, and one
+  where A and B quit concurrently, neither having seen the other, each for their own reasons.
+  "Both providers agreed to cancel" is true of the first and false of the second, and the notice
+  cannot tell them apart. Writing a meeting of minds into a **durable thread message** — the
+  record either provider may later be asked to stand behind — is an assertion about their intent
+  that the server has no evidence for. The neutral form states what the two acts do prove and is
+  true of both sequences, which is the right sentence for a fact derived from counting rather
+  than from anyone's assent. Assent is a property of a **specific UX moment**, not of the
+  aggregate state, so it may be said only where that moment is what happened.
+- **Evidence:** Founder ruling via PM, recorded 2026-09-06; issued during PR #58 and already
+  implemented on `main` at `d735b72`.
+  `supabase/migrations/20261010000000_cancellation_notice_neutral_copy.sql` is a **copy-only**
+  replacement of `cancel_barter_agreement` that changes exactly one string literal: line 128 now
+  emits `'Both providers cancelled the trade for ' || v_label || '.'` where `20261009000000`
+  line 202 emitted `'Both providers agreed to cancel the trade for '`. Its header records the
+  defect and the reasoning (lines 10–35). The classification still returns `mutually_cancelled`
+  on `v_acts >= 2`, and `AGREE_TO_CANCEL_COPY` (`lib/tradeCancellation.ts:182-189`) keeps
+  "Agree to cancel" for the counterparty-response control. See
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) — `cancel_barter_agreement` is the
+  most-redefined function in the repo, and copying any earlier body forward restores the untrue
+  wording.
+- **Status:** Locked; **implemented** (the implementation records this decision, it is not the
+  approval of one)
 
 ---
 

@@ -78,7 +78,15 @@ export interface BarterWriteFailure {
    * These are different questions and conflating them produced a real defect: "the other
    * provider proposed first" is recoverable — you counter — but the screen behind the alert
    * still said "No terms yet", so the alert told the user to look at terms that were not on
-   * screen, above a button that could only fail again. Screens reload on `terminal || stale`.
+   * screen, above a button that could only fail again.
+   *
+   * `terminal || stale` is the DEFAULT reload rule, implemented once in
+   * `lib/negotiationWrite.ts` and used by every write on the negotiation screen. Two of those —
+   * accepting terms and confirming a trade — deliberately reload on ANY refusal, because their
+   * plausible non-terminal failures all mean the counterparty moved first. Screens that still
+   * hand-spell the sequence (the barter feed, barter interests, Trade Activity) read only
+   * `terminal`; none of their operations has a `stale` outcome mapped below, so they agree with
+   * the default today and would need this flag honoured before one is added.
    */
   stale?: boolean
   title: string
