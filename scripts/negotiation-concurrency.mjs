@@ -281,6 +281,9 @@ const tag = randomUUID().slice(0, 8)
 const ids = {
   ou: randomUUID(),
   ru: randomUUID(),
+  // The pair's ONE canonical thread. Cancelling an official trade now writes a system message
+  // into it (20261007000000), so the harness must have one or the signal is never exercised.
+  conv: randomUUID(),
   offer: randomUUID(),
   interest: randomUUID(),
   offer2: randomUUID(),
@@ -351,6 +354,11 @@ begin
     values ('${ids.ou}', 'Conc Owner ${tag}', 'cco_${tag}') returning id into opid;
   insert into public.providers(user_id, display_name, username)
     values ('${ids.ru}', 'Conc Resp ${tag}', 'ccr_${tag}') returning id into rpid;
+
+  -- Inserted as service_role so the request-status clamp leaves it open; the canonical
+  -- provider_pair_key is derived by the server either way.
+  insert into public.conversation(id, client_id, provider_id, request_status, request_opened_at)
+    values ('${ids.conv}', '${ids.ru}', opid, 'accepted', now());
 
   insert into public.barter_offers(id, provider_id, user_id, offering_service, seeking_service)
     values ('${ids.offer}', opid, '${ids.ou}', 'conc offering ${tag}', 'conc seeking');
@@ -850,6 +858,17 @@ select count(*) as n,
 // Two independent acts must BOTH be recorded. If one were lost the trade would read as
 // "cancelled by one participant" when both had in fact agreed — and the second act is the
 // only evidence of the counterparty's assent.
+// System messages of one exact wording in the pair's thread. Counted by content because every
+// cancellation scenario in this run shares the one canonical conversation, so a bare total
+// would drift as later scenarios cancel their own trades.
+async function systemMessages(content) {
+  const q = await runSql(
+    `select count(*) as n from public.messages
+      where conversation_id = '${ids.conv}' and sender_id is null
+        and content = ${JSON.stringify(content).replace(/"/g, "'")};`)
+  return scalar(q.out, 'n')
+}
+
 async function raceBothCancel() {
   await confirmedTrade(ids.interest13)
   const cancel = (who) =>
@@ -877,6 +896,19 @@ async function raceBothCancel() {
     String(rows.reasons.includes('owner reason') && rows.reasons.includes('responder reason')))
   const ob = await obligationRow(ids.interest13, 'offer_owner')
   chk('cancelling touches no obligation', 'pending', ob.status)
+  // EXACTLY ONCE PER TRANSITION, under a real race. Both calls insert an act; only the first
+  // to commit sees one act and only the second sees two, because both hold the agreement lock
+  // when they count. If the count were read outside the lock, both could report the same
+  // classification and write the same message twice.
+  chk('the simultaneous mutual cancellation announced the first act exactly once',
+    '1', await systemMessages('This trade was cancelled by one provider.'))
+  chk('and the mutual outcome exactly once',
+    '1', await systemMessages('Both providers agreed to cancel this trade.'))
+  const leak = await runSql(
+    `select count(*) as n from public.messages
+      where conversation_id = '${ids.conv}'
+        and (content like '%owner reason%' or content like '%responder reason%');`)
+  chk('and no cancellation reason reached the thread', '0', scalar(leak.out, 'n'))
 }
 
 // ── 14. The same participant cancels twice at once ─────────────────────────
@@ -1000,6 +1032,8 @@ begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
   -- Obligations cascade with their agreement, and the immutability trigger early-returns for
   -- service_role, so the agreement delete is what removes them.
+  delete from public.messages where conversation_id = '${ids.conv}';
+  delete from public.conversation where id = '${ids.conv}';
   delete from public.barter_agreement_cancellations c
    using public.barter_agreements ag
    where c.agreement_id = ag.id and ag.interest_id in (${quoted(AGREEMENT_INTERESTS)});
@@ -1043,11 +1077,15 @@ select (select count(*) from public.barter_offers where id in
        (select count(*) from public.barter_agreement_cancellations c
           join public.barter_agreements ag on ag.id = c.agreement_id
           where ag.interest_id in (${quoted(AGREEMENT_INTERESTS)})) as cancellations,
+       (select count(*) from public.messages
+          where conversation_id = '${ids.conv}') as messages,
+       (select count(*) from public.conversation
+          where id = '${ids.conv}') as conversations,
        (select count(*) from public.providers where user_id in
           ('${ids.ou}','${ids.ru}')) as providers,
        (select count(*) from auth.users where id in ('${ids.ou}','${ids.ru}')) as users;`)
   for (const k of ['offers', 'interests', 'proposals', 'obligations', 'agreements',
-    'cancellations', 'providers', 'users']) {
+    'cancellations', 'messages', 'conversations', 'providers', 'users']) {
     chk(`zero residue: ${k}`, '0', scalar(q.out, k))
   }
 }

@@ -185,22 +185,18 @@ export const MAX_CANCEL_REASON = 200
 export const CANCEL_REASON_PLACEHOLDER = 'Reason (optional)'
 
 /**
- * What actually happens to the reason, said plainly.
+ * What happens to the reason, disclosed BEFORE the writer commits to it.
  *
- * This deliberately makes NO confidentiality promise, because the data boundary does not keep
- * one. The read policy on `barter_agreement_cancellations` is agreement-scoped, not
- * actor-scoped: both participants can read both acts, `reason` included. No screen renders it
- * today, so an earlier version of this line said "The other provider is not shown this" — true
- * of the app, false of the boundary, and printed directly above the input as if it were an
- * assurance. A privacy guarantee a provider is given at the moment of authorship must be
- * enforced by the boundary, not by which surfaces happen to read the column.
+ * Founder ruling on PR #58: the reason is participant-visible context and IS shared with the
+ * other provider. The read policy was always agreement-scoped, so this states the boundary
+ * rather than promising against it — an earlier draft said "The other provider is not shown
+ * this", which was an assurance the data boundary never kept.
  *
- * Whether the counterparty SHOULD see it is an open product question. This line answers
- * neither way; it tells the writer what is true now so they can decide what to write.
+ * Rendered above the input, not after it: a disclosure a provider reads only after submitting
+ * an irreversible act is not a disclosure. It does NOT appear in the conversation system
+ * message — that surface says only that the trade was cancelled.
  */
-export const CANCEL_REASON_NOTE =
-  'Kept with your cancellation. No screen shows it to the other provider today — but do not'
-  + ' treat it as private to you.'
+export const CANCEL_REASON_NOTE = 'Optional reason — shared with the other provider.'
 
 /**
  * Mirror of the server's only rule about the reason, so the UI can refuse with a sentence a
@@ -221,4 +217,36 @@ export function validateCancelReason(reason: string): string | null {
 export function cancelReasonPayload(reason: string): string | null {
   const trimmed = reason.trim()
   return trimmed.length === 0 ? null : trimmed
+}
+
+
+/**
+ * The reasons to show on a cancelled trade, in the viewer's terms.
+ *
+ * TOTAL over what can exist: each participant may have written one, either may have written
+ * none, and a reason exists only where its act does. Returned as a list so a screen renders
+ * whatever is there without re-deriving whose is whose — the attribution is the part a screen
+ * gets wrong, and putting the wrong name on someone's stated reason for abandoning a
+ * commitment is the worst version of that mistake.
+ *
+ * NOT a verdict. These are statements two providers made, not findings about either of them:
+ * no fault, no reliability judgment, no no-show determination and no adjudication is implied
+ * or exists. The labels say who SAID it, never who was right.
+ */
+export function cancellationReasons(
+  f: { iCancelled: boolean; theyCancelled: boolean },
+  myReason: string | null,
+  theirReason: string | null,
+): { key: 'mine' | 'theirs'; label: string; reason: string }[] {
+  const out: { key: 'mine' | 'theirs'; label: string; reason: string }[] = []
+  // Gated on the ACT, not on the text alone: a reason without its act would be a row the
+  // server should never have produced, and rendering it would attribute a statement to
+  // someone who never made one.
+  if (f.iCancelled && myReason && myReason.trim().length > 0) {
+    out.push({ key: 'mine', label: 'You said', reason: myReason.trim() })
+  }
+  if (f.theyCancelled && theirReason && theirReason.trim().length > 0) {
+    out.push({ key: 'theirs', label: 'The other provider said', reason: theirReason.trim() })
+  }
+  return out
 }

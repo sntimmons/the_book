@@ -64,6 +64,7 @@ import {
   CANCEL_REASON_NOTE,
   CANCEL_REASON_PLACEHOLDER,
   CANCEL_TRADE_COPY,
+  cancellationReasons,
   cancellationView,
   cancelReasonPayload,
   isCancelled,
@@ -207,6 +208,14 @@ export default function NegotiationScreen() {
     cancelledAt: row?.cancelledAt ?? null,
   }
   const cancel = cancellationView(cancellationFacts, delivered)
+  // Participant-visible context, per the ruling on PR #58. Attribution is derived by
+  // lib/tradeCancellation.ts rather than by a ternary here: putting the wrong label on a
+  // provider's stated reason for abandoning a commitment is the one mistake this must not make.
+  const cancelReasons = cancellationReasons(
+    cancellationFacts,
+    row?.myCancelReason ?? null,
+    row?.theirCancelReason ?? null,
+  )
   // ONE predicate for "is this trade cancelled". The JSX below also branches on
   // `view.state === 'cancelled'`, and the two are equivalent only because `negotiationView`
   // returns that state exactly when `live && agreementId !== null && tradeCancelled` — and a
@@ -688,6 +697,14 @@ export default function NegotiationScreen() {
                   <Text style={styles.cancelDetail}>
                     {cancel.timeLabel} {formatTermTime(cancel.cancelledAt)}
                   </Text>
+                  {/* Both participants see both reasons. Labelled by who SAID it, never by
+                      who was right: nothing here is a fault finding, a reliability judgment or
+                      an adjudication, and none of those exist. */}
+                  {cancelReasons.map((r) => (
+                    <Text key={r.key} style={styles.cancelDetail}>
+                      {r.label}: {r.reason}
+                    </Text>
+                  ))}
                 </View>
               ) : null}
               {view.state === 'confirmed' || view.state === 'cancelled' ? (

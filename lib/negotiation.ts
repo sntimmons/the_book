@@ -38,6 +38,16 @@ export interface NegotiationRow {
   theyCancelled: boolean
   /** When the FIRST of the two acts was recorded; null when neither has. */
   cancelledAt: string | null
+  /**
+   * The reason THIS viewer gave, if any. Null when they have not cancelled or gave none.
+   *
+   * Founder ruling on PR #58: the reason is participant-visible context, shared with the other
+   * provider — not a private note, and not a verdict, a no-show determination, adjudication or
+   * proof of fault, none of which exist. The composer says so before submission.
+   */
+  myCancelReason: string | null
+  /** The reason the OTHER provider gave, if any. Same posture. */
+  theirCancelReason: string | null
 }
 
 export interface ProposalTerm {
@@ -77,7 +87,7 @@ export interface BarterObligation {
 }
 
 const ROW_COLUMNS =
-  'proposal_id, interest_id, offer_id, current_version_no, current_version_id, current_version_author_id, current_version_at, interest_status, offer_is_active, my_role, counterparty_user_id, i_accepted_current, they_accepted_current, both_accepted, agreement_id, officialized_at, i_cancelled, they_cancelled, cancelled_at'
+  'proposal_id, interest_id, offer_id, current_version_no, current_version_id, current_version_author_id, current_version_at, interest_status, offer_is_active, my_role, counterparty_user_id, i_accepted_current, they_accepted_current, both_accepted, agreement_id, officialized_at, i_cancelled, they_cancelled, cancelled_at, my_cancel_reason, their_cancel_reason'
 
 interface RawRow {
   proposal_id: string
@@ -99,6 +109,8 @@ interface RawRow {
   i_cancelled: boolean
   they_cancelled: boolean
   cancelled_at: string | null
+  my_cancel_reason: string | null
+  their_cancel_reason: string | null
 }
 
 function mapRow(r: RawRow): NegotiationRow {
@@ -122,6 +134,8 @@ function mapRow(r: RawRow): NegotiationRow {
     iCancelled: r.i_cancelled,
     theyCancelled: r.they_cancelled,
     cancelledAt: r.cancelled_at,
+    myCancelReason: r.my_cancel_reason,
+    theirCancelReason: r.their_cancel_reason,
   }
 }
 

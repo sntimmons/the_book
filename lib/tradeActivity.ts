@@ -113,8 +113,13 @@ export const SECTION_COPY: Record<
   { title: string; caption: string; rank: number }
 > = {
   confirmed: {
-    title: 'Confirmed trades',
-    caption: 'Terms both of you agreed to and confirmed.',
+    // 'Confirmed trades' was the heading over a MIXED group: a cancelled trade stays here as
+    // durable history, and the row's own note says so, but the section title above it said the
+    // opposite. A heading is read before the rows under it, so the group is named for what its
+    // members have in common — they were all made official — and the per-row state label is
+    // left to say which of them is still live.
+    title: 'Trades',
+    caption: 'Trades you both made official.',
     rank: 0,
   },
   active: {

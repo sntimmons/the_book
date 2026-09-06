@@ -1,6 +1,8 @@
 import {
   AGREE_TO_CANCEL_COPY,
+  CANCEL_REASON_NOTE,
   CANCEL_TRADE_COPY,
+  cancellationReasons,
   CancellationFacts,
   CancellationState,
   cancellationState,
@@ -11,7 +13,12 @@ import {
   validateCancelReason,
 } from '@/lib/tradeCancellation'
 import { obligationView } from '@/lib/obligationState'
-import { tradeRowState, responderFeedState } from '@/lib/tradeActivity'
+import {
+  SECTION_COPY,
+  tradeActivitySection,
+  tradeRowState,
+  responderFeedState,
+} from '@/lib/tradeActivity'
 import { barterWriteFailure } from '@/lib/barterErrors'
 
 // Pre-delivery cancellation rules and copy. Pure, and tested here for the same reason the rest
@@ -327,5 +334,122 @@ describe('cancellation write failures', () => {
         expect(text).not.toContain(word)
       }
     }
+  })
+})
+
+// ── Founder rulings on PR #58 ─────────────────────────────────────────────
+describe('the cancellation reason is disclosed as shared BEFORE it is written', () => {
+  // Ruling 2: the reason is participant-visible context. The composer must say so before the
+  // provider commits to an irreversible act — a disclosure read only afterwards is not one.
+  it('tells the writer the other provider will see it', () => {
+    expect(CANCEL_REASON_NOTE.toLowerCase()).toContain('shared with the other provider')
+  })
+
+  it('never promises the opposite', () => {
+    // The earlier copy said "The other provider is not shown this", which the agreement-scoped
+    // read policy never backed. Pinned so it cannot come back.
+    expect(CANCEL_REASON_NOTE.toLowerCase()).not.toContain('not shown')
+    expect(CANCEL_REASON_NOTE.toLowerCase()).not.toContain('private')
+  })
+
+  it('does not turn the reason into a verdict', () => {
+    for (const banned of ['fault', 'blame', 'no-show', 'dispute', 'review', 'penalty']) {
+      expect(CANCEL_REASON_NOTE.toLowerCase()).not.toContain(banned)
+    }
+  })
+})
+
+describe('cancellationReasons — both participants see both, attributed to who said it', () => {
+  const both = { iCancelled: true, theyCancelled: true }
+  const mineOnly = { iCancelled: true, theyCancelled: false }
+  const theirsOnly = { iCancelled: false, theyCancelled: true }
+
+  it('shows each participant their own reason', () => {
+    const r = cancellationReasons(mineOnly, 'ran out of time', null)
+    expect(r).toHaveLength(1)
+    expect(r[0].key).toBe('mine')
+    expect(r[0].reason).toBe('ran out of time')
+  })
+
+  it('shows the counterparty the same reason, attributed to them', () => {
+    const r = cancellationReasons(theirsOnly, null, 'ran out of time')
+    expect(r).toHaveLength(1)
+    expect(r[0].key).toBe('theirs')
+    expect(r[0].reason).toBe('ran out of time')
+    expect(r[0].label).toBe('The other provider said')
+  })
+
+  it('shows both on a mutual cancellation, without swapping them', () => {
+    const r = cancellationReasons(both, 'mine', 'theirs')
+    expect(r.map((x) => [x.key, x.reason])).toEqual([
+      ['mine', 'mine'],
+      ['theirs', 'theirs'],
+    ])
+  })
+
+  it('shows nothing when the reason was omitted — it is optional', () => {
+    expect(cancellationReasons(both, null, null)).toEqual([])
+    expect(cancellationReasons(both, '   ', '')).toEqual([])
+  })
+
+  it('never attributes a reason to someone who did not act', () => {
+    // A reason without its act would be a row the server should never produce; rendering it
+    // would put a statement in the mouth of a provider who never made one.
+    expect(cancellationReasons({ iCancelled: false, theyCancelled: false }, 'x', 'y')).toEqual([])
+    expect(cancellationReasons(mineOnly, 'mine', 'leaked')).toEqual([
+      { key: 'mine', label: 'You said', reason: 'mine' },
+    ])
+  })
+
+  it('labels who SAID it, never who was right', () => {
+    for (const r of cancellationReasons(both, 'a', 'b')) {
+      expect(r.label.toLowerCase()).toContain('said')
+      for (const banned of ['fault', 'blame', 'wrong', 'failed', 'no-show']) {
+        expect(r.label.toLowerCase()).not.toContain(banned)
+      }
+    }
+  })
+})
+
+describe('a cancelled trade is grouped truthfully', () => {
+  // Ruling 3: cancelled trades stay visible as durable history, but must not sit under a
+  // heading that calls them confirmed. A heading is read before the rows beneath it.
+  const facts = (over: Record<string, unknown> = {}) => ({
+    status: 'accepted' as const,
+    offerIsActive: true,
+    releasedAt: null,
+    releaseReason: null,
+    offerHasAcceptedResponse: true,
+    agreementId: 'ag',
+    myRole: 'owner' as const,
+    iCancelled: false,
+    theyCancelled: false,
+    ...over,
+  })
+
+  it('puts confirmed and cancelled trades in the same durable group', () => {
+    expect(tradeActivitySection('accepted', 'ag')).toBe('confirmed')
+  })
+
+  it('does not title that group "Confirmed trades"', () => {
+    expect(SECTION_COPY.confirmed.title).toBe('Trades')
+    expect(SECTION_COPY.confirmed.title).not.toContain('Confirmed')
+  })
+
+  it('keeps the caption true of every member, cancelled ones included', () => {
+    const caption = SECTION_COPY.confirmed.caption.toLowerCase()
+    for (const banned of ['confirmed', 'active', 'live', 'upcoming']) {
+      expect(caption).not.toContain(banned)
+    }
+  })
+
+  it('still shows an uncancelled trade as confirmed on its own row', () => {
+    expect(tradeRowState(facts()).note).toContain('Trade confirmed')
+  })
+
+  it('and says cancelled on the row when it is', () => {
+    expect(tradeRowState(facts({ iCancelled: true })).note).toContain('Trade cancelled')
+    expect(tradeRowState(facts({ iCancelled: true, theyCancelled: true })).note)
+      .toContain('cancelled by both of you')
   })
 })

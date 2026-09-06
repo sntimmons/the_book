@@ -776,3 +776,154 @@ begin
    where agreement_id = v_e and actor_user_id = ou;
   perform pg_temp.chk('cancellation', 'and the first act was not disturbed', '1', v_n::text);
 end $$;
+
+-- ── 20261007000000: the counterparty is TOLD, and the reason is SHARED ─────
+-- Founder rulings on PR #58. The signal reuses the pre-agreement mechanism from
+-- 20260910000000 -- a message whose author is nobody (`sender_id is null`) in the existing
+-- canonical provider-pair conversation -- rather than introducing a second mechanism.
+do $$
+declare
+  ou uuid := current_setting('b5b.cx_ou')::uuid;
+  ru uuid := current_setting('b5b.cx_ru')::uuid;
+  xu uuid := current_setting('b5b.cx_xu')::uuid;
+  v_f uuid; v_conv uuid; v_n integer; v_txt text; v_res text;
+begin
+  perform pg_temp.act_service();
+  -- The pair's ONE canonical thread. Inserted as service_role so the request-status clamp
+  -- does not force it to 'pending'; the pair key is derived by the server either way.
+  insert into public.conversation(client_id, provider_id, request_status, request_opened_at)
+  values (ru, (select id from public.providers where user_id = ou), 'accepted', now())
+  returning id into v_conv;
+  perform pg_temp.chk('cancellation', 'the pair thread carries a canonical key', 'true',
+    (select (provider_pair_key is not null)::text from public.conversation where id = v_conv));
+
+  v_f := pg_temp.cx_agreement(ou, ru, 'f');
+
+  -- FIRST ACT → exactly one system message, and it is authored by nobody.
+  perform pg_temp.act(ou);
+  select public.cancel_barter_agreement(v_f, 'double booked that weekend') into v_res;
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null
+     and content = 'This trade was cancelled by one provider.';
+  perform pg_temp.chk('cancellation',
+    'the first cancellation writes exactly one system message', '1', v_n::text);
+  perform pg_temp.chk('cancellation', 'and the thread''s last_message_at moved', 'true',
+    (select (last_message_at is not null)::text from public.conversation where id = v_conv));
+
+  -- IDEMPOTENT REPEAT → no second message. The already-acted branch returns before the insert.
+  perform pg_temp.act(ou);
+  perform public.cancel_barter_agreement(v_f, 'a different reason entirely');
+  perform public.cancel_barter_agreement(v_f);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null
+     and content = 'This trade was cancelled by one provider.';
+  perform pg_temp.chk('cancellation', 'a repeat by the same participant writes no duplicate',
+    '1', v_n::text);
+
+  -- SECOND PARTICIPANT'S ASSENT → exactly one mutual message.
+  perform pg_temp.act(ru);
+  select public.cancel_barter_agreement(v_f, 'agreed, no hard feelings') into v_res;
+  perform pg_temp.chk('cancellation', 'the assent is classified mutual', 'mutually_cancelled',
+    v_res);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null
+     and content = 'Both providers agreed to cancel this trade.';
+  perform pg_temp.chk('cancellation',
+    'the second act writes exactly one mutual-cancellation message', '1', v_n::text);
+
+  -- REPEATED ASSENT → still one.
+  perform pg_temp.act(ru);
+  perform public.cancel_barter_agreement(v_f);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null
+     and content = 'Both providers agreed to cancel this trade.';
+  perform pg_temp.chk('cancellation', 'a repeated assent writes no duplicate either',
+    '1', v_n::text);
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null;
+  perform pg_temp.chk('cancellation', 'two acts produced exactly two system messages',
+    '2', v_n::text);
+
+  -- THE FREE TEXT IS NOT IN THE THREAD. A conversation message is a different surface with
+  -- different longevity, and the ruling keeps the reason out of it.
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv
+     and (content like '%double booked%' or content like '%hard feelings%'
+          or content like '%different reason%');
+  perform pg_temp.chk('cancellation', 'no system message leaks the cancellation reason',
+    '0', v_n::text);
+  -- Nor does it name a participant, or claim a channel the product does not have.
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id is null
+     and (content ilike '%Cx Owner%' or content ilike '%Cx Resp%'
+          or content ilike '%notif%' or content ilike '%email%' or content ilike '%push%');
+  perform pg_temp.chk('cancellation',
+    'nor names a provider or claims a notification was sent', '0', v_n::text);
+  -- Authored by the platform: a client cannot forge one, because the send policy pins
+  -- sender_id = auth.uid() and null can never satisfy it.
+  select count(*) into v_n from public.messages
+   where conversation_id = v_conv and sender_id in (ou, ru);
+  perform pg_temp.chk('cancellation', 'and no system message is attributed to a participant',
+    '0', v_n::text);
+
+  -- READ BOUNDARY. The signal creates no new conversation identity and grants nobody new
+  -- access: it is readable exactly by whoever could already read this thread.
+  select count(*) into v_n from public.conversation
+   where provider_pair_key = public.provider_pair_key(
+     (select id from public.providers where user_id = ou),
+     (select id from public.providers where user_id = ru));
+  perform pg_temp.chk('cancellation', 'no second conversation was created for the pair',
+    '1', v_n::text);
+  perform pg_temp.act(ou);
+  select count(*) into v_n from public.messages where conversation_id = v_conv;
+  perform pg_temp.chk('cancellation', 'participant A reads the signal', '2', v_n::text);
+  perform pg_temp.act(ru);
+  select count(*) into v_n from public.messages where conversation_id = v_conv;
+  perform pg_temp.chk('cancellation', 'participant B reads the signal', '2', v_n::text);
+  perform pg_temp.act(xu);
+  select count(*) into v_n from public.messages where conversation_id = v_conv;
+  perform pg_temp.chk('cancellation', 'an unrelated user reads none of it', '0', v_n::text);
+
+  -- ── RULING 2: the reason is participant-visible, to BOTH sides ───────────
+  perform pg_temp.act(ou);
+  select my_cancel_reason into v_txt from public.my_barter_proposals where agreement_id = v_f;
+  perform pg_temp.chk('cancellation', 'participant A reads their own reason',
+    'double booked that weekend', v_txt);
+  select their_cancel_reason into v_txt from public.my_barter_proposals where agreement_id = v_f;
+  perform pg_temp.chk('cancellation', 'and the counterparty''s reason',
+    'agreed, no hard feelings', v_txt);
+  perform pg_temp.act(ru);
+  select my_cancel_reason into v_txt from public.my_barter_proposals where agreement_id = v_f;
+  perform pg_temp.chk('cancellation', 'participant B reads their own reason',
+    'agreed, no hard feelings', v_txt);
+  select their_cancel_reason into v_txt from public.my_barter_proposals where agreement_id = v_f;
+  perform pg_temp.chk('cancellation', 'and A''s, from the other side',
+    'double booked that weekend', v_txt);
+  -- Immutability survived the ruling: neither repeat overwrote the original text.
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_agreement_cancellations
+   where agreement_id = v_f and reason in ('a different reason entirely');
+  perform pg_temp.chk('cancellation', 'no repeat overwrote an original reason', '0', v_n::text);
+
+  -- NON-PARTICIPANTS SEE NOTHING. Shared with the other provider is not shared with anyone.
+  perform pg_temp.act(xu);
+  select count(*) into v_n from public.my_barter_proposals where agreement_id = v_f;
+  perform pg_temp.chk('cancellation', 'an unrelated user reads no reason', '0', v_n::text);
+  select count(*) into v_n from public.barter_agreement_cancellations where agreement_id = v_f;
+  perform pg_temp.chk('cancellation', 'nor the acts they came from', '0', v_n::text);
+  -- anon is stopped one layer EARLIER than the outsider: it holds no grant on the table at
+  -- all, so it is refused outright rather than shown an empty result.
+  perform pg_temp.act(null, 'anon');
+  begin
+    select count(*) into v_n from public.barter_agreement_cancellations where agreement_id = v_f;
+    v_txt := 'NO ERROR';
+  exception when others then v_txt := sqlstate;
+  end;
+  -- Back to service_role BEFORE recording: anon cannot write the harness result table either.
+  perform pg_temp.act_service();
+  perform pg_temp.chk('cancellation', 'and anon is refused the table outright', '42501', v_txt);
+end $$;
