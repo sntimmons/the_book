@@ -2,7 +2,9 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** PR #60 (previous edit: PR #59)
+**Last edited by:** PR #62 (previous edit: PR #61). The reconciliation that made the most recent
+corrections was **not given its own PR number**, so this field names the last mutation whose
+number is known.
 
 > **Why the anchor did not move to `76f5632`.** The reconciliation that last edited this file
 > inspected `main` @ `76f5632` and re-verified the **barter** entries there (OQ-006, OQ-007,
@@ -19,6 +21,12 @@
 > "related, not closing" note and the closed index below, to record that pre-delivery
 > cancellation shipped; it re-verified nothing carried by OQ-011, OQ-036 or OQ-070, and it had no
 > shell with which to confirm that SHA in any case.
+>
+> **It did not move for PR #62 (`26fb7fd`) either, and for the same reason.** The reconciliation
+> after that merge edited only the closed index below — to record that the receiver-response
+> window and Needs Attention shipped, that they close no question here, and that the two rulings
+> the index still called undocumented now carry PD-060 and PD-061. It re-verified nothing carried
+> by OQ-011, OQ-036 or OQ-070, and it had no shell with which to confirm that SHA.
 > `Last edited by:` records the edit; the anchor records the verification.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
@@ -409,7 +417,10 @@ say that was false.
 | **OQ-008** — May an offer's terms still be edited once providers have responded? | 2026-09-04 | **PD-047** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1) |
 
 Nothing here was closed by repository evidence. **OQ-006** and **OQ-007** remain Open, and
-PD-049 … PD-059 closed no question in this ledger — they answered questions nobody had filed.
+PD-049 … PD-061 closed no question in this ledger — they answered questions nobody had filed.
+(PD-060 and PD-061 do close a **documentation gap** recorded under OQ-004's follow-on note, which
+is a different thing from closing the question: OQ-004 was already Closed by PD-046 on
+2026-09-04 and its status is unchanged.)
 That includes the three rulings recorded on 2026-09-05 alongside PR #56 (`46c0bef`): **PD-057**
 (the receiver-confirmation window anchor, implemented by PR #62), **PD-058** (`not_received` is immutable and is
 a receiver statement, not a verdict) and **PD-059** (no receiver push notifications in this
@@ -425,7 +436,20 @@ followed it. Two Founder rulings are cited in that PR's migration headers (the c
 told, and the reason is shared with them:
 `supabase/migrations/20261007000000_barter_cancellation_signal.sql:1-32`; the second notice must
 state a fact rather than an agreement: `20261010000000_cancellation_notice_neutral_copy.sql:1-35`).
-**Neither has a `PD-NNN` entry**, because no approval text was supplied to this reconciliation
-and a migration header is an implementation record, not an approval. That is recorded here as a
-gap for the Founder to close or dismiss — it is **not** an open question, because nothing about
-it is undecided; only the durable recording of the decision is missing.
+The reconciliation that wrote this paragraph recorded both as **undocumented rulings with no
+`PD-NNN` entry**, and asked the Founder to close or dismiss the gap. **That gap is now closed and
+this sentence is superseded:** PR #61 recorded them as **[PD-060](PRODUCT_DECISIONS.md)** (the
+reason is participant-visible context, and the counterparty may get a durable best-effort
+in-thread notice) and **[PD-061](PRODUCT_DECISIONS.md)** (the neutral mutual-cancellation
+wording). See OQ-004's "Follow-on rulings (2026-09-06)" note above, which was updated at the time
+while this index was not. Neither decision closes, narrows or reopens any entry here.
+
+**PR #62 (`26fb7fd`) closed no question here either, and did not reopen one.** It implements
+**PD-057** and the Trade Activity half of **PD-059**, both of which were already recorded as
+locked decisions that close nothing in this ledger. Two further Founder rulings issued on that PR
+— that agreement-level and obligation-level attention are different **scopes**, so the higher one
+never suppresses the viewer's own live action; and that the surface scope for the slice is Trade
+Activity plus the confirmed-trade detail, with the feed card and offer-responses screen deferred —
+are recorded **inside PD-059**, because they refine an existing locked decision rather than
+opening or settling a question. **A migration is an implementation, not an approval**, and nothing
+in PR #62 closes an entry above by itself: **OQ-006** and **OQ-007** remain Open.
