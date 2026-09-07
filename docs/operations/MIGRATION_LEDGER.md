@@ -852,17 +852,17 @@ against the linked non-production project (`wcoyjeklscuqsumpjpfo`); local and re
 and never queried; no credential for it was read, and the only Supabase values present in the
 environment were the non-production `TEST_SUPABASE_*` keys.
 
-## 2026-09-07 — `20261012000000` + `20261013000000` **APPLIED to non-production 2026-09-07** (No-show + Under Review foundation, PR TBD)
+## 2026-09-07 — `20261012000000` + `20261013000000` + `20261014000000` **APPLIED to non-production 2026-09-07** (No-show + Under Review foundation, PR TBD)
 
 > **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`) on 2026-09-07.**
-> `supabase migration list --linked`: local and remote agree on all **52** versions, no gap and
-> no drift. **B5B: 1063/1063 passed, 0 failed**, of which the new `no_show` suite is
+> `supabase migration list --linked`: local and remote agree on all **53** versions, no gap and
+> no drift. **B5B: 1074/1074 passed, 0 failed**, of which the new `no_show` suite is
 > `supabase/tests/no_show_under_review.test.sql`. **Concurrency: 124/124 passed**
 > (`scripts/negotiation-concurrency.mjs`), including four new no-show races. Both harnesses
 > report zero residue, and the concurrency harness now counts the new table in its residue
 > sweep. Production (`kxregomuawwcqvisuhtr`) was never targeted and never queried.
 
-**TWO migrations, and the second corrects the first.** `20261012000000` is the slice.
+**THREE migrations, and the second and third each correct the first.** `20261012000000` is the slice.
 `20261013000000` is a **forward correction** applied minutes later, because `20261012000000`
 computed no-show eligibility as an INLINE PREDICATE inside `my_trade_activity` and did not
 expose it on `my_barter_obligations` at all. That was wrong twice: the rule had no single home,
@@ -901,12 +901,39 @@ parameter at all, so no client value can reach it. The B5B fixture deliberately 
 whose APPOINTMENT has passed while its DUE DATE has not, so a `due_at`-based implementation
 would fail rather than pass by accident.
 
-**LOCK ORDER.** `report_barter_obligation_no_show` takes the OBLIGATION row lock and nothing
-else, exactly as `record_barter_obligation_receipt` and `mark_barter_obligation_delivered` do.
-`cancel_barter_agreement` takes the AGREEMENT lock first and then its obligations in id order;
-because the new RPC never takes the agreement lock it can WAIT for a cancellation but can never
-hold something cancellation needs first, so the pair cannot deadlock. **A future writer on this
-table must keep that property.**
+**LOCK ORDER — the first version of this paragraph was WRONG, and the correction is
+`20261014000000`.** It claimed `report_barter_obligation_no_show` "takes the OBLIGATION row lock
+and nothing else, exactly as `record_barter_obligation_receipt` and
+`mark_barter_obligation_delivered` do ... so the pair cannot deadlock", and told future writers to
+preserve that property. Both halves were false.
+
+The function DOES lock `barter_agreements`, just not with a visible `for update`: its INSERT
+carries an FK to that table, and PostgreSQL enforces an FK on INSERT by taking `for key share` on
+the parent row, which conflicts with `for update`. So the real order was **obligation, then
+agreement** — the reverse of `cancel_barter_agreement`. The parity claim failed for the same
+reason: the other two obligation RPCs only UPDATE lifecycle columns, and PostgreSQL skips the FK
+re-check when the referencing columns are unchanged, so those genuinely take no agreement lock.
+This was the FIRST obligation-scoped writer to INSERT a row referencing `barter_agreements` while
+holding the obligation lock, and it inherited a contract written for functions doing something
+else.
+
+**The deadlock was REPRODUCED, not merely reasoned about.** With race #20's assertions
+strengthened to fail on `40P01` rather than absorb it, `scripts/negotiation-concurrency.mjs`
+reported `FAIL neither act deadlocked` on the pre-fix schema — a receiver reporting a no-show
+while either participant cancelled, which is exactly the "they did not show up" versus "I am
+cancelling this" moment.
+
+`20261014000000` replaces the function body so the AGREEMENT lock is taken FIRST, matching
+`cancel_barter_agreement`. The order across the barter graph is now total: **agreement before
+obligation, obligations in id order.** Every authority check, refusal SQLSTATE, the idempotent
+branch and the return value are unchanged, so no client copy and no test expectation moved; a
+terminal `unique_violation` handler was added so that "unreachable" is not load-bearing, matching
+`cancel_barter_agreement`'s own precedent.
+
+**RULE FOR FUTURE WRITERS, restated because the old one was wrong in a way that was easy to
+believe: ENUMERATE THE IMPLICIT LOCKS TOO.** An INSERT, or an UPDATE that writes a foreign-key
+column, takes `for key share` on the parent row. One that touches only non-key columns does not.
+"I wrote no `for update` on that table" is not the same as "I take no lock on it".
 
 **A REPORT DOES NOT REWRITE HISTORY.** `delivered_at` is never erased and no prior row is
 changed. A receiver may report a no-show even after the deliverer marked it delivered — "they

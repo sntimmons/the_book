@@ -129,8 +129,13 @@ answer. Trade Activity surfaces it role-relatively: **Action needed** for the re
 window, **Waiting for confirmation** for the deliverer, **Needs attention** for either once it
 elapses.
 
+**Also built (Founder ruling, 2026-09-07):** receiver-reported **no-show** on a SCHEDULED
+obligation, and the derived **Under Review** state it routes the trade into — meaning a human
+must look. It decides no fault, creates no outcome, and the receiver may still answer. A plain
+`not_received` qualifies on its own, so nobody files a second complaint to be heard.
+
 **What is NOT built:** automatic fulfilment, automatic completion,
-no-show, Under Review, adjudication, terminal obligation outcomes
+adjudication, any operator decision path, terminal obligation outcomes
 (Fulfilled / Unfulfilled / Closed Without Resolution), terminal agreement outcomes, barter
 reviews and reputation. Nothing yet signals a receiver that a delivery happened (**PD-059**).
 See [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 for the authoritative gap list.

@@ -5,12 +5,17 @@
 //
 // USER LANGUAGE, NOT SCHEMA LANGUAGE. Nothing here says status, enum, row or transition.
 //
-// TRUTHFUL AND NON-FINAL. The receiver-response window and Needs Attention now EXIST (PD-057,
-// PD-059). Nothing else does: there is still no automatic fulfilment, no automatic completion,
-// no no-show, no Under Review and no adjudication, so no copy in this module may say an
-// obligation is complete, fulfilled, unfulfilled, disputed, resolved or under review — and
-// Needs Attention itself must never be worded as any of them. It is an UNRESOLVED OPERATIONAL
-// STATE and nothing more: the window passed and nobody has answered.
+// TRUTHFUL AND NON-FINAL. Three things now EXIST: the receiver-response window and Needs
+// Attention (PD-057, PD-059), and — by Founder ruling, 2026-09-07 — receiver-reported NO-SHOW
+// and the derived UNDER REVIEW state. All three are UNRESOLVED OPERATIONAL STATES and nothing
+// more. Under Review means a human has to look; it does not mean anyone is at fault.
+//
+// What still does NOT exist: automatic fulfilment, automatic completion, adjudication, any
+// operator decision path, and every terminal outcome — Fulfilled, Unfulfilled, Completed,
+// Closed Without Resolution, Partially Fulfilled, Not Completed — plus reputation. **No copy in
+// this module may say an obligation is complete, fulfilled, unfulfilled, disputed or resolved,
+// may name a fault except to deny one, or may promise an outcome.** Needs Attention and Under
+// Review must never be worded as any of the above.
 //
 // The window is decided by the SERVER. This module receives `receiver_window_state` already
 // computed against the server's clock and never re-derives it from `Date.now()`; a device with a
@@ -45,9 +50,13 @@ export type ObligationStatus = 'pending' | 'delivered' | 'received' | 'not_recei
  * Needs Attention, and the state is the same for both participants only because one clock
  * decides it.
  *
- * `needs_attention` is an UNRESOLVED OPERATIONAL STATE. It is not Fulfilled, Unfulfilled,
- * Completed, Under Review, Disputed, a no-show or an adjudication; none of those exist, and no
- * copy below may imply otherwise.
+ * `needs_attention` is an UNRESOLVED OPERATIONAL STATE: the window passed and nobody answered.
+ * It is not Fulfilled, Unfulfilled, Completed, Disputed or an adjudication — none of which
+ * exist — and no copy below may imply otherwise.
+ *
+ * It is also NOT Under Review, which is a DIFFERENT state with a different cause: a window
+ * elapses on its own, while a review begins only because someone explicitly reported something.
+ * Under Review outranks this when both are true.
  */
 export type ReceiverWindowState = 'none' | 'awaiting_receiver' | 'needs_attention'
 
@@ -80,8 +89,9 @@ export interface ObligationView {
    *
    * DELIBERATELY UNAFFECTED BY THE DEADLINE. An elapsed window means "this needs attention", not
    * "you lost your right to answer" — and the server agrees: neither receiver RPC consults a
-   * deadline, so withdrawing the control here would hide an action that still works. Only a
-   * later Under Review / adjudication slice may close it, and it does not exist.
+   * deadline, so withdrawing the control here would hide an action that still works. Under
+   * Review does not close it either: a reported trade still accepts the receiver's answer, and
+   * only a later ADJUDICATION slice could close it — which does not exist.
    */
   canRespond: boolean
   /**

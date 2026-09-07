@@ -654,3 +654,113 @@ begin
                           'barter_obligations_starts_pending');
   perform pg_temp.chk('no_show', 'and no new trigger was added to it', '0', v_n::text);
 end $$;
+
+-- ── The eligibility column, asserted POSITIVE and asserted to flip ─────────
+-- Every other assertion on `can_report_no_show` in this suite is negative. Without a positive
+-- one, a regression that made `barter_can_report_no_show` return false unconditionally — a
+-- mis-ordered argument in the view's call, say — would pass the whole suite while the feature
+-- was simply unreachable in the UI.
+do $$
+declare
+  ou uuid := current_setting('b5b.ns_ou')::uuid;
+  ru uuid := current_setting('b5b.ns_ru')::uuid;
+  v_ag uuid; v_ob uuid;
+begin
+  select o_ag, o_ob into v_ag, v_ob from pg_temp.ns_arrived(ou, ru, 'ns10');
+
+  perform pg_temp.act(ru);
+  perform pg_temp.chk('no_show',
+    'the receiver IS offered the control on an arrived, unreported, live obligation',
+    'true', (select can_report_no_show::text from public.my_barter_obligations
+              where id = v_ob));
+
+  -- ROLE-BLIND BY CONSTRUCTION, and recorded so nobody reads it as a per-caller capability.
+  -- `barter_can_report_no_show` takes no identity, so the same row reads true for the DELIVERER
+  -- too. The RPC refuses them (42501) and `obligationView` refuses them again, so no control is
+  -- ever drawn — but a future consumer reading this column WITHOUT a role check would draw a
+  -- button that can only fail. Asserted, not assumed, so the property is visible.
+  perform pg_temp.act(ou);
+  perform pg_temp.chk('no_show',
+    'the column is role-blind — a consumer MUST apply the receiver check itself',
+    'true', (select can_report_no_show::text from public.my_barter_obligations
+              where id = v_ob));
+
+  -- It flips the moment a report exists, which is what stops the control inviting a duplicate.
+  perform pg_temp.act(ru);
+  perform public.report_barter_obligation_no_show(v_ob, 'nobody came');
+  perform pg_temp.chk('no_show',
+    'and it goes false the moment a report is filed, for the receiver',
+    'false', (select can_report_no_show::text from public.my_barter_obligations
+              where id = v_ob));
+  perform pg_temp.act(ou);
+  perform pg_temp.chk('no_show', 'and for the deliverer',
+    'false', (select can_report_no_show::text from public.my_barter_obligations
+              where id = v_ob));
+end $$;
+
+-- ── Report, THEN cancel: what a cancellation does to a filed report ───────
+-- PINS CURRENT BEHAVIOUR, and does not endorse it. Cancellation currently DOMINATES: it is
+-- refused only once something is delivered, so a reported-but-undelivered trade can still be
+-- cancelled — by either participant, including the one who was reported — and Under Review then
+-- derives false while the report row survives untouched.
+--
+-- **Whether that is right is an OPEN FOUNDER QUESTION** (should cancellation be refused once a
+-- report exists, or should the report stay visible on a cancelled trade?). It is asserted here
+-- so the answer, whichever it is, changes a failing test rather than passing silently.
+do $$
+declare
+  ou uuid := current_setting('b5b.ns_ou')::uuid;
+  ru uuid := current_setting('b5b.ns_ru')::uuid;
+  v_ag uuid; v_ob uuid; v_code text; v_n integer;
+begin
+  select o_ag, o_ob into v_ag, v_ob from pg_temp.ns_arrived(ou, ru, 'ns11');
+  perform pg_temp.act(ru);
+  perform public.report_barter_obligation_no_show(v_ob, 'they never arrived');
+  perform pg_temp.chk('no_show', 'fixture: the trade is under review before the cancellation',
+    'under_review', pg_temp.ns_report_state(ru, v_ob));
+
+  -- The REPORTED party cancels.
+  perform pg_temp.act(ou);
+  begin
+    perform public.cancel_barter_agreement(v_ag, null);
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('no_show',
+    'CURRENT BEHAVIOUR: the reported party can still cancel — open Founder question',
+    'OK', v_code);
+
+  -- The record itself is NOT destroyed. This is the half that must stay true whatever is ruled.
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_obligation_no_show_reports
+   where obligation_id = v_ob and reason = 'they never arrived';
+  perform pg_temp.chk('no_show',
+    'the report row SURVIVES the cancellation, unchanged', '1', v_n::text);
+  perform pg_temp.act(ru);
+  select count(*) into v_n from public.barter_obligation_no_show_reports
+   where obligation_id = v_ob;
+  perform pg_temp.chk('no_show', 'and the reporter can still read it', '1', v_n::text);
+  select count(*) into v_n from public.my_barter_obligations
+   where id = v_ob and no_show_reported_at is not null;
+  perform pg_temp.chk('no_show', 'and its timestamp is still exposed on the read model',
+    '1', v_n::text);
+
+  -- But the DERIVED state goes false, because cancellation dominates the rule.
+  perform pg_temp.chk('no_show',
+    'CURRENT BEHAVIOUR: the derived review state goes false — open Founder question',
+    'not_under_review', pg_temp.ns_report_state(ru, v_ob));
+end $$;
+
+-- ── The reports table is in no realtime publication ───────────────────────
+-- Same pin cancellation.test.sql carries for its sibling table: realtime is a delivery layer,
+-- and a later `alter publication ... add table` would quietly open a second, unscoped read
+-- channel for rows whose entire point is that exactly two people may read them.
+do $$
+declare v_n integer;
+begin
+  perform pg_temp.act_service();
+  select count(*) into v_n from pg_publication_tables
+   where schemaname = 'public' and tablename = 'barter_obligation_no_show_reports';
+  perform pg_temp.chk('no_show',
+    'the reports table is in NO realtime publication', '0', v_n::text);
+end $$;

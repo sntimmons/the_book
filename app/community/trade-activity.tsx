@@ -49,9 +49,13 @@ import { NEEDS_ATTENTION_LABEL, UNDER_REVIEW_LABEL } from '@/lib/obligationState
 // STILL REPORTING, NOT ACTING: the answer is given on the negotiation screen, so no receiver
 // action is offered here and this slice added no write of any kind.
 //
-// What does NOT exist is any completion, no-show, Under Review or adjudication model, so a
-// confirmed trade still has no fulfilment outcome to report. "Needs attention" is an unresolved
-// operational state and nothing more.
+// It now also reports UNDER REVIEW, the state a receiver-reported no-show or a `not_received`
+// answer puts a trade into (Founder ruling, 2026-09-07). Under Review outranks every window
+// state here and means only that a human has to look.
+//
+// What does NOT exist is any completion or adjudication model, so a confirmed trade still has no
+// fulfilment outcome to report. "Needs attention" and "Under review" are unresolved operational
+// states and nothing more.
 //
 // The feed is discovery: it filters `is_active = true` and shows the newest 50. An accepted
 // negotiation is durable workflow state. Hanging the End-negotiation control off a feed card

@@ -704,13 +704,22 @@ begin
                          'fulfilment_state', 'review_state');
   perform pg_temp.chk('cancellation',
     'no no-show, timeout, review or terminal-outcome column was added', '0', v_n::text);
+  -- PATTERN, not a name list. This previously named `report_barter_no_show`, a function that
+  -- never existed under that spelling — so it asserted the absence of nothing and would not have
+  -- noticed the real `report_barter_obligation_no_show` when 20261012000000 shipped it. The five
+  -- objects that Founder ruling legitimately added are exempted BY NAME, so a sixth still fails.
   select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
-     and p.proname in ('report_barter_no_show', 'adjudicate_barter_obligation',
-                       'complete_barter_agreement', 'expire_barter_obligation',
-                       'escalate_barter_agreement', 'resolve_barter_agreement');
+     and (p.proname ~* 'no_show|adjudicat|under_review|complete_barter|expire_barter'
+          or p.proname ~* 'escalate_barter|resolve_barter|fulfil|reputation')
+     and p.proname not in ('report_barter_obligation_no_show',
+                           'barter_obligation_under_review',
+                           'barter_can_report_no_show',
+                           'enforce_barter_no_show_append_only',
+                           'enforce_barter_no_show_consistent');
   perform pg_temp.chk('cancellation',
-    'no no-show, adjudication, completion or timeout function was added', '0', v_n::text);
+    'no adjudication, completion, escalation or timeout function beyond the ruled no-show',
+    '0', v_n::text);
   -- Cancelling produces no review opportunity and touches no reputation surface.
   select count(*) into v_n from information_schema.columns
    where table_schema = 'public' and table_name = 'barter_agreement_cancellations'

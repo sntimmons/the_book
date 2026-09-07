@@ -99,11 +99,17 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // more: the obligation stays `delivered`, the receiver may still answer however late, and an
 // answer clears the condition.
 //
+// A SCHEDULED obligation whose appointment has passed can also be reported as a NO-SHOW by its
+// receiver (Founder ruling, 2026-09-07), which puts that obligation into UNDER REVIEW — a human
+// has to look. It decides no fault, creates no outcome, and does not close the receiver's
+// controls: a reported trade still accepts their answer.
+//
 // That is all it can do. There is still no timeout TRANSITION (the window changes no status),
-// no automatic fulfilment or completion, no no-show, no Under Review, no adjudication and no
+// no automatic fulfilment or completion, no adjudication, no operator decision path and no
 // terminal outcome — for the obligation or for the agreement — so no copy on this screen may say
-// a trade is booked, complete, fulfilled, unfulfilled, disputed, resolved or under review. Until
-// it is cancelled the agreement stays "Trade confirmed" while its obligations progress.
+// a trade is booked, complete, fulfilled, unfulfilled, disputed or resolved, may name a fault
+// except to deny one, or may promise an outcome. Until it is cancelled the agreement stays
+// "Trade confirmed" while its obligations progress.
 
 const EMPTY_DRAFT: ProposalDraft = {
   ownerGives: '',

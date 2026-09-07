@@ -254,7 +254,7 @@ Verified by reading the files on `main` @ `26fb7fd` — **50 migrations**, newes
 
 | Capability | What is actually enforced | Where |
 |---|---|---|
-| Data model | **Nine barter tables.** `barter_offers` and `barter_interests` (the post and its responses), Slice 3a's `barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms` and `barter_version_acceptances` (the negotiated terms), PR #50's `barter_agreements` for the finalized trade, PR #54's `barter_obligations` — which PR #56 extended **in place** with a three-column delivery / receipt lifecycle rather than by adding a table — and PR #58's `barter_agreement_cancellations`. **No no-show, adjudication, Under Review, terminal-obligation-outcome or terminal-agreement-outcome table or column exists, and there is no Needs Attention column either** — PR #62's Needs Attention is **derived per read** from timestamps already stored and persists nothing (see the receiver-window paragraph below; `20261011000000` § 7 states the absence directly). | Origin: `20260829000000_canonical_live_baseline.sql`; proposal tables in `20260917000000_barter_proposal_versions.sql` §§ 1–4, narrowed by `20260925000000_negotiation_directed_terms.sql` § 1; agreement table in `20260927000000_barter_agreement_finalization.sql`; obligation table in `20261003000000_barter_obligations_foundation.sql`; lifecycle columns in `20261004000000_barter_obligation_delivery.sql`; cancellation table in `20261005000000_barter_pre_delivery_cancellation.sql:35-50` |
+| Data model | **Ten barter tables.** `barter_offers` and `barter_interests` (the post and its responses), Slice 3a's `barter_proposals`, `barter_proposal_versions`, `barter_proposal_terms` and `barter_version_acceptances` (the negotiated terms), PR #50's `barter_agreements` for the finalized trade, PR #54's `barter_obligations` — which PR #56 extended **in place** with a three-column delivery / receipt lifecycle rather than by adding a table — and PR #58's `barter_agreement_cancellations`. **No adjudication, terminal-obligation-outcome or terminal-agreement-outcome table or column exists, and there is no Needs Attention or Under Review column either** — the tenth table, `barter_obligation_no_show_reports`, records a receiver's REPORT and nothing else; Under Review is derived from it — PR #62's Needs Attention is **derived per read** from timestamps already stored and persists nothing (see the receiver-window paragraph below; `20261011000000` § 7 states the absence directly). | Origin: `20260829000000_canonical_live_baseline.sql`; proposal tables in `20260917000000_barter_proposal_versions.sql` §§ 1–4, narrowed by `20260925000000_negotiation_directed_terms.sql` § 1; agreement table in `20260927000000_barter_agreement_finalization.sql`; obligation table in `20261003000000_barter_obligations_foundation.sql`; lifecycle columns in `20261004000000_barter_obligation_delivery.sql`; cancellation table in `20261005000000_barter_pre_delivery_cancellation.sql:35-50` |
 | Response vocabulary | `pending → accepted \| declined \| released`, with `released_at`, `released_by` and `release_reason` required together and null together. | `20260909000000_barter_interest_release.sql` (status + completeness check constraints) |
 | Write identity | `caller_provider_id()` derives the provider from `auth.uid()`; nothing client-supplied enters the comparison. Foreign-field writes are governed by an **allow-list** trigger, `created_at` is server-stamped, delete guards preserve counterparty history (PD-043), and `anon` holds nothing on either table. | `20260906000000_barter_integrity_slice1.sql` §§ 1–7, 10 |
 | Interest rate limit | 15 new interests per provider per rolling 24h, counted from `rate_limit_log` so delete-and-resend cannot reset the window (PD-045). | `20260906000000` § 9 (`enforce_barter_interest_rate_limit`) |
@@ -466,9 +466,19 @@ not copied here. Two gaps matter most to anyone reading this document cold:
   events into an outcome remains unbuilt, and is asserted absent rather than assumed: **no 7-day
   timeout TRANSITION (the window creates no status change — an elapsed window leaves the row
   `delivered` and the receiver may still answer), no automatic fulfilment, no automatic
-  completion, no no-show, no Under Review, no adjudication, no terminal obligation outcome
+  completion, no adjudication, no operator decision path, no terminal obligation outcome
   (Fulfilled / Unfulfilled / Closed Without Resolution), no terminal agreement outcome, no
-  reviews-on-barter, no reputation and no push notifications.** PD-046 § 7.3–7.5 and § 7 of the
+  reviews-on-barter, no reputation and no push notifications.**
+
+  **NO-SHOW AND UNDER REVIEW ARE THE EXCEPTIONS, AND THEY ARE NOT OUTCOMES EITHER.** A receiver
+  may now report that a SCHEDULED service did not happen, and that report — or a plain
+  `not_received` answer — puts the obligation into **Under Review**, meaning a human must look.
+  Under Review is derived per read like Needs Attention: no status value, no column, no case
+  table, and nothing moves on a timer. It decides no fault and produces no outcome, and the
+  receiver's controls stay live beneath it.
+  (`supabase/migrations/20261012000000_barter_no_show_under_review.sql`,
+  `20261013000000_no_show_eligibility_single_source.sql`,
+  `20261014000000_no_show_lock_order.sql`; `supabase/tests/no_show_under_review.test.sql`.) PD-046 § 7.3–7.5 and § 7 of the
   contract still describe that work with no schema behind it; PD-057 is now **implemented** and
   its expiry still never means Fulfilled or Completed — asserted directly, not assumed
   (`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`;

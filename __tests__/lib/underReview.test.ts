@@ -149,7 +149,7 @@ function facts(over: Partial<TradeRowFacts> = {}): TradeRowFacts {
 describe('tradeRowState — Under Review outranks every window state', () => {
   const WINDOWS = ['none', 'awaiting_receiver', 'needs_attention'] as const
 
-  it('wins over all nine window combinations', () => {
+  it('takes the headline in all nine window combinations', () => {
     for (const mine of WINDOWS) {
       for (const theirs of WINDOWS) {
         const s = tradeRowState(
@@ -157,15 +157,48 @@ describe('tradeRowState — Under Review outranks every window state', () => {
             myResponseState: mine,
             theirResponseState: theirs,
             agreementUnderReview: true,
+            myUnderReview: true,
             myResponseDeadline: '2026-10-17T09:00:00.000Z',
           }),
         )
         expect(s.attention).toBe(UNDER_REVIEW_LABEL)
         assertTruthful(s.note)
-        // No countdown beside "needs review": the answer is no longer what settles it.
+        // The viewer's OWN obligation is the one under review, so their answer genuinely is no
+        // longer what settles it and a countdown would say otherwise.
         expect(s.deadline).toBeNull()
       }
     }
+  })
+
+  // FOUNDER RULING 2026-09-07, applied to Under Review. The ruling is about SCOPE, not about the
+  // Needs Attention label: an agreement-level headline may lead, but it must never delete the
+  // viewer's own live obligation-level action. This is the case the first cut got wrong.
+  it('does NOT suppress the viewer’s own live answer when the review is on the other side', () => {
+    const s = tradeRowState(
+      facts({
+        myResponseState: 'awaiting_receiver',
+        theirResponseState: 'none',
+        agreementUnderReview: true,
+        myUnderReview: false,
+        myResponseDeadline: '2026-10-17T09:00:00.000Z',
+      }),
+    )
+    // Agreement-level headline still leads — the higher-severity trade state.
+    expect(s.attention).toBe(UNDER_REVIEW_LABEL)
+    // But the viewer's own action and deadline survive it.
+    expect(s.deadline).toEqual({ label: 'Please respond by', at: '2026-10-17T09:00:00.000Z' })
+    expect(s.note.toLowerCase()).toContain('needs review')
+    expect(s.note.toLowerCase()).toContain('you still need to say')
+    expect(s.note).toMatch(/open this to/)
+    assertTruthful(s.note)
+  })
+
+  it('says only the review sentence when the viewer owes nothing', () => {
+    const s = tradeRowState(
+      facts({ myResponseState: 'none', agreementUnderReview: true, myUnderReview: false }),
+    )
+    expect(s.note).not.toMatch(/open this to/)
+    expect(s.deadline).toBeNull()
   })
 
   it('says a human is needed and that nothing has been decided', () => {
@@ -178,7 +211,7 @@ describe('tradeRowState — Under Review outranks every window state', () => {
   it('is still outranked by cancellation', () => {
     for (const c of [{ iCancelled: true }, { theyCancelled: true },
       { iCancelled: true, theyCancelled: true }]) {
-      const s = tradeRowState(facts({ agreementUnderReview: true, ...c }))
+      const s = tradeRowState(facts({ agreementUnderReview: true, myUnderReview: true, ...c }))
       expect(s.attention).toBeNull()
       expect(s.note.toLowerCase()).toContain('cancelled')
       expect(s.deadline).toBeNull()

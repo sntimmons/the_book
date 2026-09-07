@@ -292,8 +292,15 @@ deliberately out of PR #62's scope):
   same deny-by-default treatment while preserving privileged DELETE. Evidence and scope are in
   [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md).
 
-Still not built: automatic fulfilment or completion; **no-show**;
-**Under Review**; adjudication; terminal obligation outcomes
+**No-show reporting and Under Review now exist too** (Founder ruling, 2026-09-07): a receiver may
+report that a SCHEDULED service did not happen, and that report — or a plain `not_received` —
+puts the obligation into **Under Review**, meaning a human must look. Derived per read like Needs
+Attention: no status value, no column, no case table, nothing on a timer. It decides no fault and
+manufactures no outcome, and the receiver keeps their controls.
+
+Still not built: automatic fulfilment or completion; **adjudication and any operator decision
+path** — which is what an Under Review case will eventually need, and is the next slice, not this
+one; terminal obligation outcomes
 (Fulfilled / Unfulfilled / Closed Without Resolution); terminal agreement outcomes
 (**PD-046** § 7.3–7.5, contract §§ 6–7); **no push, device or email notification work** — which
 is the half of **PD-059** that remains deliberately absent, and PR #58's cancellation notice is a

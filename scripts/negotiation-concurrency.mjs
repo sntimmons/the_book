@@ -1197,6 +1197,12 @@ async function raceNoShowVsCancel() {
   // The cancellation may win outright, or the report may land first and the cancellation still
   // succeed — a no-show report does not block the ordinary exit, because nothing was delivered.
   // What must NEVER happen is a report written against an already-cancelled trade.
+  // A DEADLOCK MUST FAIL THIS SCENARIO, NOT BE ABSORBED BY IT. Every other assertion here is
+  // conditional on which RPC won, so if PostgreSQL aborts one side with 40P01 they would all
+  // still pass while both acts failed. These two are unconditional.
+  chk('at least one of the two acts succeeded', 'true', String(n.opOk || c.opOk))
+  chk('neither act deadlocked', 'true',
+    String(n.timing?.code !== '40P01' && c.timing?.code !== '40P01'))
   chk('a report is never written against an already-cancelled trade',
     'false', String(cancels.n !== '0' && rows.n === '1' && !n.opOk))
   chk('at most one report exists', 'true', String(rows.n === '0' || rows.n === '1'))

@@ -686,14 +686,21 @@ begin
   -- that slice added is pinned by supabase/tests/cancellation.test.sql; what it did NOT add is
   -- still pinned here. Obligation-level cancellation remains absent — cancelling is an
   -- agreement-level act and decides nothing about either obligation.
+  -- PATTERN, not a name list, for the same reason as cancellation.test.sql: the old list named
+  -- `report_barter_no_show`, which never existed under that spelling, so it proved nothing. The
+  -- five objects Founder ruling added in 20261012000000 are exempted by name; a sixth fails.
   select count(*) into v_n from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
-     and p.proname in ('cancel_barter_obligation',
-                       'report_barter_no_show', 'adjudicate_barter_obligation',
-                       'complete_barter_agreement', 'expire_barter_obligation');
+     and (p.proname ~* 'cancel_barter_obligation|no_show|adjudicat|under_review'
+          or p.proname ~* 'complete_barter|expire_barter|fulfil|reputation')
+     and p.proname not in ('report_barter_obligation_no_show',
+                           'barter_obligation_under_review',
+                           'barter_can_report_no_show',
+                           'enforce_barter_no_show_append_only',
+                           'enforce_barter_no_show_consistent');
   perform pg_temp.chk('obligation',
-    'no no-show, adjudication, completion or obligation-cancellation function was added',
+    'no adjudication, completion or obligation-cancellation function beyond the ruled no-show',
     '0', v_n::text);
   -- ANCHORED the same way: prove the table name matches something before asserting an absence
   -- against it.
