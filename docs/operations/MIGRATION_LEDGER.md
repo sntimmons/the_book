@@ -852,13 +852,15 @@ against the linked non-production project (`wcoyjeklscuqsumpjpfo`); local and re
 and never queried; no credential for it was read, and the only Supabase values present in the
 environment were the non-production `TEST_SUPABASE_*` keys.
 
-## 2026-09-07 — `20261012000000` + `20261013000000` + `20261014000000` **APPLIED to non-production 2026-09-07** (No-show + Under Review foundation, PR TBD)
+## 2026-09-07 — `20261012000000` + `20261013000000` + `20261014000000` **APPLIED to non-production 2026-09-07** (No-show + Under Review foundation, PR #64)
 
 > **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`) on 2026-09-07.**
 > `supabase migration list --linked`: local and remote agree on all **53** versions, no gap and
 > no drift. **B5B: 1074/1074 passed, 0 failed**, of which the new `no_show` suite is
 > `supabase/tests/no_show_under_review.test.sql`. **Concurrency: 124/124 passed**
-> (`scripts/negotiation-concurrency.mjs`), including four new no-show races. Both harnesses
+> (`scripts/negotiation-concurrency.mjs`), including four new no-show races. **These figures are
+> a snapshot at THIS apply**; the later entry below supersedes them after PD-062/PD-063 added
+> migrations and assertions (56 versions, B5B 1089/1089, concurrency 129/129). Both harnesses
 > report zero residue, and the concurrency harness now counts the new table in its residue
 > sweep. Production (`kxregomuawwcqvisuhtr`) was never targeted and never queried.
 
@@ -959,9 +961,16 @@ remains forbidden.
 
 ## 2026-09-07 — `20261015000000` … `20261017000000` **APPLIED to non-production 2026-09-07** (PD-062 / PD-063, PR #64)
 
-> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`).** 57 versions, local
-> and remote agree, no drift. **B5B: 1089/1089 passed, 0 failed.** Production
+> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`).** **56** versions,
+> local and remote agree, no drift, verified by `supabase migration list --linked`. **B5B:
+> 1089/1089 passed, 0 failed. Concurrency: 129/129 passed, 0 failed.** Production
 > (`kxregomuawwcqvisuhtr`) never targeted, never queried.
+>
+> **The PD-063 race is PROVEN, not argued.** `scripts/negotiation-concurrency.mjs` race #20 now
+> asserts, unconditionally: neither act deadlocked; exactly one of the two succeeded; the end
+> state is exactly one of *cancelled-with-no-report* or *reported-with-no-cancellation*; a
+> cancellation and a report NEVER both exist; and the loser carries the mapped code for the
+> state that won (`PT423` when the report won, `PT409` when the cancellation did).
 
 **PD-063 — Under Review outranks the ordinary exit.** `20261015000000` makes
 `cancel_barter_agreement` refuse with the new SQLSTATE **`PT423`** once any no-show report exists
