@@ -2,7 +2,7 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** PR #62 (previous edit: PR #61). The reconciliation that made the most recent
+**Last edited by:** PR #64 (previous edit: PR #62). The reconciliation that made the most recent
 corrections was **not given its own PR number**, so this field names the last mutation whose
 number is known.
 
@@ -27,6 +27,10 @@ number is known.
 > window and Needs Attention shipped, that they close no question here, and that the two rulings
 > the index still called undocumented now carry PD-060 and PD-061. It re-verified nothing carried
 > by OQ-011, OQ-036 or OQ-070, and it had no shell with which to confirm that SHA.
+> **It did not move for PR #64 (`23df39c`) either, and for the same reason.** The reconciliation
+> after that merge edited only the closed index below — to record that no-show reporting and the
+> Under Review foundation shipped and close no question here. It re-verified nothing carried by
+> OQ-011, OQ-036 or OQ-070, and it had no shell with which to confirm that SHA.
 > `Last edited by:` records the edit; the anchor records the verification.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
@@ -424,6 +428,13 @@ explicit **no-show** enters **Under Review**; an explicit **`not_received`** ent
 Review** (PD-062). The escalation question will be settled with the adjudication / review
 workflow. It is filed here rather than as a numbered OQ because it is a known gap in a decided
 area, not an open product question anyone has asked — assign an OQ number if that is preferred.
+**Still true on `main` @ `23df39c`, after PR #64 merged**: the two escalation shapes the slice
+declined to invent — an automatic second timer, and a manual "send this to review" action needing
+an actor nobody has defined — are recorded in the migration's own header
+(`supabase/migrations/20261012000000_barter_no_show_under_review.sql:38-52`), and § 8 of that file
+states the absences directly. **A second Founder ruling of the same date belongs beside it:** a
+no-show **conversation / in-thread notice is DEFERRED**, to be decided with the adjudication /
+review workflow. Neither is an open question anyone has filed; both are absences by decision.
 
 Nothing here was closed by repository evidence. **OQ-006** and **OQ-007** remain Open, and
 PD-049 … PD-061 closed no question in this ledger — they answered questions nobody had filed.
@@ -462,3 +473,14 @@ Activity plus the confirmed-trade detail, with the feed card and offer-responses
 are recorded **inside PD-059**, because they refine an existing locked decision rather than
 opening or settling a question. **A migration is an implementation, not an approval**, and nothing
 in PR #62 closes an entry above by itself: **OQ-006** and **OQ-007** remain Open.
+
+**PR #64 (`23df39c`) closed no question here either, and did not reopen one.** It implements
+**PD-062** (no-show reporting, Under Review, the participant-visible reason) and **PD-063** (Under
+Review outranks the ordinary exit), both recorded as locked decisions in
+[PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md), and **neither closes, narrows or reopens an entry
+above**. **OQ-004** stays Closed by PD-046 on 2026-09-04 — PD-062 supersedes the
+`no-show → Needs Attention → adjudication → Unfulfilled` **route** described in
+[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7.4, which is marked superseded there, but it
+does not disturb the question's closure or the decision that closed it. **OQ-006** and **OQ-007**
+remain **Open**, for the reasons recorded on each. What PR #64 leaves undecided is recorded
+immediately above rather than as a new numbered entry, because no one has filed it as a question.

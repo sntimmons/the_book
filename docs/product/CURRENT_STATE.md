@@ -1,12 +1,13 @@
 # Current State — what is true on `main` today
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `26fb7fd` (2026-09-07) — squash-merge of PR #62. The SHA and the
-PR number were **supplied to this reconciliation**, which had no shell and could not confirm
-either independently; the source claims below were read from files on that tree.
-**Last edited by:** PR #62 (previous edit: PR #60). PR #62 carried the prose below in with its own
-code; the reconciliation that corrected it afterwards was **not given its own PR number**, so this
-field names the last mutation whose number is known.
+**Reconciled against:** `main` @ `23df39c` (2026-09-07) — squash-merge of PR #64, "feat: no-show
+reporting and the Under Review foundation". The SHA, the PR number, the post-merge CI run and the
+migration-list state were **supplied to this reconciliation**, which had no shell and could not
+confirm any of them independently; every source claim below was read from files on that tree.
+**Last edited by:** PR #64 (previous edit: PR #62). PR #64 carried much of the prose below in with
+its own code; the reconciliation that corrected it afterwards was **not given its own PR number**,
+so this field names the last mutation whose number is known.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -122,17 +123,20 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 Docs: **[supabase/tests/README.md](../../supabase/tests/README.md)**.
 
-**Migration ledger.** The repository holds **50 migration files** — counted from
+**Migration ledger.** The repository holds **57 migration files** — counted from
 `supabase/migrations/*.sql`, newest
-`20261011000000_barter_receiver_window_needs_attention.sql` — and
+`20261018000000_no_show_created_at_server_stamped.sql` — and
 that part is repository-provable. Ten files, `20260917000000` … `20260926000000`, are Slice 3a
 (PR #49); four files, `20260927000000` … `20260930000000`, are Agreement Finalization (PR #50);
 two files, `20261001000000` … `20261002000000`, are Proposal Timing Extension (PR #52);
 `20261003000000` is the Barter Obligations Foundation (PR #54); `20261004000000` is
 Obligation Delivery and Receiver Confirmation (PR #56); **six files,
-`20261005000000` … `20261010000000`, are Pre-Delivery Cancellation (PR #58)**; and
+`20261005000000` … `20261010000000`, are Pre-Delivery Cancellation (PR #58)**;
 **`20261011000000` is the Receiver-Response Window and Needs Attention (PR #62)** — one file,
-which creates no column, table, trigger, RPC or job.
+which creates no column, table, trigger, RPC or job; and **seven files,
+`20261012000000` … `20261018000000`, are No-Show Reporting and the Under Review Foundation
+(PR #64)**, of which `20261012000000` is the slice and the other six are forward corrections
+and the two PD-062 / PD-063 halves.
 The ledger's § Prevention records why these features landed as forward correction chains:
 after a migration is applied to non-production, fixes go into a new migration rather than an
 edited historical file. Process and the dated record:
@@ -140,10 +144,13 @@ edited historical file. Process and the dated record:
 
 > **Read the ledger before redefining `public.cancel_barter_agreement`.** It was replaced **five
 > times** inside PR #58 — `20261005000000`, `20261006000000`, `20261007000000`, `20261008000000`,
-> `20261009000000` — and its **current live definition is
-> `20261010000000_cancellation_notice_neutral_copy.sql`**. An author who redefines it from any
-> earlier file would silently delete the in-thread signal and restore the "Both providers agreed
-> to cancel" wording that `20261010000000` was written to remove. This is not hypothetical:
+> `20261009000000`, then `20261010000000` — and **PR #64 replaced it a sixth time, so its current
+> live definition is now
+> `20261015000000_under_review_precedes_cancellation.sql`**, which adds the PD-063 `PT423`
+> refusal. An author who redefines it from any
+> earlier file would silently delete the PD-063 refusal, the in-thread signal, and restore the
+> "Both providers agreed to cancel" wording that `20261010000000` was written to remove. This is
+> not hypothetical:
 > `20261008000000` exists precisely because `20261007000000`'s body was written from a
 > **superseded** definition of `release_barter_interest` and dropped four of its properties,
 > including the isolation that stops a notice failure from vetoing the cancellation. The ledger's
@@ -154,6 +161,19 @@ edited historical file. Process and the dated record:
 > `20261011000000_barter_receiver_window_needs_attention.sql`, not the `20261004000000` that
 > first narrowed it.** Copying the older body forward would silently re-open a `service_role`
 > rewrite of the agreed trade.
+>
+> **PR #64 added four more live-definition hazards of the same shape**, each recorded in the
+> ledger's table and each verifiable from the files: `public.report_barter_obligation_no_show`
+> lives in `20261014000000_no_show_lock_order.sql`, **not** the `20261012000000` that created it —
+> and `20261012000000` § 6 states a lock-order contract that is **false** and must not be copied
+> forward; `public.enforce_barter_cancellation_consistent` lives in
+> `20261017000000_restore_cancellation_actor_binding.sql`, which exists **because**
+> `20261015000000` wrote that trigger from `20261005000000` instead of its live `20261006000000`
+> and silently reverted the actor binding and the server-stamped `created_at`;
+> `public.enforce_barter_no_show_consistent` lives in
+> `20261018000000_no_show_created_at_server_stamped.sql`; and both read models are recreated in
+> full, so `public.my_barter_obligations` lives in `20261016000000_no_show_reason_read_model.sql`
+> and `public.my_trade_activity` in `20261013000000_no_show_eligibility_single_source.sql`.
 
 **Applied where.** All six PR #58 migrations were applied to the **linked non-production project
 only** (`wcoyjeklscuqsumpjpfo`), confirmed with `supabase migration list`: local and remote match
@@ -165,6 +185,12 @@ the live catalog rather than the file
 first recorded in the ledger and has since been **re-verified directly**: `supabase migration
 list` against the linked non-production project returns 50 versions with local == remote and no
 drift, newest `20261011000000`.
+**PR #64's seven migrations, `20261012000000` … `20261018000000`, were applied to the same
+non-production project on 2026-09-07** and are dated per-migration in
+[MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) (§ `20261012000000` + `20261013000000` +
+`20261014000000`, and § `20261015000000` … `20261018000000`). The state **supplied to this
+reconciliation** is **57 versions, local == remote, no drift**; this document had no shell with
+which to re-run `supabase migration list`, so that line is attested rather than observed here.
 **Production was never touched and was never queried**, and remains out of scope. Every harness
 that reaches a database refuses the production ref outright (`scripts/prodRef.mjs`).
 
@@ -177,9 +203,13 @@ interchangeable:
   typecheck, lint and unit tests; the `db-security` job ran the non-production B5B harness.
   The latest run recorded here is **34019463222** on `5b1a7a9` — `check` and `db-security` both
   green, confirmed with `gh run view` after PR #58 merged. **No CI run number is recorded anywhere
-  in this repository for PR #62 / `26fb7fd`**, and this reconciliation had no shell with which to
-  fetch one, so nothing is asserted about post-PR-#62 CI. Read the current status from the latest
-  `db-security` run rather than from this document.
+  in this repository for PR #62 / `26fb7fd`**, and the reconciliation that wrote that sentence had
+  no shell with which to fetch one; **it is superseded** — the post-merge run for `26fb7fd` is
+  34155130832, **success** (see the verification note at the foot of this document). **The latest
+  `main` CI run recorded here is now 34165346538 on `23df39c`, conclusion `success`**, the
+  post-merge run for PR #64. That run number was **supplied to this reconciliation**, which had no
+  shell with which to confirm it. Read the current status from the latest `db-security` run rather
+  than from this document.
 - **The last recorded local B5B execution** is still the post-apply run logged against
   `20261004000000` in
   [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) (2026-09-05): **730/730 passed,
@@ -196,15 +226,37 @@ interchangeable:
   DST-straddling determinism check, and the full `service_role` freeze matrix — and
   **concurrency 102/102**, re-run because § 3b replaced a live trigger body every delivery,
   receipt and cancellation race passes through. Zero residue on both.
+  **For PR #64 the post-apply figures are recorded against `20261015000000` … `20261018000000`**
+  in the ledger, and they supersede the intermediate snapshot taken at `20261014000000`
+  (1074/1074, concurrency 124/124): **B5B 1097/1097 passed, 0 failed** and **concurrency 129/129
+  passed, 0 failed**, zero residue on both, against **57** applied versions with local == remote
+  and no drift. The concurrency harness's race #20 is where the PD-063 outcome is proven rather
+  than argued — and it is the assertion that caught a real `40P01` deadlock before
+  `20261014000000` fixed the lock order.
   **That the files exist does not establish that they pass**; this document does not run tests,
   and every figure above is a run recorded elsewhere rather than one observed here.
 
-The suite grew enormously across these slices — 88 → 730 assertions as the barter work landed —
+The suite grew enormously across these slices — 88 → 1097 assertions as the barter work landed,
+per the runs recorded in [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) —
 which is exactly why the count is read from a run rather than from this document. The
 authoritative description of the harness lives in
 [supabase/tests/README.md](../../supabase/tests/README.md).
 
-**Why this document's anchor is now `26fb7fd`.** The anchor before it was `5b1a7a9` (PR #58),
+**Why this document's anchor is now `23df39c`.** The anchor before it was `26fb7fd` (PR #62).
+**PR #64 changed facts *this document* asserts**, so the anchor moves again: the migration chain
+went from 50 files to **57**, a **tenth barter table** appeared
+(`barter_obligation_no_show_reports`), a fourth obligation RPC appeared
+(`report_barter_obligation_no_show`), a second derived read state appeared (**Under Review**), and
+the **live definitions of four objects moved** — `cancel_barter_agreement`,
+`enforce_barter_cancellation_consistent`, `enforce_barter_no_show_consistent` and both read
+models. **Like the PR #62 move, `23df39c` was supplied to a shell-less reconciliation and then
+VERIFIED**: `gh pr view 64` (MERGED, squash, base `ddcb229`), `git rev-parse` (local `main` ==
+`origin/main`, tree clean), `gh run list` (post-merge run 34165346538, success) and
+`supabase migration list --linked` (57 versions, local == remote, no drift). B5B 1097/1097 and
+concurrency 129/129 were re-run against merged `main`.
+
+The reasoning for the previous move is kept below, because it is the record of why the anchor sits
+where each step left it. The anchor before `26fb7fd` was `5b1a7a9` (PR #58),
 which had itself moved from `46c0bef` (PR #56) because PR #58 took the migration chain from 43
 files to 49, added a ninth barter table, gave an official agreement an ordinary pre-delivery exit
 and renamed the Trade Activity grouping. **PR #62 changed facts *this document* asserts** in the
@@ -213,8 +265,9 @@ same way: the chain went from 49 files to 50, two new read surfaces appeared
 window and Needs Attention became real, and the live body of
 `enforce_barter_obligations_immutable` changed so the obligation's contract fields are frozen
 against `service_role` too. So the anchor moves to PR #62's squash-merge commit, `26fb7fd`.
-**Unlike the two moves before it, that SHA was supplied rather than confirmed** — this
-reconciliation had no shell and could not run `git rev-parse` or `gh`.
+That SHA was supplied to a shell-less reconciliation and then **verified** — `gh pr view 62`
+(MERGED, squash, `26fb7fd`), `git rev-parse` (local `main` == `origin/main`) and
+`gh run list` (post-merge run 34155130832, success).
 
 [ROADMAP.md](ROADMAP.md) remains authoritative for **which** merge delivered **which**
 capability — it carries a Completed row per delivered capability, each citing its merge,
@@ -242,15 +295,15 @@ barter surface as **REAL (beta)** (line 57) — offers, interests and the commun
 What was undecided when that classification was written was the barter **product model**: how a
 trade binds to bookings, messaging, reviews and completion. For the first Houston closed beta
 that model is now locked in **[BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md)**, which is
-authoritative for it; the decisions behind it are **PD-030 … PD-061** in
+authoritative for it; the decisions behind it are **PD-030 … PD-063** in
 [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md). Neither is restated here.
 
 This section records **what is built on `main`** and **what is not**.
 
 ### What is built
 
-Verified by reading the files on `main` @ `26fb7fd` — **50 migrations**, newest
-`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`.
+Verified by reading the files on `main` @ `23df39c` — **57 migrations**, newest
+`supabase/migrations/20261018000000_no_show_created_at_server_stamped.sql`.
 
 | Capability | What is actually enforced | Where |
 |---|---|---|
@@ -280,6 +333,10 @@ Verified by reading the files on `main` @ `26fb7fd` — **50 migrations**, newes
 | Cancellation notices in the pair thread | Cancelling writes a **durable, best-effort system message** (`sender_id is null`) into the pair's **existing canonical provider-pair conversation**, addressed to the participant who did **not** act. **These are not push, device or email notifications** — PD-059 is unchanged. First act: `The trade for "X" for "Y" was cancelled by one provider.` Second act, deliberately neutral: `Both providers cancelled the trade for "X" for "Y".` — because two acts prove each provider cancelled, **not** that either assented to the other's decision. **Exactly one notice per transition** (the idempotent branch returns before the insert), **no conversation is ever created**, and a notice failure **cannot veto the cancellation**: the insert is wrapped in its own `exception when others then null` handler. | `20261009000000_pair_conversation_notice.sql:35-111` (the one writer, revoked from every client role) and `:113-222`; live copy in `20261010000000_cancellation_notice_neutral_copy.sql:121-133`, rationale `:11-23`; the `"X" for "Y"` label is `barter_terms_label` (`20260914000000_trade_activity_corrections.sql:148-157`) |
 | Cancelled trades stay visible | A cancelled trade remains in Trade Activity under the broader **"Trades"** grouping — **renamed from "Confirmed trades"**, because the group now holds a mixed set and a heading is read before the rows beneath it. The per-row note carries the state instead (`Trade cancelled…`), and the row offers **no** cancellation control: the act is taken on the negotiation screen, the one place that can check the delivery precondition. | `lib/tradeActivity.ts:158-192` (section copy and the rename rationale), `:252-265` (the per-row note, total over the cancellation vocabulary), `:414-437` (the confirmed row's action, badge and deadline); row facts assembled in `app/community/trade-activity.tsx:238-242` |
 | What cancellation does **not** mean | Cancellation is an **agreement-level** event. It decides nothing about whether either obligation was fulfilled, writes **no** obligation outcome, and implies **no** no-show, unfulfilled finding, dispute, adjudication or reliability verdict — none of which exist. B5B asserts the **absence** of the whole vocabulary rather than assuming it. | `20261005000000:25-29`; absence assertions in `supabase/tests/cancellation.test.sql:700-713`; client rule in `lib/tradeCancellation.ts:1-13` |
+| No-show reporting (PD-062) | Only an obligation's **receiver** may report that a **scheduled** service did not happen, and only **at or after `scheduled_at`**. **Server time is authoritative**: the RPC has no `p_as_of` parameter and compares `now()` — the transaction clock — to `scheduled_at`, so no client-supplied time reaches the comparison. `scheduled_at is null` means there is no appointment to miss and the report is refused. The report is **immutable participant-reported history**: append-only by trigger, at most one per obligation, `created_at` **stamped by the trigger on every insert path** rather than merely defaulted, and a repeat call **returns the original timestamp** without re-stamping or merging a second reason. `authenticated` holds no `INSERT`/`UPDATE`/`DELETE` and there is no write policy — the one `SECURITY DEFINER` RPC is the only writer. Delivery neither blocks a report nor is erased by one. | `20261012000000_barter_no_show_under_review.sql:64-108` (table, one-per-obligation, reason bound), `:110-139` (append-only), `:141-214` (the consistency trigger, superseded by `20261018000000:34-89` which adds the server stamp), `:237-240` (no write grant); **live RPC body `20261014000000_no_show_lock_order.sql:56-176`**, server-time comparison at `:129`; `supabase/tests/no_show_under_review.test.sql` |
+| Under Review — derived, and not a finding of fault | **Under Review is derived per read, not stored**: `barter_obligation_under_review(status, a report exists, cancelled)` is `(report exists) OR (status = 'not_received')`, minus cancelled. **No status value, no column, no case table and nothing on a timer** — the four-value `status` vocabulary is unchanged. It means **a human must look**, never that anyone is at fault, and it is not Fulfilled, Unfulfilled, Completed, Closed Without Resolution or any terminal outcome, none of which exist. **A no-show does not produce Needs Attention** either — that is a separate route, and PD-062 states the absence directly. The receiver's controls stay live beneath it. Exposed as `under_review` / `no_show_reported_at` / `no_show_reason` / `can_report_no_show` on `my_barter_obligations`, and role-relative plus an `agreement_under_review` **display roll-up** on `my_trade_activity`. | `20261012000000:242-287` (the rule), `:419-473` and `20261013000000:79-122`, `20261016000000:27-87` (the read models); `20261013000000:34-76` (`barter_can_report_no_show`, the one place the offer rule is written); client copy in `lib/obligationState.ts:303-370`, `:493-510`, list copy in `lib/tradeActivity.ts:351-375`, `:455-470`, `:498-514` |
+| Under Review outranks the ordinary exit (PD-063) | Once **any** no-show report exists on the agreement, `cancel_barter_agreement` refuses with the **new SQLSTATE `PT423`**, and `enforce_barter_cancellation_consistent` carries the same rule as defence in depth; the client stops drawing the control. In the other direction, a cancellation that commits first refuses a later report with **`PT409`**. A race resolves to **exactly one** state because **both writers take the `barter_agreements` row lock first** — `20261014000000` moved the no-show RPC onto that order after a real `40P01` deadlock was reproduced. Refusing cancellation removes one exit and **decides nothing**. | `20261015000000_under_review_precedes_cancellation.sql` (the RPC, and the live body of `cancel_barter_agreement`); `20261017000000_restore_cancellation_actor_binding.sql` (the live body of the trigger); `PT409` refusal at `20261014000000:116-120`; `PT423` constant `lib/barterErrors.ts:160`; client gate `lib/tradeCancellation.ts:138-162`; race in `scripts/negotiation-concurrency.mjs` |
+| The no-show reason is shared context | Optional free text, **1–200 characters**, no taxonomy, immutable, and **not merged on a repeat call**. It is **visible to both participants** — the reports table's participant-read policy admits the deliverer as well as the reporter, and `my_barter_obligations.no_show_reason` is the route to it through `security_invoker`, so no policy was widened. The UI attributes it as the **reporting participant's statement**, never a platform finding, and the sharing is disclosed **above** the input before the writer commits (the PD-060 precedent). It is deliberately **absent from `my_trade_activity`**: a list row is the wrong place for someone's account of what happened. | `20261012000000:75-79`, `:216-240` (policy); `20261016000000:1-25` (the ruling and why no policy changed), `:70-91`; `lib/obligationState.ts:415-439` (`NO_SHOW_REASON_NOTE`, validation, payload), `:480-491` (`noShowStatement`); disclosure rendered above the input at `app/community/negotiation/[id].tsx:678-707`, the statement at `:712-716` |
 
 **The RLS policies on `barter_offers` and `barter_interests` are still the Slice 1 set.**
 `barter_offers_provider_read` and `barter_interests_offer_owner_read` on reads;
@@ -316,21 +373,25 @@ per-row capability and copy rules (`tradeRowState`) that **both** barter surface
 
 For the negotiation itself: `lib/negotiation.ts` is the data layer (reads come from
 `my_barter_proposals`, the proposal tables and, after agreement finalization, the **view**
-`my_barter_obligations` rather than the `barter_obligations` table — `lib/negotiation.ts:288-297`,
-so the PD-057 window arrives already derived server-side and is never recomputed here; every write
+`my_barter_obligations` rather than the `barter_obligations` table — `lib/negotiation.ts:318-326`,
+so the PD-057 window, the derived Under Review state, `can_report_no_show` and the reason all
+arrive already decided server-side and none is recomputed here; every write
 is one of the three negotiation RPCs, the finalization RPC,
-one of the three obligation RPCs — `lib/negotiation.ts:411-456`, each sending the obligation id
-and nothing else — or the cancellation RPC, `lib/negotiation.ts:458-481`, which sends the
-agreement id and an optional reason and cannot name the actor, the time or the outcome),
+**one of the four obligation RPCs** — `lib/negotiation.ts:459-524`, the first three sending the
+obligation id and nothing else and the fourth, `reportObligationNoShow` (`:514-524`), sending the
+obligation id and an optional reason — or the cancellation RPC, `lib/negotiation.ts:539-549`, which
+sends the agreement id and an optional reason and cannot name the actor, the time or the outcome),
 `lib/negotiationState.ts` holds the pure state and copy rules (`negotiationView`,
 `validateDraft`, `draftPayload`), `lib/obligationState.ts` holds the per-obligation role, state
 and copy rules (`obligationRole`, `obligationView`, `obligationTimeline`, plus `anyDelivered` —
 the PD-046 precondition, kept out of JSX so it can be tested) with no I/O,
-`lib/obligationState.ts` also owns the client half of the PD-057 receiver window
-(`ReceiverWindowState`; the total role × window copy table at `:241-280`; `NEEDS_ATTENTION_LABEL`
-at `:205` and `ACTION_NEEDED_LABEL` at `:216`, the latter **moved here from
+`lib/obligationState.ts` also owns the client half of the PD-057 receiver window and of PD-062's
+Under Review (`ReceiverWindowState`; the total role × window copy table at `:262-301`;
+`NEEDS_ATTENTION_LABEL` at `:226` and `ACTION_NEEDED_LABEL` at `:237`, the latter **moved here from
 `lib/tradeActivity.ts`**, which now re-exports it, so one label reads identically on the list and
-on the trade's own screen) — the SERVER decides the state and this module only words it,
+on the trade's own screen; `UNDER_REVIEW_LABEL` at `:493` and the per-role `UNDER_REVIEW_NOTE` at
+`:504-511`, both of which **outrank** the window labels while cancellation outranks all of them,
+`:337-362`) — the SERVER decides the state and this module only words it,
 `lib/negotiationWrite.ts` owns the write-operation sequence every one of those writes shares —
 busy on, write, busy off in a `finally`, interpret the refusal via `lib/barterErrors.ts`, say it
 once, decide whether the screen is stale, re-read authoritative state — with the per-operation
@@ -343,19 +404,29 @@ exist; the route's `role` param is a last-resort label only.
 
 **The confirmed-trade detail** on that screen shows **both** obligations with **Mark
 delivered**, **Confirm received** and **Didn't receive** and both timestamps, each control
-gated by the server-derived role and status, and — since PR #62 — an attention chip and a
-response deadline above them (`app/community/negotiation/[id].tsx:518-624`, the whole
-`renderObligation`; both obligations are rendered at `:745-750`). The **AGREEMENT reads "Trade
+gated by the server-derived role and status; since PR #62 an attention chip and a
+response deadline above them; and since PR #64 a **separate** no-show block — disclosure, optional
+reason input, **Report no-show** — offered only when the server's `can_report_no_show` says so, and
+the reporter's own words rendered beneath (`app/community/negotiation/[id].tsx:557-719`, the whole
+`renderObligation`; both obligations are rendered at `:843-844`). **`noShowReportedAt` is read but
+deliberately not rendered.** `lib/negotiation.ts:109` and `:366` carry it and
+`obligationTimeline` is not given it, so no timestamp for the report appears on the card. This is
+a **Founder ruling supplied with this reconciliation**, quoted as given: *"`noShowReportedAt` is
+RETAINED for future review/adjudication history and is deliberately NOT currently rendered … it
+must not be documented as dead code or as a defect."* It is recorded here so a later reader does
+not delete it as unused. The **AGREEMENT reads "Trade
 confirmed" until it is cancelled, and gained no
 terminal outcome** (`lib/negotiationState.ts:181-194`) — it stays that way for the whole life of
 the trade while its obligations progress. On a cancelled trade the page headline becomes "Trade
 cancelled", the terms card is retitled "The terms that were agreed", both obligation controls
 are frozen and their what-happens-next notes are dropped, and the cancellation is said **once**,
-above both obligations (`lib/negotiationState.ts:169-180`, `lib/obligationState.ts:193-203` and
-`:308-322`, `app/community/negotiation/[id].tsx:730-744`). `lib/barterErrors.ts` interprets the
-refusals PR #56 and PR #58 introduced, including `PT412` for an answer already recorded
-(constant at `:153`, copy at `:505-513` and `:535-540`) and `PT409` read as
-"this trade was cancelled" for the three obligation operations (`:131-144`).
+above both obligations (`lib/negotiationState.ts:169-180`, `lib/obligationState.ts:214-224` and
+`:344-361`, `app/community/negotiation/[id].tsx:825-839`). `lib/barterErrors.ts` interprets the
+refusals PR #56, PR #58 and PR #64 introduced, including `PT412` for an answer already recorded
+(constant at `:154`), `PT409` read as
+"this trade was cancelled" for the obligation operations (`:132-145`), and **`PT423` for a trade
+already under review** (`:160`), whose comment records why a new code was minted rather than
+reusing `object_not_in_prerequisite_state`.
 
 **The receiver-response window and Needs Attention now exist** (PD-057, PD-059), as DERIVED read
 state. `public.barter_confirmation_anchor` returns
@@ -374,17 +445,21 @@ after the deadline** — no RPC consults it, asserted over `prosrc` — and an e
 the condition however long ago the window closed (PD-058). Cancelled trades never enter the flow.
 **Agreement-level and obligation-level attention are different SCOPES** (Founder ruling
 2026-09-07). Trade Activity's row badge is the agreement-level headline and may read
-"Needs attention" because the counterparty's window elapsed (`lib/tradeActivity.ts:355-364`);
-that never suppresses this viewer's own live obligation. On the list, the viewer's own deadline is
-keyed off **their own** window state rather than off the badge (`:382-388`) and the mixed case
-states both facts (`:316-319`). On the trade detail the viewer's own unanswered obligation keeps
-its **Action needed** label, its **deadline**, and both **Confirm received** / **Didn't receive**
-controls (`lib/obligationState.ts:257-279`, rendered at
-`app/community/negotiation/[id].tsx:554-586` and `:600-621`). `obligationView` is
+"Needs attention" because the counterparty's window elapsed (`lib/tradeActivity.ts:334-345`,
+`:412-434`); that never suppresses this viewer's own live obligation. On the list, the viewer's own
+deadline is keyed off **their own** window state rather than off the badge (`:498-520`) and the
+mixed case states both facts (`:347-350`). On the trade detail the viewer's own unanswered
+obligation keeps its **Action needed** label, its **deadline**, and both **Confirm received** /
+**Didn't receive** controls (`lib/obligationState.ts:278-300`, rendered at
+`app/community/negotiation/[id].tsx:600-636` and `:650-671`). `obligationView` is
 per-obligation and is never passed the counterparty's state, so the isolation is structural
-rather than a rule that could be forgotten. The **feed card and offer-responses screen are
+rather than a rule that could be forgotten. **PR #64 extended the same ruling to Under Review**,
+which is the stronger headline and therefore needs it more: the mixed case keeps both the
+viewer's instruction and their deadline, and the deadline is suppressed only when the viewer's
+**own** obligation is the one under review (`lib/tradeActivity.ts:362-375`, `:458-470`,
+`:508-520`). The **feed card and offer-responses screen are
 deliberately deferred**: `responderFeedState` calls `tradeRowState` without either window fact
-(`lib/tradeActivity.ts:625-659`), so they show "Trade confirmed. The agreed terms can no longer
+(`lib/tradeActivity.ts:706` onward), so they show "Trade confirmed. The agreed terms can no longer
 change.", which stays true — nothing there became false. That deferral is recorded for Session 7
 closeout in [ROADMAP.md](ROADMAP.md) § Next.
 
@@ -415,18 +490,32 @@ as **Action needed** or **Needs attention** (above). The Trade Activity attentio
 required before beta **is now built**; the **push** half of PD-059 remains a known, scheduled gap
 rather than an oversight.
 
+**PR #64 added no notification either, and its in-thread notice is DEFERRED.** A no-show report
+writes **nothing** into the pair's conversation: `public.pair_conversation_notice` is called only
+from `20261009000000`, `20261010000000` and `20261015000000` — every one of them a cancellation
+path — and none of `20261012000000` … `20261018000000` calls it. The deliverer learns of a report
+by opening the trade, where `UNDER_REVIEW_NOTE` tells them the other provider reported a problem
+and that nothing has been decided (`lib/obligationState.ts:504-511`). That is a **Founder ruling
+supplied with this reconciliation**: a no-show conversation / in-thread notice is deferred, to be
+decided with the later adjudication / review workflow. It is an absence by decision, not an
+oversight.
+
 Regression coverage: `supabase/tests/barter.test.sql`, `supabase/tests/negotiation.test.sql`,
 `supabase/tests/agreement.test.sql`, `supabase/tests/obligation.test.sql`,
-`supabase/tests/cancellation.test.sql` and `supabase/tests/receiver_window.test.sql`, all
-registered in the B5B runner at `scripts/db-security-test.mjs` (lines 47–52), plus
+`supabase/tests/cancellation.test.sql`, `supabase/tests/receiver_window.test.sql` and
+`supabase/tests/no_show_under_review.test.sql`, all
+registered in the B5B runner at `scripts/db-security-test.mjs` (lines 45–53), plus
 `__tests__/lib/tradeActivity.test.ts`, `__tests__/lib/negotiationState.test.ts`,
 `__tests__/lib/obligationState.test.ts` and `__tests__/lib/tradeCancellation.test.ts` for the
-pure client rules, `__tests__/lib/negotiationWrite.test.ts` for the shared write sequence, and
+pure client rules, `__tests__/lib/negotiationWrite.test.ts` for the shared write sequence,
 `__tests__/lib/receiverWindow.test.ts` for the PD-057 window's client half (that it consumes the
 server's state rather than deriving one, with a word-boundary vocabulary sweep over the whole
-role x status x window x cancelled matrix), and
+role x status x window x cancelled matrix), `__tests__/lib/underReview.test.ts` for PD-062's
+client half (that Under Review outranks the window labels while cancellation outranks it, that the
+no-show control is offered only to a receiver the SERVER has cleared, and that the reason is
+attributed as a statement), and
 `__tests__/app/negotiationWriteHandlers.test.tsx` — the first suite here that RENDERS a screen —
-which drives all six negotiation write controls and pins, per control, the RPC called, the exact
+which drives the negotiation write controls and pins, per control, the RPC called, the exact
 payload, the refusal copy, whether the screen re-reads and whether that re-read blocks. Those
 tests distinguish
 ready-to-confirm from confirmed, and pin that confirmed trade copy does not promise booking,
@@ -436,8 +525,13 @@ and now also who may mark delivered, who may answer, the one-answer rule, the CH
 where no trigger stands in front of them, and the starts-pending insert guard.
 `supabase/tests/cancellation.test.sql` pins the cancellation invariants and the posture of every
 object PR #58 created or redefined, and asserts the continuing **absence** of any no-show,
-timeout, review or terminal-outcome column and of any no-show, adjudication, completion or
-timeout function (`:700-713`). `supabase/tests/receiver_window.test.sql` pins the three anchor
+timeout, review or terminal-outcome **column** (`:697-706`). **Its function-absence assertion was
+corrected in PR #64 and is worth reading rather than paraphrasing** (`:707-722`): it was a
+**name** list naming `report_barter_no_show`, a spelling that never existed, so it passed
+vacuously and would not have noticed the real `report_barter_obligation_no_show`. It is now a
+**pattern sweep** over `no_show|adjudicat|under_review|complete_barter|expire_barter|escalate_
+barter|resolve_barter|fulfil|reputation` with the **five** ruled objects exempted by name — so a
+sixth fails the suite. `supabase/tests/receiver_window.test.sql` pins the three anchor
 cases (§ 1), the exact 7-day interval (§ 2), the inclusive boundary before / at / after (§ 3),
 what is **not** an attention state (§ 4), that an explicit answer settles it at every instant
 (§ 5), that "didn't receive" still works after the deadline (§ 7), that cancelled trades never
@@ -445,9 +539,21 @@ enter the flow (§ 8), the role-relative Trade Activity columns (§ 9), particip
 `anon` revoke (§ 11), that the view is not a write path (§ 12), zero residue — nothing this slice
 must not have created (§ 14), the `service_role` freeze matrix including that privileged DELETE
 still works (§ 14b), the invariant that the obligation and cancellation read scopes cannot
-diverge (§ 14c), and that the receiver RPCs were not touched (§ 15). Races a single-transaction
+diverge (§ 14c), and that the receiver RPCs were not touched (§ 15).
+`supabase/tests/no_show_under_review.test.sql` pins authority, timing and eligibility, that a
+report cannot be filed before the scheduled time, that a de-approved participant keeps authority on
+an existing agreement, that `not_received` qualifies for Under Review on its own, that an
+explicitly `received` obligation cannot be reported, that delivery neither blocks a report nor is
+erased by one, that a cancelled agreement never enters Under Review, that **both** participants
+read the review state and nobody else does, the object posture, the eligibility column asserted
+positive and asserted to flip, **both directions of the PD-063 precedence**, that the reason is
+participant-visible context, that a no-show creates **no** Needs Attention and **no** terminal
+outcome, that the reports table is in no realtime publication, that the report time is
+**trigger**-stamped rather than merely defaulted, and that the lock order is pinned
+**structurally** rather than only behaviourally. Races a single-transaction
 harness cannot stage are covered by `scripts/negotiation-concurrency.mjs`, a non-B5B script, which
-now carries cancellation cases. Executions **are** recorded for both slices, in
+now carries cancellation cases and the no-show / cancellation race. Executions **are** recorded for
+each slice, in
 [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) rather than here — see
 § Foundation & security above for what is and is not established about test runs. **This document
 runs nothing**; it cites those records.
@@ -483,16 +589,28 @@ not copied here. Two gaps matter most to anyone reading this document cold:
   because both writers take the agreement row lock first. **The reason is participant-visible
   context** (PD-062): both participants read it, non-participants and anon cannot, and the UI
   attributes it as the reporting participant's STATEMENT with the sharing disclosed above the
-  input. **Needs Attention is a separate, unchanged route** — it does not enter Under Review, and
-  how it might later is deliberately undecided.
+  input. Reporting is **receiver-only**, only for an obligation with a non-null `scheduled_at`,
+  only **at or after** it, and only against **server time** — the RPC has no `p_as_of` and no
+  client value reaches the comparison. The report itself is **immutable participant-reported
+  history**: append-only, one per obligation, server-stamped on every insert path, and a repeat
+  returns the original timestamp. **A no-show does NOT automatically mean Needs Attention,
+  Unfulfilled, a reliability impact, a reputation impact or any terminal outcome** — asserted
+  directly rather than assumed.
+  **Needs Attention is a separate, unchanged route** — it does not enter Under Review, and
+  **how it might later remains UNRESOLVED and deliberately so**: no second timer, no automatic
+  escalation, no participant escalation action and no operator auto-escalation exists, and the
+  question is filed for the adjudication / review workflow (recorded in
+  [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) § Closed — index, and in the migration's own header,
+  `20261012000000:38-52`).
   (`supabase/migrations/20261012000000_barter_no_show_under_review.sql` through
-  `20261017000000_restore_cancellation_actor_binding.sql`;
+  `20261018000000_no_show_created_at_server_stamped.sql` — **seven** files;
   `supabase/tests/no_show_under_review.test.sql`; PD-062, PD-063.) PD-046 § 7.3–7.5 and § 7 of the
-  contract still describe that work with no schema behind it; PD-057 is now **implemented** and
+  contract are **partly** implemented by that work — the routes exist, the outcomes do not; PD-057
+  is now **implemented** and
   its expiry still never means Fulfilled or Completed — asserted directly, not assumed
   (`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`;
   `supabase/tests/receiver_window.test.sql` §§ 4, 14;
-  `supabase/tests/cancellation.test.sql:700-713`). **Cancelling implies none of them**: it is an
+  `supabase/tests/cancellation.test.sql:697-722`). **Cancelling implies none of them**: it is an
   agreement-level act that decides nothing about fulfilment and carries no reliability verdict
   (`supabase/migrations/20261005000000_barter_pre_delivery_cancellation.sql:25-29`).
 - **Offer creation is not server-limited.** The interest cap is server-authoritative; the
@@ -572,6 +690,21 @@ with the command it named**, on 2026-09-07:
 - `supabase migration list` — **50** versions, local == remote, no drift.
 - B5B **985/985** and concurrency **102/102** were **re-run against merged `main`**, alongside
   `tsc --noEmit` clean, `lint:ci` 0 errors and Jest **605/605**.
+
+**The PR #64 revision is verified to the WEAKER standard, and says so rather than borrowing the
+three above.** Every source claim in § Barter was read from files on this tree — the seven
+migrations `20261012000000` … `20261018000000`, `lib/obligationState.ts`, `lib/tradeActivity.ts`,
+`lib/tradeCancellation.ts`, `lib/negotiation.ts`, `lib/barter.ts`, `lib/barterErrors.ts`,
+`app/community/negotiation/[id].tsx`, `supabase/tests/no_show_under_review.test.sql`,
+`__tests__/lib/underReview.test.ts` and the registration line at `scripts/db-security-test.mjs:53`.
+This reconciliation had **no shell**, so the following are **attested as supplied in the
+invocation and not independently confirmed**: that `main` is `23df39c`, that it equals
+`origin/main` with a clean tree, that PR #64 was squash-merged onto base `ddcb229` (PR #63), that
+post-merge CI on `main` is [run 34165346538](https://github.com/sntimmons/the_book/actions/runs/34165346538)
+with conclusion **success**, and that `supabase migration list` reports 57 versions with local ==
+remote and no drift. The B5B and concurrency figures are read from
+[MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md), not re-run here. Closing those gaps takes
+`gh pr view 64`, `git rev-parse`, `gh run view 34165346538` and `supabase migration list`.
 
 What that still does **not** establish: runtime behaviour on a device, live database contents
 beyond the migration list, or anything about production — which remains out of scope and was
