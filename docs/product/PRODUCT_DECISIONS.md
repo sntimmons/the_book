@@ -1,7 +1,10 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** PR #60 (previous edit: PR #59)
+**Last edited by:** PR #62 (previous edit: PR #61, which recorded PD-060 and PD-061). PR #62
+carried its own PD-057 / PD-059 implementation notes in with its code; the reconciliation that
+corrected the citations afterwards was **not given its own PR number**, so this field names the
+last mutation whose number is known.
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -453,9 +456,15 @@ as locked decisions.
   answer raises SQLSTATE `PT412` (line 347); `receipt_responded_at` and `delivered_at` are
   write-once (lines 137–147); and four CHECK constraints bind each status to its stamp (lines
   36–64). Client copy states the receiver's answer as theirs and adds "Nothing has been
-  decided." (`lib/obligationState.ts:84-95`, `:116-123`). Asserted in
-  `supabase/tests/obligation.test.sql`. The implementation **records** this decision; it is not
-  the approval of one.
+  decided." (`lib/obligationState.ts:145-156` for the deliverer's view, `:177-184` for the
+  receiver's — line numbers as of `main` @ `26fb7fd`, PR #62 having grown that file). Asserted in
+  `supabase/tests/obligation.test.sql`. **Still true after PR #62**, and load-bearing there:
+  because an explicit answer moves the obligation off `delivered`, the PD-057 window returns
+  `none` for an answered obligation however long ago its deadline passed, so elapsed time can
+  never drag a receiver's recorded statement into Needs Attention
+  (`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql:63-66`,
+  asserted in `supabase/tests/receiver_window.test.sql` § 5). The implementation **records** this
+  decision; it is not the approval of one.
 - **Status:** Locked
 
 ---
