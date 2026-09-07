@@ -890,3 +890,99 @@ begin
   perform pg_temp.chk('no_show',
     'the reports table is in NO realtime publication', '0', v_n::text);
 end $$;
+
+-- ── The report time is TRIGGER-stamped, not merely defaulted ──────────────
+-- A DEFAULT is overridden by an explicit insert, so "server-stamped" is only true if a trigger
+-- assigns it. This distinguishes the two: it supplies a `created_at` on a privileged insert and
+-- asserts the server's value wins. The sibling assertion for cancellations
+-- (`cancellation.test.sql`) is what caught the equivalent regression there.
+do $$
+declare
+  ou uuid := current_setting('b5b.ns_ou')::uuid;
+  ru uuid := current_setting('b5b.ns_ru')::uuid;
+  v_ag uuid; v_ob uuid; v_at timestamptz;
+begin
+  select o_ag, o_ob into v_ag, v_ob from pg_temp.ns_arrived(ou, ru, 'ns15');
+
+  -- BACKDATED. Accepted by the arrival check (it is after `scheduled_at`), so only the stamp
+  -- can refuse to keep it.
+  perform pg_temp.act_service();
+  insert into public.barter_obligation_no_show_reports
+    (obligation_id, agreement_id, reporter_user_id, reporter_provider_id, scheduled_at,
+     created_at)
+  select v_ob, v_ag, o.receiver_user_id, o.receiver_provider_id, o.scheduled_at,
+         o.scheduled_at + interval '1 minute'
+    from public.barter_obligations o where o.id = v_ob;
+  select created_at into v_at from public.barter_obligation_no_show_reports
+   where obligation_id = v_ob;
+  perform pg_temp.chk('no_show',
+    'a supplied created_at is replaced by the server clock',
+    'true', (v_at > now() - interval '5 minutes')::text);
+
+  -- And a FAR-FUTURE value cannot be planted either.
+  delete from public.barter_obligation_no_show_reports where obligation_id = v_ob;
+  insert into public.barter_obligation_no_show_reports
+    (obligation_id, agreement_id, reporter_user_id, reporter_provider_id, scheduled_at,
+     created_at)
+  select v_ob, v_ag, o.receiver_user_id, o.receiver_provider_id, o.scheduled_at,
+         now() + interval '100 days'
+    from public.barter_obligations o where o.id = v_ob;
+  select created_at into v_at from public.barter_obligation_no_show_reports
+   where obligation_id = v_ob;
+  perform pg_temp.chk('no_show', 'and a far-future one is replaced too',
+    'true', (v_at < now() + interval '5 minutes')::text);
+end $$;
+
+-- ── The lock order is pinned STRUCTURALLY, not only behaviourally ─────────
+-- `20261012000000` shipped a confidently-worded, FALSE lock-order contract and a real deadlock
+-- followed; `20261014000000` fixed it. A `create or replace` could silently undo that, and the
+-- behavioural proof lives in scripts/negotiation-concurrency.mjs, which is not part of B5B.
+-- This asserts the ORDER from `prosrc`, comments stripped — the same mechanism messaging.test.sql
+-- uses to keep its `for update` lock from being deleted by a future body rewrite.
+do $$
+declare v_src text; v_ag_pos integer; v_ob_pos integer;
+begin
+  perform pg_temp.act_service();
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'report_barter_obligation_no_show';
+
+  -- Whitespace-normalised so reformatting cannot break the match, comments already stripped so
+  -- a comment mentioning either table cannot satisfy it.
+  v_src := regexp_replace(v_src, '\s+', ' ', 'g');
+  v_ag_pos := position('public.barter_agreements ag where ag.id = v_ag for update' in v_src);
+  v_ob_pos := position('public.barter_obligations o where o.id = p_obligation_id for update'
+                       in v_src);
+  perform pg_temp.chk('no_show',
+    'the no-show RPC takes the AGREEMENT lock explicitly', 'true', (v_ag_pos > 0)::text);
+  perform pg_temp.chk('no_show',
+    'and the obligation lock explicitly', 'true', (v_ob_pos > 0)::text);
+  -- THE ORDER ITSELF. Reversing the two statements makes this fail, which is the whole point:
+  -- the deadlock 20261014000000 fixed was REPRODUCED, and the behavioural proof lives in a
+  -- harness that is not part of B5B.
+  perform pg_temp.chk('no_show',
+    'and takes the agreement lock BEFORE the obligation — the order cancel_barter_agreement uses',
+    'true', (v_ag_pos > 0 and v_ob_pos > 0 and v_ag_pos < v_ob_pos)::text);
+
+  -- And PD-063's refusal is still in the cancellation RPC's live body.
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'cancel_barter_agreement';
+  perform pg_temp.chk('no_show',
+    'cancel_barter_agreement still refuses a reported trade (PD-063)',
+    'true', (position('barter_obligation_no_show_reports' in v_src) > 0
+             and position('PT423' in v_src) > 0)::text);
+
+  -- And the actor binding 20261015000000 briefly reverted is still in the trigger.
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_src
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'enforce_barter_cancellation_consistent';
+  perform pg_temp.chk('no_show',
+    'the cancellation trigger still server-stamps created_at',
+    'true', (position('new.created_at := clock_timestamp()' in
+                      regexp_replace(v_src, '\s+', ' ', 'g')) > 0)::text);
+  perform pg_temp.chk('no_show',
+    'and still binds the actor to the caller',
+    'true', (position('new.actor_user_id <> v_uid' in
+                      regexp_replace(v_src, '\s+', ' ', 'g')) > 0)::text);
+end $$;

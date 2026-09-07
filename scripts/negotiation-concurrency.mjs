@@ -1174,9 +1174,11 @@ async function raceNoShowVsConfirmReceived() {
 }
 
 // ── 20. No-show racing a cancellation ──────────────────────────────────────
-// Both are legal at this instant: nothing has been delivered, so the ordinary exit is still
-// open, and the appointment has passed, so a no-show may be reported. Exactly one must win, and
-// a cancelled trade must never end up carrying a report.
+// PD-063: the two acts are MUTUALLY EXCLUSIVE. Both are attemptable at this instant — nothing is
+// delivered, so the ordinary exit is still open, and the appointment has passed, so a no-show may
+// be reported — but exactly ONE may commit. The loser is refused: PT423 if the report won, PT409
+// if the cancellation did. A cancelled trade never carries a report, and a reported trade never
+// carries a cancellation.
 async function raceNoShowVsCancel() {
   await confirmedScheduledTradeInPast(ids.interest20)
   const report =
@@ -1194,9 +1196,6 @@ async function raceNoShowVsCancel() {
     'true', String(intervalsOverlap(n.timing, c.timing)))
   const rows = await noShowRows(ids.interest20)
   const cancels = await cancellationRows(ids.interest20)
-  // The cancellation may win outright, or the report may land first and the cancellation still
-  // succeed — a no-show report does not block the ordinary exit, because nothing was delivered.
-  // What must NEVER happen is a report written against an already-cancelled trade.
   // A DEADLOCK MUST FAIL THIS SCENARIO, NOT BE ABSORBED BY IT. Every other assertion here is
   // conditional on which RPC won, so if PostgreSQL aborts one side with 40P01 they would all
   // still pass while both acts failed. These two are unconditional.

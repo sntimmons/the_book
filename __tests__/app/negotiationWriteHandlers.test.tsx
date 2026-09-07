@@ -1122,6 +1122,55 @@ describe('report no-show', () => {
   })
 })
 
+// PD-062 / PD-063 at the RENDER layer — the screen-level joins the pure unit tests cannot reach.
+describe('under review, on the trade detail', () => {
+  const reviewed = (over = {}) =>
+    makeObligation('responder', {
+      status: 'delivered',
+      deliveredAt: FUTURE_SCHEDULED,
+      scheduledAt: FUTURE_SCHEDULED,
+      underReview: true,
+      noShowReportedAt: '2026-10-01T09:00:00.000Z',
+      ...over,
+    })
+
+  it('withdraws the cancel controls once a report exists (PD-063)', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), reviewed()],
+    )
+    const utils = await renderScreen()
+    expect(utils.queryByText(CANCEL_TRADE_COPY.confirmLabel)).toBeNull()
+    expect(utils.queryByText(AGREE_TO_CANCEL_COPY.confirmLabel)).toBeNull()
+  })
+
+  it('shows the reporter their OWN words', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      // ME is the offer owner, so the `responder`-side obligation is the one ME RECEIVES.
+      [makeObligation('offer_owner'), reviewed({ noShowReason: 'Waited an hour.' })],
+    )
+    const utils = await renderScreen()
+    expect(utils.getByText(/You said/)).toBeTruthy()
+    expect(utils.queryByText(/The other provider said: “Waited an hour\.”/)).toBeNull()
+  })
+
+  it('shows the DELIVERER the same words attributed to the other provider, never as their own',
+    async () => {
+      loads(
+        makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+        [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+        // The `offer_owner`-side obligation is the one ME DELIVERS.
+        [reviewed({ side: 'offer_owner', id: 'obligation-offer_owner' }),
+          makeObligation('responder')],
+      )
+      const utils = await renderScreen()
+      expect(utils.queryByText(/You said/)).toBeNull()
+    })
+})
+
 describe('no write action beyond the six', () => {
   it('a confirmed pre-delivery trade offers exactly the expected controls', async () => {
     loads(

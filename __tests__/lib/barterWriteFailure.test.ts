@@ -356,6 +356,32 @@ describe('PT409 means exactly one thing per operation', () => {
     }
   })
 
+  // PD-063's SQLSTATE. Unpinned, a regression that dropped or mis-keyed this entry would fall
+  // through to the retryable default — "Could not cancel / Please try again." — on a
+  // permanently impossible action, sending a provider into a retry loop and never triggering
+  // the stale re-read that removes the control.
+  it('maps PT423 to a truthful, terminal, stale cancellation refusal', () => {
+    const f = barterWriteFailure('cancelTrade', pgErr('PT423'))
+    expect(f.terminal).toBe(true)
+    expect(f.stale).toBe(true)
+    expect(f.title.toLowerCase()).toContain('review')
+    expect(f.body.toLowerCase()).toContain('nothing has been decided')
+    // It must NOT be the retryable default.
+    const retry = barterWriteFailure('cancelTrade', pgErr('08006'))
+    expect(f.title).not.toBe(retry.title)
+    expect(f.body).not.toBe(retry.body)
+    // And it must not claim something was delivered — that is a DIFFERENT refusal (55000).
+    expect(f.body.toLowerCase()).not.toContain('delivered')
+  })
+
+  it('leaves PT423 retryable on every operation that cannot produce it', () => {
+    for (const op of ALL_OPS) {
+      if (op === 'cancelTrade') continue
+      const f = barterWriteFailure(op, pgErr('PT423'))
+      expect(f.terminal).toBe(false)
+    }
+  })
+
   it('keeps the negotiation writes on the confirmed-trade meaning', () => {
     for (const op of ['release', 'proposeTerms', 'acceptTerms'] as const) {
       const f = barterWriteFailure(op, pgErr(PT409))

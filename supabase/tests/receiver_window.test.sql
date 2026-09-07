@@ -841,8 +841,8 @@ begin
   --
   -- `%no_show%` and `%under_review%` were part of this list until 20261012000000, which added
   -- receiver-reported no-shows and the DERIVED Under Review state by Founder ruling. They are
-  -- named explicitly below rather than dropped from the sweep, so the exemption is exactly two
-  -- known objects and a third would still fail here. Everything else stays forbidden: an
+  -- named explicitly below rather than dropped from the sweep, so the exemption is exactly five
+  -- known objects and a SIXTH would still fail here. Everything else stays forbidden: an
   -- elapsed window must still create no outcome, and Under Review is not one.
   select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'

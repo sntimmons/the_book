@@ -202,7 +202,7 @@ affected obligation is **Unfulfilled**.~~ A failed obligation produces **no norm
 service-quality review**. The event is retained for a future conduct/reliability model, with
 **no automatic ranking or reputation effect** in the first beta.
 
-**CURRENT BEHAVIOUR (PD-062, PD-063), implemented in `20261012000000`–`20261016000000`:**
+**CURRENT BEHAVIOUR (PD-062, PD-063), implemented in `20261012000000`–`20261018000000`:**
 
 A no-show is a **participant-reported event**, reported only by the RECEIVER of an obligation
 whose `scheduled_at` is non-null, at or after that time, judged by **server-authoritative time**.

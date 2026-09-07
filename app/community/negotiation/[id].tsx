@@ -590,11 +590,13 @@ export default function NegotiationScreen() {
         {/* Above the state sentence, so an obligation is marked before it is described. Never a
             verdict: `attention` is only ever ACTION_NEEDED_LABEL — this obligation is waiting on
             THIS viewer, and the controls beneath prove it is still available — or
-            NEEDS_ATTENTION_LABEL, which names an unresolved condition. Both come from
-            lib/obligationState.ts and are decided PER OBLIGATION from the server's window state,
-            so the agreement-level headline elsewhere can differ from this one without either
-            being wrong (Founder ruling 2026-09-07). Same chip for both, deliberately: an
-            elapsed window is not more alarming than a live one, it is just later. */}
+            NEEDS_ATTENTION_LABEL, which names an unresolved condition, or UNDER_REVIEW_LABEL,
+            which means a human must look and outranks both. All three come from
+            lib/obligationState.ts and are decided PER OBLIGATION from the server's state, so the
+            agreement-level headline elsewhere can differ from this one without either being
+            wrong (Founder ruling 2026-09-07). THREE chip tones, and the difference is meaning,
+            not emphasis: amber for "your turn, still in time", warmer for "the window passed",
+            cool for "with someone else now". Deliberately no alarm colour on any of them. */}
         {o.attention ? (
           <View
             style={[
@@ -858,9 +860,9 @@ export default function NegotiationScreen() {
                   either obligation is delivered the control disappears for good — PD-046
                   removes it permanently, and a later "didn't receive" does not bring it back,
                   so this must never reappear on that state.
-                  Gated on `obligationsLoaded` as well: `anyDelivered` is derived from the
-                  obligation rows, and an EMPTY list reads as "nothing delivered" — which is
-                  indistinguishable from the truth. Offering an irreversible action off a
+                  Gated on `obligationsLoaded` as well: `anyDelivered` AND `underReview` are both
+                  derived from the obligation rows, and an EMPTY list reads as "nothing delivered,
+                  nothing under review" — which is indistinguishable from the truth. Offering an irreversible action off a
                   precondition computed from data the screen has just said it could not load is
                   exactly the case the message above warns about. */}
               {obligationsLoaded && (cancel.canCancel || cancel.canAgree) ? (

@@ -292,9 +292,27 @@ the no-show slice and must not be widened again:
   colour literals; this slice added the third branch to both by hand, and the fallthrough is a
   silent `null`. A fourth state would render at two different severities on two surfaces.
 
-**Neither was refactored inside PR #64** — the Founder ruled they are not required for that
+The PR #64 re-audit added **three more items to the same gate**, all found while applying the
+PD-062 / PD-063 rulings and none refactored there:
+
+- **`cancellationView` now has the same shape as `obligationView`** — three positional
+  parameters, of which the last two are adjacent booleans of identical type. A transposed call
+  type-checks silently, on the function that decides whether an irreversible control is drawn.
+  Fix it in the SAME change as `obligationView`, or the cleanup lands with the anti-pattern
+  re-established one module over.
+- **The reason composer is authored twice** in `app/community/negotiation/[id].tsx` (no-show and
+  cancellation), as two near-identical JSX blocks with parallel `validate*`/`*Payload` helpers.
+  The PD-060/PD-062 rule that the disclosure sits ABOVE the input is currently enforced by two
+  hand-authored copies and a reviewer's eye. A third composer is likely in adjudication.
+- **`underReview` names two different predicates.** The client gate is `report OR not_received`;
+  PD-063's server rule is `report exists`. They cannot diverge today only because
+  `not_received` implies `delivered_at is not null`, which independently blocks cancellation —
+  a coincidence between a CHECK constraint two migrations away and a client predicate, named
+  nowhere. Resolve it while it is still theoretical.
+
+**None was refactored inside PR #64** — the Founder ruled they are not required for that
 correction, and doing them there would have widened the diff across the surface adjudication will
-touch. **Adjudication must not widen either pattern further; fix them first.**
+touch. **Adjudication must not widen any of these patterns further; fix them first.**
 
 **Recorded for Session 7 closeout / cross-app audit** (Founder rulings, 2026-09-07, both
 deliberately out of PR #62's scope):

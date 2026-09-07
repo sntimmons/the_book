@@ -651,8 +651,9 @@ as locked decisions.
 - **Evidence:** Founder ruling, 2026-09-07. Implemented by
   `supabase/migrations/20261012000000_barter_no_show_under_review.sql`,
   `20261013000000_no_show_eligibility_single_source.sql`,
-  `20261014000000_no_show_lock_order.sql` and
-  `20261016000000_no_show_reason_read_model.sql`. Asserted in
+  `20261014000000_no_show_lock_order.sql`,
+  `20261016000000_no_show_reason_read_model.sql` and
+  `20261018000000_no_show_created_at_server_stamped.sql`. Asserted in
   `supabase/tests/no_show_under_review.test.sql` and `__tests__/lib/underReview.test.ts`.
   Supersedes the `no-show → Needs Attention → adjudication → Unfulfilled` route in
   [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7.4, which is marked superseded there.
@@ -681,8 +682,15 @@ as locked decisions.
   removes one exit and decides nothing. **Race safety is structural, not hopeful:** both writers
   take the `barter_agreements` row lock FIRST (`20261014000000` put the no-show RPC on that
   order), so the second to arrive blocks and then sees the first's committed state.
-- **Evidence:** Founder ruling, 2026-09-07. Implemented by
-  `supabase/migrations/20261015000000_under_review_precedes_cancellation.sql`. The race is proven
+- **Evidence:** Founder ruling, 2026-09-07. Implemented in TWO halves:
+  `supabase/migrations/20261015000000_under_review_precedes_cancellation.sql` (the RPC — and the
+  live definition of `cancel_barter_agreement`) and
+  `20261017000000_restore_cancellation_actor_binding.sql` (**the live definition of the
+  `enforce_barter_cancellation_consistent` trigger**; `20261015000000`'s copy of that trigger is
+  SUPERSEDED — it was written from the wrong source and reverted the actor binding, which B5B
+  caught). Read the functions table in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) before redefining either. The race is
+  proven
   by `scripts/negotiation-concurrency.mjs`, which asserts exactly one act succeeds and that
   neither deadlocks — an assertion that **caught a real `40P01`** before `20261014000000` fixed
   the lock order.

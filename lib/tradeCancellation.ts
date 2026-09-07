@@ -185,8 +185,8 @@ export const CANCEL_TRADE_COPY: CancelActionCopy = {
   title: 'Cancel this trade?',
   body:
     'Once cancelled, neither of you can deliver against this trade, and it cannot be'
-    + ' restarted. The agreed terms and this trade’s history are kept. This cannot be'
-    + ' undone.',
+    + ' restarted. A no-show can no longer be reported either. The agreed terms and this'
+    + ' trade’s history are kept. This cannot be undone.',
   confirmLabel: 'Cancel trade',
   cancelLabel: 'Keep trade',
 }

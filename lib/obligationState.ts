@@ -97,10 +97,12 @@ export interface ObligationView {
   /**
    * The short label for this obligation's response window, or null when it has none.
    *
-   * TWO possible values, not one. `ACTION_NEEDED_LABEL` means the window is LIVE and waiting on
-   * this viewer — the controls beside it are live, so the label is an available action, never a
-   * verdict. `NEEDS_ATTENTION_LABEL` means it has passed unanswered. A screen may style them
-   * differently but must not assume a single value, and must not treat either as an outcome.
+   * THREE possible values, not one. `ACTION_NEEDED_LABEL` means the window is LIVE and waiting
+   * on this viewer — the controls beside it are live, so the label is an available action, never
+   * a verdict. `NEEDS_ATTENTION_LABEL` means it has passed unanswered. `UNDER_REVIEW_LABEL`
+   * means a no-show or `not_received` put it in front of a human (PD-062); it OUTRANKS both of
+   * the others. A screen may style them differently but must not assume a fixed count, and must
+   * not treat any of them as an outcome — a FOURTH would need every mapping updated.
    *
    * Decided PER OBLIGATION: `obligationView` is never told about the counterparty's obligation,
    * so an agreement-level headline elsewhere may differ from this without either being wrong
@@ -444,12 +446,19 @@ export function noShowReasonPayload(reason: string): string | null {
  * has won, that anything is unfulfilled or resolved, or that a refund or penalty follows — none
  * of those exist, and a confirmation dialog is exactly where a product accidentally promises
  * an outcome it cannot deliver.
+ *
+ * IT ALSO DISCLOSES WHAT IT TAKES AWAY (PD-063). Reporting permanently removes the ordinary exit
+ * for BOTH providers, not just the reporter. An earlier draft said the report "does not end or
+ * cancel the trade" — true in the narrow sense and misleading in the way that matters, because
+ * it read as reassurance that cancelling was still available when the report was about to
+ * foreclose it for the counterparty too. A consequence this irreversible is disclosed before the
+ * writer commits, the same rule the cancellation copy already follows.
  */
 export const REPORT_NO_SHOW_COPY: ObligationActionCopy = {
   title: 'Report that this did not happen?',
   body:
     'This records that the scheduled service did not take place. It does not decide who was at'
-    + ' fault, and it does not end or cancel the trade — the trade will need review.',
+    + ' fault. The trade will need review, and after this neither of you can cancel it.',
   confirmLabel: 'Report no-show',
   cancelLabel: 'Go back',
 }
@@ -495,10 +504,10 @@ export const UNDER_REVIEW_LABEL = 'Under review'
 export const UNDER_REVIEW_NOTE: Record<ObligationRole, string> = {
   receiver:
     'This trade needs review. What you reported has been recorded. Nothing has been decided'
-    + ' yet.',
+    + ' yet, and the trade can no longer be cancelled.',
   deliverer:
     'This trade needs review. The other provider reported a problem with this. Nothing has been'
-    + ' decided yet.',
+    + ' decided yet, and the trade can no longer be cancelled.',
 }
 
 /**
