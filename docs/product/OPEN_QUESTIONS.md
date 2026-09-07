@@ -411,7 +411,7 @@ say that was false.
 Nothing here was closed by repository evidence. **OQ-006** and **OQ-007** remain Open, and
 PD-049 … PD-059 closed no question in this ledger — they answered questions nobody had filed.
 That includes the three rulings recorded on 2026-09-05 alongside PR #56 (`46c0bef`): **PD-057**
-(the future receiver-confirmation window anchor), **PD-058** (`not_received` is immutable and is
+(the receiver-confirmation window anchor, implemented by PR #62), **PD-058** (`not_received` is immutable and is
 a receiver statement, not a verdict) and **PD-059** (no receiver push notifications in this
 pass; Trade Activity must surface an unanswered delivery before beta). None of them closes or
 narrows an entry above — OQ-003's closure already recorded a 7-day receiver confirmation window

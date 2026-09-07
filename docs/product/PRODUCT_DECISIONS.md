@@ -375,7 +375,7 @@ as locked decisions.
 
 ---
 
-### PD-057 — The future receiver-confirmation deadline is anchored on the later of delivery and the agreed time, and its expiry never means fulfilment
+### PD-057 — The receiver-confirmation deadline is anchored on the later of delivery and the agreed time, and its expiry never means fulfilment
 
 - **Decided:** 2026-09-05
 - **Decision:** When the receiver-response window is built, its anchor is
