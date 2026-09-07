@@ -315,8 +315,8 @@ const THEIR_ATTENTION_NOTE =
  */
 const MIXED_ATTENTION_NOTE =
   'Needs attention. The response window has passed and the other provider has not said whether '
-  + 'they received your delivery. Nothing has been decided. You have not yet said whether you '
-  + 'received theirs.'
+  + 'they received your delivery. Nothing has been decided. You still need to say whether you '
+  + 'received theirs — open this to answer.'
 const WAITING_NOTE =
   'Waiting for confirmation. The other provider has not yet said whether they received your '
   + 'delivery.'
@@ -334,7 +334,11 @@ const WINDOW_NOTE: Record<ReceiverWindowState, Record<ReceiverWindowState, strin
     awaiting_receiver: ACTION_NEEDED_NOTE,
     // The viewer's own answer is still inside its window, but the counterparty's is not. The
     // trade-level state leads, because it is the more severe one — and then the viewer's own
-    // outstanding answer is stated too, rather than being displaced by it.
+    // outstanding answer is stated too, rather than being displaced by it. It ends in the SAME
+    // IMPERATIVE as `ACTION_NEEDED_NOTE` ("open this to …"), because this row is asking the
+    // viewer for something and every other row that does says so in that form. Without it the
+    // row opened with a sentence identical to the one on the row that asks nothing of them
+    // (`none × needs_attention`), and the ask was a trailing statement of fact.
     needs_attention: MIXED_ATTENTION_NOTE,
   },
   needs_attention: {

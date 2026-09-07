@@ -459,7 +459,7 @@ describe('tradeRowState — the response deadline (PD-057)', () => {
     expect(s.deadline).toEqual({ label: 'Please respond by', at: AT })
     // And the sentence states BOTH facts, not just the counterparty's.
     expect(s.note).toContain('the other provider has not said')
-    expect(s.note).toContain('You have not yet said whether you received theirs')
+    expect(s.note).toContain('You still need to say whether you received theirs')
     assertTruthful(s.note)
   })
 
@@ -468,5 +468,64 @@ describe('tradeRowState — the response deadline (PD-057)', () => {
       expect(tradeRowState(facts({ status })).deadline).toBeNull()
     }
     expect(tradeRowState(facts({ agreementId: null })).deadline).toBeNull()
+  })
+})
+
+describe('the two surfaces cannot drift back apart', () => {
+  const AT = '2026-10-17T09:00:00.000Z'
+
+  // The regression net for the Founder ruling of 2026-09-07, written so it fails if EITHER
+  // surface re-introduces the suppression: whenever the list offers the viewer a deadline, the
+  // trade detail must agree that this viewer is being asked to act and can still answer.
+  it('list deadline implies the detail shows Action needed with live controls', () => {
+    for (const mine of WINDOWS) {
+      for (const theirs of WINDOWS) {
+        const row = tradeRowState(
+          facts({ myResponseState: mine, theirResponseState: theirs, myResponseDeadline: AT }),
+        )
+        if (!row.deadline) continue
+        const detail = obligationView('receiver', 'delivered', false, mine, AT)
+        expect(detail.attention).toBe(ACTION_NEEDED_LABEL)
+        expect(detail.canRespond).toBe(true)
+        expect(detail.deadline).toEqual({ label: 'Please respond by', at: AT })
+      }
+    }
+  })
+
+  // The mixed row must not be mistakable for the row that asks NOTHING of this viewer. Before
+  // the ruling the two shared a sentence and a badge, and the ask was a trailing fact.
+  it('the mixed row is distinguishable from the row that asks nothing', () => {
+    const mixed = tradeRowState(
+      facts({
+        myResponseState: 'awaiting_receiver',
+        theirResponseState: 'needs_attention',
+        myResponseDeadline: AT,
+      }),
+    )
+    const notMine = tradeRowState(
+      facts({
+        myResponseState: 'none',
+        theirResponseState: 'needs_attention',
+        myResponseDeadline: AT,
+      }),
+    )
+    expect(mixed.note).not.toBe(notMine.note)
+    // The actionable one carries an instruction, in the same form every actionable row uses.
+    expect(mixed.note).toMatch(/open this to/)
+    expect(notMine.note).not.toMatch(/open this to/)
+    // And only the actionable one offers a deadline.
+    expect(mixed.deadline).not.toBeNull()
+    expect(notMine.deadline).toBeNull()
+  })
+
+  // An answered obligation must never carry a label, whatever the server says about a window.
+  it('never labels an obligation the viewer can no longer answer', () => {
+    for (const status of ['received', 'not_received'] as const) {
+      for (const w of WINDOWS) {
+        const v = obligationView('receiver', status, false, w, AT)
+        expect(v.canRespond).toBe(false)
+        expect(v.attention).toBeNull()
+      }
+    }
   })
 })

@@ -85,7 +85,16 @@ export interface ObligationView {
    */
   canRespond: boolean
   /**
-   * The short label for an obligation whose response window has passed unanswered, or null.
+   * The short label for this obligation's response window, or null when it has none.
+   *
+   * TWO possible values, not one. `ACTION_NEEDED_LABEL` means the window is LIVE and waiting on
+   * this viewer — the controls beside it are live, so the label is an available action, never a
+   * verdict. `NEEDS_ATTENTION_LABEL` means it has passed unanswered. A screen may style them
+   * differently but must not assume a single value, and must not treat either as an outcome.
+   *
+   * Decided PER OBLIGATION: `obligationView` is never told about the counterparty's obligation,
+   * so an agreement-level headline elsewhere may differ from this without either being wrong
+   * (Founder ruling 2026-09-07).
    *
    * A separate field rather than words spliced into `state`, so a screen can render it as a
    * badge and so the forbidden-vocabulary sweep has one string to check.
@@ -285,11 +294,18 @@ export function obligationView(
   confirmationDeadline: string | null = null,
 ): ObligationView {
   const c = COPY[role][status]
-  // A cancelled trade has no live window. The server already returns `none` for one, so this is
-  // a second, independent refusal rather than the only one: Needs Attention on a trade the
-  // screen is simultaneously reporting as cancelled would be the worst contradiction available
-  // on this card, and it must not depend on one query being right.
-  const w = WINDOW[role][tradeCancelled ? 'none' : window]
+  // A window belongs ONLY to a delivered, unanswered obligation, and only to an uncancelled
+  // trade. The server already guarantees both — `barter_receiver_window` returns `none` for any
+  // other status and for a cancelled agreement — so these are SECOND, independent refusals
+  // rather than the only ones.
+  //
+  // The status half is load-bearing now that the live window carries a label. Without it,
+  // `('receiver', 'received', 'awaiting_receiver')` would render "Action needed" beside a card
+  // with NO controls, because `canRespond` is already false for an answered obligation: the
+  // caption-contradicts-capability defect this module exists to prevent, and the one shape that
+  // became reachable when the live window stopped being unlabelled. It must not depend on one
+  // query being right.
+  const w = WINDOW[role][tradeCancelled || status !== 'delivered' ? 'none' : window]
   return {
     title: TITLE[role],
     state: c.state,

@@ -52,6 +52,7 @@ import {
   anyDelivered,
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
+  NEEDS_ATTENTION_LABEL,
   NOT_RECEIVED_COPY,
   ObligationActionCopy,
   obligationRole,
@@ -542,12 +543,24 @@ export default function NegotiationScreen() {
             Scheduled for {formatTermTime(obligation.scheduledAt)}
           </Text>
         ) : null}
-        {/* Above the state sentence, so an obligation that has run out of window is marked
-            before it is described. Never a verdict: `attention` is only ever
-            NEEDS_ATTENTION_LABEL, which names an unresolved condition, and the sentence beneath
-            says what is still possible. */}
+        {/* Above the state sentence, so an obligation is marked before it is described. Never a
+            verdict: `attention` is only ever ACTION_NEEDED_LABEL — this obligation is waiting on
+            THIS viewer, and the controls beneath prove it is still available — or
+            NEEDS_ATTENTION_LABEL, which names an unresolved condition. Both come from
+            lib/obligationState.ts and are decided PER OBLIGATION from the server's window state,
+            so the agreement-level headline elsewhere can differ from this one without either
+            being wrong (Founder ruling 2026-09-07). Same chip for both, deliberately: an
+            elapsed window is not more alarming than a live one, it is just later. */}
         {o.attention ? (
-          <View style={styles.attentionChip}>
+          <View
+            style={[
+              styles.attentionChip,
+              // Same colour rule as Trade Activity, so one state does not change meaning when
+              // the viewer moves between the two surfaces: amber for "your turn, still in
+              // time", the warmer tone for "the window has passed".
+              o.attention === NEEDS_ATTENTION_LABEL ? styles.attentionChipLate : null,
+            ]}
+          >
             <Text style={styles.attentionChipText}>{o.attention}</Text>
           </View>
         ) : null}
@@ -980,17 +993,26 @@ const styles = StyleSheet.create({
   },
   cancelBlock: { marginTop: 16 },
   obligationState: { color: '#F0E8D5', fontSize: 13, lineHeight: 19, marginTop: 8 },
-  // Same chip as Trade Activity uses, and deliberately NOT red: an elapsed response window is an
-  // unresolved condition, not a failure, a dispute or a review, and an alarm colour would say
-  // something the product cannot support.
+  // The same two chips Trade Activity uses, with the same meanings. Colour carries the
+  // difference between "your turn, still in time" (amber base) and "the window has passed"
+  // (the warmer `Late` variant) — the base alone was the LATE colour, so a live obligation was
+  // being shown in the elapsed treatment here while the list showed it as live.
+  //
+  // Deliberately NOT red in either state: an elapsed response window is an unresolved
+  // condition, not a failure, a dispute or a review, and an alarm colour would say something
+  // the product cannot support.
   attentionChip: {
     alignSelf: 'flex-start',
     marginTop: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
-    backgroundColor: 'rgba(214,124,79,0.18)',
+    backgroundColor: 'rgba(214,167,79,0.16)',
     borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(214,167,79,0.45)',
+  },
+  attentionChipLate: {
+    backgroundColor: 'rgba(214,124,79,0.18)',
     borderColor: 'rgba(214,124,79,0.5)',
   },
   attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
