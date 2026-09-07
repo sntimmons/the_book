@@ -678,9 +678,19 @@ flipping rows at a deadline.
 returns `max(delivered_at, coalesce(scheduled_at, due_at))` and NULL before delivery;
 `public.barter_confirmation_deadline(...)` is that plus 7 days and is the **only place the 7-day
 interval is written**; `public.barter_receiver_window(status, delivered_at, scheduled_at, due_at,
-trade_cancelled, as_of)` returns `none | awaiting_receiver | needs_attention`. All three are
-IMMUTABLE, invoker-rights (not definer), `search_path` pinned, read no table and take no id — so
-none is an existence oracle. `EXECUTE` is granted to `authenticated` and revoked from `anon` and
+trade_cancelled, as_of)` returns `none | awaiting_receiver | needs_attention`. **Volatility is
+not uniform, and the difference is deliberate:** the anchor is genuinely `IMMUTABLE` (`case`,
+`greatest` and `coalesce` over `timestamptz` only), while the deadline and the window are
+`STABLE`. `timestamptz + interval` is `timestamptz_pl_interval`, which is STABLE because it
+resolves the calendar component in the session's `TimeZone`; PostgreSQL does not verify a
+volatility claim at `CREATE FUNCTION`, so marking those two IMMUTABLE would have been a silent
+false promise to the planner. The window is STABLE because it calls the deadline, and a function
+may not claim stricter volatility than what it calls. Neither is used in an index or a generated
+column, so STABLE costs nothing. The deadline additionally pins `timezone = 'UTC'`, which is the
+half that protects the product: without it the boundary would be timezone-RELATIVE while `now()`
+is absolute, so two sessions straddling a DST transition could disagree by an hour about whether
+one trade needs attention. All three are invoker-rights (not definer), `search_path` pinned, read
+no table and take no id — so none is an existence oracle. `EXECUTE` is granted to `authenticated` and revoked from `anon` and
 `public`; the grant to `authenticated` is **required**, not incidental, because both consuming
 views are `security_invoker` and therefore run these functions as the caller.
 
@@ -738,19 +748,42 @@ is simultaneously answered and needing attention.
 
 **How B5B reaches a past deadline.** `due_at` must be in the future when a proposal is written, so
 a naturally elapsed window cannot occur inside the harness's single transaction. The suite AGES a
-trade as `service_role`, which is permitted **by design** rather than by accident:
-`enforce_barter_obligations_immutable` returns early for `service_role` (`20261004000000` line 96)
-and `enforce_barter_obligation_consistent` is a `BEFORE INSERT` trigger only. Every CHECK
-constraint still applies. This is what lets all three boundaries — just before, exactly at, just
-after — be proven against the **real view**, not only against the calculator.
+trade **without touching a contract field**, because § 3b below freezes those against
+`service_role` too. `pg_temp.rw_age_terms` moves the ACCEPTED TERM's timing (`created_at`,
+`due_at`, `scheduled_at` together, so the row stays inside its own CHECK constraints), deletes
+the derived obligations — privileged DELETE is deliberately still permitted — and RE-DERIVES the
+pair through the real `public.create_barter_obligation_pair`. The resulting rows are produced by
+production code from a real term. The one synthetic step left is `pg_temp.rw_backdate_delivery`,
+which moves `delivered_at` only: a LIFECYCLE column, over which privileged maintenance keeps its
+existing latitude, not a contract field. Every CHECK constraint still applies throughout. This is
+what lets all three boundaries — just before, exactly at, just after — be proven against the
+**real view**, not only against the calculator.
+
+**§ 3b — THE AGREED TRADE IS FROZEN AGAINST EVERY WRITER** (Founder ruling, 2026-09-06). This
+migration replaces the body of `public.enforce_barter_obligations_immutable` so the obligation's
+contract fields — `agreement_id`, `source_term_id`, `side`, the four deliverer/receiver identity
+columns, `agreed_description`, `due_at` and `scheduled_at` — can no longer be rewritten by ANY
+writer, `service_role` and the no-JWT maintenance path included. The previous unconditional
+privileged early return is SPLIT: the contract-field diff now runs before the privileged branch,
+while privileged DELETE is unchanged (every `auth.users` and `barter_agreements` FK here is
+`ON DELETE CASCADE`, so account erasure depends on it) and the three lifecycle columns keep their
+prior privileged latitude. It is denied by default rather than by allowlist — the whole row minus
+the three lifecycle keys must be identical — so a column added later is frozen unless deliberately
+subtracted. **Nothing gains a write it did not have; this is a narrowing only.** It lands in this
+migration because this migration is what makes those columns load-bearing: the identity columns
+become the scoping keys of a second read surface, and `due_at`/`scheduled_at` become the PD-057
+anchor that decides Needs Attention for both participants. The message and SQLSTATE are unchanged.
+An operator-correction workflow is **not** built here and would need its own Founder approval.
 
 **The boundary is inclusive:** Needs Attention begins at `server_now >= confirmation_deadline`,
 per Founder ruling, spelled once in `barter_receiver_window`.
 
-Ledger after apply, expected: **50 entries** — **unverified**, because `supabase migration list`
-could not be run from this environment. Production untouched, never targeted and never queried; no
-credential for it was read, and the only Supabase values present in the environment were the
-non-production `TEST_SUPABASE_*` keys, which were not used.
+Ledger after apply: **50 entries** — **VERIFIED 2026-09-07** by `supabase migration list`
+against the linked non-production project (`wcoyjeklscuqsumpjpfo`); local and remote agree on all
+50 versions with no gap and no drift, and `20261011000000` is recorded with the corrected body
+(the applied statements contain § 3b and the timezone pin). Production untouched, never targeted
+and never queried; no credential for it was read, and the only Supabase values present in the
+environment were the non-production `TEST_SUPABASE_*` keys.
 
 ## Functions redefined across migrations
 
@@ -764,6 +797,7 @@ NOT in the migration that created it.
 | `public.cancel_barter_agreement` | `20261005000000_barter_pre_delivery_cancellation.sql` | **`20261010000000_cancellation_notice_neutral_copy.sql`** | **Replaced FIVE times in one PR — the most-redefined function in this repo. Copying any earlier body forward deletes the in-thread signal and restores the untrue "Both providers agreed to cancel" wording.** `20261006000000` added the post-lock `FOUND` re-check, bound the actor to `auth.uid()` in the consistency trigger, and made `created_at` server-stamped on every insert path rather than by DEFAULT. `20261007000000` added the counterparty notice and the shared reason. `20261008000000` restored the four properties `20261007000000` dropped by copying `20260910000000` instead of the live `20260913000000` — best-effort isolation (**a notice failure must never veto the cancellation**), the open-conversation predicate, the provider-identity re-check, and `system_recipient_id`. `20261009000000` replaced the inlined notice block with a call to `public.pair_conversation_notice` and derives the classification once. `20261010000000` changed **one string literal** — the second notice now states a fact ("Both providers cancelled…") rather than an agreement, because two concurrent cancellations reach two acts without either participant assenting. |
 | `public.pair_conversation_notice` (new) | `20261009000000_pair_conversation_notice.sql` | **`20261009000000_pair_conversation_notice.sql`** | **The one writer for platform notices (`sender_id IS NULL`) into a provider pair's existing conversation.** Resolves the canonical thread by `provider_pair_key` with the stale-key fallback, re-checks that both `providers` rows still belong to the agreement's users, skips a thread that cannot take a message, addresses the notice via `system_recipient_id`, and wraps the write so it **can never veto the act it announces**. Creates no conversation. **EXECUTE revoked from `public`, `anon` and `authenticated`** — callers are other definer functions. A NEW signal writer must call this rather than hand-copy it; that hand-copying is exactly what produced the `20261008000000` correction. **`public.release_barter_interest` deliberately still carries its own body** (live definition `20260913000000`): replacing a shipped, authorization-adjacent function wholesale to remove a duplicate would risk a live path to tidy one. Migrate it onto this helper the next time it is opened for a reason of its own. |
 | `public.mark_barter_obligation_delivered` / `public.record_barter_obligation_receipt` | `20261004000000_barter_obligation_delivery.sql` | **`20261005000000_barter_pre_delivery_cancellation.sql`** | Both gained a cancellation check placed **after** the obligation row lock — the half of the delivery/cancel race contract that `cancel_barter_agreement` depends on. Every guard from `20261004000000` survives in order; the check precedes the idempotent no-op branch so a cancelled trade is never reported as a successful delivery. The two public receipt wrappers (`confirm_barter_obligation_received`, `report_barter_obligation_not_received`) are untouched and still resolve, because `create or replace` preserves the OID. |
+| `public.enforce_barter_obligations_immutable` | `20261004000000_barter_obligation_delivery.sql` | **`20261011000000_barter_receiver_window_needs_attention.sql`** | **The privileged early return was SPLIT, and copying the `20261004000000` body forward would silently re-open a `service_role` rewrite of the agreed trade.** Founder ruling 2026-09-06: the obligation's CONTRACT FIELDS — `agreement_id`, `source_term_id`, `side`, the four deliverer/receiver identity columns, `agreed_description`, `due_at`, `scheduled_at` — are now frozen against EVERY writer, `service_role` and the no-JWT maintenance path included. The contract-field diff runs BEFORE the privileged branch; the diff is denied by default (the whole row MINUS `status`, `delivered_at` and `receipt_responded_at` must be identical), so a column added by a later migration is frozen unless deliberately subtracted. **Privileged DELETE is unchanged and must stay that way** — every `auth.users` and `barter_agreements` FK in this graph is `ON DELETE CASCADE`, so account erasure and agreement removal depend on it. The three lifecycle columns keep their prior privileged latitude, still bound by the `20261004000000` CHECK constraints. **This is a narrowing only: nothing gains a write it did not have.** It landed in this migration because this migration made those columns load-bearing — the identity columns became the scoping keys of `my_barter_obligations`, and `due_at`/`scheduled_at` became the PD-057 deadline anchor both participants act on. Message and SQLSTATE unchanged. Asserted by the service_role freeze matrix in `supabase/tests/receiver_window.test.sql` § 14b, which also pins that privileged DELETE and privileged lifecycle writes still work. |
 | `public.release_barter_interest` | `20260909000000_barter_interest_release.sql` | **`20260913000000_trade_activity_hardening.sql`** | `20260910000000` added the in-transaction counterparty signal; `20260911000000` made that signal unable to veto the release and added the provider-identity assertion. **`20260909000000`'s header instructs future slices to add the agreement guard "HERE, inside this function", and `20260911000000` repeats it saying "THIS definition, the live one". BOTH now point at DEAD definitions. Extend the current one.** `20260912000000` adds the post-context label and addresses the notice via `system_recipient_id`. |
 | `public.enforce_barter_interest_write` | `20260906000000_barter_integrity_slice1.sql` | **`20260909000000_barter_interest_release.sql`** | Adds the `accepted -> released` transition and the release-column allow-list, gated on a transaction-local marker **and** the transition itself. The trigger **derives** `released_at` / `released_by` / `release_reason` rather than trusting them, so attribution is non-forgeable independent of the caller — that clamp is the load-bearing part, not the marker. The INSERT path additionally null-clamps the three new release columns so they are never author-supplied. The pre-existing owner-only `pending -> accepted\|declined` rule and the pre-existing INSERT clamps are carried through unchanged. |
 | `public.enforce_message_immutability` (new) / policy `participants_mark_messages_read` | `20260829000000_canonical_live_baseline.sql` (policy) | **`20260911000000_message_authorship_pin.sql`** | The policy's `sender_id = sender_id` conjuncts were TAUTOLOGIES — an RLS policy cannot reference OLD — so they pinned nothing and were NULL for a null sender. The pin moved to a BEFORE UPDATE trigger, where it can compare to OLD; the policy now asserts only participation. |
