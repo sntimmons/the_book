@@ -29,6 +29,7 @@ import {
   NegotiationRow,
   ProposalVersion,
   reportObligationNotReceived,
+  reportObligationNoShow,
   submitCounter,
 } from '@/lib/negotiation'
 import { BarterWriteRequest, runBarterWrite } from '@/lib/negotiationWrite'
@@ -53,7 +54,15 @@ import {
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
   NEEDS_ATTENTION_LABEL,
+  UNDER_REVIEW_LABEL,
+  MAX_NO_SHOW_REASON,
+  NO_SHOW_REASON_NOTE,
+  NO_SHOW_REASON_PLACEHOLDER,
+  noShowReasonPayload,
+  noShowStatement,
   NOT_RECEIVED_COPY,
+  REPORT_NO_SHOW_COPY,
+  validateNoShowReason,
   ObligationActionCopy,
   obligationRole,
   obligationTimeline,
@@ -96,11 +105,17 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // more: the obligation stays `delivered`, the receiver may still answer however late, and an
 // answer clears the condition.
 //
+// A SCHEDULED obligation whose appointment has passed can also be reported as a NO-SHOW by its
+// receiver (Founder ruling, 2026-09-07), which puts that obligation into UNDER REVIEW — a human
+// has to look. It decides no fault, creates no outcome, and does not close the receiver's
+// controls: a reported trade still accepts their answer.
+//
 // That is all it can do. There is still no timeout TRANSITION (the window changes no status),
-// no automatic fulfilment or completion, no no-show, no Under Review, no adjudication and no
+// no automatic fulfilment or completion, no adjudication, no operator decision path and no
 // terminal outcome — for the obligation or for the agreement — so no copy on this screen may say
-// a trade is booked, complete, fulfilled, unfulfilled, disputed, resolved or under review. Until
-// it is cancelled the agreement stays "Trade confirmed" while its obligations progress.
+// a trade is booked, complete, fulfilled, unfulfilled, disputed or resolved, may name a fault
+// except to deny one, or may promise an outcome. Until it is cancelled the agreement stays
+// "Trade confirmed" while its obligations progress.
 
 const EMPTY_DRAFT: ProposalDraft = {
   ownerGives: '',
@@ -137,6 +152,8 @@ export default function NegotiationScreen() {
   const [draft, setDraft] = useState<ProposalDraft>(EMPTY_DRAFT)
   const [showHistory, setShowHistory] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
+  // Per obligation, because a trade has two and only the receiver of one may report on it.
+  const [noShowReason, setNoShowReason] = useState<Record<string, string>>({})
   // The interest's own state, used only when no negotiation exists yet. Without it this screen
   // cannot tell "nobody has proposed yet" from "this ended before anyone proposed".
   const [context, setContext] = useState<{
@@ -211,12 +228,16 @@ export default function NegotiationScreen() {
   // Derived by lib/obligationState.ts, not here: this is the PD-046 precondition that decides
   // whether an irreversible control is rendered, and a rule computed in JSX cannot be tested.
   const delivered = anyDelivered(obligations)
+  // PD-063: once a no-show is reported the ordinary exit is gone and does not come back. The
+  // SERVER decides this — it arrives as `underReview` on the obligation row — and the screen
+  // only stops drawing a control that could now only be refused.
+  const underReview = obligations.some((o) => o.underReview)
   const cancellationFacts = {
     iCancelled: row?.iCancelled ?? false,
     theyCancelled: row?.theyCancelled ?? false,
     cancelledAt: row?.cancelledAt ?? null,
   }
-  const cancel = cancellationView(cancellationFacts, delivered)
+  const cancel = cancellationView(cancellationFacts, delivered, underReview)
   // Participant-visible context, per the ruling on PR #58. Attribution is derived by
   // lib/tradeCancellation.ts rather than by a ternary here: putting the wrong label on a
   // provider's stated reason for abandoning a commitment is the one mistake this must not make.
@@ -346,7 +367,7 @@ export default function NegotiationScreen() {
   // timestamp. This function cannot express "mark their obligation delivered" — there is no
   // parameter for it here and no RPC for it there.
   async function runObligationWrite(
-    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived',
+    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived' | 'reportNoShow',
     obligationId: string,
   ) {
     if (busy) return
@@ -355,20 +376,38 @@ export default function NegotiationScreen() {
     // impossible tap again. Nothing else to settle, so no callbacks.
     await runWrite({
       op,
+      // A refusal deliberately does NOT clear the reason: `22023` means it was too long, and
+      // the writer needs their words back to shorten them.
+      onSuccess:
+        op === 'reportNoShow'
+          ? () => setNoShowReason((r) => ({ ...r, [obligationId]: '' }))
+          : undefined,
       write: () =>
         op === 'markDelivered'
           ? markObligationDelivered(obligationId)
           : op === 'confirmReceived'
             ? confirmObligationReceived(obligationId)
-            : reportObligationNotReceived(obligationId),
+            : op === 'reportNotReceived'
+              ? reportObligationNotReceived(obligationId)
+              : reportObligationNoShow(
+                  obligationId,
+                  noShowReasonPayload(noShowReason[obligationId] ?? ''),
+                ),
     })
   }
 
   function askThenWrite(
     copy: ObligationActionCopy,
-    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived',
+    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived' | 'reportNoShow',
     obligationId: string,
   ) {
+    if (op === 'reportNoShow') {
+      const problem = validateNoShowReason(noShowReason[obligationId] ?? '')
+      if (problem) {
+        Alert.alert('Check that note', problem, [{ text: 'OK' }])
+        return
+      }
+    }
     Alert.alert(copy.title, copy.body, [
       { text: copy.cancelLabel, style: 'cancel' },
       { text: copy.confirmLabel, onPress: () => runObligationWrite(op, obligationId) },
@@ -522,6 +561,7 @@ export default function NegotiationScreen() {
     // screen ends up labelling an obligation "You agreed to provide" while offering the
     // receiver's controls beside it.
     const role = obligationRole(obligation.side, myRole)
+    const statement = noShowStatement(role, obligation.noShowReason)
     // The PD-057 window comes from the SERVER on the obligation row — the deadline comparison
     // happened there, against the server's clock. Nothing on this screen recomputes it, so a
     // device with a wrong clock cannot put this obligation into, or out of, Needs Attention, and
@@ -532,6 +572,10 @@ export default function NegotiationScreen() {
       tradeCancelled,
       obligation.receiverWindowState,
       obligation.confirmationDeadline,
+      // Under Review and the no-show offer are BOTH the server's answers, arriving on the same
+      // row as the window state. This screen compares nothing to a clock of its own.
+      obligation.underReview,
+      obligation.canReportNoShow,
     )
     return (
       <View style={styles.term}>
@@ -546,11 +590,13 @@ export default function NegotiationScreen() {
         {/* Above the state sentence, so an obligation is marked before it is described. Never a
             verdict: `attention` is only ever ACTION_NEEDED_LABEL — this obligation is waiting on
             THIS viewer, and the controls beneath prove it is still available — or
-            NEEDS_ATTENTION_LABEL, which names an unresolved condition. Both come from
-            lib/obligationState.ts and are decided PER OBLIGATION from the server's window state,
-            so the agreement-level headline elsewhere can differ from this one without either
-            being wrong (Founder ruling 2026-09-07). Same chip for both, deliberately: an
-            elapsed window is not more alarming than a live one, it is just later. */}
+            NEEDS_ATTENTION_LABEL, which names an unresolved condition, or UNDER_REVIEW_LABEL,
+            which means a human must look and outranks both. All three come from
+            lib/obligationState.ts and are decided PER OBLIGATION from the server's state, so the
+            agreement-level headline elsewhere can differ from this one without either being
+            wrong (Founder ruling 2026-09-07). THREE chip tones, and the difference is meaning,
+            not emphasis: amber for "your turn, still in time", warmer for "the window passed",
+            cool for "with someone else now". Deliberately no alarm colour on any of them. */}
         {o.attention ? (
           <View
             style={[
@@ -558,7 +604,11 @@ export default function NegotiationScreen() {
               // Same colour rule as Trade Activity, so one state does not change meaning when
               // the viewer moves between the two surfaces: amber for "your turn, still in
               // time", the warmer tone for "the window has passed".
-              o.attention === NEEDS_ATTENTION_LABEL ? styles.attentionChipLate : null,
+              o.attention === UNDER_REVIEW_LABEL
+                ? styles.attentionChipReview
+                : o.attention === NEEDS_ATTENTION_LABEL
+                  ? styles.attentionChipLate
+                  : null,
             ]}
           >
             <Text style={styles.attentionChipText}>{o.attention}</Text>
@@ -618,6 +668,51 @@ export default function NegotiationScreen() {
               <Text style={styles.secondaryText}>{RESPOND_LABELS.notReceived}</Text>
             </TouchableOpacity>
           </View>
+        ) : null}
+        {/* A SEPARATE row from the receipt answers, because it answers a different question:
+            those are "did you get it", this is "did the booking happen at all". Offered only
+            when the SERVER says so — it decided that the scheduled time has arrived, that
+            nothing is reported yet and that the trade is live. Rendered even once a report
+            exists is impossible: `canReportNoShow` goes false the moment one is filed, so the
+            control cannot invite a duplicate. */}
+        {o.canReportNoShow ? (
+          <View style={styles.cancelBlock}>
+            {/* The disclosure sits ABOVE the input, before the writer commits — the same rule
+                PD-060/PD-062 set for the cancellation reason, and for the same reason: someone
+                writing about a counterparty must know who reads it before they write. */}
+            <Text style={styles.cancelDetail}>{NO_SHOW_REASON_NOTE}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={NO_SHOW_REASON_PLACEHOLDER}
+              placeholderTextColor="rgba(240,232,213,0.35)"
+              value={noShowReason[obligation.id] ?? ''}
+              onChangeText={(t) =>
+                setNoShowReason((r) => ({ ...r, [obligation.id]: t }))
+              }
+              maxLength={MAX_NO_SHOW_REASON}
+              multiline
+            />
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+                disabled={busy}
+                onPress={() =>
+                  askThenWrite(REPORT_NO_SHOW_COPY, 'reportNoShow', obligation.id)
+                }
+              >
+                <Text style={styles.secondaryText}>{RESPOND_LABELS.noShow}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : null}
+        {/* The reporter's own words, once a report exists. ATTRIBUTION comes from
+            lib/obligationState.ts, never from a ternary here: it is a STATEMENT by one
+            participant, not a finding by the product, and mislabelling whose it is would be the
+            worst version of that mistake. */}
+        {statement ? (
+          <Text style={styles.obligationNote}>
+            {statement.label}: “{statement.reason}”
+          </Text>
         ) : null}
       </View>
     )
@@ -765,9 +860,9 @@ export default function NegotiationScreen() {
                   either obligation is delivered the control disappears for good — PD-046
                   removes it permanently, and a later "didn't receive" does not bring it back,
                   so this must never reappear on that state.
-                  Gated on `obligationsLoaded` as well: `anyDelivered` is derived from the
-                  obligation rows, and an EMPTY list reads as "nothing delivered" — which is
-                  indistinguishable from the truth. Offering an irreversible action off a
+                  Gated on `obligationsLoaded` as well: `anyDelivered` AND `underReview` are both
+                  derived from the obligation rows, and an EMPTY list reads as "nothing delivered,
+                  nothing under review" — which is indistinguishable from the truth. Offering an irreversible action off a
                   precondition computed from data the screen has just said it could not load is
                   exactly the case the message above warns about. */}
               {obligationsLoaded && (cancel.canCancel || cancel.canAgree) ? (
@@ -1014,6 +1109,12 @@ const styles = StyleSheet.create({
   attentionChipLate: {
     backgroundColor: 'rgba(214,124,79,0.18)',
     borderColor: 'rgba(214,124,79,0.5)',
+  },
+  // Same third state, same tone, same meaning as the list — one product state must not change
+  // colour when the viewer moves between the two surfaces.
+  attentionChipReview: {
+    backgroundColor: 'rgba(120,150,190,0.18)',
+    borderColor: 'rgba(120,150,190,0.5)',
   },
   attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
   obligationNote: {

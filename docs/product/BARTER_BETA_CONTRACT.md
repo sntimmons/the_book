@@ -181,18 +181,48 @@ Once **any** obligation is marked delivered, ordinary cancellation is **unavaila
 other party has already given something up, and a unilateral exit would erase that.
 
 Unresolved disagreement routes **Needs Attention → Under Review → manual adjudication**
-(Founder-operated in the beta).
+(Founder-operated in the beta). **Partly superseded, 2026-09-07:** an explicit **no-show** or
+**`not_received`** now enters **Under Review DIRECTLY**, without passing through Needs Attention
+(§ 7.4, PD-062). Whether a plain unanswered Needs Attention ever escalates into Under Review is
+**undecided** and belongs to the adjudication slice; **adjudication itself is not built.**
 
 ### 7.4 No-show
 
+> **⚠️ SUPERSEDED IN PART, 2026-09-07 (Founder ruling; PD-062, PD-063).** The paragraph below in
+> ~~strikethrough~~ described a route that was never built and is **no longer the intended one**.
+> It is kept rather than deleted so a reader who has seen it elsewhere can find out what replaced
+> it. **The current behaviour is stated immediately after it.**
+
 **A no-show is not a cancellation.** It is failing to perform at the agreed time *without
 having recorded a cancellation beforehand* — the difference is whether the other party was
-told.
+told. **(This distinction still stands.)**
 
-For the first beta: route to **Needs Attention** and manual adjudication. If established, the
-affected obligation is **Unfulfilled**. A failed obligation produces **no normal
+~~For the first beta: route to **Needs Attention** and manual adjudication. If established, the
+affected obligation is **Unfulfilled**.~~ A failed obligation produces **no normal
 service-quality review**. The event is retained for a future conduct/reliability model, with
 **no automatic ranking or reputation effect** in the first beta.
+
+**CURRENT BEHAVIOUR (PD-062, PD-063), implemented in `20261012000000`–`20261018000000`:**
+
+A no-show is a **participant-reported event**, reported only by the RECEIVER of an obligation
+whose `scheduled_at` is non-null, at or after that time, judged by **server-authoritative time**.
+A valid report is **immutable** and routes the obligation and its agreement to **Under Review**
+— meaning a human must look, and nothing more.
+
+The route is therefore **no-show → Under Review**. It is **NOT** no-show → Needs Attention →
+adjudication → Unfulfilled. Specifically, a no-show produces **no** automatic Needs Attention,
+**no** Unfulfilled, **no** finding of fault, **no** reliability or reputation impact and **no**
+terminal outcome — none of which exist. Adjudication and any operator decision path remain
+unbuilt.
+
+Once a report exists, **ordinary pre-delivery cancellation is no longer available** (PD-063):
+a trade cannot be cancelled out of review, and a cancellation can never erase or hide a recorded
+report.
+
+**Needs Attention is a separate route and is unchanged**: an unanswered receiver window still
+expires to Needs Attention only, with no second timer and no escalation. **How a plain Needs
+Attention might later enter Under Review is deliberately UNDECIDED** and will be settled with the
+adjudication / review workflow — see § 7.5 and OPEN_QUESTIONS.
 
 ### 7.5 Terminal truth
 

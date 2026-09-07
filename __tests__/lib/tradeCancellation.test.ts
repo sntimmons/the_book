@@ -97,15 +97,17 @@ describe('cancellation copy is truthful', () => {
     'unfulfilled',
     'dispute',
     'disputed',
-    'no-show',
-    'no show',
+    // 'no-show', 'no show' and 'reported' were forbidden here until PD-062 made no-show a real,
+    // Founder-ruled concept. The CANCEL dialog now names it deliberately, to disclose that
+    // cancelling forecloses reporting one (PD-063). All three are checked separately below so
+    // the ban survives everywhere it still applies — the STATE copy of a cancelled trade must
+    // still never mention a no-show or a report, because none was made.
     'resolved',
     'under review',
     'needs attention',
     'completed',
     'refund',
     'penalt',
-    'reported',
   ]
 
   it('claims no outcome, verdict or process that does not exist', () => {
@@ -120,6 +122,25 @@ describe('cancellation copy is truthful', () => {
     for (const text of texts) {
       for (const word of FORBIDDEN) expect(text.toLowerCase()).not.toContain(word)
     }
+  })
+
+  // A cancelled trade's STATE copy still may not mention a no-show: nothing was reported, and
+  // naming one there would invent an event. Only the pre-commit CONFIRMATION may, and only to
+  // disclose what cancelling takes away.
+  it('never mentions a no-show in the state copy, only in the confirmation', () => {
+    for (const f of ALL) {
+      const v = cancellationView(f, false)
+      const text = `${v.headline} ${v.detail}`.toLowerCase()
+      expect(text).not.toContain('no-show')
+      expect(text).not.toContain('no show')
+      expect(text).not.toContain('reported')
+    }
+  })
+
+  // PD-063 disclosure: cancelling forecloses reporting a no-show, and the writer is told before
+  // they commit rather than after.
+  it('discloses that cancelling forecloses a no-show report', () => {
+    expect(CANCEL_TRADE_COPY.body.toLowerCase()).toContain('no-show can no longer be reported')
   })
 
   it('distinguishes who cancelled, and never calls one act mutual', () => {

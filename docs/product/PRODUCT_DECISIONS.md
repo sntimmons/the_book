@@ -253,7 +253,9 @@ as locked decisions.
 
   **§ 7.2 is now implemented.** PR #58 (`5b1a7a9`) adds `barter_agreement_cancellations` and `cancel_barter_agreement(uuid, text)` in `supabase/migrations/20261005000000_barter_pre_delivery_cancellation.sql`, hardened by `20261006000000` and carrying the counterparty signal through `20261007000000`, `20261008000000`, `20261009000000` and `20261010000000` (the current live definition of the RPC). What the code does matches this decision on each clause: either participant may cancel before **any** delivery without the other's permission; the actor, timing and optional reason are recorded; **Mutually Cancelled is derived from two explicit acts** and **Cancelled by Participant** from one, with neither stored (`20261005000000:11-15`, `:263-284`); once anything is delivered the ordinary exit is refused permanently (`:252-260`); and no review, reputation or ranking effect is produced anywhere. One nuance the code records rather than this entry deciding: the classification is derived from a **row count**, so two participants cancelling concurrently also reach `mutually_cancelled` — the Founder ruling behind `20261010000000` kept that classification and changed only the thread wording, to "Both providers cancelled…", because two acts prove each cancelled and not that either assented (`20261010000000:11-35`).
 
-  **§ 7.3–7.5 remain not implemented**: no 7-day timeout transition, automatic fulfilment or completion, no-show, Needs Attention, Under Review, adjudication, terminal obligation outcome (Fulfilled / Unfulfilled / Closed Without Resolution) or terminal agreement outcome schema exists, and their absence is asserted in `supabase/tests/cancellation.test.sql:700-713`. Note the migrations are the *implementation*, not the approval.
+  **§ 7.3–7.5 are now PARTLY implemented, and this sentence is the one to read carefully.** **Needs Attention** exists as of PR #62 (PD-057/PD-059), and **no-show reporting** and **Under Review** exist as of the Founder ruling of 2026-09-07 (`20261012000000`–`20261014000000`). All three are DERIVED read states with no status value, no column and no persisted transition, so none of them is an outcome. What remains **not implemented**: no 7-day timeout TRANSITION, no automatic fulfilment or completion, **no adjudication and no operator decision path**, no terminal obligation outcome (Fulfilled / Unfulfilled / Closed Without Resolution) and no terminal agreement outcome.
+
+  **A citation correction, recorded rather than quietly fixed.** This entry previously cited `supabase/tests/cancellation.test.sql:700-713` as proof of that absence. That assertion named a function `report_barter_no_show`, which has never existed under that spelling — so it passed vacuously and would not have noticed the real `report_barter_obligation_no_show` when it shipped. The assertion is now a PATTERN sweep with an explicit five-name exemption, matching `receiver_window.test.sql`, and the absence of adjudication and terminal outcomes is asserted there and in `supabase/tests/no_show_under_review.test.sql`. Note the migrations are the *implementation*, not the approval — and **no PD yet records the 2026-09-07 no-show / Under Review ruling; one should be assigned by the Founder rather than minted here.**
 - **Status:** Locked
 
 ### PD-047 — The barter post stays editable; the proposal snapshots it
@@ -618,6 +620,81 @@ as locked decisions.
   wording.
 - **Status:** Locked; **implemented** (the implementation records this decision, it is not the
   approval of one)
+
+---
+
+### PD-062 — No-show reporting and the review transition
+- **Decided:** 2026-09-07
+- **Decision:** A no-show may be reported **only by the RECEIVER** of an obligation whose
+  `scheduled_at` is **non-null**, at or after that scheduled time, using **server-authoritative
+  time**. A valid no-show report is an **immutable participant-reported event** — not a finding
+  of fault and not a terminal outcome. It places the affected obligation, and its agreement, into
+  **Under Review**. A no-show does **not** automatically mean Unfulfilled, Failed, Needs
+  Attention, a reliability impact or a reputation impact.
+- **Why:** The receiver is the participant who expected the scheduled service, so they are the
+  only one who can report it did not happen; the deliverer reporting themselves is not a thing
+  the product needs. Anchoring on `scheduled_at` rather than `due_at` matters: a receiver must
+  not have to wait out the delivery window to say a booking was missed. Server time is the
+  boundary because a device clock could otherwise bring an appointment forward.
+- **Consequences:** `public.barter_obligation_no_show_reports` is append-only with one row per
+  obligation; the report cannot be edited, withdrawn or re-stamped, and a repeat call returns the
+  original timestamp. Under Review is **DERIVED** —
+  `(a report exists) OR (status = 'not_received')`, minus cancelled — with no status value, no
+  column and no case table, so there is no second place for the answer to disagree. `not_received`
+  qualifies on its own, so nobody files a second complaint to be heard. The obligation `status`
+  vocabulary is unchanged at four values. Cancelled agreements never enter Under Review.
+  **The reason is participant-visible context:** both participants may read it, non-participants
+  and anon may not, and the UI attributes it as the reporting participant's STATEMENT — never as
+  a platform finding, proof of fault, an adjudication, a reliability judgment or a reputation
+  effect. The composer discloses the sharing **above** the input, before the writer commits, as
+  PD-060/PD-062's cancellation-reason precedent requires.
+- **Evidence:** Founder ruling, 2026-09-07. Implemented by
+  `supabase/migrations/20261012000000_barter_no_show_under_review.sql`,
+  `20261013000000_no_show_eligibility_single_source.sql`,
+  `20261014000000_no_show_lock_order.sql`,
+  `20261016000000_no_show_reason_read_model.sql` and
+  `20261018000000_no_show_created_at_server_stamped.sql`. Asserted in
+  `supabase/tests/no_show_under_review.test.sql` and `__tests__/lib/underReview.test.ts`.
+  Supersedes the `no-show → Needs Attention → adjudication → Unfulfilled` route in
+  [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7.4, which is marked superseded there.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-063 — Under Review takes precedence over ordinary cancellation
+- **Decided:** 2026-09-07
+- **Decision:** Once a valid no-show report has been recorded, the agreement is **Under Review**
+  and **ordinary pre-delivery cancellation is no longer available**. If a cancellation commits
+  first, a later no-show report is **refused**. If a no-show report commits first, a later
+  ordinary cancellation is **refused**. A cancellation/no-show race must resolve to **exactly one
+  authoritative state**, and **cancellation may never erase an existing review-worthy event**.
+- **Why:** Without this, the provider a report is ABOUT could cancel the trade and make the
+  report stop counting — the only accountability signal the slice creates, cleared unilaterally
+  by its subject. PD-046 makes the pre-delivery exit unilateral by design, which is right while
+  nothing has been reported and wrong the moment something has.
+- **Consequences:** `cancel_barter_agreement` refuses with **`PT423`** once any no-show report
+  exists on the agreement, and `enforce_barter_cancellation_consistent` carries the same rule as
+  defence in depth. `PT423` is deliberately a NEW SQLSTATE rather than reuse of
+  `object_not_in_prerequisite_state`, which already means "something has already been delivered" —
+  a trade under review has not necessarily been delivered, and saying so would be false. The
+  client stops offering the control (`cancellationView`'s `underReview` conjunct) so no button is
+  drawn that could only be refused. **This is not a finding of fault:** refusing cancellation
+  removes one exit and decides nothing. **Race safety is structural, not hopeful:** both writers
+  take the `barter_agreements` row lock FIRST (`20261014000000` put the no-show RPC on that
+  order), so the second to arrive blocks and then sees the first's committed state.
+- **Evidence:** Founder ruling, 2026-09-07. Implemented in TWO halves:
+  `supabase/migrations/20261015000000_under_review_precedes_cancellation.sql` (the RPC — and the
+  live definition of `cancel_barter_agreement`) and
+  `20261017000000_restore_cancellation_actor_binding.sql` (**the live definition of the
+  `enforce_barter_cancellation_consistent` trigger**; `20261015000000`'s copy of that trigger is
+  SUPERSEDED — it was written from the wrong source and reverted the actor binding, which B5B
+  caught). Read the functions table in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) before redefining either. The race is
+  proven
+  by `scripts/negotiation-concurrency.mjs`, which asserts exactly one act succeeds and that
+  neither deadlocks — an assertion that **caught a real `40P01`** before `20261014000000` fixed
+  the lock order.
+- **Status:** Locked; **implemented**
 
 ---
 

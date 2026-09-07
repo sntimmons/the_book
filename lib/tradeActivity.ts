@@ -17,7 +17,11 @@ import type { CancellationState } from './tradeCancellation'
  * `released` — the pre-agreement negotiation ended (either party). History, never actionable.
  */
 import type { ReceiverWindowState } from './obligationState'
-import { ACTION_NEEDED_LABEL, NEEDS_ATTENTION_LABEL } from './obligationState'
+import {
+  ACTION_NEEDED_LABEL,
+  NEEDS_ATTENTION_LABEL,
+  UNDER_REVIEW_LABEL,
+} from './obligationState'
 
 export type BarterInterestStatus = 'pending' | 'accepted' | 'declined' | 'released'
 
@@ -118,6 +122,31 @@ export interface TradeRowFacts {
    * to the server's clock and arrives already made as `myResponseState`.
    */
   myResponseDeadline?: string | null
+  /**
+   * Whether EITHER obligation on this agreement needs manual resolution — the server's
+   * `agreement_under_review` roll-up.
+   *
+   * Agreement-level ON PURPOSE, unlike the two window states. Under Review is a property of the
+   * TRADE: once one side is disputed the trade as a whole needs a human, and a list row is a
+   * trade. Which side was reported is obligation-granular and lives on the trade's own screen.
+   *
+   * Defaulted like the window states, and for the same reason: a caller that has not selected
+   * the column reports NO review, which is the fail-closed direction. Claiming a trade needs
+   * review from a missing field would put a human's attention on nothing at all.
+   */
+  agreementUnderReview?: boolean
+  /**
+   * Whether the obligation THIS VIEWER RECEIVES is the one under review.
+   *
+   * Separate from `agreementUnderReview` because the two answer different questions, and
+   * conflating them cost this surface a finding. The agreement-level fact decides the HEADLINE;
+   * this per-side fact decides whether the viewer's own answer is still what the trade is
+   * waiting on. When only the COUNTERPARTY's obligation is under review, the viewer still owes
+   * an answer on theirs and still has a live deadline for it.
+   *
+   * Defaulted like the rest, and fail-closed in the same direction.
+   */
+  myUnderReview?: boolean
 }
 
 export interface TradeRowState {
@@ -272,7 +301,9 @@ const CONFIRMED_TRADE_NOTE: Record<CancellationState, string> = {
  * deliver has not been delivered at all, and each participant receives exactly one obligation
  * and delivers exactly one, so there is no roll-up to resolve.
  *
- * PRIORITY, read down the rows and across: **Needs Attention outranks Action needed, and the
+ * PRIORITY WITHIN THE WINDOW STATES, read down the rows and across. Note this table is only
+ * consulted when the trade is NOT under review: Under Review outranks every cell in it, and
+ * cancellation outranks that. **Needs Attention outranks Action needed, and the
  * viewer's OWN state outranks the counterparty's within the same rank.** So
  * `mine: needs_attention` always speaks, and `theirs: needs_attention` speaks only when the
  * viewer's own side is not itself past its deadline. That ordering is the brief's: a state
@@ -317,6 +348,32 @@ const MIXED_ATTENTION_NOTE =
   'Needs attention. The response window has passed and the other provider has not said whether '
   + 'they received your delivery. Nothing has been decided. You still need to say whether you '
   + 'received theirs — open this to answer.'
+/**
+ * What a trade under review says, and what it must never say.
+ *
+ * ONE sentence for both participants, because at this point the product knows exactly one
+ * thing: a human has to look. It does not say who reported, who is at fault, that anything is
+ * unfulfilled or resolved, or that a refund or penalty follows — none of which exist, and the
+ * receiver's own screen already tells them their report was recorded.
+ */
+const UNDER_REVIEW_NOTE =
+  'This trade needs review. Nothing has been decided yet.'
+
+/**
+ * The MIXED case: the trade needs review because of the obligation this viewer DELIVERS, while
+ * the one they RECEIVE is still awaiting their own answer.
+ *
+ * FOUNDER RULING 2026-09-07, applied to Under Review. The ruling was issued about Needs
+ * Attention, and its principle is about SCOPE rather than about that one label: an
+ * agreement-level headline may lead, but it must never suppress the viewer's own live
+ * obligation-level action. Under Review is a stronger headline than Needs Attention and so
+ * needs the rule MORE, not less — the first cut of this slice let it delete both the viewer's
+ * instruction and their deadline, which is exactly what the ruling forbade.
+ */
+const REVIEW_PLUS_ACTION_NOTE =
+  'This trade needs review. Nothing has been decided yet. You still need to say whether you '
+  + 'received the other provider’s delivery — open this to answer.'
+
 const WAITING_NOTE =
   'Waiting for confirmation. The other provider has not yet said whether they received your '
   + 'delivery.'
@@ -398,6 +455,18 @@ function confirmedTradeNote(f: TradeRowFacts): string {
   // "Needs attention: say whether you received it" on a trade that was cancelled before anything
   // could be delivered would be the worst sentence this list could produce.
   if (cancelled !== 'none') return CONFIRMED_TRADE_NOTE[cancelled]
+  // UNDER REVIEW OUTRANKS EVERY WINDOW STATE. Once a trade needs a human, "the response window
+  // passed" and "action needed" are both about a missing answer that is no longer what the
+  // trade is waiting on. Cancellation still outranks this, above: a cancelled trade ended
+  // before any of it, and the server returns no review for one either.
+  if (f.agreementUnderReview) {
+    // The viewer's OWN answer is still live and still theirs to give: say both, headline first.
+    // If their own obligation is the one under review, their answer is genuinely no longer what
+    // settles it, and the single sentence is the whole truth.
+    return !f.myUnderReview && (f.myResponseState ?? 'none') === 'awaiting_receiver'
+      ? REVIEW_PLUS_ACTION_NOTE
+      : UNDER_REVIEW_NOTE
+  }
   return WINDOW_NOTE[f.myResponseState ?? 'none'][f.theirResponseState ?? 'none']
 }
 
@@ -431,8 +500,20 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
     return {
       action: 'none',
       note: confirmedTradeNote(f),
-      attention: cancelled ? null : windowAttention(mine, f.theirResponseState ?? 'none'),
-      deadline: cancelled ? null : rowDeadline(mine, f.myResponseDeadline ?? null),
+      attention: cancelled
+        ? null
+        : f.agreementUnderReview
+          ? UNDER_REVIEW_LABEL
+          : windowAttention(mine, f.theirResponseState ?? 'none'),
+      // The deadline is suppressed only when the VIEWER'S OWN obligation is under review — then
+      // their answer really is no longer what settles it, and a countdown would say otherwise.
+      // When the review belongs to the obligation they DELIVER, their own answer is still live
+      // and still due, so the deadline stays (Founder ruling 2026-09-07: an agreement-level
+      // headline must not delete an obligation-level action).
+      deadline:
+        cancelled || f.myUnderReview
+          ? null
+          : rowDeadline(mine, f.myResponseDeadline ?? null),
     }
   },
 

@@ -29,7 +29,7 @@ import {
   tradeActivitySection,
   tradeRowState,
 } from '@/lib/tradeActivity'
-import { NEEDS_ATTENTION_LABEL } from '@/lib/obligationState'
+import { NEEDS_ATTENTION_LABEL, UNDER_REVIEW_LABEL } from '@/lib/obligationState'
 
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
@@ -49,9 +49,13 @@ import { NEEDS_ATTENTION_LABEL } from '@/lib/obligationState'
 // STILL REPORTING, NOT ACTING: the answer is given on the negotiation screen, so no receiver
 // action is offered here and this slice added no write of any kind.
 //
-// What does NOT exist is any completion, no-show, Under Review or adjudication model, so a
-// confirmed trade still has no fulfilment outcome to report. "Needs attention" is an unresolved
-// operational state and nothing more.
+// It now also reports UNDER REVIEW, the state a receiver-reported no-show or a `not_received`
+// answer puts a trade into (Founder ruling, 2026-09-07). Under Review outranks every window
+// state here and means only that a human has to look.
+//
+// What does NOT exist is any completion or adjudication model, so a confirmed trade still has no
+// fulfilment outcome to report. "Needs attention" and "Under review" are unresolved operational
+// states and nothing more.
 //
 // The feed is discovery: it filters `is_active = true` and shows the newest 50. An accepted
 // negotiation is durable workflow state. Hanging the End-negotiation control off a feed card
@@ -282,9 +286,11 @@ export default function TradeActivityScreen() {
                       <View
                         style={[
                           styles.attentionChip,
-                          state.attention === NEEDS_ATTENTION_LABEL
-                            ? styles.attentionChipLate
-                            : null,
+                          state.attention === UNDER_REVIEW_LABEL
+                            ? styles.attentionChipReview
+                            : state.attention === NEEDS_ATTENTION_LABEL
+                              ? styles.attentionChipLate
+                              : null,
                         ]}
                       >
                         <Text style={styles.attentionChipText}>{state.attention}</Text>
@@ -520,6 +526,14 @@ const styles = StyleSheet.create({
   attentionChipLate: {
     backgroundColor: 'rgba(214,124,79,0.18)',
     borderColor: 'rgba(214,124,79,0.5)',
+  },
+  // A THIRD state, and deliberately a cool tone rather than a hotter one. Under Review is more
+  // consequential than an elapsed window, but escalating the colour would read as an alarm or a
+  // verdict — and nothing has been decided. Cool reads as "with someone else now", which is
+  // exactly what it means.
+  attentionChipReview: {
+    backgroundColor: 'rgba(120,150,190,0.18)',
+    borderColor: 'rgba(120,150,190,0.5)',
   },
   attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
 })

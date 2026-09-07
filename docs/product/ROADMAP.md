@@ -278,6 +278,42 @@ and the Trade Activity half of **PD-059**), as DERIVED read state: the anchor is
 at `server_now >= deadline` inclusive, and an unanswered elapsed window leaves the obligation
 `delivered` — **it manufactures no outcome**, and the receiver may still answer. Trade Activity
 now surfaces an unanswered delivered obligation as needing the right provider's attention.
+**CARRY-FORWARD CODEBASE GATE — must be cleaned up BEFORE the adjudication slice.** Recorded by
+the Codebase audit of PR #64 and ruled by the Founder, 2026-09-07. Two patterns were widened by
+the no-show slice and must not be widened again:
+
+- **`obligationView`'s positional-argument expansion.** It now takes seven positional parameters
+  ending in two adjacent, same-typed, same-defaulted booleans (`underReview`, `canReportNoShow`).
+  Swapping them type-checks cleanly and produces two opposite defects at once. Every neighbouring
+  view-model in `lib/` takes a facts OBJECT; this one is the outlier. Adjudication would add an
+  eighth.
+- **The duplicated attention-chip mapping.** The label → chip-style ternary is hand-copied in
+  `app/community/negotiation/[id].tsx` and `app/community/trade-activity.tsx`, with six duplicated
+  colour literals; this slice added the third branch to both by hand, and the fallthrough is a
+  silent `null`. A fourth state would render at two different severities on two surfaces.
+
+The PR #64 re-audit added **three more items to the same gate**, all found while applying the
+PD-062 / PD-063 rulings and none refactored there:
+
+- **`cancellationView` now has the same shape as `obligationView`** — three positional
+  parameters, of which the last two are adjacent booleans of identical type. A transposed call
+  type-checks silently, on the function that decides whether an irreversible control is drawn.
+  Fix it in the SAME change as `obligationView`, or the cleanup lands with the anti-pattern
+  re-established one module over.
+- **The reason composer is authored twice** in `app/community/negotiation/[id].tsx` (no-show and
+  cancellation), as two near-identical JSX blocks with parallel `validate*`/`*Payload` helpers.
+  The PD-060/PD-062 rule that the disclosure sits ABOVE the input is currently enforced by two
+  hand-authored copies and a reviewer's eye. A third composer is likely in adjudication.
+- **`underReview` names two different predicates.** The client gate is `report OR not_received`;
+  PD-063's server rule is `report exists`. They cannot diverge today only because
+  `not_received` implies `delivered_at is not null`, which independently blocks cancellation —
+  a coincidence between a CHECK constraint two migrations away and a client predicate, named
+  nowhere. Resolve it while it is still theoretical.
+
+**None was refactored inside PR #64** — the Founder ruled they are not required for that
+correction, and doing them there would have widened the diff across the surface adjudication will
+touch. **Adjudication must not widen any of these patterns further; fix them first.**
+
 **Recorded for Session 7 closeout / cross-app audit** (Founder rulings, 2026-09-07, both
 deliberately out of PR #62's scope):
 - **Surface consistency.** The general barter feed card and the offer-responses screen still
@@ -292,8 +328,19 @@ deliberately out of PR #62's scope):
   same deny-by-default treatment while preserving privileged DELETE. Evidence and scope are in
   [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md).
 
-Still not built: automatic fulfilment or completion; **no-show**;
-**Under Review**; adjudication; terminal obligation outcomes
+**No-show reporting and Under Review now exist too** (Founder ruling, 2026-09-07): a receiver may
+report that a SCHEDULED service did not happen, and that report — or a plain `not_received` —
+puts the obligation into **Under Review**, meaning a human must look. Derived per read like Needs
+Attention: no status value, no column, no case table, nothing on a timer. It decides no fault and
+manufactures no outcome, and the receiver keeps their controls. Under Review **outranks the
+ordinary exit** (**PD-063**): a reported trade can no longer be cancelled, so the party a report
+is about cannot make it stop counting. **How a plain Needs Attention might later enter Under
+Review is deliberately UNDECIDED** and belongs to the adjudication slice — no second timer, no
+automatic escalation and no participant escalation action was created.
+
+Still not built: automatic fulfilment or completion; **adjudication and any operator decision
+path** — which is what an Under Review case will eventually need, and is the next slice, not this
+one; terminal obligation outcomes
 (Fulfilled / Unfulfilled / Closed Without Resolution); terminal agreement outcomes
 (**PD-046** § 7.3–7.5, contract §§ 6–7); **no push, device or email notification work** — which
 is the half of **PD-059** that remains deliberately absent, and PR #58's cancellation notice is a

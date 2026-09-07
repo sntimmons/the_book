@@ -66,6 +66,7 @@ export type BarterWriteOp =
   | 'markDelivered'
   | 'confirmReceived'
   | 'reportNotReceived'
+  | 'reportNoShow'
   | 'cancelTrade'
 
 export interface BarterWriteFailure {
@@ -152,6 +153,12 @@ const EXPIRED_TERMS = 'PT410'
 // IS delivered, and nothing is stale in a way a re-read can fix: their first answer stands.
 const ANSWER_ALREADY_RECORDED = 'PT412'
 
+// PD-063: a no-show report has been filed, so this trade is UNDER REVIEW and the ordinary
+// pre-delivery exit is gone. Deliberately NOT `object_not_in_prerequisite_state`, which already
+// means "something has already been delivered" — a trade under review has not necessarily been
+// delivered, and telling a provider it had would be a false statement about their own trade.
+const TRADE_UNDER_REVIEW = 'PT423'
+
 const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   respond: { terminal: false, title: 'Could not send', body: 'Please try again.' },
   accept: { terminal: false, title: 'Could not accept', body: 'Please try again.' },
@@ -171,6 +178,11 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   reportNotReceived: {
     terminal: false,
     title: 'Could not record your answer',
+    body: 'Please try again.',
+  },
+  reportNoShow: {
+    terminal: false,
+    title: 'Could not record your report',
     body: 'Please try again.',
   },
   cancelTrade: { terminal: false, title: 'Could not cancel', body: 'Please try again.' },
@@ -243,6 +255,11 @@ const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
     body: 'It may have been removed. The details have been updated.',
   },
   reportNotReceived: {
+    terminal: true,
+    title: 'That trade is no longer available',
+    body: 'It may have been removed. The details have been updated.',
+  },
+  reportNoShow: {
     terminal: true,
     title: 'That trade is no longer available',
     body: 'It may have been removed. The details have been updated.',
@@ -544,7 +561,63 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       body: 'It may have been removed. The details have been updated.',
     },
   },
+  // Every refusal here names what is actually wrong and says nothing about fault. NONE of these
+  // may imply the report succeeded, that anyone failed, or that an outcome followed.
+  reportNoShow: {
+    [TRADE_CANCELLED]: {
+      terminal: true,
+      stale: true,
+      title: 'This trade was cancelled',
+      body: 'This trade was cancelled, so there is nothing to report. The details have been updated.',
+    },
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not yours to report',
+      body: 'Only the provider receiving this can report that it did not happen.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      // Two causes share this code and the copy must be true under BOTH: the obligation has no
+      // scheduled time at all, or the scheduled time has not arrived yet. Saying "not yet" for
+      // the first would promise the control returns later, when it never will.
+      terminal: false,
+      stale: true,
+      title: 'Cannot report this yet',
+      body:
+        'A no-show can only be reported for a trade with a scheduled time, once that time has'
+        + ' passed. The details have been updated.',
+    },
+    [ANSWER_ALREADY_RECORDED]: {
+      terminal: true,
+      stale: true,
+      title: 'You already confirmed this',
+      body:
+        'You confirmed you received this, so it cannot be reported as a no-show. The details'
+        + ' have been updated.',
+    },
+    [INVALID_PARAMETER]: {
+      terminal: false,
+      title: 'That reason is too long',
+      body: 'Please shorten it and try again.',
+    },
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That trade is no longer available',
+      body: 'It may have been removed. The details have been updated.',
+    },
+  },
   cancelTrade: {
+    [TRADE_UNDER_REVIEW]: {
+      // TERMINAL and STALE: the exit is gone and it does not come back, and the screen re-reads
+      // so the control disappears rather than inviting the same impossible tap. The copy says
+      // WHY without saying who was at fault — nothing has been decided, and a cancellation
+      // refusal is not the place to imply otherwise.
+      terminal: true,
+      stale: true,
+      title: 'This trade needs review',
+      body:
+        'A no-show was reported, so this trade needs review and can no longer be cancelled.'
+        + ' Nothing has been decided. The details have been updated.',
+    },
     [NOT_IN_PREREQUISITE_STATE]: {
       // PD-046: once ANY obligation has been marked delivered the ordinary exit is gone, and
       // it does not come back — a later "didn't receive" is not a route to cancellation.

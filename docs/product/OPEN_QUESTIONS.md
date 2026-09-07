@@ -416,6 +416,15 @@ say that was false.
 | **OQ-005** — How should barter interact with reviews and reputation? | 2026-09-04 | [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 8 — not at all, in the first beta |
 | **OQ-008** — May an offer's terms still be edited once providers have responded? | 2026-09-04 | **PD-047** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1) |
 
+**RECORDED AS DELIBERATELY UNDECIDED, 2026-09-07 (Founder).** How a plain **Needs Attention**
+later enters **Under Review** is NOT decided and was NOT implemented. No second timer, no
+automatic escalation, no participant escalation action and no operator auto-escalation exists.
+The routes that DO exist are: an unanswered receiver window expires to **Needs Attention**; an
+explicit **no-show** enters **Under Review**; an explicit **`not_received`** enters **Under
+Review** (PD-062). The escalation question will be settled with the adjudication / review
+workflow. It is filed here rather than as a numbered OQ because it is a known gap in a decided
+area, not an open product question anyone has asked — assign an OQ number if that is preferred.
+
 Nothing here was closed by repository evidence. **OQ-006** and **OQ-007** remain Open, and
 PD-049 … PD-061 closed no question in this ledger — they answered questions nobody had filed.
 (PD-060 and PD-061 do close a **documentation gap** recorded under OQ-004's follow-on note, which

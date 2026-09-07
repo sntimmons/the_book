@@ -852,6 +852,192 @@ against the linked non-production project (`wcoyjeklscuqsumpjpfo`); local and re
 and never queried; no credential for it was read, and the only Supabase values present in the
 environment were the non-production `TEST_SUPABASE_*` keys.
 
+## 2026-09-07 — `20261012000000` + `20261013000000` + `20261014000000` **APPLIED to non-production 2026-09-07** (No-show + Under Review foundation, PR #64)
+
+> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`) on 2026-09-07.**
+> `supabase migration list --linked`: local and remote agree on all **53** versions, no gap and
+> no drift. **B5B: 1074/1074 passed, 0 failed**, of which the new `no_show` suite is
+> `supabase/tests/no_show_under_review.test.sql`. **Concurrency: 124/124 passed**
+> (`scripts/negotiation-concurrency.mjs`), including four new no-show races. **These figures are
+> a snapshot at THIS apply**; the later entry below supersedes them after PD-062/PD-063 added
+> migrations and assertions (56 versions, B5B 1089/1089, concurrency 129/129). Both harnesses
+> report zero residue, and the concurrency harness now counts the new table in its residue
+> sweep. Production (`kxregomuawwcqvisuhtr`) was never targeted and never queried.
+
+**THREE migrations, and the second and third each correct the first.** `20261012000000` is the slice.
+`20261013000000` is a **forward correction** applied minutes later, because `20261012000000`
+computed no-show eligibility as an INLINE PREDICATE inside `my_trade_activity` and did not
+expose it on `my_barter_obligations` at all. That was wrong twice: the rule had no single home,
+and the surface that actually renders the button (the trade detail) reads the obligations view
+and would have had to re-derive the answer from `scheduled_at` on the client — exactly what
+PD-057 established must not happen. `20261012000000` was **not edited**; the rule now lives in
+`public.barter_can_report_no_show` and `my_trade_activity` reads the column rather than
+recomputing it.
+
+**ONE NEW FACT, ONE DERIVED STATE.** `public.barter_obligation_no_show_reports` is append-only
+with `unique (obligation_id)` — one row is not an arbitrary cap, because only the obligation's
+RECEIVER may report and an obligation has exactly one receiver, so a second row could only be
+the same person filing twice. That constraint is what makes a repeat call idempotent rather than
+a second event.
+
+**UNDER REVIEW IS DERIVED, AND THERE IS DELIBERATELY NO `barter_review_cases` TABLE.** It is
+`(a report exists) OR (status = 'not_received')`, minus cancelled. With adjudication out of
+scope a case row would carry no assignee, no decision, no resolution and no closure — nothing
+the predicate does not already determine — while adding a second place for the answer to be
+wrong. "One authoritative review per obligation" holds BY CONSTRUCTION: a derived predicate
+cannot have two values. Same precedent as PD-057's window and as cancelled-by-one versus
+mutually-cancelled, which `20261005000000` says is "DERIVED from the row count, never stored".
+**When an operator can take, annotate or resolve a review there is real state to hold, and a
+case table becomes right — that is the adjudication slice, which this does not begin.**
+
+**AUTHORITY.** Receiver only, enforced in the RPC AND re-derived independently in the BEFORE
+INSERT trigger, which reads every identity from the obligation rather than trusting the row. A
+non-participant gets the same message and SQLSTATE as a caller naming an id that does not exist,
+so neither learns which it was. **No `is_approved` check, deliberately:** a participant who was
+approved when the agreement was made keeps authority over it, and losing approval must not strip
+someone of the ability to report what happened on a trade they are already in.
+
+**TIMING is `scheduled_at`, NOT `due_at`.** A receiver does not wait out the delivery window to
+say a booking was missed. The comparison is against `now()` inside the RPC; there is no `p_as_of`
+parameter at all, so no client value can reach it. The B5B fixture deliberately produces a trade
+whose APPOINTMENT has passed while its DUE DATE has not, so a `due_at`-based implementation
+would fail rather than pass by accident.
+
+**LOCK ORDER — the first version of this paragraph was WRONG, and the correction is
+`20261014000000`.** It claimed `report_barter_obligation_no_show` "takes the OBLIGATION row lock
+and nothing else, exactly as `record_barter_obligation_receipt` and
+`mark_barter_obligation_delivered` do ... so the pair cannot deadlock", and told future writers to
+preserve that property. Both halves were false.
+
+The function DOES lock `barter_agreements`, just not with a visible `for update`: its INSERT
+carries an FK to that table, and PostgreSQL enforces an FK on INSERT by taking `for key share` on
+the parent row, which conflicts with `for update`. So the real order was **obligation, then
+agreement** — the reverse of `cancel_barter_agreement`. The parity claim failed for the same
+reason: the other two obligation RPCs only UPDATE lifecycle columns, and PostgreSQL skips the FK
+re-check when the referencing columns are unchanged, so those genuinely take no agreement lock.
+This was the FIRST obligation-scoped writer to INSERT a row referencing `barter_agreements` while
+holding the obligation lock, and it inherited a contract written for functions doing something
+else.
+
+**The deadlock was REPRODUCED, not merely reasoned about.** With race #20's assertions
+strengthened to fail on `40P01` rather than absorb it, `scripts/negotiation-concurrency.mjs`
+reported `FAIL neither act deadlocked` on the pre-fix schema — a receiver reporting a no-show
+while either participant cancelled, which is exactly the "they did not show up" versus "I am
+cancelling this" moment.
+
+`20261014000000` replaces the function body so the AGREEMENT lock is taken FIRST, matching
+`cancel_barter_agreement`. The order across the barter graph is now total: **agreement before
+obligation, obligations in id order.** Every authority check, refusal SQLSTATE, the idempotent
+branch and the return value are unchanged, so no client copy and no test expectation moved; a
+terminal `unique_violation` handler was added so that "unreachable" is not load-bearing, matching
+`cancel_barter_agreement`'s own precedent.
+
+**RULE FOR FUTURE WRITERS, restated because the old one was wrong in a way that was easy to
+believe: ENUMERATE THE IMPLICIT LOCKS TOO.** An INSERT, or an UPDATE that writes a foreign-key
+column, takes `for key share` on the parent row. One that touches only non-key columns does not.
+"I wrote no `for update` on that table" is not the same as "I take no lock on it".
+
+**A REPORT DOES NOT REWRITE HISTORY.** `delivered_at` is never erased and no prior row is
+changed. A receiver may report a no-show even after the deliverer marked it delivered — "they
+marked it delivered" is precisely the claim a receiver may need to contradict — and the two
+facts simply stand beside each other. `not_received` qualifies for review on its own, so nobody
+is forced to file a second complaint to be heard.
+
+**WHAT IS NOT BUILT, AND ONE OPEN QUESTION.** No adjudication, no operator decision path, no
+reviewer identity, no resolution, no closure, no appeal, and no terminal outcome of any kind. No
+reputation signal, no notification, no scheduler — nothing moves a row on a timer. The
+obligation `status` vocabulary is unchanged at four values and Under Review is **not** one of
+them. **OPEN FOUNDER QUESTION:** whether an unresolved Needs Attention should be escalatable
+into Under Review. Automatic escalation would be a SECOND TIMER beyond PD-057's seven days,
+which no PD defines; manual escalation would need an actor and terms no authoritative document
+defines. Neither was invented — Needs Attention still resolves only by the receiver answering.
+
+**One existing assertion was amended, and this is recorded rather than buried.**
+`receiver_window.test.sql`'s zero-residue sweep forbade any function matching `%no_show%` or
+`%under_review%`. That was correct for that slice and is now false by ruling, so the sweep
+EXEMPTS exactly five named objects rather than dropping the patterns — a sixth would still fail
+there. Everything else in that sweep (adjudication, fulfilment, expiry, timeout, dispute)
+remains forbidden.
+
+## 2026-09-07 — `20261015000000` … `20261018000000` **APPLIED to non-production 2026-09-07** (PD-062 / PD-063, PR #64)
+
+> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`).** **57** versions,
+> local and remote agree, no drift, verified by `supabase migration list --linked`. **B5B:
+> 1097/1097 passed, 0 failed. Concurrency: 129/129 passed, 0 failed.** Production
+> (`kxregomuawwcqvisuhtr`) never targeted, never queried.
+>
+> **The PD-063 race is PROVEN, not argued.** `scripts/negotiation-concurrency.mjs` race #20 now
+> asserts, unconditionally: neither act deadlocked; exactly one of the two succeeded; the end
+> state is exactly one of *cancelled-with-no-report* or *reported-with-no-cancellation*; a
+> cancellation and a report NEVER both exist; and the loser carries the mapped code for the
+> state that won (`PT423` when the report won, `PT409` when the cancellation did).
+
+**PD-063 — Under Review outranks the ordinary exit.** `20261015000000` makes
+`cancel_barter_agreement` refuse with the new SQLSTATE **`PT423`** once any no-show report exists
+on the agreement. Before it, the provider a report was ABOUT could cancel the trade and make the
+derived Under Review state disappear — the report row survived, but nothing showed it. The
+approved boundary is now total: cancel-first refuses a later report (`PT409`), report-first
+refuses a later cancellation (`PT423`), and a race resolves to exactly one state because **both
+writers take the `barter_agreements` row lock FIRST** (`20261014000000` put the no-show RPC on
+that order).
+
+`PT423` is deliberately NOT `object_not_in_prerequisite_state`, which already means "something
+has already been delivered". A trade under review has not necessarily been delivered, and saying
+so would be a false statement about a provider's own trade.
+
+**`20261016000000` — the no-show reason reaches the two participants.** The column, its CHECK and
+the RPC parameter existed from `20261012000000` and the RLS always admitted both participants;
+what did not exist was a route, so the text sat unreachable at four layers. The view is
+`security_invoker`, so exposing it widens NO boundary — it makes readable, to exactly the two
+people already entitled to the row, a column they could already reach through PostgREST. No
+`reported_by_me` column was added: only the receiver can report, `receiver_user_id` is already on
+the view, and a second derivable field is one that can disagree.
+
+---
+
+**`20261018000000` — the report's `created_at` is now trigger-stamped, not merely defaulted.**
+Raised by the security re-review. `20261012000000` gave the column `default clock_timestamp()`
+and a comment promising *"Server-stamped and immutable … cannot be moved"* — but **a DEFAULT is
+not a stamp**: an explicit INSERT overrides it, and the consistency trigger only READ the value.
+Any supplied value at or after `scheduled_at`, including an arbitrarily FUTURE one, was accepted.
+The two sibling tables were asymmetric — the cancellation act stamped since `20261006000000`,
+the no-show report not — while both comments claimed the same guarantee.
+
+Not client-reachable (`authenticated` holds no INSERT and there is no INSERT policy), so this is
+hardening rather than an authorization defect. Worth doing now because `no_show_reported_at` is
+already surfaced to both participants and is the obvious anchor for the adjudication slice: the
+moment a rule measures from it, a movable timestamp stops being a display fact and becomes an
+authorization boundary.
+
+---
+
+**`20261017000000` — A MISTAKE, AND THE ONE THIS LEDGER SECTION EXISTS TO PREVENT.**
+
+`20261015000000` added the PD-063 check to `enforce_barter_cancellation_consistent` by writing a
+new body **from `20261005000000`, the migration that CREATED the function — not from
+`20261006000000`, its LIVE definition.** Two properties were silently reverted:
+
+* `new.created_at := clock_timestamp()`, which server-stamps on EVERY insert path rather than
+  only defaulting — without it a direct insert can supply a backdated value.
+* **THE ACTOR IS THE CALLER.** Without it a privileged writer holding one participant's session
+  could record the OTHER participant's cancellation — and two acts is exactly what the product
+  reads as **mutually cancelled**, fabricating assent nobody gave.
+
+**B5B caught it on the first run after apply**, at `supabase/tests/cancellation.test.sql:752-759`
+— the assertion `20261006000000` added for precisely this. Nothing reached any environment beyond
+the linked non-production project. `20261017000000` restores `20261006000000`'s body verbatim and
+re-adds the PD-063 check on top of it.
+
+`cancel_barter_agreement` was NOT affected: `20261015000000` wrote that one from
+`20261010000000`, which IS its live definition, and diffed it before commit — exactly one block
+added.
+
+**The lesson, recorded because the repo has now paid for it twice** (`20261008000000` restored
+four properties `20261007000000` dropped the same way): **read the functions table below BEFORE
+redefining anything.** "The migration that created it" and "the migration that defines it" are
+different files, and the more discoverable one — the one carrying all the design rationale — is
+usually the wrong one.
+
 ## Functions redefined across migrations
 
 A `create or replace function` in a later migration silently supersedes an earlier one. The
@@ -861,9 +1047,12 @@ NOT in the migration that created it.
 
 | Function | Created in | **Current definition** | Why it moved |
 |---|---|---|---|
-| `public.cancel_barter_agreement` | `20261005000000_barter_pre_delivery_cancellation.sql` | **`20261010000000_cancellation_notice_neutral_copy.sql`** | **Replaced FIVE times in one PR — the most-redefined function in this repo. Copying any earlier body forward deletes the in-thread signal and restores the untrue "Both providers agreed to cancel" wording.** `20261006000000` added the post-lock `FOUND` re-check, bound the actor to `auth.uid()` in the consistency trigger, and made `created_at` server-stamped on every insert path rather than by DEFAULT. `20261007000000` added the counterparty notice and the shared reason. `20261008000000` restored the four properties `20261007000000` dropped by copying `20260910000000` instead of the live `20260913000000` — best-effort isolation (**a notice failure must never veto the cancellation**), the open-conversation predicate, the provider-identity re-check, and `system_recipient_id`. `20261009000000` replaced the inlined notice block with a call to `public.pair_conversation_notice` and derives the classification once. `20261010000000` changed **one string literal** — the second notice now states a fact ("Both providers cancelled…") rather than an agreement, because two concurrent cancellations reach two acts without either participant assenting. |
+| `public.cancel_barter_agreement` | `20261005000000_barter_pre_delivery_cancellation.sql` | **`20261015000000_under_review_precedes_cancellation.sql`** | **Redefined SIX times — the most-redefined function in this repo. Copying ANY earlier body forward now reverts PD-063, the in-thread signal, and the neutral "Both providers cancelled" wording all at once.** `20261006000000` added the post-lock `FOUND` re-check. `20261007000000` added the counterparty notice and the shared reason. `20261008000000` restored the four properties `20261007000000` dropped by copying `20260910000000` instead of the live `20260913000000` — best-effort isolation (**a notice failure must never veto the cancellation**), the open-conversation predicate, the provider-identity re-check, and `system_recipient_id`. `20261009000000` replaced the inlined notice block with a call to `public.pair_conversation_notice` and derives the classification once. `20261010000000` changed **one string literal** — the second notice states a fact ("Both providers cancelled…") rather than an agreement, because two concurrent cancellations reach two acts without either participant assenting. **`20261015000000` adds the PD-063 refusal**: once any `barter_obligation_no_show_reports` row exists on the agreement it raises **`PT423`**, because a trade under review must not be cancellable out of review. Written from `20261010000000` and diffed before commit — exactly one block added. |
 | `public.pair_conversation_notice` (new) | `20261009000000_pair_conversation_notice.sql` | **`20261009000000_pair_conversation_notice.sql`** | **The one writer for platform notices (`sender_id IS NULL`) into a provider pair's existing conversation.** Resolves the canonical thread by `provider_pair_key` with the stale-key fallback, re-checks that both `providers` rows still belong to the agreement's users, skips a thread that cannot take a message, addresses the notice via `system_recipient_id`, and wraps the write so it **can never veto the act it announces**. Creates no conversation. **EXECUTE revoked from `public`, `anon` and `authenticated`** — callers are other definer functions. A NEW signal writer must call this rather than hand-copy it; that hand-copying is exactly what produced the `20261008000000` correction. **`public.release_barter_interest` deliberately still carries its own body** (live definition `20260913000000`): replacing a shipped, authorization-adjacent function wholesale to remove a duplicate would risk a live path to tidy one. Migrate it onto this helper the next time it is opened for a reason of its own. |
+| `public.report_barter_obligation_no_show` | `20261012000000_barter_no_show_under_review.sql` | **`20261014000000_no_show_lock_order.sql`** | **`20261012000000` § 6 CONTAINS A FALSE LOCK-ORDER CONTRACT AND MUST NOT BE COPIED FORWARD.** It states the function "takes the OBLIGATION row lock and nothing else … so the pair cannot deadlock" and instructs future writers to preserve that. Both halves are false: the INSERT's FK to `barter_agreements` takes `for key share` on the parent, so the real order was obligation-then-agreement — the reverse of `cancel_barter_agreement`. **The deadlock was REPRODUCED** (`scripts/negotiation-concurrency.mjs` race #20 reported `FAIL neither act deadlocked` on the pre-fix schema), not theorised. `20261014000000` takes the AGREEMENT lock FIRST, making the order across the barter graph total — **agreement before obligation, obligations in id order** — and adds a terminal `unique_violation` handler so "unreachable" is not load-bearing. **Rule: enumerate the IMPLICIT locks too.** An INSERT, or an UPDATE writing a foreign-key column, takes `for key share` on the parent; one touching only non-key columns does not. |
 | `public.mark_barter_obligation_delivered` / `public.record_barter_obligation_receipt` | `20261004000000_barter_obligation_delivery.sql` | **`20261005000000_barter_pre_delivery_cancellation.sql`** | Both gained a cancellation check placed **after** the obligation row lock — the half of the delivery/cancel race contract that `cancel_barter_agreement` depends on. Every guard from `20261004000000` survives in order; the check precedes the idempotent no-op branch so a cancelled trade is never reported as a successful delivery. The two public receipt wrappers (`confirm_barter_obligation_received`, `report_barter_obligation_not_received`) are untouched and still resolve, because `create or replace` preserves the OID. |
+| `public.enforce_barter_cancellation_consistent` | `20261005000000_barter_pre_delivery_cancellation.sql` | **`20261017000000_restore_cancellation_actor_binding.sql`** | Redefined THREE times. `20261006000000` added the server-stamped `created_at` and the ACTOR-IS-THE-CALLER check. **`20261015000000` then silently reverted both by writing its new body from `20261005000000` instead of the live `20261006000000`** — the exact hazard this table exists to prevent; B5B caught it at `cancellation.test.sql:752-759` on the first run after apply. `20261017000000` restores `20261006000000` verbatim and re-adds the PD-063 `PT423` check on top. |
+| `public.my_barter_obligations` / `public.my_trade_activity` (VIEWS, not functions) | `20261011000000` / `20260929000000` | **`20261016000000`** (obligations) and **`20261013000000`** (trade activity) | Listed here although this table is named for functions, because both views are recreated IN FULL by `create or replace view` and the same copy-forward hazard applies. `20261012000000` is the more discoverable file — it carries the design rationale — and copying its `my_trade_activity` body forward would reinstate the inline eligibility predicate `20261013000000` removed, while copying its `my_barter_obligations` body would drop `can_report_no_show` and `no_show_reason`. |
 | `public.enforce_barter_obligations_immutable` | `20261004000000_barter_obligation_delivery.sql` | **`20261011000000_barter_receiver_window_needs_attention.sql`** | **The privileged early return was SPLIT, and copying the `20261004000000` body forward would silently re-open a `service_role` rewrite of the agreed trade.** Founder ruling 2026-09-06: the obligation's CONTRACT FIELDS — `agreement_id`, `source_term_id`, `side`, the four deliverer/receiver identity columns, `agreed_description`, `due_at`, `scheduled_at` — are now frozen against EVERY writer, `service_role` and the no-JWT maintenance path included. The contract-field diff runs BEFORE the privileged branch; the diff is denied by default (the whole row MINUS `status`, `delivered_at` and `receipt_responded_at` must be identical), so a column added by a later migration is frozen unless deliberately subtracted. **Privileged DELETE is unchanged and must stay that way** — every `auth.users` and `barter_agreements` FK in this graph is `ON DELETE CASCADE`, so account erasure and agreement removal depend on it. The three lifecycle columns keep their prior privileged latitude, still bound by the `20261004000000` CHECK constraints. **This is a narrowing only: nothing gains a write it did not have.** It landed in this migration because this migration made those columns load-bearing — the identity columns became the scoping keys of `my_barter_obligations`, and `due_at`/`scheduled_at` became the PD-057 deadline anchor both participants act on. Message and SQLSTATE unchanged. Asserted by the service_role freeze matrix in `supabase/tests/receiver_window.test.sql` § 14b, which also pins that privileged DELETE and privileged lifecycle writes still work. |
 | `public.release_barter_interest` | `20260909000000_barter_interest_release.sql` | **`20260913000000_trade_activity_hardening.sql`** | `20260910000000` added the in-transaction counterparty signal; `20260911000000` made that signal unable to veto the release and added the provider-identity assertion. **`20260909000000`'s header instructs future slices to add the agreement guard "HERE, inside this function", and `20260911000000` repeats it saying "THIS definition, the live one". BOTH now point at DEAD definitions. Extend the current one.** `20260912000000` adds the post-context label and addresses the notice via `system_recipient_id`. |
 | `public.enforce_barter_interest_write` | `20260906000000_barter_integrity_slice1.sql` | **`20260909000000_barter_interest_release.sql`** | Adds the `accepted -> released` transition and the release-column allow-list, gated on a transaction-local marker **and** the transition itself. The trigger **derives** `released_at` / `released_by` / `release_reason` rather than trusting them, so attribution is non-forgeable independent of the caller — that clamp is the load-bearing part, not the marker. The INSERT path additionally null-clamps the three new release columns so they are never author-supplied. The pre-existing owner-only `pending -> accepted\|declined` rule and the pre-existing INSERT clamps are carried through unchanged. |

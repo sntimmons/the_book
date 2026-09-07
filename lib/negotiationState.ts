@@ -184,10 +184,12 @@ const STATE_COPY: Record<
     // Beta-safe: confirmed, not booked / complete / fulfilled / guaranteed. This is the
     // AGREEMENT's state and it stays "Trade confirmed" for the whole life of the trade.
     //
-    // Obligations underneath it now have their own delivery and receipt lifecycle, but that
-    // never rolls up to here: no completion, cancellation, no-show or adjudication model
-    // exists, so an agreement has no terminal outcome to report. What each side owes, has
-    // delivered, and has confirmed is said per obligation, by `lib/obligationState.ts`.
+    // Obligations underneath have their own delivery, receipt, no-show and Under Review
+    // lifecycle, but NONE of it rolls up into a terminal agreement outcome: cancellation ends a
+    // trade without deciding anything, Under Review says only that a human must look, and no
+    // completion or adjudication model exists — so an agreement still has no outcome to report.
+    // What each side owes, has delivered, has confirmed and has reported is said per obligation,
+    // by `lib/obligationState.ts`.
     detail:
       'These terms are now the agreed trade and can no longer be changed. Arrange the details'
       + ' in your conversation.',

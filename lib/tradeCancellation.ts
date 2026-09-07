@@ -131,6 +131,15 @@ export interface CancellationView {
 export function cancellationView(
   f: CancellationFacts,
   anyDelivered: boolean,
+  /**
+   * Whether EITHER obligation on this agreement is under review (PD-063).
+   *
+   * Once a no-show has been reported the ordinary pre-delivery exit is gone and does not come
+   * back — the server refuses it with `PT423` — so the control must not be drawn. Defaulted to
+   * `false` so a caller that has not been given it withholds nothing it should show; the SERVER
+   * remains the authority either way, and this only stops a button that could only fail.
+   */
+  underReview = false,
 ): CancellationView {
   const state = cancellationState(f)
   const copy = CANCELLED_COPY[state]
@@ -143,11 +152,14 @@ export function cancellationView(
     // it, which is how the label ended up authored in JSX.
     cancelledAt: state === 'none' ? null : f.cancelledAt,
     timeLabel: copy.timeLabel,
-    canCancel: !anyDelivered && state === 'none',
+    canCancel: !anyDelivered && !underReview && state === 'none',
     // Still gated on `anyDelivered`, even though the counterparty's act already proves nothing
     // had been delivered when they took it: this function must not depend on that inference
-    // staying true, and a control the server would refuse must never be rendered.
-    canAgree: !anyDelivered && state === 'byThem',
+    // staying true, and a control the server would refuse must never be rendered. `underReview`
+    // is gated for the same reason — PD-063 removes the exit once a report exists, and a trade
+    // under review can never simultaneously be one the counterparty has already cancelled, so
+    // `canAgree` is covered by the same conjunct.
+    canAgree: !anyDelivered && !underReview && state === 'byThem',
   }
 }
 
@@ -173,8 +185,8 @@ export const CANCEL_TRADE_COPY: CancelActionCopy = {
   title: 'Cancel this trade?',
   body:
     'Once cancelled, neither of you can deliver against this trade, and it cannot be'
-    + ' restarted. The agreed terms and this trade’s history are kept. This cannot be'
-    + ' undone.',
+    + ' restarted. A no-show can no longer be reported either. The agreed terms and this'
+    + ' trade’s history are kept. This cannot be undone.',
   confirmLabel: 'Cancel trade',
   cancelLabel: 'Keep trade',
 }

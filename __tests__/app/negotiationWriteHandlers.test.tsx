@@ -1,4 +1,7 @@
-// app/community/negotiation/[id].tsx — the six write handlers, driven through the real screen.
+// app/community/negotiation/[id].tsx — the seven write ACTIONS, driven through the real screen.
+//
+// Seven actions, still SIX handlers: `runObligationWrite` multiplexes four obligation RPCs
+// through one guarded entry point, so "Report no-show" added an op rather than a handler.
 //
 // This is the regression net for the write-handler consolidation. Every case below presses the
 // real control, asserts the RPC the screen called and the exact payload it sent, and asserts
@@ -28,6 +31,7 @@ jest.mock('@/lib/negotiation', () => ({
   markObligationDelivered: jest.fn(),
   confirmObligationReceived: jest.fn(),
   reportObligationNotReceived: jest.fn(),
+  reportObligationNoShow: jest.fn(),
   cancelTrade: jest.fn(),
 }))
 
@@ -60,6 +64,10 @@ import {
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
   NOT_RECEIVED_COPY,
+  NO_SHOW_REASON_NOTE,
+  NO_SHOW_REASON_PLACEHOLDER,
+  REPORT_NO_SHOW_COPY,
+  RESPOND_LABELS,
 } from '@/lib/obligationState'
 import {
   AGREE_TO_CANCEL_COPY,
@@ -148,6 +156,11 @@ function makeObligation(
     confirmationAnchor: null,
     confirmationDeadline: null,
     receiverWindowState: 'none',
+    // Nothing reported, so no review. Overridden per case where one exists.
+    underReview: false,
+    noShowReportedAt: null,
+    canReportNoShow: false,
+    noShowReason: null,
     ...over,
   }
 }
@@ -985,6 +998,179 @@ describe('send different terms', () => {
 
 // ── The surface itself ──────────────────────────────────────────────────────
 
+// ── 7. Report no-show ───────────────────────────────────────────────────────
+// The fourth obligation RPC, reached through the SAME `runObligationWrite` entry point as the
+// other three. These cases exist because that dispatch is a nested ternary: three of its four
+// branches were already pinned, and an unpinned fourth is exactly where a mis-wire hides.
+describe('report no-show', () => {
+  // `canReportNoShow` is the SERVER's answer. The screen never compares scheduledAt to a clock,
+  // so the fixture states the server's decision rather than a date the test would have to reason
+  // about.
+  const reportable = () =>
+    makeObligation('responder', { scheduledAt: FUTURE_SCHEDULED, canReportNoShow: true })
+
+  it('reports a no-show on the right obligation, through the right RPC', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), reportable()],
+    )
+    mocked.reportObligationNoShow.mockResolvedValue({
+      ok: true, reportedAt: '2026-10-01T09:00:00.000Z', error: null,
+    } as never)
+    const utils = await renderScreen()
+    await act(async () => {
+      fireEvent.press(await utils.findByText(RESPOND_LABELS.noShow))
+    })
+    expect(alerts()[0]).toEqual({
+      title: REPORT_NO_SHOW_COPY.title,
+      body: REPORT_NO_SHOW_COPY.body,
+      buttons: [
+        { text: REPORT_NO_SHOW_COPY.cancelLabel, style: 'cancel' },
+        { text: REPORT_NO_SHOW_COPY.confirmLabel, onPress: expect.any(Function) },
+      ],
+    })
+    await pressDialogButton(REPORT_NO_SHOW_COPY.confirmLabel)
+    // No reason typed, so NULL is sent — not an empty string. The column is null-or-content.
+    expect(mocked.reportObligationNoShow).toHaveBeenCalledWith('obligation-responder', null)
+    // The report cannot be routed to a sibling RPC or the other obligation — the whole reason
+    // these assertions exist on every branch of the dispatch.
+    expect(mocked.markObligationDelivered).not.toHaveBeenCalled()
+    expect(mocked.confirmObligationReceived).not.toHaveBeenCalled()
+    expect(mocked.reportObligationNotReceived).not.toHaveBeenCalled()
+  })
+
+  it('sends the reporter’s own words, trimmed, when they write some', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), reportable()],
+    )
+    mocked.reportObligationNoShow.mockResolvedValue({
+      ok: true, reportedAt: '2026-10-01T09:00:00.000Z', error: null,
+    } as never)
+    const utils = await renderScreen()
+    await act(async () => {
+      fireEvent.changeText(
+        utils.getByPlaceholderText(NO_SHOW_REASON_PLACEHOLDER),
+        '  Waited an hour, nobody came.  ',
+      )
+    })
+    await act(async () => {
+      fireEvent.press(await utils.findByText(RESPOND_LABELS.noShow))
+    })
+    await pressDialogButton(REPORT_NO_SHOW_COPY.confirmLabel)
+    expect(mocked.reportObligationNoShow).toHaveBeenCalledWith(
+      'obligation-responder',
+      'Waited an hour, nobody came.',
+    )
+  })
+
+  it('discloses who reads the reason ABOVE the input, before the writer commits', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), reportable()],
+    )
+    const utils = await renderScreen()
+    expect(utils.getByText(NO_SHOW_REASON_NOTE)).toBeTruthy()
+  })
+
+  it('re-reads on PT409 — the trade was cancelled under the report button', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), reportable()],
+    )
+    mocked.reportObligationNoShow.mockResolvedValue({
+      ok: false, reportedAt: null, error: { code: 'PT409' },
+    } as never)
+    const utils = await renderScreen()
+    const before = reads()
+    await act(async () => {
+      fireEvent.press(await utils.findByText(RESPOND_LABELS.noShow))
+    })
+    await pressDialogButton(REPORT_NO_SHOW_COPY.confirmLabel)
+    // Says it was cancelled, not merely that something went wrong.
+    expect(alerts()[1].title.toLowerCase()).toContain('cancelled')
+    await waitFor(() => expect(reads()).toBe(before + 1))
+  })
+
+  it('never offers the control when the server did not', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      // canReportNoShow defaults false — the server said the moment has not come.
+      [makeObligation('offer_owner'), makeObligation('responder', { scheduledAt: FUTURE_SCHEDULED })],
+    )
+    const utils = await renderScreen()
+    expect(utils.queryByText(RESPOND_LABELS.noShow)).toBeNull()
+  })
+
+  it('never offers it on the obligation this provider DELIVERS', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      // The server's column is role-blind, so it can be true on the delivered side too. The
+      // client must still refuse: only a receiver may report, and a button that can only fail
+      // must never be drawn.
+      [makeObligation('offer_owner', { scheduledAt: FUTURE_SCHEDULED, canReportNoShow: true }),
+        makeObligation('responder')],
+    )
+    const utils = await renderScreen()
+    expect(utils.queryByText(RESPOND_LABELS.noShow)).toBeNull()
+  })
+})
+
+// PD-062 / PD-063 at the RENDER layer — the screen-level joins the pure unit tests cannot reach.
+describe('under review, on the trade detail', () => {
+  const reviewed = (over = {}) =>
+    makeObligation('responder', {
+      status: 'delivered',
+      deliveredAt: FUTURE_SCHEDULED,
+      scheduledAt: FUTURE_SCHEDULED,
+      underReview: true,
+      noShowReportedAt: '2026-10-01T09:00:00.000Z',
+      ...over,
+    })
+
+  it('withdraws the cancel controls once a report exists (PD-063)', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), reviewed()],
+    )
+    const utils = await renderScreen()
+    expect(utils.queryByText(CANCEL_TRADE_COPY.confirmLabel)).toBeNull()
+    expect(utils.queryByText(AGREE_TO_CANCEL_COPY.confirmLabel)).toBeNull()
+  })
+
+  it('shows the reporter their OWN words', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      // ME is the offer owner, so the `responder`-side obligation is the one ME RECEIVES.
+      [makeObligation('offer_owner'), reviewed({ noShowReason: 'Waited an hour.' })],
+    )
+    const utils = await renderScreen()
+    expect(utils.getByText(/You said/)).toBeTruthy()
+    expect(utils.queryByText(/The other provider said: “Waited an hour\.”/)).toBeNull()
+  })
+
+  it('shows the DELIVERER the same words attributed to the other provider, never as their own',
+    async () => {
+      loads(
+        makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+        [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+        // The `offer_owner`-side obligation is the one ME DELIVERS.
+        [reviewed({ side: 'offer_owner', id: 'obligation-offer_owner' }),
+          makeObligation('responder')],
+      )
+      const utils = await renderScreen()
+      expect(utils.queryByText(/You said/)).toBeNull()
+    })
+})
+
 describe('no write action beyond the six', () => {
   it('a confirmed pre-delivery trade offers exactly the expected controls', async () => {
     loads(
@@ -1001,6 +1187,7 @@ describe('no write action beyond the six', () => {
     expect(utils.queryByText('Send different terms')).toBeNull()
     expect(utils.queryByText(CONFIRM_RECEIVED_COPY.confirmLabel)).toBeNull()
     expect(utils.queryByText(NOT_RECEIVED_COPY.confirmLabel)).toBeNull()
+    expect(utils.queryByText(RESPOND_LABELS.noShow)).toBeNull()
   })
 
   // NOT a proof that no seventh write path exists — a render cannot establish that. It pins the
@@ -1015,6 +1202,7 @@ describe('no write action beyond the six', () => {
     expect(mocked.markObligationDelivered).not.toHaveBeenCalled()
     expect(mocked.confirmObligationReceived).not.toHaveBeenCalled()
     expect(mocked.reportObligationNotReceived).not.toHaveBeenCalled()
+    expect(mocked.reportObligationNoShow).not.toHaveBeenCalled()
     expect(mocked.cancelTrade).not.toHaveBeenCalled()
   })
 })
