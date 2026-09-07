@@ -22,9 +22,8 @@ import {
 } from '@/lib/barter'
 import { barterWriteFailure } from '@/lib/barterErrors'
 import {
-  ACTION_NEEDED_LABEL,
   confirmCopy,
-  formatTradeDate,
+  formatTradeDeadline,
   SECTION_COPY,
   SECTION_ORDER,
   tradeActivitySection,
@@ -300,13 +299,14 @@ export default function TradeActivityScreen() {
                       </Text>
                     ) : null}
 
-                    {/* The deadline for the viewer's OWN outstanding answer, formatted locally
-                        from the server's timestamp. Shown only while the window is live: once it
-                        has passed, `state.note` says so, and repeating a date underneath would
-                        read as a countdown to something that already happened. */}
-                    {state.attention === ACTION_NEEDED_LABEL && item.myResponseDeadline ? (
+                    {/* The deadline for the viewer's OWN outstanding answer. BOTH the wording and
+                        the decision to show it come from `tradeRowState` — this screen only
+                        formats the server's timestamp, with the same formatter and the same
+                        precision the trade's own screen uses, so one instant never reads as two
+                        different moments on two surfaces. */}
+                    {state.deadline ? (
                       <Text style={styles.historyNote}>
-                        Please respond by {formatTradeDate(item.myResponseDeadline)}.
+                        {state.deadline.label} {formatTradeDeadline(state.deadline.at)}.
                       </Text>
                     ) : null}
 

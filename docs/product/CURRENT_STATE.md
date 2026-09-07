@@ -218,8 +218,8 @@ This section records **what is built on `main`** and **what is not**.
 
 ### What is built
 
-Verified against the migration chain in the working tree — **49 migrations**, newest
-`supabase/migrations/20261010000000_cancellation_notice_neutral_copy.sql`.
+Verified against the migration chain in the working tree — **50 migrations**, newest
+`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`.
 
 | Capability | What is actually enforced | Where |
 |---|---|---|
@@ -345,12 +345,15 @@ permitted, so account-erasure cascades still work.
 **Nothing sends the receiver a push, device or email notification.** PD-059's push half is
 unchanged: no such path exists anywhere in the chain. What PR #58 added is narrower and only for
 cancellation — a durable in-thread system message, written best-effort into the pair's existing
-conversation (`20261009000000_pair_conversation_notice.sql`). **A delivery still produces no
-signal of any kind**: `20261004000000_barter_obligation_delivery.sql` creates no notification
-path and `lib/tradeActivity.ts` has no obligation awareness, so a delivery is visible **only** on
-the negotiation screen, which refreshes on focus (`app/community/negotiation/[id].tsx:170-175`).
-The Trade Activity attention UX that PD-059 required before beta **is now built** (above); the
-**push** half of PD-059 remains a known, scheduled gap rather than an oversight.
+conversation (`20261009000000_pair_conversation_notice.sql`). **A delivery still PUSHES nothing**:
+`20261004000000_barter_obligation_delivery.sql` creates no notification path and this slice added
+none, so nothing reaches a provider who does not open the app. What changed is where a delivery is
+VISIBLE once they do: it is no longer only the negotiation screen
+(`app/community/negotiation/[id].tsx:170-175`, refreshed on focus) — `lib/tradeActivity.ts` now
+reads the two role-relative response states, so an unanswered delivery surfaces on Trade Activity
+as **Action needed** or **Needs attention** (above). The Trade Activity attention UX that PD-059
+required before beta **is now built**; the **push** half of PD-059 remains a known, scheduled gap
+rather than an oversight.
 
 Regression coverage: `supabase/tests/barter.test.sql`, `supabase/tests/negotiation.test.sql`,
 `supabase/tests/agreement.test.sql`, `supabase/tests/obligation.test.sql` and
@@ -387,15 +390,19 @@ not copied here. Two gaps matter most to anyone reading this document cold:
 - **There is a delivery, receipt and cancellation record, but no fulfilment verdict.** PR #54
   added the immutable, server-derived `barter_obligations` pair; PR #56 added the two participant
   actions and the four-value `status` that records **what happened**; PR #58 added the ordinary
-  pre-delivery exit. Everything that would turn those events into an **outcome** remains
-  unbuilt, and is asserted absent rather than assumed: **no 7-day timeout transition, no
-  automatic fulfilment, no automatic completion, no no-show, no Needs Attention, no Under
-  Review, no adjudication, no terminal obligation outcome (Fulfilled / Unfulfilled / Closed
-  Without Resolution), no terminal agreement outcome, no reviews-on-barter, no reputation and no
-  push notifications.** PD-046 § 7.3–7.5 and § 7 of the contract still describe that work with no
-  schema behind it; PD-057 records the **future** window anchor and that its expiry must never
-  mean Fulfilled or Completed
-  (`supabase/migrations/20261004000000_barter_obligation_delivery.sql:15-26`;
+  pre-delivery exit; PR #62 added the PD-057 response window and **Needs Attention**. That last
+  one is the distinction this bullet turns on: Needs Attention is an **unresolved operational
+  state, derived per read**, and it is precisely NOT an outcome. Everything that would turn these
+  events into an outcome remains unbuilt, and is asserted absent rather than assumed: **no 7-day
+  timeout TRANSITION (the window creates no status change — an elapsed window leaves the row
+  `delivered` and the receiver may still answer), no automatic fulfilment, no automatic
+  completion, no no-show, no Under Review, no adjudication, no terminal obligation outcome
+  (Fulfilled / Unfulfilled / Closed Without Resolution), no terminal agreement outcome, no
+  reviews-on-barter, no reputation and no push notifications.** PD-046 § 7.3–7.5 and § 7 of the
+  contract still describe that work with no schema behind it; PD-057 is now **implemented** and
+  its expiry still never means Fulfilled or Completed — asserted directly, not assumed
+  (`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`;
+  `supabase/tests/receiver_window.test.sql` §§ 4, 14;
   `supabase/tests/cancellation.test.sql:700-713`). **Cancelling implies none of them**: it is an
   agreement-level act that decides nothing about fulfilment and carries no reliability verdict
   (`supabase/migrations/20261005000000_barter_pre_delivery_cancellation.sql:25-29`).

@@ -109,6 +109,15 @@ export interface TradeRowFacts {
   myResponseState?: ReceiverWindowState
   /** The window state of the obligation this viewer DELIVERS — i.e. waiting on the other side. */
   theirResponseState?: ReceiverWindowState
+  /**
+   * When this viewer's own answer is due — `my_trade_activity.my_response_deadline`, straight
+   * from the server's `barter_confirmation_deadline`.
+   *
+   * Passed through, never compared. This module decides WHETHER to show a deadline and what to
+   * call it; it never decides whether the deadline has passed, because that comparison belongs
+   * to the server's clock and arrives already made as `myResponseState`.
+   */
+  myResponseDeadline?: string | null
 }
 
 export interface TradeRowState {
@@ -124,6 +133,17 @@ export interface TradeRowState {
    * response window.
    */
   attention: string | null
+  /**
+   * The viewer's own response deadline and the words to introduce it, or null to show none.
+   *
+   * Returned as a LABEL PLUS A RAW TIMESTAMP, exactly as `obligationView` does on the
+   * negotiation screen, for two reasons. The label is product copy, so it belongs in the module
+   * the forbidden-vocabulary sweep reads rather than in JSX no test renders. And the timestamp
+   * stays raw so ONE formatter renders it — a deadline stated as a date on the list and as a
+   * date-and-time on the trade's own screen is one instant described two ways, and the receiver
+   * acting on the looser of the two can be late through no fault of their own.
+   */
+  deadline: { label: string; at: string } | null
 }
 
 /**
@@ -206,6 +226,27 @@ export function formatTradeDate(iso: string | null): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/**
+ * The PD-057 response deadline, as an INSTANT the reader can act on.
+ *
+ * Deliberately NOT `formatTradeDate`. That one is date-only, and it is right for a history
+ * surface where the row never changes again. A deadline is different: the server decides
+ * Needs Attention by comparing `now() >= confirmation_deadline` to the microsecond, so
+ * rendering a 09:00Z boundary as "Oct 17, 2026" would promise the receiver the whole of the
+ * 17th and then move the trade into Needs Attention that morning — the app stating a due date
+ * it does not honour, on the one surface built to prompt the action.
+ *
+ * Same precision, and the same `toLocaleString()` call, as the negotiation screen's
+ * `formatTermTime`, so ONE server instant reads the same on both surfaces. The client
+ * contributes the locale and nothing else; the instant itself is the server's.
+ */
+export function formatTradeDeadline(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleString()
 }
 
 /**
@@ -303,6 +344,28 @@ function windowAttention(
       : null
 }
 
+/**
+ * Whether to show the viewer their own response deadline, and what to call it.
+ *
+ * Keyed off the badge rather than off the window states directly, so the row can never show a
+ * countdown that disagrees with the sentence above it. Shown ONLY while the viewer's own answer
+ * is still live (`Action needed`): once a window has elapsed the note already says so, and
+ * repeating the date underneath would read as a countdown to something that has already
+ * happened. A cancelled trade never reaches here, because its badge is null.
+ *
+ * NOTE (PD-057, unresolved): in the one mixed case — the viewer's own answer still in time while
+ * the COUNTERPARTY's has elapsed — the badge is `Needs attention`, so this returns null and the
+ * viewer's own live deadline is not shown. That is the behaviour as shipped; whether the row
+ * should state both facts is an open product question, deliberately not decided here.
+ */
+function rowDeadline(
+  attention: string | null,
+  at: string | null,
+): { label: string; at: string } | null {
+  if (attention !== ACTION_NEEDED_LABEL || !at) return null
+  return { label: 'Please respond by', at }
+}
+
 function confirmedTradeNote(f: TradeRowFacts): string {
   // The CLASSIFICATION comes from lib/tradeCancellation.ts, which owns it and is total over the
   // vocabulary; only the wording is local, because a list row and a detail banner are different
@@ -327,26 +390,31 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
   // confirmed trade before either side has delivered is pre-delivery cancellation, which is
   // taken on the trade's own screen — this list reports it rather than offering it, so the
   // one place that can check the delivery precondition is the one place that can act.
-  accepted: (f) =>
-    f.agreementId !== null
-      ? {
-          action: 'none',
-          note: confirmedTradeNote(f),
-          // Only a confirmed trade can have a response window at all, and a cancelled one has
-          // none — the same dominance `confirmedTradeNote` applies to the sentence.
-          attention:
-            cancellationState(f) !== 'none'
-              ? null
-              : windowAttention(f.myResponseState ?? 'none', f.theirResponseState ?? 'none'),
-        }
-      : {
-          action: 'end',
-          note: f.offerIsActive
-            ? ''
-            : 'This post is no longer on the board. The negotiation is still open.',
-          // No agreement means no obligations, so nothing can be awaiting a receiver.
-          attention: null,
-        },
+  accepted: (f) => {
+    if (f.agreementId === null) {
+      return {
+        action: 'end',
+        note: f.offerIsActive
+          ? ''
+          : 'This post is no longer on the board. The negotiation is still open.',
+        // No agreement means no obligations, so nothing can be awaiting a receiver.
+        attention: null,
+        deadline: null,
+      }
+    }
+    // Only a confirmed trade can have a response window at all, and a cancelled one has
+    // none — the same dominance `confirmedTradeNote` applies to the sentence.
+    const attention =
+      cancellationState(f) !== 'none'
+        ? null
+        : windowAttention(f.myResponseState ?? 'none', f.theirResponseState ?? 'none')
+    return {
+      action: 'none',
+      note: confirmedTradeNote(f),
+      attention,
+      deadline: rowDeadline(attention, f.myResponseDeadline ?? null),
+    }
+  },
 
   pending: (f) => {
     if (f.myRole === 'owner') {
@@ -358,13 +426,20 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
           action: 'declineOnly',
           note: 'You are already in negotiation on this post, so this response cannot be accepted.',
           attention: null,
+          deadline: null,
         }
       }
       return f.offerIsActive
-        ? { action: 'answer', note: 'Waiting on you to accept or decline.', attention: null }
+        ? {
+            action: 'answer',
+            note: 'Waiting on you to accept or decline.',
+            attention: null,
+            deadline: null,
+          }
         : {
             action: 'none',
             attention: null,
+            deadline: null,
             // Says WHY it cannot be answered, and names BOTH refusals: PD-052 withdraws
             // decline as well as accept, so copy mentioning only accept explains half the rule
             // and makes the missing Decline control read as a bug.
@@ -373,10 +448,16 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
           }
     }
     return f.offerIsActive
-      ? { action: 'none', note: 'Waiting on the other provider.', attention: null }
+      ? {
+          action: 'none',
+          note: 'Waiting on the other provider.',
+          attention: null,
+          deadline: null,
+        }
       : {
           action: 'none',
           attention: null,
+          deadline: null,
           // The responder is otherwise left waiting forever on a post that is gone.
           note: 'This post has been closed without your response being accepted.',
         }
@@ -387,12 +468,18 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
       ? RELEASE_ACTOR[f.releaseReason](f.myRole)
       : 'This negotiation ended.'
     const when = formatTradeDate(f.releasedAt)
-    return { action: 'none', note: when ? `${who} ${when}.` : who, attention: null }
+    return {
+      action: 'none',
+      note: when ? `${who} ${when}.` : who,
+      attention: null,
+      deadline: null,
+    }
   },
 
   declined: (f) => ({
     action: 'none',
     attention: null,
+    deadline: null,
     note:
       f.myRole === 'owner'
         ? 'You declined this response. Kept as history.'

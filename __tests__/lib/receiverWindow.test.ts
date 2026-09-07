@@ -272,6 +272,28 @@ describe('tradeRowState — priority across the two obligations', () => {
     }
   })
 
+  // The badge is derived by a separate expression from the note, so assert it over the SAME
+  // nine cells rather than the five that happened to have a named case. A tenth window state
+  // must not be able to give a truthful sentence a missing badge.
+  it('yields an expected badge — never an unrecognised one — in all nine combinations', () => {
+    const allowed = [null, ACTION_NEEDED_LABEL, NEEDS_ATTENTION_LABEL]
+    for (const mine of WINDOWS) {
+      for (const theirs of WINDOWS) {
+        const s = tradeRowState(facts({ myResponseState: mine, theirResponseState: theirs }))
+        expect(allowed).toContain(s.attention)
+        // Either side elapsed is always Needs Attention; nothing elapsed and the viewer awaited
+        // is always Action needed; anything else carries no badge.
+        const expected =
+          mine === 'needs_attention' || theirs === 'needs_attention'
+            ? NEEDS_ATTENTION_LABEL
+            : mine === 'awaiting_receiver'
+              ? ACTION_NEEDED_LABEL
+              : null
+        expect(s.attention).toBe(expected)
+      }
+    }
+  })
+
   it('prefers the viewer OWN elapsed window over the counterparty’s', () => {
     const s = tradeRowState(
       facts({ myResponseState: 'needs_attention', theirResponseState: 'needs_attention' }),
@@ -336,5 +358,68 @@ describe('tradeRowState — no window state leaks onto a non-confirmed row', () 
     for (const f of rows) {
       expect(tradeRowState(f).attention).toBeNull()
     }
+  })
+})
+
+describe('tradeRowState — the response deadline (PD-057)', () => {
+  const AT = '2026-10-17T09:00:00.000Z'
+
+  it('states the viewer’s own deadline while their answer is still live', () => {
+    const s = tradeRowState(
+      facts({ myResponseState: 'awaiting_receiver', myResponseDeadline: AT }),
+    )
+    expect(s.deadline).toEqual({ label: 'Please respond by', at: AT })
+    // The RAW server timestamp is handed back, never a preformatted string: one formatter
+    // renders it, so the list and the trade's own screen cannot describe one instant two ways.
+    expect(s.deadline?.at).toBe(AT)
+    assertTruthful(s.deadline!.label)
+  })
+
+  it('shows no deadline once the window has elapsed — the note already says so', () => {
+    const s = tradeRowState(
+      facts({ myResponseState: 'needs_attention', myResponseDeadline: AT }),
+    )
+    expect(s.deadline).toBeNull()
+  })
+
+  it('shows no deadline to the DELIVERER, who is not the one being asked', () => {
+    const s = tradeRowState(
+      facts({ theirResponseState: 'awaiting_receiver', myResponseDeadline: AT }),
+    )
+    expect(s.deadline).toBeNull()
+  })
+
+  it('shows no deadline on a cancelled trade, however live the window looked', () => {
+    const s = tradeRowState(
+      facts({ myResponseState: 'awaiting_receiver', myResponseDeadline: AT, iCancelled: true }),
+    )
+    expect(s.attention).toBeNull()
+    expect(s.deadline).toBeNull()
+  })
+
+  it('never renders a dangling label when the server sent no timestamp', () => {
+    const s = tradeRowState(
+      facts({ myResponseState: 'awaiting_receiver', myResponseDeadline: null }),
+    )
+    expect(s.deadline).toBeNull()
+  })
+
+  it('shows a deadline only where the badge asks the viewer to act', () => {
+    for (const mine of WINDOWS) {
+      for (const theirs of WINDOWS) {
+        const s = tradeRowState(
+          facts({ myResponseState: mine, theirResponseState: theirs, myResponseDeadline: AT }),
+        )
+        // The rule, stated once: a deadline appears exactly when the badge is `Action needed`.
+        expect(s.deadline !== null).toBe(s.attention === ACTION_NEEDED_LABEL)
+      }
+    }
+  })
+
+  it('is null on every row that is not a confirmed trade', () => {
+    for (const status of ['pending', 'declined', 'released'] as const) {
+      expect(tradeRowState(facts({ status })).deadline).toBeNull()
+    }
+    expect(tradeRowState(facts({ agreementId: null })).deadline).toBeNull()
   })
 })

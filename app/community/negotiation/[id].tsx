@@ -88,11 +88,18 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // route to "mutually cancelled". Cancelling ends the trade; it decides nothing about whether
 // anyone fulfilled anything.
 //
-// That is all it can do. There is still no timeout, automatic fulfilment or completion,
-// no-show, Needs Attention, Under Review, adjudication or terminal outcome — for the
-// obligation or for the agreement — so no copy on this screen may say a trade is booked,
-// complete, fulfilled, unfulfilled, disputed, resolved or under review. Until it is cancelled
-// the agreement stays "Trade confirmed" while its obligations progress.
+// A delivered obligation also carries the PD-057 RECEIVER-RESPONSE WINDOW: a deadline, and once
+// it passes unanswered, NEEDS ATTENTION. Both are decided by the SERVER and arrive on the
+// obligation row — this screen never compares a deadline to the device clock, it only words and
+// formats what the server sent. Needs Attention is an UNRESOLVED OPERATIONAL STATE and nothing
+// more: the obligation stays `delivered`, the receiver may still answer however late, and an
+// answer clears the condition.
+//
+// That is all it can do. There is still no timeout TRANSITION (the window changes no status),
+// no automatic fulfilment or completion, no no-show, no Under Review, no adjudication and no
+// terminal outcome — for the obligation or for the agreement — so no copy on this screen may say
+// a trade is booked, complete, fulfilled, unfulfilled, disputed, resolved or under review. Until
+// it is cancelled the agreement stays "Trade confirmed" while its obligations progress.
 
 const EMPTY_DRAFT: ProposalDraft = {
   ownerGives: '',

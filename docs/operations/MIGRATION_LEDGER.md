@@ -655,18 +655,31 @@ Hand-applied SQL requires a `migration repair` in the same sitting, or the drift
 Out of scope for this note. Production has never been reconciled by this process and must
 not be, without a separate, explicitly approved change.
 
-## 2026-09-06 — `20261011000000` **AUTHORED, NOT YET APPLIED** (Receiver Window + Needs Attention, PR #62)
+## 2026-09-06 — `20261011000000` **APPLIED to non-production 2026-09-06** (Receiver Window + Needs Attention, PR #62)
 
-> **APPLICATION STATUS: NOT APPLIED. This entry records an authored migration, not a completed
-> apply, and it is the first entry in this ledger to do so.** The session that wrote it had **no
-> database access of any kind** — no `psql` binary, no local Postgres, no Docker for
-> `supabase start`, and no `TEST_SUPABASE_DB_URL` — so it could neither apply the migration nor
-> execute the B5B suite. Every claim below describes what the SQL says, verified by reading it and
-> by static checks; **none of it is a claim about observed database behaviour.** Before this is
-> treated as applied: run the migration against non-production, run
-> `node scripts/db-security-test.mjs`, then replace this banner with the apply date, the
-> `supabase migration list` confirmation and the real B5B counts. Until then the correct reading of
-> the entries below is "intended and reviewed, unproven at runtime".
+> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`) on 2026-09-06;
+> CONFIRMED 2026-09-07.** This entry was first written as AUTHORED-BUT-NOT-APPLIED, because the
+> authoring session had no database access. That banner asked its successor for three things —
+> the apply date, the `supabase migration list` confirmation and the real B5B counts — and all
+> three are now recorded, so the claims below are **observed database behaviour**, not static
+> reading.
+>
+> * `supabase migration list --linked`: local and remote agree on all **50** versions, no gap and
+>   no drift; `20261011000000` is present on both sides.
+> * The APPLIED body is the CORRECTED one, verified against the live catalog rather than the file:
+>   `barter_confirmation_anchor` is `provolatile = 'i'`, `barter_confirmation_deadline` and
+>   `barter_receiver_window` are `'s'`, the deadline carries `proconfig` `TimeZone=UTC`, and
+>   `enforce_barter_obligations_immutable` contains the § 3b contract-field diff.
+> * **B5B: 985/985 passed, 0 failed**, of which **113** are `receiver_window` — including the
+>   three anchor cases, the inclusive boundary at one microsecond before / exactly at / one
+>   microsecond after, a DST-straddling determinism check, and the full `service_role` freeze
+>   matrix. Transaction rolled back; no residue.
+> * **Concurrency: 102/102 passed** (`scripts/negotiation-concurrency.mjs`). Re-run deliberately
+>   even though this slice adds no write, because § 3b replaced a live trigger body that the
+>   delivery / receipt / cancellation races all pass through.
+>
+> **The migration is therefore APPLIED HISTORY and must not be edited.** A correction needs a
+> forward migration. Production (`kxregomuawwcqvisuhtr`) was never targeted and never queried.
 
 **One migration, and it is the smallest kind this repo has added to the barter chain: it creates
 no column, no table, no trigger, no RPC, no job and no write path.** Everything it exposes is
@@ -777,6 +790,32 @@ An operator-correction workflow is **not** built here and would need its own Fou
 
 **The boundary is inclusive:** Needs Attention begins at `server_now >= confirmation_deadline`,
 per Founder ruling, spelled once in `barter_receiver_window`.
+
+**TWO COMMENTS INSIDE THE APPLIED FILE ARE SUPERSEDED BY THIS ENTRY.** Both were found by the
+2026-09-07 security review. `20261011000000` is applied history and **was not edited**; neither
+correction changes behaviour, so neither warrants a forward migration on its own. Fold the
+`comment on` refresh into the next migration that opens these objects for a reason of its own.
+
+1. **§ 6's grant rationale says "All three are IMMUTABLE".** Two of the three are STABLE — the
+   same file argues for exactly that twice, and the B5B suite asserts `'i'`, `'s'`, `'s'` per
+   function. The load-bearing half of that sentence ("read no table, take no id, hold no
+   authority") is true and is what actually justifies the `authenticated` grant. **Do not treat
+   the deadline or the window as IMMUTABLE** — in particular, never place either in an index
+   predicate or a generated column, which is the one context where the false claim would become
+   a real correctness defect.
+2. **§ 3b's closing note overstates the participant-set pin.** It says the obligation's and the
+   agreement's participant columns "are frozen against EVERY writer including `service_role`".
+   Only the **obligation** side is. `enforce_barter_agreement_immutable`
+   (`20260927000000:56-61`) still has an unconditional privileged early return, so
+   `barter_agreements.owner_user_id` / `responder_user_id` remain rewritable by `service_role`
+   and by a no-JWT session. Consequence if one were ever rewritten: the obligation keeps the old
+   (now frozen) ids, so a participant could read the obligation while losing read on the
+   agreement's cancellation acts, and the view would report a live or attention window on a
+   **cancelled** trade — a false demand, not a disclosure, and reachable only with privileged
+   access the product already trusts. **Whether the Founder ruling of 2026-09-06 should extend to
+   `barter_agreements` is an OPEN PRODUCT QUESTION, not a defect, and is deliberately not decided
+   here.** What stands between the two read policies drifting apart is the cross-table data
+   invariant asserted in `supabase/tests/receiver_window.test.sql` § 14c, which fails CI on drift.
 
 Ledger after apply: **50 entries** — **VERIFIED 2026-09-07** by `supabase migration list`
 against the linked non-production project (`wcoyjeklscuqsumpjpfo`); local and remote agree on all

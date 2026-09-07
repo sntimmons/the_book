@@ -707,8 +707,12 @@ begin
   select count(*) into v_n from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and c.relname in ('my_barter_obligations', 'my_trade_activity')
      and c.relkind = 'v'
-     and array_to_string(c.reloptions, ',') like '%security_invoker=%';
-  perform pg_temp.chk('receiver_window', 'both views are security_invoker', '2', v_n::text);
+     -- The VALUE, not merely the key. `like '%security_invoker=%'` also passes for
+     -- `security_invoker=false` — a view that runs as its postgres OWNER and therefore bypasses
+     -- `barter_obligations_participant_read` entirely. That is the exact regression this
+     -- assertion exists to catch, so it must not be the one shape it cannot see.
+     and array_to_string(c.reloptions, ',') ilike '%security_invoker=true%';
+  perform pg_temp.chk('receiver_window', 'both views are security_invoker=true', '2', v_n::text);
 
   select count(*) into v_n from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname = 'public' and c.relname in ('my_barter_obligations', 'my_trade_activity')
@@ -723,9 +727,14 @@ begin
                        'barter_receiver_window')
      and not p.prosecdef
      and pg_get_userbyid(p.proowner) = 'postgres'
-     and array_to_string(p.proconfig, ',') like '%search_path=%';
+     -- Again the VALUE: `search_path=public` is a pinned search_path and a hijackable one.
+     -- These functions pin the EMPTY path, which is what makes every reference in them
+     -- schema-qualified by necessity. Tested as an ARRAY ELEMENT rather than by equality on the
+     -- joined string, because `barter_confirmation_deadline` legitimately carries a second
+     -- setting (`TimeZone=UTC`) alongside it.
+     and 'search_path=""' = any(p.proconfig);
   perform pg_temp.chk('receiver_window',
-    'all three functions are invoker-rights, postgres-owned and search_path pinned',
+    'all three functions are invoker-rights, postgres-owned and search_path pinned to the empty path',
     '3', v_n::text);
 
   -- VOLATILITY IS DECLARED HONESTLY, per function. `timestamptz + interval` is the STABLE
