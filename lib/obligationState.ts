@@ -5,9 +5,16 @@
 //
 // USER LANGUAGE, NOT SCHEMA LANGUAGE. Nothing here says status, enum, row or transition.
 //
-// TRUTHFUL AND NON-FINAL. There is no timeout, no automatic fulfilment, no-show, Needs
-// Attention, Under Review or adjudication in the product yet, so no copy in this module may say
-// an obligation is complete, fulfilled, unfulfilled, disputed, resolved or under review.
+// TRUTHFUL AND NON-FINAL. The receiver-response window and Needs Attention now EXIST (PD-057,
+// PD-059). Nothing else does: there is still no automatic fulfilment, no automatic completion,
+// no no-show, no Under Review and no adjudication, so no copy in this module may say an
+// obligation is complete, fulfilled, unfulfilled, disputed, resolved or under review — and
+// Needs Attention itself must never be worded as any of them. It is an UNRESOLVED OPERATIONAL
+// STATE and nothing more: the window passed and nobody has answered.
+//
+// The window is decided by the SERVER. This module receives `receiver_window_state` already
+// computed against the server's clock and never re-derives it from `Date.now()`; a device with a
+// wrong clock must not be able to put a trade into — or out of — Needs Attention.
 //
 // Pre-delivery cancellation DOES exist, but it is an AGREEMENT-level act: it is said once, by
 // lib/tradeCancellation.ts, above both obligations. This module only takes `tradeCancelled` as
@@ -22,6 +29,27 @@ import { sideForRole } from './negotiationState'
  * verdict — see the migration comment in 20261004000000 for why the vocabulary stops here.
  */
 export type ObligationStatus = 'pending' | 'delivered' | 'received' | 'not_received'
+
+/**
+ * Where a delivered-but-unanswered obligation sits relative to its PD-057 response window,
+ * **as the server computed it**.
+ *
+ *   none               nothing is waiting on the receiver — not delivered, already answered,
+ *                      or the trade was cancelled
+ *   awaiting_receiver  delivered, unanswered, still inside the window
+ *   needs_attention    delivered, unanswered, and the window has passed
+ *
+ * Read from `my_barter_obligations.receiver_window_state`. NEVER derived here: the deadline
+ * comparison happens once, in `public.barter_receiver_window`, against the server's clock. A
+ * client that recomputed it from `Date.now()` would let a wrong device clock invent — or hide —
+ * Needs Attention, and the state is the same for both participants only because one clock
+ * decides it.
+ *
+ * `needs_attention` is an UNRESOLVED OPERATIONAL STATE. It is not Fulfilled, Unfulfilled,
+ * Completed, Under Review, Disputed, a no-show or an adjudication; none of those exist, and no
+ * copy below may imply otherwise.
+ */
+export type ReceiverWindowState = 'none' | 'awaiting_receiver' | 'needs_attention'
 
 /** The viewer's relationship to one obligation. Derived from the SERVER's role and side. */
 export type ObligationRole = 'deliverer' | 'receiver'
@@ -47,8 +75,37 @@ export interface ObligationView {
   note: string | null
   /** May the viewer mark this delivered? Only the deliverer, only before delivery. */
   canMarkDelivered: boolean
-  /** May the viewer answer for it? Only the receiver, only after delivery, only once. */
+  /**
+   * May the viewer answer for it? Only the receiver, only after delivery, only once.
+   *
+   * DELIBERATELY UNAFFECTED BY THE DEADLINE. An elapsed window means "this needs attention", not
+   * "you lost your right to answer" — and the server agrees: neither receiver RPC consults a
+   * deadline, so withdrawing the control here would hide an action that still works. Only a
+   * later Under Review / adjudication slice may close it, and it does not exist.
+   */
   canRespond: boolean
+  /**
+   * The short label for this obligation's response window, or null when it has none.
+   *
+   * TWO possible values, not one. `ACTION_NEEDED_LABEL` means the window is LIVE and waiting on
+   * this viewer — the controls beside it are live, so the label is an available action, never a
+   * verdict. `NEEDS_ATTENTION_LABEL` means it has passed unanswered. A screen may style them
+   * differently but must not assume a single value, and must not treat either as an outcome.
+   *
+   * Decided PER OBLIGATION: `obligationView` is never told about the counterparty's obligation,
+   * so an agreement-level headline elsewhere may differ from this without either being wrong
+   * (Founder ruling 2026-09-07).
+   *
+   * A separate field rather than words spliced into `state`, so a screen can render it as a
+   * badge and so the forbidden-vocabulary sweep has one string to check.
+   */
+  attention: string | null
+  /**
+   * The response deadline worth showing, with the label that makes it true for THIS viewer, or
+   * null when there is no live window. The timestamp is returned raw and the caller formats it,
+   * so one formatter renders every time on the card.
+   */
+  deadline: { label: string; at: string } | null
 }
 
 interface StateCopy {
@@ -144,12 +201,111 @@ const TITLE: Record<ObligationRole, string> = {
  * stays true — because the cancellation itself is said once, by `lib/tradeCancellation.ts`,
  * above both obligations rather than repeated inside each.
  */
+/** The one short label for an elapsed, unanswered response window. */
+export const NEEDS_ATTENTION_LABEL = 'Needs attention'
+
+/**
+ * The one short label for "this provider owes an answer, and is still in time".
+ *
+ * Lives HERE, beside `NEEDS_ATTENTION_LABEL`, even though the list surface uses it too. It was
+ * previously spelled only in lib/tradeActivity.ts, which imports from this module — so putting
+ * the shared spelling here is the direction that does not create an import cycle, and it keeps
+ * ONE spelling of a label that must read identically on the list and on the trade's own screen.
+ * `lib/tradeActivity.ts` re-exports it, so existing importers are unaffected.
+ */
+export const ACTION_NEEDED_LABEL = 'Action needed'
+
+interface WindowCopy {
+  /** Replaces the status note when there is something truer to say about the window. */
+  note: string | null
+  attention: string | null
+  deadlineLabel: string | null
+}
+
+/**
+ * What the response window adds, per role.
+ *
+ * TOTAL over role × window state, for the same reason `COPY` is total over role × status: a
+ * fourth window state must be a compile error, not a silent fallthrough to whichever branch a
+ * ternary happened to end on. That defect class produced every copy finding on this surface.
+ *
+ * Only reachable for a DELIVERED, unanswered obligation — the server returns `none` for every
+ * other row — so these never need to describe a pending, received or not_received obligation.
+ *
+ * NOTHING HERE BLAMES ANYONE. An elapsed window is not a receiver who failed, a provider who
+ * failed, a dispute, or an admin review: no such finding exists, and the copy stops at the two
+ * facts on record — the window passed, and nobody has answered. "Nothing has been decided" is
+ * the same sentence PD-058 already requires after an explicit `not_received`, for the same
+ * reason.
+ */
+const WINDOW: Record<ObligationRole, Record<ReceiverWindowState, WindowCopy>> = {
+  deliverer: {
+    none: { note: null, attention: null, deadlineLabel: null },
+    awaiting_receiver: {
+      // Keeps the status note — it is still exactly what is pending — and adds when.
+      note: null,
+      attention: null,
+      deadlineLabel: 'They have until',
+    },
+    needs_attention: {
+      note: 'The confirmation window has passed and this is still unanswered, so the trade is '
+        + 'unresolved. Nothing has been decided.',
+      attention: NEEDS_ATTENTION_LABEL,
+      deadlineLabel: 'A response was due by',
+    },
+  },
+  receiver: {
+    none: { note: null, attention: null, deadlineLabel: null },
+    awaiting_receiver: {
+      note: null,
+      // FOUNDER RULING 2026-09-07. The receiver's own unanswered obligation is labelled for the
+      // action it is asking for. This is decided PER OBLIGATION — `obligationView` never sees
+      // the counterparty's obligation, so an escalation over there cannot reach in and silence
+      // it. The agreement-level headline may read "Needs attention" at the same moment; the two
+      // are different SCOPES and both are true. An actionable deadline is never hidden merely
+      // because the other obligation escalated.
+      attention: ACTION_NEEDED_LABEL,
+      deadlineLabel: 'Please respond by',
+    },
+    needs_attention: {
+      // Says the window passed and that the action is STILL available, because it is. Copy that
+      // announced a closed window beside two working buttons would be the
+      // caption-contradicts-capability defect this module exists to prevent.
+      note: 'The response window has passed and this is still unanswered. You can still say '
+        + 'whether you received it.',
+      attention: NEEDS_ATTENTION_LABEL,
+      deadlineLabel: 'A response was due by',
+    },
+  },
+}
+
+/**
+ * @param window the SERVER's `receiver_window_state`. Defaulted to `none` so a caller that has
+ * not been given one cannot accidentally assert an attention state — the safe direction is to
+ * say nothing about a window, never to invent one.
+ * @param confirmationDeadline the server's `confirmation_deadline` for this obligation. Only
+ * rendered; never compared against a local clock here.
+ */
 export function obligationView(
   role: ObligationRole,
   status: ObligationStatus,
   tradeCancelled = false,
+  window: ReceiverWindowState = 'none',
+  confirmationDeadline: string | null = null,
 ): ObligationView {
   const c = COPY[role][status]
+  // A window belongs ONLY to a delivered, unanswered obligation, and only to an uncancelled
+  // trade. The server already guarantees both — `barter_receiver_window` returns `none` for any
+  // other status and for a cancelled agreement — so these are SECOND, independent refusals
+  // rather than the only ones.
+  //
+  // The status half is load-bearing now that the live window carries a label. Without it,
+  // `('receiver', 'received', 'awaiting_receiver')` would render "Action needed" beside a card
+  // with NO controls, because `canRespond` is already false for an answered obligation: the
+  // caption-contradicts-capability defect this module exists to prevent, and the one shape that
+  // became reachable when the live window stopped being unlabelled. It must not depend on one
+  // query being right.
+  const w = WINDOW[role][tradeCancelled || status !== 'delivered' ? 'none' : window]
   return {
     title: TITLE[role],
     state: c.state,
@@ -158,9 +314,19 @@ export function obligationView(
     // nothing happens next. Suppressing both controls while leaving the sentence that promises
     // one was the screen telling a receiver to wait for a delivery it had just said could never
     // arrive. The `state` sentence stays: "Not marked delivered yet." is still true.
-    note: tradeCancelled ? null : c.note,
+    // The window's note WINS when it has one: "the window passed and this is unanswered" is
+    // strictly truer than "waiting for the other provider to confirm", which stops being
+    // accurate the moment the deadline goes by.
+    note: tradeCancelled ? null : (w.note ?? c.note),
     canMarkDelivered: c.canMarkDelivered && !tradeCancelled,
     canRespond: c.canRespond && !tradeCancelled,
+    attention: w.attention,
+    // Shown only when the server gave both a live window state and a deadline. Guarding on both
+    // means a missing deadline degrades to no line, never to a label with nothing after it.
+    deadline:
+      w.deadlineLabel && confirmationDeadline
+        ? { label: w.deadlineLabel, at: confirmationDeadline }
+        : null,
   }
 }
 

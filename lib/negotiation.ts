@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import type { ProposalDraft, ProposalSide, TradeSide } from './negotiationState'
 import { draftPayload } from './negotiationState'
-import type { ObligationStatus } from './obligationState'
+import type { ObligationStatus, ReceiverWindowState } from './obligationState'
 
 /** What the server reports after a cancellation act. Derived there from the acts on record. */
 export type TradeCancellationResult = 'cancelled_by_participant' | 'mutually_cancelled'
@@ -84,6 +84,17 @@ export interface BarterObligation {
   deliveredAt: string | null
   /** Server-stamped when the receiver answered. */
   receiptRespondedAt: string | null
+  /**
+   * PD-057 receiver-response window, DERIVED AND DECIDED BY THE SERVER.
+   *
+   * `confirmationAnchor` is `max(delivered_at, scheduled_at ?? due_at)` and
+   * `confirmationDeadline` is that plus 7 days; both are null until a delivery exists.
+   * `receiverWindowState` is the server's comparison of its own clock against that deadline —
+   * never recomputed here, so a wrong device clock cannot invent or hide Needs Attention.
+   */
+  confirmationAnchor: string | null
+  confirmationDeadline: string | null
+  receiverWindowState: ReceiverWindowState
 }
 
 const ROW_COLUMNS =
@@ -274,11 +285,16 @@ export async function fetchNegotiation(proposalId: string): Promise<{
   const row = rowRes.data ? mapRow(rowRes.data as unknown as RawRow) : null
   let obligations: BarterObligation[] = []
   if (row?.agreementId) {
+    // Reads `my_barter_obligations`, not the table: the PD-057 window is derived server-side and
+    // arrives with the row, so the client never compares a deadline against its own clock. The
+    // view is security_invoker over the same participant policy, so this is the same read
+    // authority as before — one extra column set, no extra reach.
     const obligationRes = await supabase
-      .from('barter_obligations')
+      .from('my_barter_obligations')
       .select(
         'id, agreement_id, side, agreed_description, due_at, scheduled_at, status,'
-        + ' delivered_at, receipt_responded_at',
+        + ' delivered_at, receipt_responded_at, confirmation_anchor, confirmation_deadline,'
+        + ' receiver_window_state',
       )
       .eq('agreement_id', row.agreementId)
       .order('side', { ascending: true })
@@ -293,6 +309,9 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       status: ObligationStatus
       delivered_at: string | null
       receipt_responded_at: string | null
+      confirmation_anchor: string | null
+      confirmation_deadline: string | null
+      receiver_window_state: ReceiverWindowState
     }[] | null) ?? []).map((o) => ({
       id: o.id,
       agreementId: o.agreement_id,
@@ -303,6 +322,11 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       status: o.status,
       deliveredAt: o.delivered_at,
       receiptRespondedAt: o.receipt_responded_at,
+      confirmationAnchor: o.confirmation_anchor,
+      confirmationDeadline: o.confirmation_deadline,
+      // Fail closed on a missing value: no window state means say nothing about a window, never
+      // assert one. A row the server declined to classify must not become Needs Attention here.
+      receiverWindowState: o.receiver_window_state ?? 'none',
     }))
   }
 

@@ -52,6 +52,7 @@ import {
   anyDelivered,
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
+  NEEDS_ATTENTION_LABEL,
   NOT_RECEIVED_COPY,
   ObligationActionCopy,
   obligationRole,
@@ -88,11 +89,18 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // route to "mutually cancelled". Cancelling ends the trade; it decides nothing about whether
 // anyone fulfilled anything.
 //
-// That is all it can do. There is still no timeout, automatic fulfilment or completion,
-// no-show, Needs Attention, Under Review, adjudication or terminal outcome — for the
-// obligation or for the agreement — so no copy on this screen may say a trade is booked,
-// complete, fulfilled, unfulfilled, disputed, resolved or under review. Until it is cancelled
-// the agreement stays "Trade confirmed" while its obligations progress.
+// A delivered obligation also carries the PD-057 RECEIVER-RESPONSE WINDOW: a deadline, and once
+// it passes unanswered, NEEDS ATTENTION. Both are decided by the SERVER and arrive on the
+// obligation row — this screen never compares a deadline to the device clock, it only words and
+// formats what the server sent. Needs Attention is an UNRESOLVED OPERATIONAL STATE and nothing
+// more: the obligation stays `delivered`, the receiver may still answer however late, and an
+// answer clears the condition.
+//
+// That is all it can do. There is still no timeout TRANSITION (the window changes no status),
+// no automatic fulfilment or completion, no no-show, no Under Review, no adjudication and no
+// terminal outcome — for the obligation or for the agreement — so no copy on this screen may say
+// a trade is booked, complete, fulfilled, unfulfilled, disputed, resolved or under review. Until
+// it is cancelled the agreement stays "Trade confirmed" while its obligations progress.
 
 const EMPTY_DRAFT: ProposalDraft = {
   ownerGives: '',
@@ -514,7 +522,17 @@ export default function NegotiationScreen() {
     // screen ends up labelling an obligation "You agreed to provide" while offering the
     // receiver's controls beside it.
     const role = obligationRole(obligation.side, myRole)
-    const o = obligationView(role, obligation.status, tradeCancelled)
+    // The PD-057 window comes from the SERVER on the obligation row — the deadline comparison
+    // happened there, against the server's clock. Nothing on this screen recomputes it, so a
+    // device with a wrong clock cannot put this obligation into, or out of, Needs Attention, and
+    // both participants are looking at the same answer.
+    const o = obligationView(
+      role,
+      obligation.status,
+      tradeCancelled,
+      obligation.receiverWindowState,
+      obligation.confirmationDeadline,
+    )
     return (
       <View style={styles.term}>
         <Text style={styles.termSide}>{o.title}</Text>
@@ -524,6 +542,27 @@ export default function NegotiationScreen() {
           <Text style={styles.termTiming}>
             Scheduled for {formatTermTime(obligation.scheduledAt)}
           </Text>
+        ) : null}
+        {/* Above the state sentence, so an obligation is marked before it is described. Never a
+            verdict: `attention` is only ever ACTION_NEEDED_LABEL — this obligation is waiting on
+            THIS viewer, and the controls beneath prove it is still available — or
+            NEEDS_ATTENTION_LABEL, which names an unresolved condition. Both come from
+            lib/obligationState.ts and are decided PER OBLIGATION from the server's window state,
+            so the agreement-level headline elsewhere can differ from this one without either
+            being wrong (Founder ruling 2026-09-07). Same chip for both, deliberately: an
+            elapsed window is not more alarming than a live one, it is just later. */}
+        {o.attention ? (
+          <View
+            style={[
+              styles.attentionChip,
+              // Same colour rule as Trade Activity, so one state does not change meaning when
+              // the viewer moves between the two surfaces: amber for "your turn, still in
+              // time", the warmer tone for "the window has passed".
+              o.attention === NEEDS_ATTENTION_LABEL ? styles.attentionChipLate : null,
+            ]}
+          >
+            <Text style={styles.attentionChipText}>{o.attention}</Text>
+          </View>
         ) : null}
         <Text style={styles.obligationState}>{o.state}</Text>
         {obligationTimeline(obligation.deliveredAt, obligation.receiptRespondedAt).map((t) => (
@@ -536,6 +575,15 @@ export default function NegotiationScreen() {
           </Text>
         ))}
         {o.note ? <Text style={styles.obligationNote}>{o.note}</Text> : null}
+        {/* The deadline, labelled for THIS viewer by lib/obligationState.ts — "Please respond by"
+            for the receiver, "They have until" for the deliverer. Formatted with the SAME
+            formatter as every other time on the card, and read from the server's
+            `confirmation_deadline`; the client contributes the locale, nothing more. */}
+        {o.deadline ? (
+          <Text style={styles.termTiming}>
+            {o.deadline.label} {formatTermTime(o.deadline.at)}
+          </Text>
+        ) : null}
         {o.canMarkDelivered ? (
           <View style={styles.actions}>
             <TouchableOpacity
@@ -945,6 +993,29 @@ const styles = StyleSheet.create({
   },
   cancelBlock: { marginTop: 16 },
   obligationState: { color: '#F0E8D5', fontSize: 13, lineHeight: 19, marginTop: 8 },
+  // The same two chips Trade Activity uses, with the same meanings. Colour carries the
+  // difference between "your turn, still in time" (amber base) and "the window has passed"
+  // (the warmer `Late` variant) — the base alone was the LATE colour, so a live obligation was
+  // being shown in the elapsed treatment here while the list showed it as live.
+  //
+  // Deliberately NOT red in either state: an elapsed response window is an unresolved
+  // condition, not a failure, a dispute or a review, and an alarm colour would say something
+  // the product cannot support.
+  attentionChip: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(214,167,79,0.16)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(214,167,79,0.45)',
+  },
+  attentionChipLate: {
+    backgroundColor: 'rgba(214,124,79,0.18)',
+    borderColor: 'rgba(214,124,79,0.5)',
+  },
+  attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
   obligationNote: {
     color: 'rgba(240,232,213,0.6)',
     fontSize: 12.5,

@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { fetchProviderInfoMap, CommunityProviderInfo } from './community'
 import { interpretWrite } from './barterErrors'
 import type { BarterInterestStatus, BarterReleaseReason } from './tradeActivity'
+import type { ReceiverWindowState } from './obligationState'
 
 // The status vocabulary and the Trade Activity section mapping live in lib/tradeActivity.ts --
 // a PURE module, so they can be unit tested. This module imports the Supabase client, which
@@ -285,6 +286,17 @@ export interface TradeActivityRow {
   iCancelled: boolean
   /** The other participant recorded theirs. Both true is "mutually cancelled". */
   theyCancelled: boolean
+  /**
+   * PD-059 role-relative receiver-window state, computed by the server against its own clock.
+   *
+   * `myResponseState` is the obligation this viewer RECEIVES — their own action.
+   * `theirResponseState` is the one they DELIVER — waiting on the counterparty. Each participant
+   * receives exactly one and delivers exactly one, so neither is a roll-up.
+   */
+  myResponseState: ReceiverWindowState
+  theirResponseState: ReceiverWindowState
+  /** The deadline behind `myResponseState`, for display only. Null when no window is live. */
+  myResponseDeadline: string | null
   provider: CommunityProviderInfo
 }
 
@@ -306,7 +318,8 @@ export async function fetchTradeActivity(): Promise<{
       'interest_id, offer_id, status, created_at, released_at, release_reason, ' +
         'offering_service, seeking_service, offer_is_active, my_role, ' +
         'counterparty_provider_id, conversation_id, agreement_id, ' +
-        'i_cancelled, they_cancelled',
+        'i_cancelled, they_cancelled, my_response_state, my_response_deadline, ' +
+        'their_response_state',
     )
     .order('created_at', { ascending: false })
   // A failure is NOT an empty list. Collapsing the two let the screen say "No trade activity
@@ -333,6 +346,9 @@ export async function fetchTradeActivity(): Promise<{
           agreement_id: string | null
           i_cancelled: boolean
           they_cancelled: boolean
+          my_response_state: ReceiverWindowState | null
+          my_response_deadline: string | null
+          their_response_state: ReceiverWindowState | null
         }[]
       | null) ?? []
   const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
@@ -354,6 +370,12 @@ export async function fetchTradeActivity(): Promise<{
     agreementId: r.agreement_id,
     iCancelled: r.i_cancelled,
     theyCancelled: r.they_cancelled,
+    // Null for every row with no agreement (the LEFT JOINs find no obligation), and fail-closed
+    // for anything else the server declined to classify: absence means say nothing about a
+    // window, never assert one.
+    myResponseState: r.my_response_state ?? 'none',
+    theirResponseState: r.their_response_state ?? 'none',
+    myResponseDeadline: r.my_response_deadline,
       provider: infoMap.get(r.counterparty_provider_id) ?? {
         name: 'Provider',
         photo: null,

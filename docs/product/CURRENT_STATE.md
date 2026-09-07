@@ -218,8 +218,8 @@ This section records **what is built on `main`** and **what is not**.
 
 ### What is built
 
-Verified against the migration chain in the working tree — **49 migrations**, newest
-`supabase/migrations/20261010000000_cancellation_notice_neutral_copy.sql`.
+Verified against the migration chain in the working tree — **50 migrations**, newest
+`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`.
 
 | Capability | What is actually enforced | Where |
 |---|---|---|
@@ -293,6 +293,9 @@ agreement id and an optional reason and cannot name the actor, the time or the o
 `validateDraft`, `draftPayload`), `lib/obligationState.ts` holds the per-obligation role, state
 and copy rules (`obligationRole`, `obligationView`, `obligationTimeline`, plus `anyDelivered` —
 the PD-046 precondition, kept out of JSX so it can be tested) with no I/O,
+`lib/obligationState.ts` also owns the client half of the PD-057 receiver window
+(`ReceiverWindowState`, the role x window copy table, `NEEDS_ATTENTION_LABEL`) — the SERVER
+decides the state and this module only words it,
 `lib/negotiationWrite.ts` owns the write-operation sequence every one of those writes shares —
 busy on, write, busy off in a `finally`, interpret the refusal via `lib/barterErrors.ts`, say it
 once, decide whether the screen is stale, re-read authoritative state — with the per-operation
@@ -316,15 +319,56 @@ above both obligations (`lib/negotiationState.ts:169-180`, `lib/obligationState.
 refusals, including `PT412` for an answer already recorded (`:142-145`) and `PT409` read as
 "this trade was cancelled" for the three obligation operations (`:124-136`).
 
-**Nothing sends the receiver a push, device or email notification.** PD-059 is unchanged: no
-such path exists anywhere in the chain. What PR #58 added is narrower and only for
+**The receiver-response window and Needs Attention now exist** (PD-057, PD-059), as DERIVED read
+state. `public.barter_confirmation_anchor` returns
+`max(delivered_at, coalesce(scheduled_at, due_at))` and NULL before delivery;
+`public.barter_confirmation_deadline` is that plus 7 days and is the only place the interval is
+written; `public.barter_receiver_window` returns `none | awaiting_receiver | needs_attention` and
+begins attention at `server_now >= deadline`, **inclusive**. `public.my_barter_obligations`
+(security_invoker, scoped by the existing participant policy) exposes the anchor, the deadline,
+the state and `server_now`; `my_trade_activity` gained role-relative `my_response_state` /
+`their_response_state`. **No column, trigger, background job or scheduler was added** — nothing
+flips a row at a deadline, so there is no persisted transition to disagree with the timestamps.
+An elapsed window leaves the row `delivered`: the four-value `status` vocabulary is unchanged and
+**Needs Attention is not a status value**, not an outcome, and not Fulfilled, Unfulfilled,
+Completed, Under Review, Disputed, a no-show or an adjudication. **The receiver may still answer
+after the deadline** — no RPC consults it, asserted over `prosrc` — and an explicit answer clears
+the condition however long ago the window closed (PD-058). Cancelled trades never enter the flow.
+**Agreement-level and obligation-level attention are different SCOPES** (Founder ruling
+2026-09-07). Trade Activity's row badge is the agreement-level headline and may read
+"Needs attention" because the counterparty's window elapsed; that never suppresses this viewer's
+own live obligation, which keeps its **Action needed** label, its **deadline**, and both
+**Confirm received** / **Didn't receive** controls on the trade detail. `obligationView` is
+per-obligation and is never passed the counterparty's state, so the isolation is structural
+rather than a rule that could be forgotten. The **feed card and offer-responses screen are
+deliberately deferred**: they show "Trade confirmed. The agreed terms can no longer change.",
+which stays true, so nothing there became false.
+
+The same migration also **froze the obligation's contract fields against every writer, including
+`service_role`** (Founder ruling 2026-09-06): agreement, participants, source term, description,
+`due_at` and `scheduled_at` can no longer be rewritten after the agreement exists, because they
+are now the read-scoping keys and the deadline anchor. Privileged DELETE is deliberately still
+permitted, so account-erasure cascades still work. **The same principle is now ruled to extend to
+core `barter_agreements` identity** (Founder, 2026-09-07), but is **not yet enforced there**:
+`enforce_barter_agreement_immutable` refuses ordinary callers absolutely while giving
+`service_role` and the no-JWT path an unconditional early return. That is a recorded bounded
+follow-up with live-catalog evidence in
+[MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md), not work done in PR #62.
+(`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`,
+`lib/obligationState.ts`, `lib/tradeActivity.ts`.)
+
+**Nothing sends the receiver a push, device or email notification.** PD-059's push half is
+unchanged: no such path exists anywhere in the chain. What PR #58 added is narrower and only for
 cancellation — a durable in-thread system message, written best-effort into the pair's existing
-conversation (`20261009000000_pair_conversation_notice.sql`). **A delivery still produces no
-signal of any kind**: `20261004000000_barter_obligation_delivery.sql` creates no notification
-path and `lib/tradeActivity.ts` has no obligation awareness, so a delivery is visible **only** on
-the negotiation screen, which refreshes on focus (`app/community/negotiation/[id].tsx:170-175`).
-PD-059 records that as a known gap belonging to later Session 7 attention / timeout UX, not as an
-oversight.
+conversation (`20261009000000_pair_conversation_notice.sql`). **A delivery still PUSHES nothing**:
+`20261004000000_barter_obligation_delivery.sql` creates no notification path and this slice added
+none, so nothing reaches a provider who does not open the app. What changed is where a delivery is
+VISIBLE once they do: it is no longer only the negotiation screen
+(`app/community/negotiation/[id].tsx:170-175`, refreshed on focus) — `lib/tradeActivity.ts` now
+reads the two role-relative response states, so an unanswered delivery surfaces on Trade Activity
+as **Action needed** or **Needs attention** (above). The Trade Activity attention UX that PD-059
+required before beta **is now built**; the **push** half of PD-059 remains a known, scheduled gap
+rather than an oversight.
 
 Regression coverage: `supabase/tests/barter.test.sql`, `supabase/tests/negotiation.test.sql`,
 `supabase/tests/agreement.test.sql`, `supabase/tests/obligation.test.sql` and
@@ -333,6 +377,9 @@ the B5B runner at `scripts/db-security-test.mjs` (lines 47–51), plus
 `__tests__/lib/tradeActivity.test.ts`, `__tests__/lib/negotiationState.test.ts`,
 `__tests__/lib/obligationState.test.ts` and `__tests__/lib/tradeCancellation.test.ts` for the
 pure client rules, `__tests__/lib/negotiationWrite.test.ts` for the shared write sequence, and
+`__tests__/lib/receiverWindow.test.ts` for the PD-057 window's client half (that it consumes the
+server's state rather than deriving one, with a word-boundary vocabulary sweep over the whole
+role x status x window x cancelled matrix), and
 `__tests__/app/negotiationWriteHandlers.test.tsx` — the first suite here that RENDERS a screen —
 which drives all six negotiation write controls and pins, per control, the RPC called, the exact
 payload, the refusal copy, whether the screen re-reads and whether that re-read blocks. Those
@@ -358,15 +405,19 @@ not copied here. Two gaps matter most to anyone reading this document cold:
 - **There is a delivery, receipt and cancellation record, but no fulfilment verdict.** PR #54
   added the immutable, server-derived `barter_obligations` pair; PR #56 added the two participant
   actions and the four-value `status` that records **what happened**; PR #58 added the ordinary
-  pre-delivery exit. Everything that would turn those events into an **outcome** remains
-  unbuilt, and is asserted absent rather than assumed: **no 7-day timeout transition, no
-  automatic fulfilment, no automatic completion, no no-show, no Needs Attention, no Under
-  Review, no adjudication, no terminal obligation outcome (Fulfilled / Unfulfilled / Closed
-  Without Resolution), no terminal agreement outcome, no reviews-on-barter, no reputation and no
-  push notifications.** PD-046 § 7.3–7.5 and § 7 of the contract still describe that work with no
-  schema behind it; PD-057 records the **future** window anchor and that its expiry must never
-  mean Fulfilled or Completed
-  (`supabase/migrations/20261004000000_barter_obligation_delivery.sql:15-26`;
+  pre-delivery exit; PR #62 added the PD-057 response window and **Needs Attention**. That last
+  one is the distinction this bullet turns on: Needs Attention is an **unresolved operational
+  state, derived per read**, and it is precisely NOT an outcome. Everything that would turn these
+  events into an outcome remains unbuilt, and is asserted absent rather than assumed: **no 7-day
+  timeout TRANSITION (the window creates no status change — an elapsed window leaves the row
+  `delivered` and the receiver may still answer), no automatic fulfilment, no automatic
+  completion, no no-show, no Under Review, no adjudication, no terminal obligation outcome
+  (Fulfilled / Unfulfilled / Closed Without Resolution), no terminal agreement outcome, no
+  reviews-on-barter, no reputation and no push notifications.** PD-046 § 7.3–7.5 and § 7 of the
+  contract still describe that work with no schema behind it; PD-057 is now **implemented** and
+  its expiry still never means Fulfilled or Completed — asserted directly, not assumed
+  (`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`;
+  `supabase/tests/receiver_window.test.sql` §§ 4, 14;
   `supabase/tests/cancellation.test.sql:700-713`). **Cancelling implies none of them**: it is an
   agreement-level act that decides nothing about fulfilment and carries no reliability verdict
   (`supabase/migrations/20261005000000_barter_pre_delivery_cancellation.sql:25-29`).

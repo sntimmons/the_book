@@ -23,11 +23,13 @@ import {
 import { barterWriteFailure } from '@/lib/barterErrors'
 import {
   confirmCopy,
+  formatTradeDeadline,
   SECTION_COPY,
   SECTION_ORDER,
   tradeActivitySection,
   tradeRowState,
 } from '@/lib/tradeActivity'
+import { NEEDS_ATTENTION_LABEL } from '@/lib/obligationState'
 
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
@@ -38,8 +40,18 @@ import {
 // say who cancelled) and offers no action on a confirmed row, because the one place that can
 // check the delivery precondition is the one place that can act.
 //
-// What does NOT exist is any completion, no-show or adjudication model, so a confirmed trade
-// still has no fulfilment outcome to report.
+// It now also reports the PD-057 RECEIVER-RESPONSE WINDOW, which is what PD-059 asked for: a
+// delivered obligation nobody has answered is surfaced here as needing this provider's attention
+// rather than being visible only on the trade's own screen. Both the badge and the sentence come
+// from `tradeRowState`, and the window state itself is computed by the SERVER — this screen never
+// compares a deadline to the device clock, it only formats a timestamp the server sent.
+//
+// STILL REPORTING, NOT ACTING: the answer is given on the negotiation screen, so no receiver
+// action is offered here and this slice added no write of any kind.
+//
+// What does NOT exist is any completion, no-show, Under Review or adjudication model, so a
+// confirmed trade still has no fulfilment outcome to report. "Needs attention" is an unresolved
+// operational state and nothing more.
 //
 // The feed is discovery: it filters `is_active = true` and shows the newest 50. An accepted
 // negotiation is durable workflow state. Hanging the End-negotiation control off a feed card
@@ -260,11 +272,41 @@ export default function TradeActivityScreen() {
                       </View>
                     </View>
 
+                    {/* The badge, above the sentence. Rendered from `state.attention` rather
+                        than from a local read of the window states, so the list and the note can
+                        never disagree about whether this row needs anyone. Present only on a
+                        confirmed, uncancelled trade with a live or elapsed response window; the
+                        one for THIS provider's own outstanding answer is styled distinctly from
+                        the one that has run out of time. */}
+                    {state.attention ? (
+                      <View
+                        style={[
+                          styles.attentionChip,
+                          state.attention === NEEDS_ATTENTION_LABEL
+                            ? styles.attentionChipLate
+                            : null,
+                        ]}
+                      >
+                        <Text style={styles.attentionChipText}>{state.attention}</Text>
+                      </View>
+                    ) : null}
+
                     {state.note ? (
                       <Text
                         style={state.action === 'end' ? styles.closedNote : styles.historyNote}
                       >
                         {state.note}
+                      </Text>
+                    ) : null}
+
+                    {/* The deadline for the viewer's OWN outstanding answer. BOTH the wording and
+                        the decision to show it come from `tradeRowState` — this screen only
+                        formats the server's timestamp, with the same formatter and the same
+                        precision the trade's own screen uses, so one instant never reads as two
+                        different moments on two surfaces. */}
+                    {state.deadline ? (
+                      <Text style={styles.historyNote}>
+                        {state.deadline.label} {formatTradeDeadline(state.deadline.at)}.
                       </Text>
                     ) : null}
 
@@ -461,4 +503,23 @@ const styles = StyleSheet.create({
   endText: { color: '#F0E8D5', fontSize: 12.5, fontWeight: '500' },
   btnDisabled: { opacity: 0.5 },
   historyNote: { color: 'rgba(240,232,213,0.45)', fontSize: 12.5, marginTop: 10 },
+  // Self-sizing so the label reads as a chip, not a full-width band. Colour carries the
+  // difference between "your turn, still in time" and "the window has passed": amber for the
+  // first, a warmer tone for the second. Deliberately NOT red — nothing has failed, nothing is
+  // disputed and nobody is being reviewed, so an alarm colour would state something untrue.
+  attentionChip: {
+    alignSelf: 'flex-start',
+    marginTop: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    backgroundColor: 'rgba(214,167,79,0.16)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(214,167,79,0.45)',
+  },
+  attentionChipLate: {
+    backgroundColor: 'rgba(214,124,79,0.18)',
+    borderColor: 'rgba(214,124,79,0.5)',
+  },
+  attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
 })

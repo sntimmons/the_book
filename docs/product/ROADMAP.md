@@ -227,15 +227,32 @@ reconciliation does **not** start Session 8, which **has not started**.
 
 Next work remains within **Session 7**. Delivery, the receiver's one-time answer and the ordinary
 pre-delivery exit now exist (PR #56, PR #58) — but they record events and acts, not outcomes.
-Still not built: the **7-day receiver-response
-window** and its anchor (**PD-057**, whose expiry must never mean Fulfilled or Completed);
-automatic fulfilment or completion; **no-show**;
-**Needs Attention** and **Under Review**; adjudication; terminal obligation outcomes
+The **7-day receiver-response window** and **Needs Attention** now exist too (PR #62, **PD-057**
+and the Trade Activity half of **PD-059**), as DERIVED read state: the anchor is
+`max(delivered_at, scheduled_at ?? due_at)`, the deadline is that plus 7 days, attention begins
+at `server_now >= deadline` inclusive, and an unanswered elapsed window leaves the obligation
+`delivered` — **it manufactures no outcome**, and the receiver may still answer. Trade Activity
+now surfaces an unanswered delivered obligation as needing the right provider's attention.
+**Recorded for Session 7 closeout / cross-app audit** (Founder rulings, 2026-09-07, both
+deliberately out of PR #62's scope):
+- **Surface consistency.** The general barter feed card and the offer-responses screen still
+  render agreement-level state only ("Trade confirmed. The agreed terms can no longer change.")
+  and do not carry the receiver-window state. That copy stays TRUE, so nothing there became
+  actively false and PD-059 is satisfied by Trade Activity — but the two surfaces disagree in
+  completeness with Trade Activity and the trade detail, and that belongs in the cross-app audit.
+- **Agreement identity immutability.** The contract-integrity principle behind § 3b now extends
+  by ruling to core `barter_agreements` identity, and is **not yet enforced**:
+  `enforce_barter_agreement_immutable` gives `service_role` and the no-JWT path an unconditional
+  early return with no contract-field diff. The bounded fix is a forward migration applying the
+  same deny-by-default treatment while preserving privileged DELETE. Evidence and scope are in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md).
+
+Still not built: automatic fulfilment or completion; **no-show**;
+**Under Review**; adjudication; terminal obligation outcomes
 (Fulfilled / Unfulfilled / Closed Without Resolution); terminal agreement outcomes
-(**PD-046** § 7.3–7.5, contract §§ 6–7); the **attention UX that surfaces an unanswered delivered
-obligation in Trade Activity**, with **no push, device or email notification work** planned in
-this pass (**PD-059** — PR #58's cancellation notice is a durable in-thread message, not a
-notification system); barter reviews and reputation;
+(**PD-046** § 7.3–7.5, contract §§ 6–7); **no push, device or email notification work** — which
+is the half of **PD-059** that remains deliberately absent, and PR #58's cancellation notice is a
+durable in-thread message, not a notification system; barter reviews and reputation;
 provider-eligibility gating of the barter surface (**PD-044**'s `is_approved` conjunct, whose
 seam is prepared but empty); the **Open to Trades** opt-in; the 3-post and 5-offers/day limits
 as server rules; the post-decline reverse-contact episode (**PD-048**); and blocking and
