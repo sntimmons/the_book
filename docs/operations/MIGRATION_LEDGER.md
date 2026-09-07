@@ -852,6 +852,84 @@ against the linked non-production project (`wcoyjeklscuqsumpjpfo`); local and re
 and never queried; no credential for it was read, and the only Supabase values present in the
 environment were the non-production `TEST_SUPABASE_*` keys.
 
+## 2026-09-07 — `20261012000000` + `20261013000000` **APPLIED to non-production 2026-09-07** (No-show + Under Review foundation, PR TBD)
+
+> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`) on 2026-09-07.**
+> `supabase migration list --linked`: local and remote agree on all **52** versions, no gap and
+> no drift. **B5B: 1063/1063 passed, 0 failed**, of which the new `no_show` suite is
+> `supabase/tests/no_show_under_review.test.sql`. **Concurrency: 124/124 passed**
+> (`scripts/negotiation-concurrency.mjs`), including four new no-show races. Both harnesses
+> report zero residue, and the concurrency harness now counts the new table in its residue
+> sweep. Production (`kxregomuawwcqvisuhtr`) was never targeted and never queried.
+
+**TWO migrations, and the second corrects the first.** `20261012000000` is the slice.
+`20261013000000` is a **forward correction** applied minutes later, because `20261012000000`
+computed no-show eligibility as an INLINE PREDICATE inside `my_trade_activity` and did not
+expose it on `my_barter_obligations` at all. That was wrong twice: the rule had no single home,
+and the surface that actually renders the button (the trade detail) reads the obligations view
+and would have had to re-derive the answer from `scheduled_at` on the client — exactly what
+PD-057 established must not happen. `20261012000000` was **not edited**; the rule now lives in
+`public.barter_can_report_no_show` and `my_trade_activity` reads the column rather than
+recomputing it.
+
+**ONE NEW FACT, ONE DERIVED STATE.** `public.barter_obligation_no_show_reports` is append-only
+with `unique (obligation_id)` — one row is not an arbitrary cap, because only the obligation's
+RECEIVER may report and an obligation has exactly one receiver, so a second row could only be
+the same person filing twice. That constraint is what makes a repeat call idempotent rather than
+a second event.
+
+**UNDER REVIEW IS DERIVED, AND THERE IS DELIBERATELY NO `barter_review_cases` TABLE.** It is
+`(a report exists) OR (status = 'not_received')`, minus cancelled. With adjudication out of
+scope a case row would carry no assignee, no decision, no resolution and no closure — nothing
+the predicate does not already determine — while adding a second place for the answer to be
+wrong. "One authoritative review per obligation" holds BY CONSTRUCTION: a derived predicate
+cannot have two values. Same precedent as PD-057's window and as cancelled-by-one versus
+mutually-cancelled, which `20261005000000` says is "DERIVED from the row count, never stored".
+**When an operator can take, annotate or resolve a review there is real state to hold, and a
+case table becomes right — that is the adjudication slice, which this does not begin.**
+
+**AUTHORITY.** Receiver only, enforced in the RPC AND re-derived independently in the BEFORE
+INSERT trigger, which reads every identity from the obligation rather than trusting the row. A
+non-participant gets the same message and SQLSTATE as a caller naming an id that does not exist,
+so neither learns which it was. **No `is_approved` check, deliberately:** a participant who was
+approved when the agreement was made keeps authority over it, and losing approval must not strip
+someone of the ability to report what happened on a trade they are already in.
+
+**TIMING is `scheduled_at`, NOT `due_at`.** A receiver does not wait out the delivery window to
+say a booking was missed. The comparison is against `now()` inside the RPC; there is no `p_as_of`
+parameter at all, so no client value can reach it. The B5B fixture deliberately produces a trade
+whose APPOINTMENT has passed while its DUE DATE has not, so a `due_at`-based implementation
+would fail rather than pass by accident.
+
+**LOCK ORDER.** `report_barter_obligation_no_show` takes the OBLIGATION row lock and nothing
+else, exactly as `record_barter_obligation_receipt` and `mark_barter_obligation_delivered` do.
+`cancel_barter_agreement` takes the AGREEMENT lock first and then its obligations in id order;
+because the new RPC never takes the agreement lock it can WAIT for a cancellation but can never
+hold something cancellation needs first, so the pair cannot deadlock. **A future writer on this
+table must keep that property.**
+
+**A REPORT DOES NOT REWRITE HISTORY.** `delivered_at` is never erased and no prior row is
+changed. A receiver may report a no-show even after the deliverer marked it delivered — "they
+marked it delivered" is precisely the claim a receiver may need to contradict — and the two
+facts simply stand beside each other. `not_received` qualifies for review on its own, so nobody
+is forced to file a second complaint to be heard.
+
+**WHAT IS NOT BUILT, AND ONE OPEN QUESTION.** No adjudication, no operator decision path, no
+reviewer identity, no resolution, no closure, no appeal, and no terminal outcome of any kind. No
+reputation signal, no notification, no scheduler — nothing moves a row on a timer. The
+obligation `status` vocabulary is unchanged at four values and Under Review is **not** one of
+them. **OPEN FOUNDER QUESTION:** whether an unresolved Needs Attention should be escalatable
+into Under Review. Automatic escalation would be a SECOND TIMER beyond PD-057's seven days,
+which no PD defines; manual escalation would need an actor and terms no authoritative document
+defines. Neither was invented — Needs Attention still resolves only by the receiver answering.
+
+**One existing assertion was amended, and this is recorded rather than buried.**
+`receiver_window.test.sql`'s zero-residue sweep forbade any function matching `%no_show%` or
+`%under_review%`. That was correct for that slice and is now false by ruling, so the sweep
+EXEMPTS exactly five named objects rather than dropping the patterns — a sixth would still fail
+there. Everything else in that sweep (adjudication, fulfilment, expiry, timeout, dispute)
+remains forbidden.
+
 ## Functions redefined across migrations
 
 A `create or replace function` in a later migration silently supersedes an earlier one. The
