@@ -64,6 +64,8 @@ import {
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
   NOT_RECEIVED_COPY,
+  NO_SHOW_REASON_NOTE,
+  NO_SHOW_REASON_PLACEHOLDER,
   REPORT_NO_SHOW_COPY,
   RESPOND_LABELS,
 } from '@/lib/obligationState'
@@ -158,6 +160,7 @@ function makeObligation(
     underReview: false,
     noShowReportedAt: null,
     canReportNoShow: false,
+    noShowReason: null,
     ...over,
   }
 }
@@ -1028,12 +1031,49 @@ describe('report no-show', () => {
       ],
     })
     await pressDialogButton(REPORT_NO_SHOW_COPY.confirmLabel)
-    expect(mocked.reportObligationNoShow).toHaveBeenCalledWith('obligation-responder')
+    // No reason typed, so NULL is sent — not an empty string. The column is null-or-content.
+    expect(mocked.reportObligationNoShow).toHaveBeenCalledWith('obligation-responder', null)
     // The report cannot be routed to a sibling RPC or the other obligation — the whole reason
     // these assertions exist on every branch of the dispatch.
     expect(mocked.markObligationDelivered).not.toHaveBeenCalled()
     expect(mocked.confirmObligationReceived).not.toHaveBeenCalled()
     expect(mocked.reportObligationNotReceived).not.toHaveBeenCalled()
+  })
+
+  it('sends the reporter’s own words, trimmed, when they write some', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), reportable()],
+    )
+    mocked.reportObligationNoShow.mockResolvedValue({
+      ok: true, reportedAt: '2026-10-01T09:00:00.000Z', error: null,
+    } as never)
+    const utils = await renderScreen()
+    await act(async () => {
+      fireEvent.changeText(
+        utils.getByPlaceholderText(NO_SHOW_REASON_PLACEHOLDER),
+        '  Waited an hour, nobody came.  ',
+      )
+    })
+    await act(async () => {
+      fireEvent.press(await utils.findByText(RESPOND_LABELS.noShow))
+    })
+    await pressDialogButton(REPORT_NO_SHOW_COPY.confirmLabel)
+    expect(mocked.reportObligationNoShow).toHaveBeenCalledWith(
+      'obligation-responder',
+      'Waited an hour, nobody came.',
+    )
+  })
+
+  it('discloses who reads the reason ABOVE the input, before the writer commits', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), reportable()],
+    )
+    const utils = await renderScreen()
+    expect(utils.getByText(NO_SHOW_REASON_NOTE)).toBeTruthy()
   })
 
   it('re-reads on PT409 — the trade was cancelled under the report button', async () => {

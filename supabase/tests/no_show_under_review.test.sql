@@ -698,15 +698,11 @@ begin
               where id = v_ob));
 end $$;
 
--- ── Report, THEN cancel: what a cancellation does to a filed report ───────
--- PINS CURRENT BEHAVIOUR, and does not endorse it. Cancellation currently DOMINATES: it is
--- refused only once something is delivered, so a reported-but-undelivered trade can still be
--- cancelled — by either participant, including the one who was reported — and Under Review then
--- derives false while the report row survives untouched.
+-- ── PD-063: Under Review takes precedence over ordinary cancellation ──────
 --
--- **Whether that is right is an OPEN FOUNDER QUESTION** (should cancellation be refused once a
--- report exists, or should the report stay visible on a cancelled trade?). It is asserted here
--- so the answer, whichever it is, changes a failing test rather than passing silently.
+-- This block replaces the earlier "pinned open question". The Founder has ruled: once a valid
+-- no-show report exists, the ordinary pre-delivery exit is GONE. A trade cannot be cancelled out
+-- of review, and a cancellation can never erase or hide a recorded report.
 do $$
 declare
   ou uuid := current_setting('b5b.ns_ou')::uuid;
@@ -719,36 +715,166 @@ begin
   perform pg_temp.chk('no_show', 'fixture: the trade is under review before the cancellation',
     'under_review', pg_temp.ns_report_state(ru, v_ob));
 
-  -- The REPORTED party cancels.
+  -- B. REPORT FIRST → later ordinary cancellation REFUSED, for the reported party...
   perform pg_temp.act(ou);
   begin
     perform public.cancel_barter_agreement(v_ag, null);
-    v_code := 'OK';
+    v_code := 'ALLOWED';
   exception when others then v_code := sqlstate;
   end;
   perform pg_temp.chk('no_show',
-    'CURRENT BEHAVIOUR: the reported party can still cancel — open Founder question',
-    'OK', v_code);
+    'PD-063: the REPORTED party cannot cancel a trade that is under review', 'PT423', v_code);
 
-  -- The record itself is NOT destroyed. This is the half that must stay true whatever is ruled.
+  -- ...and for the reporter too. The rule is about the STATE, not about who is asking.
+  perform pg_temp.act(ru);
+  begin
+    perform public.cancel_barter_agreement(v_ag, null);
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('no_show',
+    'PD-063: nor can the REPORTER — the exit is gone for both', 'PT423', v_code);
+
+  -- Nothing was written, and nothing was erased.
   perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_agreement_cancellations
+   where agreement_id = v_ag;
+  perform pg_temp.chk('no_show', 'no cancellation act was recorded', '0', v_n::text);
   select count(*) into v_n from public.barter_obligation_no_show_reports
    where obligation_id = v_ob and reason = 'they never arrived';
   perform pg_temp.chk('no_show',
-    'the report row SURVIVES the cancellation, unchanged', '1', v_n::text);
+    'the report survives untouched — a cancellation cannot rewrite it', '1', v_n::text);
+  perform pg_temp.chk('no_show', 'and the trade is STILL under review',
+    'under_review', pg_temp.ns_report_state(ru, v_ob));
+
+  -- A privileged direct insert is refused by the trigger too, not only by the RPC.
+  perform pg_temp.act_service();
+  perform pg_temp.chk_blocked('no_show',
+    'and the row guard refuses a direct cancellation insert as well',
+    format('insert into public.barter_agreement_cancellations
+              (agreement_id, actor_user_id, actor_provider_id)
+            values (%L, %L, (select id from public.providers where user_id = %L))',
+           v_ag, ou, ou));
+end $$;
+
+-- ── PD-063 direction A: cancellation first → later report refused ─────────
+-- Already covered above by the cancelled-trade case, and asserted again here beside its mirror
+-- so the two halves of the approved boundary read as one rule rather than two accidents.
+do $$
+declare
+  ou uuid := current_setting('b5b.ns_ou')::uuid;
+  ru uuid := current_setting('b5b.ns_ru')::uuid;
+  v_ag uuid; v_ob uuid; v_code text; v_n integer;
+begin
+  select o_ag, o_ob into v_ag, v_ob from pg_temp.ns_arrived(ou, ru, 'ns12');
+  perform pg_temp.act(ou);
+  perform public.cancel_barter_agreement(v_ag, null);
+
   perform pg_temp.act(ru);
+  begin
+    perform public.report_barter_obligation_no_show(v_ob, 'too late');
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('no_show',
+    'PD-063: a no-show cannot be reported on an already-cancelled trade', 'PT409', v_code);
+
+  perform pg_temp.act_service();
   select count(*) into v_n from public.barter_obligation_no_show_reports
    where obligation_id = v_ob;
-  perform pg_temp.chk('no_show', 'and the reporter can still read it', '1', v_n::text);
-  select count(*) into v_n from public.my_barter_obligations
-   where id = v_ob and no_show_reported_at is not null;
-  perform pg_temp.chk('no_show', 'and its timestamp is still exposed on the read model',
-    '1', v_n::text);
-
-  -- But the DERIVED state goes false, because cancellation dominates the rule.
-  perform pg_temp.chk('no_show',
-    'CURRENT BEHAVIOUR: the derived review state goes false — open Founder question',
+  perform pg_temp.chk('no_show', 'and no report row was written', '0', v_n::text);
+  perform pg_temp.chk('no_show', 'the cancelled trade is NOT under review',
     'not_under_review', pg_temp.ns_report_state(ru, v_ob));
+
+  -- The two states are mutually exclusive: never both, never compatible.
+  select count(*) into v_n
+    from public.barter_agreement_cancellations c
+   where c.agreement_id = v_ag
+     and exists (select 1 from public.barter_obligation_no_show_reports r
+                  where r.agreement_id = v_ag);
+  perform pg_temp.chk('no_show',
+    'a cancellation and a no-show report NEVER coexist on one agreement', '0', v_n::text);
+end $$;
+
+-- ── PD-062: the reason is participant-visible context ─────────────────────
+do $$
+declare
+  ou uuid := current_setting('b5b.ns_ou')::uuid;
+  ru uuid := current_setting('b5b.ns_ru')::uuid;
+  xu uuid := current_setting('b5b.ns_xu')::uuid;
+  v_ag uuid; v_ob uuid; v_txt text; v_n integer; v_c1 text;
+begin
+  select o_ag, o_ob into v_ag, v_ob from pg_temp.ns_arrived(ou, ru, 'ns13');
+  perform pg_temp.act(ru);
+  perform public.report_barter_obligation_no_show(v_ob, 'Waited an hour, nobody came.');
+
+  -- The REPORTER reads their own words back.
+  perform pg_temp.act(ru);
+  select no_show_reason into v_txt from public.my_barter_obligations where id = v_ob;
+  perform pg_temp.chk('no_show', 'the reporter reads their own reason',
+    'Waited an hour, nobody came.', v_txt);
+
+  -- The DELIVERER reads it too — they must be able to see what was said about their trade.
+  perform pg_temp.act(ou);
+  select no_show_reason into v_txt from public.my_barter_obligations where id = v_ob;
+  perform pg_temp.chk('no_show', 'and so does the other participant',
+    'Waited an hour, nobody came.', v_txt);
+
+  -- An unrelated provider reads NOTHING — not the reason, not the row, not the obligation.
+  perform pg_temp.act(xu);
+  select count(*) into v_n from public.my_barter_obligations where id = v_ob;
+  perform pg_temp.chk('no_show', 'an unrelated provider cannot reach the reason at all',
+    '0', v_n::text);
+  select count(*) into v_n from public.barter_obligation_no_show_reports
+   where obligation_id = v_ob and reason is not null;
+  perform pg_temp.chk('no_show', 'nor read it from the table directly', '0', v_n::text);
+
+  -- anon reads nothing either.
+  perform pg_temp.act(null, 'anon');
+  begin
+    perform 1 from public.my_barter_obligations where id = v_ob;
+    v_c1 := 'ALLOWED';
+  exception when others then v_c1 := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('no_show', 'and anon cannot read the view carrying it', '42501', v_c1);
+end $$;
+
+-- ── PD-062: a no-show creates NO Needs Attention and NO terminal outcome ──
+do $$
+declare
+  ou uuid := current_setting('b5b.ns_ou')::uuid;
+  ru uuid := current_setting('b5b.ns_ru')::uuid;
+  v_ag uuid; v_ob uuid; v_state text; v_n integer;
+begin
+  select o_ag, o_ob into v_ag, v_ob from pg_temp.ns_arrived(ou, ru, 'ns14');
+  perform pg_temp.act(ru);
+  perform public.report_barter_obligation_no_show(v_ob, null);
+
+  -- NEEDS ATTENTION IS A SEPARATE ROUTE AND IS UNTOUCHED. The obligation was never delivered,
+  -- so its receiver window is `none` — and reporting a no-show did not manufacture one.
+  perform pg_temp.act_service();
+  select public.barter_receiver_window(
+           o.status, o.delivered_at, o.scheduled_at, o.due_at, false, now())
+    into v_state
+    from public.barter_obligations o where o.id = v_ob;
+  perform pg_temp.chk('no_show',
+    'a no-show creates NO Needs Attention — the window state is untouched', 'none', v_state);
+
+  -- Under Review survives and stays visible to both.
+  perform pg_temp.chk('no_show', 'Under Review survives for the reporter',
+    'under_review', pg_temp.ns_report_state(ru, v_ob));
+  perform pg_temp.chk('no_show', 'and for the counterparty',
+    'under_review', pg_temp.ns_report_state(ou, v_ob));
+
+  -- No outcome, anywhere.
+  perform pg_temp.act_service();
+  perform pg_temp.chk('no_show', 'the obligation is still pending — no terminal outcome',
+    'pending', (select status from public.barter_obligations where id = v_ob));
+  select count(*) into v_n from public.barter_agreements
+   where id = v_ag and officialized_at is not null;
+  perform pg_temp.chk('no_show',
+    'and the agreement is still just official — no terminal agreement state', '1', v_n::text);
 end $$;
 
 -- ── The reports table is in no realtime publication ───────────────────────

@@ -476,9 +476,18 @@ not copied here. Two gaps matter most to anyone reading this document cold:
   Under Review is derived per read like Needs Attention: no status value, no column, no case
   table, and nothing moves on a timer. It decides no fault and produces no outcome, and the
   receiver's controls stay live beneath it.
-  (`supabase/migrations/20261012000000_barter_no_show_under_review.sql`,
-  `20261013000000_no_show_eligibility_single_source.sql`,
-  `20261014000000_no_show_lock_order.sql`; `supabase/tests/no_show_under_review.test.sql`.) PD-046 § 7.3–7.5 and § 7 of the
+  **Under Review OUTRANKS the ordinary exit** (PD-063): once a report exists,
+  `cancel_barter_agreement` refuses with `PT423` and the control is no longer offered — a trade
+  cannot be cancelled out of review, and a cancellation can never erase or hide a recorded
+  report. Cancel-first refuses a later report (`PT409`); a race resolves to exactly one state,
+  because both writers take the agreement row lock first. **The reason is participant-visible
+  context** (PD-062): both participants read it, non-participants and anon cannot, and the UI
+  attributes it as the reporting participant's STATEMENT with the sharing disclosed above the
+  input. **Needs Attention is a separate, unchanged route** — it does not enter Under Review, and
+  how it might later is deliberately undecided.
+  (`supabase/migrations/20261012000000_barter_no_show_under_review.sql` through
+  `20261017000000_restore_cancellation_actor_binding.sql`;
+  `supabase/tests/no_show_under_review.test.sql`; PD-062, PD-063.) PD-046 § 7.3–7.5 and § 7 of the
   contract still describe that work with no schema behind it; PD-057 is now **implemented** and
   its expiry still never means Fulfilled or Completed — asserted directly, not assumed
   (`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`;

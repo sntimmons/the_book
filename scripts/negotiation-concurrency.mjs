@@ -1203,11 +1203,24 @@ async function raceNoShowVsCancel() {
   chk('at least one of the two acts succeeded', 'true', String(n.opOk || c.opOk))
   chk('neither act deadlocked', 'true',
     String(n.timing?.code !== '40P01' && c.timing?.code !== '40P01'))
-  chk('a report is never written against an already-cancelled trade',
-    'false', String(cancels.n !== '0' && rows.n === '1' && !n.opOk))
-  chk('at most one report exists', 'true', String(rows.n === '0' || rows.n === '1'))
+  // PD-063: the two acts are MUTUALLY EXCLUSIVE, not compatible. Exactly one transition wins
+  // and the loser is refused — a report can never be written against a cancelled trade, and a
+  // cancellation can never be recorded against a reported one.
+  chk('exactly one of the two acts succeeded', 'true', String(n.opOk !== c.opOk))
+  const cancelledOnly = cancels.n === '1' && rows.n === '0' && c.opOk && !n.opOk
+  const reviewedOnly = rows.n === '1' && cancels.n === '0' && n.opOk && !c.opOk
+  chk('the end state is exactly one of cancelled-no-report or reported-no-cancellation',
+    'true', String(cancelledOnly !== reviewedOnly))
+  chk('and it is one of those two shapes', 'true', String(cancelledOnly || reviewedOnly))
+  // The shape the Founder ruled out: a report existing while a cancellation hides it.
+  chk('a cancellation and a report never both exist', 'false',
+    String(cancels.n !== '0' && rows.n !== '0'))
   chk('and the result matches the RPC that succeeded', 'true',
     String(n.opOk ? rows.n === '1' : rows.n === '0'))
+  // The loser carries the code its own side maps: PT423 when the report won, PT409 when the
+  // cancellation did.
+  chk('the loser is refused with the mapped code for the state that won', 'true',
+    String(n.opOk ? c.timing?.code === 'PT423' : n.timing?.code === 'PT409'))
   const ob = await obligationRow(ids.interest20, 'offer_owner')
   chk('neither act invented an outcome on the obligation', 'pending', ob.status)
 }

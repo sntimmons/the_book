@@ -132,7 +132,11 @@ elapses.
 **Also built (Founder ruling, 2026-09-07):** receiver-reported **no-show** on a SCHEDULED
 obligation, and the derived **Under Review** state it routes the trade into — meaning a human
 must look. It decides no fault, creates no outcome, and the receiver may still answer. A plain
-`not_received` qualifies on its own, so nobody files a second complaint to be heard.
+`not_received` qualifies on its own, so nobody files a second complaint to be heard. **Once a
+report exists the ordinary pre-delivery exit is gone** (**PD-063**) — a trade cannot be cancelled
+out of review, and a cancellation can never erase a recorded report. The reason is **shared with
+the other provider** as that participant's own statement (**PD-062**), never as a platform
+finding. **Needs Attention remains a separate route** and does not escalate.
 
 **What is NOT built:** automatic fulfilment, automatic completion,
 adjudication, any operator decision path, terminal obligation outcomes

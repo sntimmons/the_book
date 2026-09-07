@@ -11,11 +11,15 @@ import {
   obligationView,
   ObligationRole,
   ObligationStatus,
+  noShowStatement,
+  NO_SHOW_REASON_NOTE,
+  noShowReasonPayload,
   REPORT_NO_SHOW_COPY,
   RESPOND_LABELS,
   UNDER_REVIEW_LABEL,
 } from '@/lib/obligationState'
 import { tradeRowState, TradeRowFacts } from '@/lib/tradeActivity'
+import { cancellationView } from '@/lib/tradeCancellation'
 
 const ROLES: ObligationRole[] = ['deliverer', 'receiver']
 const STATUSES: ObligationStatus[] = ['pending', 'delivered', 'received', 'not_received']
@@ -231,5 +235,64 @@ describe('tradeRowState — Under Review outranks every window state', () => {
     }
     expect(tradeRowState(facts({ agreementId: null, agreementUnderReview: true })).attention)
       .not.toBe(UNDER_REVIEW_LABEL)
+  })
+})
+
+describe('PD-063 — the ordinary exit is gone once a report exists', () => {
+  const facts = { iCancelled: false, theyCancelled: false, cancelledAt: null }
+
+  it('offers cancellation on a live, unreported, undelivered trade', () => {
+    const v = cancellationView(facts, false, false)
+    expect(v.canCancel).toBe(true)
+  })
+
+  it('withdraws it once the trade is under review', () => {
+    const v = cancellationView(facts, false, true)
+    expect(v.canCancel).toBe(false)
+    expect(v.canAgree).toBe(false)
+  })
+
+  it('withdraws "agree to cancel" too, whoever started it', () => {
+    const started = { iCancelled: false, theyCancelled: true, cancelledAt: '2026-10-01T00:00Z' }
+    expect(cancellationView(started, false, false).canAgree).toBe(true)
+    expect(cancellationView(started, false, true).canAgree).toBe(false)
+  })
+
+  it('is still withdrawn by a delivery, independently of review', () => {
+    expect(cancellationView(facts, true, false).canCancel).toBe(false)
+    expect(cancellationView(facts, true, true).canCancel).toBe(false)
+  })
+})
+
+describe('PD-062 — the reason is a participant STATEMENT, never a finding', () => {
+  it('attributes it to the receiver as their own words', () => {
+    const s = noShowStatement('receiver', 'Waited an hour, nobody came.')
+    expect(s).toEqual({ label: 'You said', reason: 'Waited an hour, nobody came.' })
+  })
+
+  it('attributes it to the counterparty for the deliverer — who SAID it, never who was right', () => {
+    const s = noShowStatement('deliverer', 'Waited an hour, nobody came.')
+    expect(s?.label).toBe('The other provider said')
+    assertTruthful(s!.label)
+  })
+
+  it('renders nothing when there is no reason, so no label dangles', () => {
+    expect(noShowStatement('receiver', null)).toBeNull()
+    expect(noShowStatement('receiver', '')).toBeNull()
+    expect(noShowStatement('receiver', '   ')).toBeNull()
+    expect(noShowStatement('deliverer', null)).toBeNull()
+  })
+
+  it('discloses the sharing BEFORE the writer commits, and says what it is not', () => {
+    assertTruthful(NO_SHOW_REASON_NOTE)
+    expect(NO_SHOW_REASON_NOTE.toLowerCase()).toContain('shared with the other provider')
+    // It must not read as filing a case.
+    expect(NO_SHOW_REASON_NOTE.toLowerCase()).toContain('not a decision')
+  })
+
+  it('sends NO reason rather than an empty one — the column is null-or-content', () => {
+    expect(noShowReasonPayload('')).toBeNull()
+    expect(noShowReasonPayload('   ')).toBeNull()
+    expect(noShowReasonPayload('  they never came  ')).toBe('they never came')
   })
 })

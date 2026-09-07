@@ -113,6 +113,15 @@ export interface BarterObligation {
    * the device clock, exactly as it never recomputes the PD-057 window.
    */
   canReportNoShow: boolean
+  /**
+   * The reporting participant's own words, or null. The reporter is always this obligation's
+   * RECEIVER, so the viewer's role attributes it — there is no second column saying who wrote it.
+   *
+   * PARTICIPANT-VISIBLE CONTEXT, not a platform finding (Founder ruling 2026-09-07). It is not
+   * proof of fault, an adjudication, a reliability judgment or a reputation impact, and copy
+   * rendering it must attribute it as a STATEMENT.
+   */
+  noShowReason: string | null
 }
 
 const ROW_COLUMNS =
@@ -313,7 +322,7 @@ export async function fetchNegotiation(proposalId: string): Promise<{
         'id, agreement_id, side, agreed_description, due_at, scheduled_at, status,'
         + ' delivered_at, receipt_responded_at, confirmation_anchor, confirmation_deadline,'
         + ' receiver_window_state, under_review, no_show_reported_at,'
-        + ' can_report_no_show',
+        + ' can_report_no_show, no_show_reason',
       )
       .eq('agreement_id', row.agreementId)
       .order('side', { ascending: true })
@@ -334,6 +343,7 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       under_review: boolean | null
       no_show_reported_at: string | null
       can_report_no_show: boolean | null
+      no_show_reason: string | null
     }[] | null) ?? []).map((o) => ({
       id: o.id,
       agreementId: o.agreement_id,
@@ -357,6 +367,7 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       // Fail closed: a missing value withholds the control rather than offering one that can
       // only be refused.
       canReportNoShow: o.can_report_no_show ?? false,
+      noShowReason: o.no_show_reason,
     }))
   }
 

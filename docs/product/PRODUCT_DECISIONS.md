@@ -623,6 +623,73 @@ as locked decisions.
 
 ---
 
+### PD-062 — No-show reporting and the review transition
+- **Decided:** 2026-09-07
+- **Decision:** A no-show may be reported **only by the RECEIVER** of an obligation whose
+  `scheduled_at` is **non-null**, at or after that scheduled time, using **server-authoritative
+  time**. A valid no-show report is an **immutable participant-reported event** — not a finding
+  of fault and not a terminal outcome. It places the affected obligation, and its agreement, into
+  **Under Review**. A no-show does **not** automatically mean Unfulfilled, Failed, Needs
+  Attention, a reliability impact or a reputation impact.
+- **Why:** The receiver is the participant who expected the scheduled service, so they are the
+  only one who can report it did not happen; the deliverer reporting themselves is not a thing
+  the product needs. Anchoring on `scheduled_at` rather than `due_at` matters: a receiver must
+  not have to wait out the delivery window to say a booking was missed. Server time is the
+  boundary because a device clock could otherwise bring an appointment forward.
+- **Consequences:** `public.barter_obligation_no_show_reports` is append-only with one row per
+  obligation; the report cannot be edited, withdrawn or re-stamped, and a repeat call returns the
+  original timestamp. Under Review is **DERIVED** —
+  `(a report exists) OR (status = 'not_received')`, minus cancelled — with no status value, no
+  column and no case table, so there is no second place for the answer to disagree. `not_received`
+  qualifies on its own, so nobody files a second complaint to be heard. The obligation `status`
+  vocabulary is unchanged at four values. Cancelled agreements never enter Under Review.
+  **The reason is participant-visible context:** both participants may read it, non-participants
+  and anon may not, and the UI attributes it as the reporting participant's STATEMENT — never as
+  a platform finding, proof of fault, an adjudication, a reliability judgment or a reputation
+  effect. The composer discloses the sharing **above** the input, before the writer commits, as
+  PD-060/PD-062's cancellation-reason precedent requires.
+- **Evidence:** Founder ruling, 2026-09-07. Implemented by
+  `supabase/migrations/20261012000000_barter_no_show_under_review.sql`,
+  `20261013000000_no_show_eligibility_single_source.sql`,
+  `20261014000000_no_show_lock_order.sql` and
+  `20261016000000_no_show_reason_read_model.sql`. Asserted in
+  `supabase/tests/no_show_under_review.test.sql` and `__tests__/lib/underReview.test.ts`.
+  Supersedes the `no-show → Needs Attention → adjudication → Unfulfilled` route in
+  [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7.4, which is marked superseded there.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-063 — Under Review takes precedence over ordinary cancellation
+- **Decided:** 2026-09-07
+- **Decision:** Once a valid no-show report has been recorded, the agreement is **Under Review**
+  and **ordinary pre-delivery cancellation is no longer available**. If a cancellation commits
+  first, a later no-show report is **refused**. If a no-show report commits first, a later
+  ordinary cancellation is **refused**. A cancellation/no-show race must resolve to **exactly one
+  authoritative state**, and **cancellation may never erase an existing review-worthy event**.
+- **Why:** Without this, the provider a report is ABOUT could cancel the trade and make the
+  report stop counting — the only accountability signal the slice creates, cleared unilaterally
+  by its subject. PD-046 makes the pre-delivery exit unilateral by design, which is right while
+  nothing has been reported and wrong the moment something has.
+- **Consequences:** `cancel_barter_agreement` refuses with **`PT423`** once any no-show report
+  exists on the agreement, and `enforce_barter_cancellation_consistent` carries the same rule as
+  defence in depth. `PT423` is deliberately a NEW SQLSTATE rather than reuse of
+  `object_not_in_prerequisite_state`, which already means "something has already been delivered" —
+  a trade under review has not necessarily been delivered, and saying so would be false. The
+  client stops offering the control (`cancellationView`'s `underReview` conjunct) so no button is
+  drawn that could only be refused. **This is not a finding of fault:** refusing cancellation
+  removes one exit and decides nothing. **Race safety is structural, not hopeful:** both writers
+  take the `barter_agreements` row lock FIRST (`20261014000000` put the no-show RPC on that
+  order), so the second to arrive blocks and then sees the first's committed state.
+- **Evidence:** Founder ruling, 2026-09-07. Implemented by
+  `supabase/migrations/20261015000000_under_review_precedes_cancellation.sql`. The race is proven
+  by `scripts/negotiation-concurrency.mjs`, which asserts exactly one act succeeds and that
+  neither deadlocks — an assertion that **caught a real `40P01`** before `20261014000000` fixed
+  the lock order.
+- **Status:** Locked; **implemented**
+
+---
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

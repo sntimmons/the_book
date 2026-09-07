@@ -153,6 +153,12 @@ const EXPIRED_TERMS = 'PT410'
 // IS delivered, and nothing is stale in a way a re-read can fix: their first answer stands.
 const ANSWER_ALREADY_RECORDED = 'PT412'
 
+// PD-063: a no-show report has been filed, so this trade is UNDER REVIEW and the ordinary
+// pre-delivery exit is gone. Deliberately NOT `object_not_in_prerequisite_state`, which already
+// means "something has already been delivered" — a trade under review has not necessarily been
+// delivered, and telling a provider it had would be a false statement about their own trade.
+const TRADE_UNDER_REVIEW = 'PT423'
+
 const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   respond: { terminal: false, title: 'Could not send', body: 'Please try again.' },
   accept: { terminal: false, title: 'Could not accept', body: 'Please try again.' },
@@ -600,6 +606,18 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
     },
   },
   cancelTrade: {
+    [TRADE_UNDER_REVIEW]: {
+      // TERMINAL and STALE: the exit is gone and it does not come back, and the screen re-reads
+      // so the control disappears rather than inviting the same impossible tap. The copy says
+      // WHY without saying who was at fault — nothing has been decided, and a cancellation
+      // refusal is not the place to imply otherwise.
+      terminal: true,
+      stale: true,
+      title: 'This trade needs review',
+      body:
+        'A no-show was reported, so this trade needs review and can no longer be cancelled.'
+        + ' Nothing has been decided. The details have been updated.',
+    },
     [NOT_IN_PREREQUISITE_STATE]: {
       // PD-046: once ANY obligation has been marked delivered the ordinary exit is gone, and
       // it does not come back — a later "didn't receive" is not a route to cancellation.

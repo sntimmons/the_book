@@ -405,6 +405,37 @@ export const NOT_RECEIVED_COPY: ObligationActionCopy = {
   cancelLabel: 'Go back',
 }
 
+/** The same 200-character bound the server enforces, and the same one cancellation uses. */
+export const MAX_NO_SHOW_REASON = 200
+
+export const NO_SHOW_REASON_PLACEHOLDER = 'What happened? (optional)'
+
+/**
+ * The disclosure, ABOVE the input and before the writer commits.
+ *
+ * Same discipline PD-060/PD-062 required for the cancellation reason: a participant writing
+ * about a counterparty must be told who will read it BEFORE they write, not afterwards. It also
+ * says what the text is NOT, because a box that appears the moment someone is reporting a missed
+ * appointment is exactly where a person assumes they are filing a case.
+ */
+export const NO_SHOW_REASON_NOTE =
+  'Optional — shared with the other provider. It is your account of what happened, not a'
+  + ' decision about it.'
+
+/** Refuses only what the server refuses, so the copy and the boundary cannot drift. */
+export function validateNoShowReason(reason: string): string | null {
+  if (reason.trim().length > MAX_NO_SHOW_REASON) {
+    return `Keep it under ${MAX_NO_SHOW_REASON} characters.`
+  }
+  return null
+}
+
+/** Empty means NO reason, not an empty one — the column is null-or-content, never blank. */
+export function noShowReasonPayload(reason: string): string | null {
+  const trimmed = reason.trim()
+  return trimmed.length > 0 ? trimmed : null
+}
+
 /**
  * Reporting that a SCHEDULED service did not happen.
  *
@@ -421,6 +452,32 @@ export const REPORT_NO_SHOW_COPY: ObligationActionCopy = {
     + ' fault, and it does not end or cancel the trade — the trade will need review.',
   confirmLabel: 'Report no-show',
   cancelLabel: 'Go back',
+}
+
+/**
+ * The reporting participant's own words about a no-show, labelled for THIS viewer.
+ *
+ * The attribution is derived here rather than by a ternary in JSX, for the same reason
+ * `cancellationReasons` derives its own: putting the wrong name on a provider's statement about
+ * a missed appointment is the one mistake this must not make. Only the RECEIVER can report, so
+ * the role decides the label — there is no second field to disagree with.
+ *
+ * NOT A VERDICT. The label says who SAID it, never who was right. No fault, reliability
+ * judgment, adjudication or reputation effect is implied or exists.
+ *
+ * Returns null when there is no report or the reporter left the box empty, so a screen never
+ * renders a label with nothing after it.
+ */
+export function noShowStatement(
+  role: ObligationRole,
+  reason: string | null,
+): { label: string; reason: string } | null {
+  const text = (reason ?? '').trim()
+  if (!text) return null
+  return {
+    label: role === 'receiver' ? 'You said' : 'The other provider said',
+    reason: text,
+  }
 }
 
 /** The one short label for a trade that needs manual resolution. */

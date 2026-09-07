@@ -55,8 +55,14 @@ import {
   MARK_DELIVERED_COPY,
   NEEDS_ATTENTION_LABEL,
   UNDER_REVIEW_LABEL,
+  MAX_NO_SHOW_REASON,
+  NO_SHOW_REASON_NOTE,
+  NO_SHOW_REASON_PLACEHOLDER,
+  noShowReasonPayload,
+  noShowStatement,
   NOT_RECEIVED_COPY,
   REPORT_NO_SHOW_COPY,
+  validateNoShowReason,
   ObligationActionCopy,
   obligationRole,
   obligationTimeline,
@@ -146,6 +152,8 @@ export default function NegotiationScreen() {
   const [draft, setDraft] = useState<ProposalDraft>(EMPTY_DRAFT)
   const [showHistory, setShowHistory] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
+  // Per obligation, because a trade has two and only the receiver of one may report on it.
+  const [noShowReason, setNoShowReason] = useState<Record<string, string>>({})
   // The interest's own state, used only when no negotiation exists yet. Without it this screen
   // cannot tell "nobody has proposed yet" from "this ended before anyone proposed".
   const [context, setContext] = useState<{
@@ -220,12 +228,16 @@ export default function NegotiationScreen() {
   // Derived by lib/obligationState.ts, not here: this is the PD-046 precondition that decides
   // whether an irreversible control is rendered, and a rule computed in JSX cannot be tested.
   const delivered = anyDelivered(obligations)
+  // PD-063: once a no-show is reported the ordinary exit is gone and does not come back. The
+  // SERVER decides this — it arrives as `underReview` on the obligation row — and the screen
+  // only stops drawing a control that could now only be refused.
+  const underReview = obligations.some((o) => o.underReview)
   const cancellationFacts = {
     iCancelled: row?.iCancelled ?? false,
     theyCancelled: row?.theyCancelled ?? false,
     cancelledAt: row?.cancelledAt ?? null,
   }
-  const cancel = cancellationView(cancellationFacts, delivered)
+  const cancel = cancellationView(cancellationFacts, delivered, underReview)
   // Participant-visible context, per the ruling on PR #58. Attribution is derived by
   // lib/tradeCancellation.ts rather than by a ternary here: putting the wrong label on a
   // provider's stated reason for abandoning a commitment is the one mistake this must not make.
@@ -364,6 +376,12 @@ export default function NegotiationScreen() {
     // impossible tap again. Nothing else to settle, so no callbacks.
     await runWrite({
       op,
+      // A refusal deliberately does NOT clear the reason: `22023` means it was too long, and
+      // the writer needs their words back to shorten them.
+      onSuccess:
+        op === 'reportNoShow'
+          ? () => setNoShowReason((r) => ({ ...r, [obligationId]: '' }))
+          : undefined,
       write: () =>
         op === 'markDelivered'
           ? markObligationDelivered(obligationId)
@@ -371,7 +389,10 @@ export default function NegotiationScreen() {
             ? confirmObligationReceived(obligationId)
             : op === 'reportNotReceived'
               ? reportObligationNotReceived(obligationId)
-              : reportObligationNoShow(obligationId),
+              : reportObligationNoShow(
+                  obligationId,
+                  noShowReasonPayload(noShowReason[obligationId] ?? ''),
+                ),
     })
   }
 
@@ -380,6 +401,13 @@ export default function NegotiationScreen() {
     op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived' | 'reportNoShow',
     obligationId: string,
   ) {
+    if (op === 'reportNoShow') {
+      const problem = validateNoShowReason(noShowReason[obligationId] ?? '')
+      if (problem) {
+        Alert.alert('Check that note', problem, [{ text: 'OK' }])
+        return
+      }
+    }
     Alert.alert(copy.title, copy.body, [
       { text: copy.cancelLabel, style: 'cancel' },
       { text: copy.confirmLabel, onPress: () => runObligationWrite(op, obligationId) },
@@ -533,6 +561,7 @@ export default function NegotiationScreen() {
     // screen ends up labelling an obligation "You agreed to provide" while offering the
     // receiver's controls beside it.
     const role = obligationRole(obligation.side, myRole)
+    const statement = noShowStatement(role, obligation.noShowReason)
     // The PD-057 window comes from the SERVER on the obligation row — the deadline comparison
     // happened there, against the server's clock. Nothing on this screen recomputes it, so a
     // device with a wrong clock cannot put this obligation into, or out of, Needs Attention, and
@@ -645,17 +674,43 @@ export default function NegotiationScreen() {
             exists is impossible: `canReportNoShow` goes false the moment one is filed, so the
             control cannot invite a duplicate. */}
         {o.canReportNoShow ? (
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.secondaryBtn, busy && styles.btnDisabled]}
-              disabled={busy}
-              onPress={() =>
-                askThenWrite(REPORT_NO_SHOW_COPY, 'reportNoShow', obligation.id)
+          <View style={styles.cancelBlock}>
+            {/* The disclosure sits ABOVE the input, before the writer commits — the same rule
+                PD-060/PD-062 set for the cancellation reason, and for the same reason: someone
+                writing about a counterparty must know who reads it before they write. */}
+            <Text style={styles.cancelDetail}>{NO_SHOW_REASON_NOTE}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={NO_SHOW_REASON_PLACEHOLDER}
+              placeholderTextColor="rgba(240,232,213,0.35)"
+              value={noShowReason[obligation.id] ?? ''}
+              onChangeText={(t) =>
+                setNoShowReason((r) => ({ ...r, [obligation.id]: t }))
               }
-            >
-              <Text style={styles.secondaryText}>{RESPOND_LABELS.noShow}</Text>
-            </TouchableOpacity>
+              maxLength={MAX_NO_SHOW_REASON}
+              multiline
+            />
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+                disabled={busy}
+                onPress={() =>
+                  askThenWrite(REPORT_NO_SHOW_COPY, 'reportNoShow', obligation.id)
+                }
+              >
+                <Text style={styles.secondaryText}>{RESPOND_LABELS.noShow}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
+        ) : null}
+        {/* The reporter's own words, once a report exists. ATTRIBUTION comes from
+            lib/obligationState.ts, never from a ternary here: it is a STATEMENT by one
+            participant, not a finding by the product, and mislabelling whose it is would be the
+            worst version of that mistake. */}
+        {statement ? (
+          <Text style={styles.obligationNote}>
+            {statement.label}: “{statement.reason}”
+          </Text>
         ) : null}
       </View>
     )

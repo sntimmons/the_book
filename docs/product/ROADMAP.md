@@ -278,6 +278,24 @@ and the Trade Activity half of **PD-059**), as DERIVED read state: the anchor is
 at `server_now >= deadline` inclusive, and an unanswered elapsed window leaves the obligation
 `delivered` — **it manufactures no outcome**, and the receiver may still answer. Trade Activity
 now surfaces an unanswered delivered obligation as needing the right provider's attention.
+**CARRY-FORWARD CODEBASE GATE — must be cleaned up BEFORE the adjudication slice.** Recorded by
+the Codebase audit of PR #64 and ruled by the Founder, 2026-09-07. Two patterns were widened by
+the no-show slice and must not be widened again:
+
+- **`obligationView`'s positional-argument expansion.** It now takes seven positional parameters
+  ending in two adjacent, same-typed, same-defaulted booleans (`underReview`, `canReportNoShow`).
+  Swapping them type-checks cleanly and produces two opposite defects at once. Every neighbouring
+  view-model in `lib/` takes a facts OBJECT; this one is the outlier. Adjudication would add an
+  eighth.
+- **The duplicated attention-chip mapping.** The label → chip-style ternary is hand-copied in
+  `app/community/negotiation/[id].tsx` and `app/community/trade-activity.tsx`, with six duplicated
+  colour literals; this slice added the third branch to both by hand, and the fallthrough is a
+  silent `null`. A fourth state would render at two different severities on two surfaces.
+
+**Neither was refactored inside PR #64** — the Founder ruled they are not required for that
+correction, and doing them there would have widened the diff across the surface adjudication will
+touch. **Adjudication must not widen either pattern further; fix them first.**
+
 **Recorded for Session 7 closeout / cross-app audit** (Founder rulings, 2026-09-07, both
 deliberately out of PR #62's scope):
 - **Surface consistency.** The general barter feed card and the offer-responses screen still
@@ -296,7 +314,11 @@ deliberately out of PR #62's scope):
 report that a SCHEDULED service did not happen, and that report — or a plain `not_received` —
 puts the obligation into **Under Review**, meaning a human must look. Derived per read like Needs
 Attention: no status value, no column, no case table, nothing on a timer. It decides no fault and
-manufactures no outcome, and the receiver keeps their controls.
+manufactures no outcome, and the receiver keeps their controls. Under Review **outranks the
+ordinary exit** (**PD-063**): a reported trade can no longer be cancelled, so the party a report
+is about cannot make it stop counting. **How a plain Needs Attention might later enter Under
+Review is deliberately UNDECIDED** and belongs to the adjudication slice — no second timer, no
+automatic escalation and no participant escalation action was created.
 
 Still not built: automatic fulfilment or completion; **adjudication and any operator decision
 path** — which is what an Under Review case will eventually need, and is the next slice, not this
