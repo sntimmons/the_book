@@ -29,7 +29,7 @@ import {
   tradeActivitySection,
   tradeRowState,
 } from '@/lib/tradeActivity'
-import { NEEDS_ATTENTION_LABEL, UNDER_REVIEW_LABEL } from '@/lib/obligationState'
+import { attentionTone, AttentionTone } from '@/lib/obligationState'
 
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
@@ -286,11 +286,10 @@ export default function TradeActivityScreen() {
                       <View
                         style={[
                           styles.attentionChip,
-                          state.attention === UNDER_REVIEW_LABEL
-                            ? styles.attentionChipReview
-                            : state.attention === NEEDS_ATTENTION_LABEL
-                              ? styles.attentionChipLate
-                              : null,
+                          // WHICH tone applies is decided once, in lib/obligationState.ts, so
+                          // one state cannot change meaning between this list and the trade's
+                          // own screen. Only the palette below is local.
+                          CHIP_TONE[attentionTone(state.attention) ?? 'live'],
                         ]}
                       >
                         <Text style={styles.attentionChipText}>{state.attention}</Text>
@@ -537,3 +536,13 @@ const styles = StyleSheet.create({
   },
   attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
 })
+
+// This screen's palette for the three tones. The MAPPING from label to tone is single-sourced in
+// lib/obligationState.ts; only the colours are local. `live` IS the base style, applied first by
+// the array — repeating it keeps the table TOTAL, so a fourth tone is a missing key rather than a
+// silent fallthrough on whichever screen was not updated.
+const CHIP_TONE: Record<AttentionTone, object> = {
+  live: styles.attentionChip,
+  elapsed: styles.attentionChipLate,
+  review: styles.attentionChipReview,
+}

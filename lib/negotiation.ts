@@ -99,12 +99,13 @@ export interface BarterObligation {
    * Whether THIS obligation needs manual resolution, DERIVED AND DECIDED BY THE SERVER from a
    * no-show report or a `not_received` answer.
    *
-   * Obligation-granular: one side of a trade can be under review while the other is untouched,
-   * and this says nothing about the other side. It means a human must look — never that anyone
+   * OBLIGATION-GRANULAR, and the name says so: one side of a trade can be under review while
+   * the other is untouched, and this says nothing about the other side. The AGREEMENT-level
+   * roll-up is derived from these by the screen and is named `agreementUnderReview` there. It means a human must look — never that anyone
    * is at fault, and never Fulfilled, Unfulfilled, Completed or any terminal outcome, none of
    * which exist. A cancelled trade is always false.
    */
-  underReview: boolean
+  obligationUnderReview: boolean
   /** When the no-show was reported, or null. Display only; the server owns the timestamp. */
   noShowReportedAt: string | null
   /**
@@ -362,7 +363,7 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       // Fail closed the same way: a missing value means say NOTHING about a review, never
       // assert one. Claiming "Under Review" from an absent field would put a trade into a
       // state a human is expected to resolve, on no evidence at all.
-      underReview: o.under_review ?? false,
+      obligationUnderReview: o.under_review ?? false,
       noShowReportedAt: o.no_show_reported_at,
       // Fail closed: a missing value withholds the control rather than offering one that can
       // only be refused.

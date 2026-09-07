@@ -55,7 +55,7 @@ function assertTruthful(text: string) {
 describe('obligationView — Under Review', () => {
   it('labels a reviewed obligation for BOTH roles, and accuses neither', () => {
     for (const role of ROLES) {
-      const v = obligationView(role, 'not_received', false, 'none', null, true, false)
+      const v = obligationView({ role, status: 'not_received', tradeCancelled: false, window: 'none', confirmationDeadline: null, obligationUnderReview: true, canReportNoShow: false })
       expect(v.attention).toBe(UNDER_REVIEW_LABEL)
       expect(v.note).toBeTruthy()
       assertTruthful(v.note!)
@@ -66,14 +66,14 @@ describe('obligationView — Under Review', () => {
   })
 
   it('outranks the receiver window — a review is truer than a missing answer', () => {
-    const v = obligationView('receiver', 'delivered', false, 'needs_attention', '2026-10-17T09:00:00.000Z', true, false)
+    const v = obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'needs_attention', confirmationDeadline: '2026-10-17T09:00:00.000Z', obligationUnderReview: true, canReportNoShow: false })
     expect(v.attention).toBe(UNDER_REVIEW_LABEL)
     expect(v.attention).not.toBe(NEEDS_ATTENTION_LABEL)
     expect(v.attention).not.toBe(ACTION_NEEDED_LABEL)
   })
 
   it('is outranked by cancellation, which ends the trade outright', () => {
-    const v = obligationView('receiver', 'not_received', true, 'none', null, true, true)
+    const v = obligationView({ role: 'receiver', status: 'not_received', tradeCancelled: true, window: 'none', confirmationDeadline: null, obligationUnderReview: true, canReportNoShow: true })
     expect(v.attention).toBeNull()
     expect(v.note).toBeNull()
     expect(v.canReportNoShow).toBe(false)
@@ -83,42 +83,42 @@ describe('obligationView — Under Review', () => {
     for (const role of ROLES) {
       for (const status of STATUSES) {
         // Defaulted: a caller that forgot to thread it must not manufacture a review.
-        expect(obligationView(role, status).attention).not.toBe(UNDER_REVIEW_LABEL)
+        expect(obligationView({ role, status }).attention).not.toBe(UNDER_REVIEW_LABEL)
       }
     }
   })
 
   it('never derives a review from the status alone', () => {
     // `not_received` is under review ON THE SERVER, but this module must be told, not guess.
-    const v = obligationView('receiver', 'not_received', false, 'none', null, false, false)
+    const v = obligationView({ role: 'receiver', status: 'not_received', tradeCancelled: false, window: 'none', confirmationDeadline: null, obligationUnderReview: false, canReportNoShow: false })
     expect(v.attention).not.toBe(UNDER_REVIEW_LABEL)
   })
 })
 
 describe('obligationView — the no-show control', () => {
   it('offers it to the RECEIVER when the server says the moment has come', () => {
-    const v = obligationView('receiver', 'pending', false, 'none', null, false, true)
+    const v = obligationView({ role: 'receiver', status: 'pending', tradeCancelled: false, window: 'none', confirmationDeadline: null, obligationUnderReview: false, canReportNoShow: true })
     expect(v.canReportNoShow).toBe(true)
   })
 
   it('never offers it to the deliverer, whatever the server said', () => {
     // A second, independent refusal: the RPC already refuses a deliverer with 42501, and a
     // button that can only fail must never be drawn.
-    const v = obligationView('deliverer', 'pending', false, 'none', null, false, true)
+    const v = obligationView({ role: 'deliverer', status: 'pending', tradeCancelled: false, window: 'none', confirmationDeadline: null, obligationUnderReview: false, canReportNoShow: true })
     expect(v.canReportNoShow).toBe(false)
   })
 
   it('withholds it when the server did not offer it, at every role and status', () => {
     for (const role of ROLES) {
       for (const status of STATUSES) {
-        expect(obligationView(role, status, false, 'none', null, false, false).canReportNoShow)
+        expect(obligationView({ role, status, tradeCancelled: false, window: 'none', confirmationDeadline: null, obligationUnderReview: false, canReportNoShow: false }).canReportNoShow)
           .toBe(false)
       }
     }
   })
 
   it('withholds it on a cancelled trade', () => {
-    expect(obligationView('receiver', 'pending', true, 'none', null, false, true).canReportNoShow)
+    expect(obligationView({ role: 'receiver', status: 'pending', tradeCancelled: true, window: 'none', confirmationDeadline: null, obligationUnderReview: false, canReportNoShow: true }).canReportNoShow)
       .toBe(false)
   })
 
@@ -242,25 +242,25 @@ describe('PD-063 — the ordinary exit is gone once a report exists', () => {
   const facts = { iCancelled: false, theyCancelled: false, cancelledAt: null }
 
   it('offers cancellation on a live, unreported, undelivered trade', () => {
-    const v = cancellationView(facts, false, false)
+    const v = cancellationView({ ...facts, anyDelivered: false, agreementUnderReview: false })
     expect(v.canCancel).toBe(true)
   })
 
   it('withdraws it once the trade is under review', () => {
-    const v = cancellationView(facts, false, true)
+    const v = cancellationView({ ...facts, anyDelivered: false, agreementUnderReview: true })
     expect(v.canCancel).toBe(false)
     expect(v.canAgree).toBe(false)
   })
 
   it('withdraws "agree to cancel" too, whoever started it', () => {
     const started = { iCancelled: false, theyCancelled: true, cancelledAt: '2026-10-01T00:00Z' }
-    expect(cancellationView(started, false, false).canAgree).toBe(true)
-    expect(cancellationView(started, false, true).canAgree).toBe(false)
+    expect(cancellationView({ ...started, anyDelivered: false, agreementUnderReview: false }).canAgree).toBe(true)
+    expect(cancellationView({ ...started, anyDelivered: false, agreementUnderReview: true }).canAgree).toBe(false)
   })
 
   it('is still withdrawn by a delivery, independently of review', () => {
-    expect(cancellationView(facts, true, false).canCancel).toBe(false)
-    expect(cancellationView(facts, true, true).canCancel).toBe(false)
+    expect(cancellationView({ ...facts, anyDelivered: true, agreementUnderReview: false }).canCancel).toBe(false)
+    expect(cancellationView({ ...facts, anyDelivered: true, agreementUnderReview: true }).canCancel).toBe(false)
   })
 })
 

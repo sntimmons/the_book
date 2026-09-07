@@ -157,7 +157,7 @@ function makeObligation(
     confirmationDeadline: null,
     receiverWindowState: 'none',
     // Nothing reported, so no review. Overridden per case where one exists.
-    underReview: false,
+    obligationUnderReview: false,
     noShowReportedAt: null,
     canReportNoShow: false,
     noShowReason: null,
@@ -1129,7 +1129,7 @@ describe('under review, on the trade detail', () => {
       status: 'delivered',
       deliveredAt: FUTURE_SCHEDULED,
       scheduledAt: FUTURE_SCHEDULED,
-      underReview: true,
+      obligationUnderReview: true,
       noShowReportedAt: '2026-10-01T09:00:00.000Z',
       ...over,
     })

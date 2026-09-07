@@ -124,23 +124,42 @@ export interface CancellationView {
 }
 
 /**
- * @param anyDelivered has EITHER obligation been marked delivered? Once one has, PD-046
- * removes the ordinary exit permanently — and a later "didn't receive" does not bring it back,
- * which is why this asks about delivery rather than about the receiver's answer.
+ * Everything `cancellationView` needs, as named fields.
+ *
+ * WHY AN OBJECT. This had grown to three positional arguments whose last two were adjacent
+ * booleans — `anyDelivered` and the agreement-level review flag. Transposing them type-checked
+ * silently, on the function that decides whether an IRREVERSIBLE control is drawn. Named fields
+ * make that impossible to write.
+ *
+ * It EXTENDS `CancellationFacts` rather than nesting it, so call sites stay flat.
+ * `cancellationState` still takes only the two acts — the classification depends on those and
+ * nothing else, and widening its input would be the first step toward that stopping being true.
  */
-export function cancellationView(
-  f: CancellationFacts,
-  anyDelivered: boolean,
+export interface CancellationViewFacts extends CancellationFacts {
   /**
-   * Whether EITHER obligation on this agreement is under review (PD-063).
+   * Has EITHER obligation been marked delivered? Once one has, PD-046 removes the ordinary exit
+   * permanently — and a later "didn't receive" does not bring it back, which is why this asks
+   * about delivery rather than about the receiver's answer.
+   */
+  anyDelivered?: boolean
+  /**
+   * Is EITHER obligation on this agreement under review? **AGREEMENT-LEVEL, and the name says
+   * so.** This is the roll-up, not the per-obligation predicate: PD-063 removes the exit for the
+   * whole trade the moment ANY report exists, so a viewer whose own obligation is clean still
+   * loses the control.
    *
-   * Once a no-show has been reported the ordinary pre-delivery exit is gone and does not come
-   * back — the server refuses it with `PT423` — so the control must not be drawn. Defaulted to
-   * `false` so a caller that has not been given it withholds nothing it should show; the SERVER
+   * The obligation-level predicate is `ObligationViewFacts.obligationUnderReview`. The two were
+   * both called `underReview` until this cleanup, which is exactly the collision a future
+   * adjudication slice could have mutated one of while assuming the other.
+   *
+   * Defaulted to `false` so a caller that has not been given it withholds nothing; the SERVER
    * remains the authority either way, and this only stops a button that could only fail.
    */
-  underReview = false,
-): CancellationView {
+  agreementUnderReview?: boolean
+}
+
+export function cancellationView(f: CancellationViewFacts): CancellationView {
+  const { anyDelivered = false, agreementUnderReview = false } = f
   const state = cancellationState(f)
   const copy = CANCELLED_COPY[state]
   return {
@@ -152,14 +171,14 @@ export function cancellationView(
     // it, which is how the label ended up authored in JSX.
     cancelledAt: state === 'none' ? null : f.cancelledAt,
     timeLabel: copy.timeLabel,
-    canCancel: !anyDelivered && !underReview && state === 'none',
+    canCancel: !anyDelivered && !agreementUnderReview && state === 'none',
     // Still gated on `anyDelivered`, even though the counterparty's act already proves nothing
     // had been delivered when they took it: this function must not depend on that inference
-    // staying true, and a control the server would refuse must never be rendered. `underReview`
-    // is gated for the same reason — PD-063 removes the exit once a report exists, and a trade
-    // under review can never simultaneously be one the counterparty has already cancelled, so
-    // `canAgree` is covered by the same conjunct.
-    canAgree: !anyDelivered && !underReview && state === 'byThem',
+    // staying true, and a control the server would refuse must never be rendered.
+    // `agreementUnderReview` is gated for the same reason — PD-063 removes the exit once a
+    // report exists, and a trade under review can never simultaneously be one the counterparty
+    // has already cancelled, so `canAgree` is covered by the same conjunct.
+    canAgree: !anyDelivered && !agreementUnderReview && state === 'byThem',
   }
 }
 
