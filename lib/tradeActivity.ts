@@ -17,7 +17,7 @@ import type { CancellationState } from './tradeCancellation'
  * `released` — the pre-agreement negotiation ended (either party). History, never actionable.
  */
 import type { ReceiverWindowState } from './obligationState'
-import { NEEDS_ATTENTION_LABEL } from './obligationState'
+import { ACTION_NEEDED_LABEL, NEEDS_ATTENTION_LABEL } from './obligationState'
 
 export type BarterInterestStatus = 'pending' | 'accepted' | 'declined' | 'released'
 
@@ -287,12 +287,12 @@ const CONFIRMED_TRADE_NOTE: Record<CancellationState, string> = {
 /**
  * The row badge for "the counterparty delivered and this viewer owes an answer, still in time".
  *
- * Lives here rather than in lib/obligationState.ts because it is a LIST label about an
- * agreement, not a sentence about one obligation. `NEEDS_ATTENTION_LABEL` is imported from that
- * module instead of respelled, because the elapsed-window state is the same product state on
- * both surfaces and two spellings of it would drift.
+ * RE-EXPORTED from lib/obligationState.ts, not respelled. It was defined here while it was a
+ * list-only label; the Founder ruling of 2026-09-07 put the same label on the trade's own
+ * screen, and the same product state must read identically on both surfaces. It moved to the
+ * module this one already imports from, because that is the direction with no import cycle.
  */
-export const ACTION_NEEDED_LABEL = 'Action needed'
+export { ACTION_NEEDED_LABEL } from './obligationState'
 
 const ACTION_NEEDED_NOTE =
   'Action needed. The other provider marked their side delivered — open this to say whether you '
@@ -303,6 +303,20 @@ const MY_ATTENTION_NOTE =
 const THEIR_ATTENTION_NOTE =
   'Needs attention. The response window has passed and the other provider has not said whether '
   + 'they received your delivery. Nothing has been decided.'
+/**
+ * The MIXED case: the counterparty's window has elapsed while this viewer's own answer is still
+ * in time. Says BOTH facts, in that order.
+ *
+ * FOUNDER RULING 2026-09-07. The agreement-level headline may stay "Needs attention" — it is
+ * the higher-severity trade-level state — but it must not SUPPRESS the viewer's own live
+ * obligation-level action. Before this ruling the row said only the first sentence, so a
+ * provider who still owed an answer, and still had time to give it, was told about the other
+ * side's silence and nothing about their own. The deadline line renders beneath this.
+ */
+const MIXED_ATTENTION_NOTE =
+  'Needs attention. The response window has passed and the other provider has not said whether '
+  + 'they received your delivery. Nothing has been decided. You have not yet said whether you '
+  + 'received theirs.'
 const WAITING_NOTE =
   'Waiting for confirmation. The other provider has not yet said whether they received your '
   + 'delivery.'
@@ -319,8 +333,9 @@ const WINDOW_NOTE: Record<ReceiverWindowState, Record<ReceiverWindowState, strin
     none: ACTION_NEEDED_NOTE,
     awaiting_receiver: ACTION_NEEDED_NOTE,
     // The viewer's own answer is still inside its window, but the counterparty's is not. The
-    // trade is unresolved, which outranks a request that is not yet late.
-    needs_attention: THEIR_ATTENTION_NOTE,
+    // trade-level state leads, because it is the more severe one — and then the viewer's own
+    // outstanding answer is stated too, rather than being displaced by it.
+    needs_attention: MIXED_ATTENTION_NOTE,
   },
   needs_attention: {
     none: MY_ATTENTION_NOTE,
@@ -347,22 +362,24 @@ function windowAttention(
 /**
  * Whether to show the viewer their own response deadline, and what to call it.
  *
- * Keyed off the badge rather than off the window states directly, so the row can never show a
- * countdown that disagrees with the sentence above it. Shown ONLY while the viewer's own answer
- * is still live (`Action needed`): once a window has elapsed the note already says so, and
- * repeating the date underneath would read as a countdown to something that has already
- * happened. A cancelled trade never reaches here, because its badge is null.
+ * Keyed off the viewer's OWN window state — not off the row badge, and not off the counterparty.
  *
- * NOTE (PD-057, unresolved): in the one mixed case — the viewer's own answer still in time while
- * the COUNTERPARTY's has elapsed — the badge is `Needs attention`, so this returns null and the
- * viewer's own live deadline is not shown. That is the behaviour as shipped; whether the row
- * should state both facts is an open product question, deliberately not decided here.
+ * FOUNDER RULING 2026-09-07: an actionable deadline is never hidden merely because the other
+ * obligation has escalated. Keying this off the badge (as it did before the ruling) meant the
+ * one mixed case — this viewer still in time, the counterparty elapsed — promoted the badge to
+ * `Needs attention` and silently took the viewer's own live deadline with it. The badge is an
+ * AGREEMENT-level headline; the deadline is an OBLIGATION-level fact about this viewer, and the
+ * more severe headline does not get to delete the less severe action underneath it.
+ *
+ * Still shown only while the viewer's own answer is LIVE: once their own window has elapsed the
+ * note says so, and repeating the date beneath would read as a countdown to something that has
+ * already happened. A cancelled trade never reaches here — the caller checks that first.
  */
 function rowDeadline(
-  attention: string | null,
+  mine: ReceiverWindowState,
   at: string | null,
 ): { label: string; at: string } | null {
-  if (attention !== ACTION_NEEDED_LABEL || !at) return null
+  if (mine !== 'awaiting_receiver' || !at) return null
   return { label: 'Please respond by', at }
 }
 
@@ -403,16 +420,15 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
       }
     }
     // Only a confirmed trade can have a response window at all, and a cancelled one has
-    // none — the same dominance `confirmedTradeNote` applies to the sentence.
-    const attention =
-      cancellationState(f) !== 'none'
-        ? null
-        : windowAttention(f.myResponseState ?? 'none', f.theirResponseState ?? 'none')
+    // none — the same dominance `confirmedTradeNote` applies to the sentence, and the same
+    // dominance removes the deadline: a cancelled trade is asking nobody for anything.
+    const cancelled = cancellationState(f) !== 'none'
+    const mine = f.myResponseState ?? 'none'
     return {
       action: 'none',
       note: confirmedTradeNote(f),
-      attention,
-      deadline: rowDeadline(attention, f.myResponseDeadline ?? null),
+      attention: cancelled ? null : windowAttention(mine, f.theirResponseState ?? 'none'),
+      deadline: cancelled ? null : rowDeadline(mine, f.myResponseDeadline ?? null),
     }
   },
 

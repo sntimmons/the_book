@@ -418,6 +418,18 @@ as locked decisions.
   and the deadline pins its timezone so both participants compute the same instant. Asserted by
   113 assertions in `supabase/tests/receiver_window.test.sql`, including the three anchor cases,
   all three boundary edges, and DST determinism.
+- **Founder ruling, 2026-09-07 — the contract-integrity principle extends to the AGREEMENT.**
+  The same rule that freezes the obligation's contract fields (§ 3b of `20261011000000`) applies
+  to core `barter_agreements` identity: after official agreement formation, ordinary
+  `service_role` maintenance must not silently rewrite the participants, the offer identity, the
+  interest identity, the proposal identity, `accepted_version_id`, or equivalent authoritative
+  source/participant references. Any future operational correction must be explicit, separately
+  approved and auditable. **This is a principle, not a claim about today's code:**
+  `enforce_barter_agreement_immutable` currently refuses ordinary callers absolutely but gives
+  `service_role` and the no-JWT path an unconditional early return, so it does **not** yet
+  enforce this. PR #62 deliberately did **not** broaden into agreement hardening — the slice does
+  not touch that trigger — and the bounded follow-up is recorded with live-catalog evidence in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md).
 - **Status:** Locked; **implemented** (the implementation records this decision, it is not the
   approval of one)
 
@@ -481,9 +493,27 @@ as locked decisions.
   with cancellation still dominant. **The push half of this entry is unchanged and remains
   deliberately unbuilt:** no push, device or email notification exists anywhere in the product,
   and PR #62 added none.
-- **Status:** Locked. **Trade Activity attention: implemented.** Push notifications: still
-  **not built**, and still not planned for this pass (the cancellation in-thread notice is not a
-  notification either)
+- **Founder rulings, 2026-09-07, issued on PR #62 and implemented in it:**
+  - **AGREEMENT-LEVEL vs OBLIGATION-LEVEL are different scopes, and the higher one does not
+    silence the lower.** When one obligation is already Needs Attention while this viewer still
+    has an unanswered delivered obligation whose OWN deadline has not passed, the agreement-level
+    headline **may remain Needs Attention** — it is the higher-severity trade-level state — but
+    it **must not suppress the viewer's own live obligation-level action**. The confirmed trade
+    detail continues to show, for the viewer's own unanswered obligation: **Action needed**, the
+    **response deadline**, and both **Confirm received** / **Didn't receive**. Conceptually:
+    *Agreement: Needs Attention · Current user's obligation: Action needed — respond by
+    [deadline]*. **An actionable deadline is never hidden merely because the other obligation
+    escalated.** Trade Activity previously did hide it, and no longer does.
+  - **SURFACE SCOPE for this slice is Trade Activity + the confirmed trade detail.** PD-059 is
+    satisfied by Trade Activity. The general barter feed card and the offer-responses screen are
+    **deferred** to Session 7 closeout / cross-app audit: both render "Trade confirmed. The
+    agreed terms can no longer change.", which is **incomplete but not false** — the trade is
+    confirmed and its terms are frozen — so neither becomes actively false under the new state,
+    which was the test for pulling them in.
+- **Status:** Locked. **Trade Activity attention: implemented.** **Trade detail obligation-level
+  action: implemented.** Feed card / offer-responses: **deferred, recorded**. Push notifications:
+  still **not built**, and still not planned for this pass (the cancellation in-thread notice is
+  not a notification either)
 
 ---
 

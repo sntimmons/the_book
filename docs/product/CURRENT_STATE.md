@@ -334,11 +334,26 @@ An elapsed window leaves the row `delivered`: the four-value `status` vocabulary
 Completed, Under Review, Disputed, a no-show or an adjudication. **The receiver may still answer
 after the deadline** — no RPC consults it, asserted over `prosrc` — and an explicit answer clears
 the condition however long ago the window closed (PD-058). Cancelled trades never enter the flow.
+**Agreement-level and obligation-level attention are different SCOPES** (Founder ruling
+2026-09-07). Trade Activity's row badge is the agreement-level headline and may read
+"Needs attention" because the counterparty's window elapsed; that never suppresses this viewer's
+own live obligation, which keeps its **Action needed** label, its **deadline**, and both
+**Confirm received** / **Didn't receive** controls on the trade detail. `obligationView` is
+per-obligation and is never passed the counterparty's state, so the isolation is structural
+rather than a rule that could be forgotten. The **feed card and offer-responses screen are
+deliberately deferred**: they show "Trade confirmed. The agreed terms can no longer change.",
+which stays true, so nothing there became false.
+
 The same migration also **froze the obligation's contract fields against every writer, including
 `service_role`** (Founder ruling 2026-09-06): agreement, participants, source term, description,
 `due_at` and `scheduled_at` can no longer be rewritten after the agreement exists, because they
 are now the read-scoping keys and the deadline anchor. Privileged DELETE is deliberately still
-permitted, so account-erasure cascades still work.
+permitted, so account-erasure cascades still work. **The same principle is now ruled to extend to
+core `barter_agreements` identity** (Founder, 2026-09-07), but is **not yet enforced there**:
+`enforce_barter_agreement_immutable` refuses ordinary callers absolutely while giving
+`service_role` and the no-JWT path an unconditional early return. That is a recorded bounded
+follow-up with live-catalog evidence in
+[MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md), not work done in PR #62.
 (`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`,
 `lib/obligationState.ts`, `lib/tradeActivity.ts`.)
 

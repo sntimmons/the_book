@@ -233,6 +233,20 @@ and the Trade Activity half of **PD-059**), as DERIVED read state: the anchor is
 at `server_now >= deadline` inclusive, and an unanswered elapsed window leaves the obligation
 `delivered` — **it manufactures no outcome**, and the receiver may still answer. Trade Activity
 now surfaces an unanswered delivered obligation as needing the right provider's attention.
+**Recorded for Session 7 closeout / cross-app audit** (Founder rulings, 2026-09-07, both
+deliberately out of PR #62's scope):
+- **Surface consistency.** The general barter feed card and the offer-responses screen still
+  render agreement-level state only ("Trade confirmed. The agreed terms can no longer change.")
+  and do not carry the receiver-window state. That copy stays TRUE, so nothing there became
+  actively false and PD-059 is satisfied by Trade Activity — but the two surfaces disagree in
+  completeness with Trade Activity and the trade detail, and that belongs in the cross-app audit.
+- **Agreement identity immutability.** The contract-integrity principle behind § 3b now extends
+  by ruling to core `barter_agreements` identity, and is **not yet enforced**:
+  `enforce_barter_agreement_immutable` gives `service_role` and the no-JWT path an unconditional
+  early return with no contract-field diff. The bounded fix is a forward migration applying the
+  same deny-by-default treatment while preserving privileged DELETE. Evidence and scope are in
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md).
+
 Still not built: automatic fulfilment or completion; **no-show**;
 **Under Review**; adjudication; terminal obligation outcomes
 (Fulfilled / Unfulfilled / Closed Without Resolution); terminal agreement outcomes

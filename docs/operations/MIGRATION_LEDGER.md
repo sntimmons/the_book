@@ -812,9 +812,37 @@ correction changes behaviour, so neither warrants a forward migration on its own
    (now frozen) ids, so a participant could read the obligation while losing read on the
    agreement's cancellation acts, and the view would report a live or attention window on a
    **cancelled** trade — a false demand, not a disclosure, and reachable only with privileged
-   access the product already trusts. **Whether the Founder ruling of 2026-09-06 should extend to
-   `barter_agreements` is an OPEN PRODUCT QUESTION, not a defect, and is deliberately not decided
-   here.** What stands between the two read policies drifting apart is the cross-table data
+   access the product already trusts. **FOUNDER RULING 2026-09-07 — no longer an open question.**
+   The same contract-integrity principle DOES apply to core `barter_agreements` identity:
+   participants, offer identity, interest identity, proposal identity, `accepted_version_id` and
+   equivalent authoritative source/participant references must not be silently rewritten by
+   ordinary `service_role` maintenance once the agreement is official, and any operational
+   correction must be explicit, separately approved and auditable.
+
+   **It is NOT enforced today.** Evidence, read from the LIVE catalog on the linked
+   non-production project rather than from a file — `pg_proc.prosrc` for
+   `public.enforce_barter_agreement_immutable` is, in full:
+
+   ```
+   begin
+     if (select auth.role()) = 'service_role' or (select auth.uid()) is null then
+       return coalesce(new, old);
+     end if;
+     raise exception 'An agreement cannot be edited or deleted.' using errcode = 'check_violation';
+   end;
+   ```
+
+   So an ordinary authenticated caller is refused ABSOLUTELY on both UPDATE and DELETE, and there
+   is no client-reachable bypass. But the privileged branch is an unconditional early return with
+   **no contract-field diff** — the shape § 3b replaced on the obligation trigger — so
+   `service_role` and the no-JWT path can still rewrite every agreement column.
+
+   **BOUNDED FOLLOW-UP, deliberately NOT done in PR #62** (Founder: do not broaden this PR into
+   agreement hardening). The work is: give `enforce_barter_agreement_immutable` the same
+   deny-by-default `to_jsonb(new) - <mutable keys>` treatment § 3b gave the obligation trigger,
+   preserving privileged DELETE so account-erasure and post cascades keep working. It is a
+   forward migration on a function this slice does not touch, and it needs its own review. Until
+   then, what stands between the two read policies drifting apart is the cross-table data
    invariant asserted in `supabase/tests/receiver_window.test.sql` § 14c, which fails CI on drift.
 
 Ledger after apply: **50 entries** — **VERIFIED 2026-09-07** by `supabase migration list`

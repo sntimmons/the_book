@@ -63,11 +63,38 @@ describe('obligationView — the client never derives the window itself', () => 
     expect(v.deadline).toBeNull()
   })
 
-  it('reports attention only when the SERVER said the window passed', () => {
-    expect(obligationView('receiver', 'delivered', false, 'awaiting_receiver').attention).toBeNull()
+  it('escalates to Needs attention only when the SERVER said the window passed', () => {
+    // The receiver's own live obligation asks for the action it needs (Founder ruling
+    // 2026-09-07); only the SERVER's `needs_attention` escalates it. The client never decides
+    // which of the two applies — it is handed the state.
+    expect(obligationView('receiver', 'delivered', false, 'awaiting_receiver').attention).toBe(
+      ACTION_NEEDED_LABEL,
+    )
     expect(obligationView('receiver', 'delivered', false, 'needs_attention').attention).toBe(
       NEEDS_ATTENTION_LABEL,
     )
+  })
+
+  it('never asks the DELIVERER to act — they are not the one being awaited', () => {
+    expect(obligationView('deliverer', 'delivered', false, 'awaiting_receiver').attention)
+      .toBeNull()
+    // Once elapsed the deliverer sees the trade-level state, but still no action of their own.
+    expect(obligationView('deliverer', 'delivered', false, 'needs_attention').attention).toBe(
+      NEEDS_ATTENTION_LABEL,
+    )
+  })
+
+  // FOUNDER RULING 2026-09-07, at the level it actually binds: `obligationView` is per
+  // obligation and is never told about the counterparty's, so no escalation over there can
+  // reach in and silence this one. The receiver keeps their label, their deadline AND both
+  // controls whatever the other obligation is doing.
+  it('keeps the receiver’s own action, deadline and controls regardless of the other side', () => {
+    const v = obligationView('receiver', 'delivered', false, 'awaiting_receiver', DEADLINE)
+    expect(v.attention).toBe(ACTION_NEEDED_LABEL)
+    expect(v.deadline).toEqual({ label: 'Please respond by', at: DEADLINE })
+    expect(v.canRespond).toBe(true)
+    // The signature carries no counterparty parameter at all — the isolation is structural.
+    expect(obligationView).toHaveLength(2)
   })
 
   it('shows no deadline line when the server sent no deadline', () => {
@@ -404,16 +431,36 @@ describe('tradeRowState — the response deadline (PD-057)', () => {
     expect(s.deadline).toBeNull()
   })
 
-  it('shows a deadline only where the badge asks the viewer to act', () => {
+  it('shows a deadline exactly when the VIEWER’S OWN answer is still live', () => {
     for (const mine of WINDOWS) {
       for (const theirs of WINDOWS) {
         const s = tradeRowState(
           facts({ myResponseState: mine, theirResponseState: theirs, myResponseDeadline: AT }),
         )
-        // The rule, stated once: a deadline appears exactly when the badge is `Action needed`.
-        expect(s.deadline !== null).toBe(s.attention === ACTION_NEEDED_LABEL)
+        // The rule, stated once, and keyed on the viewer's OWN state — NOT on the row badge.
+        // Founder ruling 2026-09-07: the counterparty escalating must not delete this.
+        expect(s.deadline !== null).toBe(mine === 'awaiting_receiver')
       }
     }
+  })
+
+  // The mixed case the ruling was issued about, pinned end to end.
+  it('keeps the viewer’s live deadline when the COUNTERPARTY’S window has elapsed', () => {
+    const s = tradeRowState(
+      facts({
+        myResponseState: 'awaiting_receiver',
+        theirResponseState: 'needs_attention',
+        myResponseDeadline: AT,
+      }),
+    )
+    // Agreement-level headline: the higher-severity trade state still leads.
+    expect(s.attention).toBe(NEEDS_ATTENTION_LABEL)
+    // Obligation-level action: NOT suppressed by it.
+    expect(s.deadline).toEqual({ label: 'Please respond by', at: AT })
+    // And the sentence states BOTH facts, not just the counterparty's.
+    expect(s.note).toContain('the other provider has not said')
+    expect(s.note).toContain('You have not yet said whether you received theirs')
+    assertTruthful(s.note)
   })
 
   it('is null on every row that is not a confirmed trade', () => {

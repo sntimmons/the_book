@@ -195,6 +195,17 @@ const TITLE: Record<ObligationRole, string> = {
 /** The one short label for an elapsed, unanswered response window. */
 export const NEEDS_ATTENTION_LABEL = 'Needs attention'
 
+/**
+ * The one short label for "this provider owes an answer, and is still in time".
+ *
+ * Lives HERE, beside `NEEDS_ATTENTION_LABEL`, even though the list surface uses it too. It was
+ * previously spelled only in lib/tradeActivity.ts, which imports from this module — so putting
+ * the shared spelling here is the direction that does not create an import cycle, and it keeps
+ * ONE spelling of a label that must read identically on the list and on the trade's own screen.
+ * `lib/tradeActivity.ts` re-exports it, so existing importers are unaffected.
+ */
+export const ACTION_NEEDED_LABEL = 'Action needed'
+
 interface WindowCopy {
   /** Replaces the status note when there is something truer to say about the window. */
   note: string | null
@@ -238,7 +249,13 @@ const WINDOW: Record<ObligationRole, Record<ReceiverWindowState, WindowCopy>> = 
     none: { note: null, attention: null, deadlineLabel: null },
     awaiting_receiver: {
       note: null,
-      attention: null,
+      // FOUNDER RULING 2026-09-07. The receiver's own unanswered obligation is labelled for the
+      // action it is asking for. This is decided PER OBLIGATION — `obligationView` never sees
+      // the counterparty's obligation, so an escalation over there cannot reach in and silence
+      // it. The agreement-level headline may read "Needs attention" at the same moment; the two
+      // are different SCOPES and both are true. An actionable deadline is never hidden merely
+      // because the other obligation escalated.
+      attention: ACTION_NEEDED_LABEL,
       deadlineLabel: 'Please respond by',
     },
     needs_attention: {
