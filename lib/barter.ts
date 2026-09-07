@@ -297,6 +297,12 @@ export interface TradeActivityRow {
   theirResponseState: ReceiverWindowState
   /** The deadline behind `myResponseState`, for display only. Null when no window is live. */
   myResponseDeadline: string | null
+  /**
+   * Whether EITHER obligation on this agreement needs manual resolution. Server-derived from a
+   * no-show report or a `not_received` answer; false for a cancelled trade. A display roll-up
+   * over both obligations — it decides nothing about either, and it is never a verdict.
+   */
+  agreementUnderReview: boolean
   provider: CommunityProviderInfo
 }
 
@@ -319,7 +325,7 @@ export async function fetchTradeActivity(): Promise<{
         'offering_service, seeking_service, offer_is_active, my_role, ' +
         'counterparty_provider_id, conversation_id, agreement_id, ' +
         'i_cancelled, they_cancelled, my_response_state, my_response_deadline, ' +
-        'their_response_state',
+        'their_response_state, agreement_under_review',
     )
     .order('created_at', { ascending: false })
   // A failure is NOT an empty list. Collapsing the two let the screen say "No trade activity
@@ -349,6 +355,7 @@ export async function fetchTradeActivity(): Promise<{
           my_response_state: ReceiverWindowState | null
           my_response_deadline: string | null
           their_response_state: ReceiverWindowState | null
+          agreement_under_review: boolean | null
         }[]
       | null) ?? []
   const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
@@ -376,6 +383,8 @@ export async function fetchTradeActivity(): Promise<{
     myResponseState: r.my_response_state ?? 'none',
     theirResponseState: r.their_response_state ?? 'none',
     myResponseDeadline: r.my_response_deadline,
+    // Fail closed the same way: absence withholds the review state rather than asserting one.
+    agreementUnderReview: r.agreement_under_review ?? false,
       provider: infoMap.get(r.counterparty_provider_id) ?? {
         name: 'Provider',
         photo: null,

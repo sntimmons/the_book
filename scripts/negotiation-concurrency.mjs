@@ -226,6 +226,13 @@ const TERMS = (a, b) =>
   `'${a}', clock_timestamp() + interval '7 days', null, `
   + `'${b}', clock_timestamp() + interval '8 days', null`
 
+// Terms whose OWNER side carries a scheduled appointment. No-show exists only for a scheduled
+// obligation, so the no-show races need this shape rather than the due-date-only default.
+// Scheduled sits inside the due date, as the schema's own CHECK requires.
+const SCHEDULED_TERMS = (a, b) =>
+  `'${a}', clock_timestamp() + interval '30 days', clock_timestamp() + interval '20 days', `
+  + `'${b}', clock_timestamp() + interval '30 days', null`
+
 const results = []
 const chk = (name, expected, actual) => {
   const ok = String(expected) === String(actual)
@@ -318,6 +325,14 @@ const ids = {
   interest16: randomUUID(),
   offer17: randomUUID(),
   interest17: randomUUID(),
+  offer18: randomUUID(),
+  interest18: randomUUID(),
+  offer19: randomUUID(),
+  interest19: randomUUID(),
+  offer20: randomUUID(),
+  interest20: randomUUID(),
+  offer21: randomUUID(),
+  interest21: randomUUID(),
 }
 
 // Every interest this harness creates, in one place: the cleanup and the residue assertions
@@ -326,6 +341,7 @@ const ALL_INTERESTS = [
   ids.interest, ids.interest2, ids.interest3, ids.interest4, ids.interest5, ids.interest6,
   ids.interest7, ids.interest8, ids.interest9, ids.interest10, ids.interest11, ids.interest12,
   ids.interest13, ids.interest14, ids.interest15, ids.interest16, ids.interest17,
+  ids.interest18, ids.interest19, ids.interest20, ids.interest21,
 ]
 const ALL_OFFERS = [
   ids.offer, ids.offer2, ids.offer3, ids.offer4, ids.offer5, ids.offer6, ids.offer7,
@@ -337,6 +353,7 @@ const AGREEMENT_INTERESTS = [
   ids.interest4, ids.interest5, ids.interest6, ids.interest7, ids.interest8, ids.interest9,
   ids.interest10, ids.interest11, ids.interest12,
   ids.interest13, ids.interest14, ids.interest15, ids.interest16, ids.interest17,
+  ids.interest18, ids.interest19, ids.interest20, ids.interest21,
 ]
 const quoted = (list) => list.map((v) => `'${v}'`).join(',')
 
@@ -389,7 +406,11 @@ begin
            ('${ids.offer14}', opid, '${ids.ou}', 'conc offering14 ${tag}', 'conc seeking'),
            ('${ids.offer15}', opid, '${ids.ou}', 'conc offering15 ${tag}', 'conc seeking'),
            ('${ids.offer16}', opid, '${ids.ou}', 'conc offering16 ${tag}', 'conc seeking'),
-           ('${ids.offer17}', opid, '${ids.ou}', 'conc offering17 ${tag}', 'conc seeking');
+           ('${ids.offer17}', opid, '${ids.ou}', 'conc offering17 ${tag}', 'conc seeking'),
+           ('${ids.offer18}', opid, '${ids.ou}', 'conc offering18 ${tag}', 'conc seeking'),
+           ('${ids.offer19}', opid, '${ids.ou}', 'conc offering19 ${tag}', 'conc seeking'),
+           ('${ids.offer20}', opid, '${ids.ou}', 'conc offering20 ${tag}', 'conc seeking'),
+           ('${ids.offer21}', opid, '${ids.ou}', 'conc offering21 ${tag}', 'conc seeking');
   insert into public.barter_interests(id, offer_id, interested_provider_id, interested_user_id,
     message, status) values
     ('${ids.interest4}', '${ids.offer4}', rpid, '${ids.ru}', 'x', 'accepted'),
@@ -405,7 +426,11 @@ begin
     ('${ids.interest14}', '${ids.offer14}', rpid, '${ids.ru}', 'x', 'accepted'),
     ('${ids.interest15}', '${ids.offer15}', rpid, '${ids.ru}', 'x', 'accepted'),
     ('${ids.interest16}', '${ids.offer16}', rpid, '${ids.ru}', 'x', 'accepted'),
-    ('${ids.interest17}', '${ids.offer17}', rpid, '${ids.ru}', 'x', 'accepted');
+    ('${ids.interest17}', '${ids.offer17}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest18}', '${ids.offer18}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest19}', '${ids.offer19}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest20}', '${ids.offer20}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest21}', '${ids.offer21}', rpid, '${ids.ru}', 'x', 'accepted');
 end $$;`)
   if (!r.ok) {
     console.error('seed failed:', r.out)
@@ -545,6 +570,57 @@ async function readyToConfirm(interest) {
   await runSql(acceptV1(ids.ou))
   await runSql(acceptV1(ids.ru))
 }
+// Same shape as readyToConfirm, with an appointment on the owner side.
+async function readyToConfirmScheduled(interest) {
+  await runSql(asUser(ids.ou, `perform public.create_barter_proposal('${interest}', ${SCHEDULED_TERMS('ns own', 'ns theirs')});`))
+  const acceptV1 = (uid) => asUser(uid, `
+  perform public.accept_barter_version(
+    (select id from public.barter_proposal_versions
+      where proposal_id = (select id from public.barter_proposals where interest_id = '${interest}')
+      order by version_no limit 1));`)
+  await runSql(acceptV1(ids.ou))
+  await runSql(acceptV1(ids.ru))
+}
+
+// A confirmed trade whose owner-side APPOINTMENT has already passed while its DUE DATE has not.
+//
+// The appointment is moved by ageing the ACCEPTED TERM and re-deriving the obligation pair
+// through production code — never by updating the obligation's `scheduled_at`, which
+// 20261011000000 § 3b freezes against every writer including service_role. Obligation ids
+// change across this call, so nothing may be captured before it.
+async function confirmedScheduledTradeInPast(interest) {
+  await readyToConfirmScheduled(interest)
+  await runSql(asUser(ids.ou, `perform public.finalize_barter_agreement(${proposalOf(interest)});`))
+  await runSql(`
+do $$
+declare v_ag uuid; v_ver uuid;
+begin
+  select ag.id, ag.accepted_version_id into v_ag, v_ver
+    from public.barter_agreements ag where ag.interest_id = '${interest}';
+  update public.barter_proposal_terms
+     set created_at = created_at - interval '25 days',
+         due_at = due_at - interval '25 days',
+         scheduled_at = case when scheduled_at is null then null
+                             else scheduled_at - interval '25 days' end
+   where version_id = v_ver;
+  delete from public.barter_obligations where agreement_id = v_ag;
+  perform public.create_barter_obligation_pair(v_ag);
+end $$;`)
+}
+
+async function noShowRows(interest) {
+  const r = await runSql(`
+select count(*) as n, min(r.created_at) as first_at, min(r.reason) as reason
+  from public.barter_obligation_no_show_reports r
+  join public.barter_agreements ag on ag.id = r.agreement_id
+ where ag.interest_id = '${interest}';`)
+  return {
+    n: scalar(r.out, 'n'),
+    firstAt: nullable(scalar(r.out, 'first_at')),
+    reason: nullable(scalar(r.out, 'reason')),
+  }
+}
+
 const proposalOf = (interest) =>
   `(select id from public.barter_proposals where interest_id = '${interest}')`
 
@@ -1033,6 +1109,132 @@ async function raceCancelVsCounterpartyDeliver() {
   chk('the obligation nobody touched is still pending', 'pending', other.status)
 }
 
+// ── 18. The same receiver reports a no-show twice at once ──────────────────
+// The double tap, on a write that must be idempotent rather than a second event. BOTH calls
+// must succeed, exactly ONE row may exist, and the timestamp must be the FIRST one: if a repeat
+// could re-stamp it, the record of when the complaint was actually made would move every time
+// the receiver tapped again — and that timestamp is the only evidence of when they raised it.
+async function raceDoubleNoShow() {
+  await confirmedScheduledTradeInPast(ids.interest18)
+  const report = (reason) =>
+    `perform public.report_barter_obligation_no_show(`
+    + `${obligationOf(ids.interest18, 'offer_owner')}, '${reason}');`
+  const blocker = blockObligation(ids.interest18, 'offer_owner')
+  await delay(2000)
+  const [a, b] = await Promise.all([
+    runTimedUser(ids.ru, report('first account')),
+    runTimedUser(ids.ru, report('second account')),
+  ])
+  await blocker
+  chk('the two no-show reports genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('a concurrent double no-show report is safe for both', 'true', String(a.opOk && b.opOk))
+  const rows = await noShowRows(ids.interest18)
+  chk('and records exactly one report', '1', rows.n)
+  chk('the surviving reason is one of the two, not a merge of both', 'true',
+    String(rows.reason === 'first account' || rows.reason === 'second account'))
+  const ob = await obligationRow(ids.interest18, 'offer_owner')
+  chk('reporting a no-show creates no outcome — the obligation is untouched',
+    'pending', ob.status)
+}
+
+// ── 19. No-show racing the receiver's own confirm-received ─────────────────
+// The same participant, two contradictory statements, at the same instant. Exactly ONE must
+// land: "I received it" and "they never showed" cannot both be authoritative, and the end state
+// must be internally consistent whichever wins.
+async function raceNoShowVsConfirmReceived() {
+  await confirmedScheduledTradeInPast(ids.interest19)
+  await runSql(asUser(ids.ou,
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest19, 'offer_owner')});`))
+  const report =
+    `perform public.report_barter_obligation_no_show(${obligationOf(ids.interest19, 'offer_owner')}, 'nobody came');`
+  const confirm =
+    `perform public.confirm_barter_obligation_received(${obligationOf(ids.interest19, 'offer_owner')});`
+  const blocker = blockObligation(ids.interest19, 'offer_owner')
+  await delay(2000)
+  const [n, c] = await Promise.all([
+    runTimedUser(ids.ru, report),
+    runTimedUser(ids.ru, confirm),
+  ])
+  await blocker
+  chk('no-show and confirm-received genuinely overlapped',
+    'true', String(intervalsOverlap(n.timing, c.timing)))
+  const rows = await noShowRows(ids.interest19)
+  const ob = await obligationRow(ids.interest19, 'offer_owner')
+  // Two compatible end states, and nothing else. Either the confirmation landed first and the
+  // no-show was refused as PT412, or the report landed first and the confirmation still
+  // succeeded — a receiver may confirm receipt after reporting, and the report stays on record.
+  const confirmFirst = rows.n === '0' && ob.status === 'received' && !n.opOk
+  const reportFirst = rows.n === '1' && n.opOk
+  chk('exactly one authoritative, self-consistent state results',
+    'true', String(confirmFirst !== reportFirst))
+  chk('and it is one of the two legal shapes', 'true', String(confirmFirst || reportFirst))
+  chk('a confirmed receipt never coexists with a no-show reported afterwards',
+    'false', String(ob.status === 'received' && rows.n === '1' && !n.opOk))
+}
+
+// ── 20. No-show racing a cancellation ──────────────────────────────────────
+// Both are legal at this instant: nothing has been delivered, so the ordinary exit is still
+// open, and the appointment has passed, so a no-show may be reported. Exactly one must win, and
+// a cancelled trade must never end up carrying a report.
+async function raceNoShowVsCancel() {
+  await confirmedScheduledTradeInPast(ids.interest20)
+  const report =
+    `perform public.report_barter_obligation_no_show(${obligationOf(ids.interest20, 'offer_owner')}, 'missed');`
+  const cancel =
+    `perform public.cancel_barter_agreement(${agreementOf(ids.interest20)}, 'ending it');`
+  const blocker = blockObligation(ids.interest20)
+  await delay(2000)
+  const [n, c] = await Promise.all([
+    runTimedUser(ids.ru, report),
+    runTimedUser(ids.ou, cancel),
+  ])
+  await blocker
+  chk('no-show and cancellation genuinely overlapped',
+    'true', String(intervalsOverlap(n.timing, c.timing)))
+  const rows = await noShowRows(ids.interest20)
+  const cancels = await cancellationRows(ids.interest20)
+  // The cancellation may win outright, or the report may land first and the cancellation still
+  // succeed — a no-show report does not block the ordinary exit, because nothing was delivered.
+  // What must NEVER happen is a report written against an already-cancelled trade.
+  chk('a report is never written against an already-cancelled trade',
+    'false', String(cancels.n !== '0' && rows.n === '1' && !n.opOk))
+  chk('at most one report exists', 'true', String(rows.n === '0' || rows.n === '1'))
+  chk('and the result matches the RPC that succeeded', 'true',
+    String(n.opOk ? rows.n === '1' : rows.n === '0'))
+  const ob = await obligationRow(ids.interest20, 'offer_owner')
+  chk('neither act invented an outcome on the obligation', 'pending', ob.status)
+}
+
+// ── 21. An unrelated caller racing the legitimate reporter ─────────────────
+// The intruder must be refused as a non-participant WITHOUT ever contending for the row lock —
+// the authority check runs before the lock is taken, so a stranger cannot even make a
+// legitimate reporter wait.
+async function raceNoShowUnauthorized() {
+  await confirmedScheduledTradeInPast(ids.interest21)
+  const report =
+    `perform public.report_barter_obligation_no_show(${obligationOf(ids.interest21, 'offer_owner')}, 'legitimate');`
+  const blocker = blockObligation(ids.interest21, 'offer_owner')
+  await delay(2000)
+  const [ok, intruder] = await Promise.all([
+    runTimedUser(ids.ru, report),
+    runTimedUser(randomUUID(), report),
+  ])
+  await blocker
+  chk('the unrelated reporter is refused without ever contending for the locked row',
+    'true', String(refusedWithoutWaiting(intruder.timing, ok.timing)))
+  chk('the receiver wins', 'true', String(ok.opOk))
+  chk('and the unrelated user is refused', '23514', intruder.timing?.code)
+  const rows = await noShowRows(ids.interest21)
+  chk('exactly one report is recorded', '1', rows.n)
+  chk('and it is the legitimate one', 'legitimate', rows.reason)
+  // The DELIVERER is a participant and still may not report themselves as a no-show.
+  const deliverer = await runTimedUser(ids.ou, report)
+  chk('the deliverer cannot report themselves, even after the fact',
+    '42501', deliverer.timing?.code)
+  chk('and no second report was created', '1', (await noShowRows(ids.interest21)).n)
+}
+
 // ── 17. Cancel racing an unauthorized caller, and cancel after a delivery ──
 async function raceCancelUnauthorizedAndLate() {
   await confirmedTrade(ids.interest17)
@@ -1115,6 +1317,9 @@ select (select count(*) from public.barter_offers where id in
        (select count(*) from public.barter_agreement_cancellations c
           join public.barter_agreements ag on ag.id = c.agreement_id
           where ag.interest_id in (${quoted(AGREEMENT_INTERESTS)})) as cancellations,
+       (select count(*) from public.barter_obligation_no_show_reports r
+          join public.barter_agreements ag on ag.id = r.agreement_id
+          where ag.interest_id in (${quoted(AGREEMENT_INTERESTS)})) as no_show_reports,
        (select count(*) from public.messages
           where conversation_id = '${ids.conv}') as messages,
        (select count(*) from public.conversation
@@ -1123,7 +1328,7 @@ select (select count(*) from public.barter_offers where id in
           ('${ids.ou}','${ids.ru}')) as providers,
        (select count(*) from auth.users where id in ('${ids.ou}','${ids.ru}')) as users;`)
   for (const k of ['offers', 'interests', 'proposals', 'obligations', 'agreements',
-    'cancellations', 'messages', 'conversations', 'providers', 'users']) {
+    'cancellations', 'no_show_reports', 'messages', 'conversations', 'providers', 'users']) {
     chk(`zero residue: ${k}`, '0', scalar(q.out, k))
   }
 }
@@ -1146,6 +1351,10 @@ await raceSameParticipantCancels()
 await raceCancelVsDeliver()
 await raceCancelVsCounterpartyDeliver()
 await raceCancelUnauthorizedAndLate()
+await raceDoubleNoShow()
+await raceNoShowVsConfirmReceived()
+await raceNoShowVsCancel()
+await raceNoShowUnauthorized()
 await cleanup()
 
 const failed = results.filter((r) => !r.ok).length

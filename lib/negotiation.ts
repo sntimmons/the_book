@@ -95,6 +95,24 @@ export interface BarterObligation {
   confirmationAnchor: string | null
   confirmationDeadline: string | null
   receiverWindowState: ReceiverWindowState
+  /**
+   * Whether THIS obligation needs manual resolution, DERIVED AND DECIDED BY THE SERVER from a
+   * no-show report or a `not_received` answer.
+   *
+   * Obligation-granular: one side of a trade can be under review while the other is untouched,
+   * and this says nothing about the other side. It means a human must look — never that anyone
+   * is at fault, and never Fulfilled, Unfulfilled, Completed or any terminal outcome, none of
+   * which exist. A cancelled trade is always false.
+   */
+  underReview: boolean
+  /** When the no-show was reported, or null. Display only; the server owns the timestamp. */
+  noShowReportedAt: string | null
+  /**
+   * Whether the receiver may report a no-show right now — the SERVER's answer, decided against
+   * its own clock. The client renders a control from this and never compares `scheduledAt` to
+   * the device clock, exactly as it never recomputes the PD-057 window.
+   */
+  canReportNoShow: boolean
 }
 
 const ROW_COLUMNS =
@@ -294,7 +312,8 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       .select(
         'id, agreement_id, side, agreed_description, due_at, scheduled_at, status,'
         + ' delivered_at, receipt_responded_at, confirmation_anchor, confirmation_deadline,'
-        + ' receiver_window_state',
+        + ' receiver_window_state, under_review, no_show_reported_at,'
+        + ' can_report_no_show',
       )
       .eq('agreement_id', row.agreementId)
       .order('side', { ascending: true })
@@ -312,6 +331,9 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       confirmation_anchor: string | null
       confirmation_deadline: string | null
       receiver_window_state: ReceiverWindowState
+      under_review: boolean | null
+      no_show_reported_at: string | null
+      can_report_no_show: boolean | null
     }[] | null) ?? []).map((o) => ({
       id: o.id,
       agreementId: o.agreement_id,
@@ -327,6 +349,14 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       // Fail closed on a missing value: no window state means say nothing about a window, never
       // assert one. A row the server declined to classify must not become Needs Attention here.
       receiverWindowState: o.receiver_window_state ?? 'none',
+      // Fail closed the same way: a missing value means say NOTHING about a review, never
+      // assert one. Claiming "Under Review" from an absent field would put a trade into a
+      // state a human is expected to resolve, on no evidence at all.
+      underReview: o.under_review ?? false,
+      noShowReportedAt: o.no_show_reported_at,
+      // Fail closed: a missing value withholds the control rather than offering one that can
+      // only be refused.
+      canReportNoShow: o.can_report_no_show ?? false,
     }))
   }
 
@@ -453,6 +483,33 @@ export async function reportObligationNotReceived(
   })
   if (error) return { ok: false, status: null, error }
   return { ok: true, status: (data as ObligationStatus | null) ?? null, error: null }
+}
+
+/**
+ * The receiver reports that a SCHEDULED service did not happen.
+ *
+ * Only the obligation and an optional reason are sent. The server derives that the caller is
+ * its receiver, reads the appointment from the obligation, stamps the time against its OWN
+ * clock, and refuses before the scheduled time — so a device with a wrong clock cannot bring an
+ * appointment forward, and nobody can file in another participant's name.
+ *
+ * This records a REPORTED EVENT and routes the trade into the derived Under Review state. It
+ * decides no fault, creates no outcome, touches no reputation and does not erase or contradict
+ * `delivered_at` — a report and a delivery record simply both stand.
+ *
+ * IDEMPOTENT. A repeat returns the ORIGINAL timestamp and does not overwrite the original
+ * report or its reason.
+ */
+export async function reportObligationNoShow(
+  obligationId: string,
+  reason?: string | null,
+): Promise<{ ok: boolean; reportedAt: string | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('report_barter_obligation_no_show', {
+    p_obligation_id: obligationId,
+    p_reason: reason ?? null,
+  })
+  if (error) return { ok: false, reportedAt: null, error }
+  return { ok: true, reportedAt: (data as string | null) ?? null, error: null }
 }
 
 /**

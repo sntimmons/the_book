@@ -838,14 +838,25 @@ begin
     'the four-value status vocabulary is unchanged — attention is not a status', '1', v_n::text);
 
   -- No new function that adjudicates, completes, expires or reviews anything.
+  --
+  -- `%no_show%` and `%under_review%` were part of this list until 20261012000000, which added
+  -- receiver-reported no-shows and the DERIVED Under Review state by Founder ruling. They are
+  -- named explicitly below rather than dropped from the sweep, so the exemption is exactly two
+  -- known objects and a third would still fail here. Everything else stays forbidden: an
+  -- elapsed window must still create no outcome, and Under Review is not one.
   select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and (p.proname ilike '%no_show%' or p.proname ilike '%adjudicat%'
           or p.proname ilike '%under_review%' or p.proname ilike '%fulfil%'
           or p.proname ilike '%expire%' or p.proname ilike '%timeout%'
-          or p.proname ilike '%dispute%' or p.proname ilike '%complete_barter%');
+          or p.proname ilike '%dispute%' or p.proname ilike '%complete_barter%')
+     and p.proname not in ('report_barter_obligation_no_show',
+                           'barter_obligation_under_review',
+                           'barter_can_report_no_show',
+                           'enforce_barter_no_show_append_only',
+                           'enforce_barter_no_show_consistent');
   perform pg_temp.chk('receiver_window',
-    'no no-show, adjudication, review, fulfilment, expiry, timeout or dispute function',
+    'no adjudication, fulfilment, expiry, timeout or dispute function beyond the ruled no-show',
     '0', v_n::text);
 
   -- No trigger and no scheduled job to flip rows at a deadline. The state is derived; a job

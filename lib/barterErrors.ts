@@ -66,6 +66,7 @@ export type BarterWriteOp =
   | 'markDelivered'
   | 'confirmReceived'
   | 'reportNotReceived'
+  | 'reportNoShow'
   | 'cancelTrade'
 
 export interface BarterWriteFailure {
@@ -173,6 +174,11 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
     title: 'Could not record your answer',
     body: 'Please try again.',
   },
+  reportNoShow: {
+    terminal: false,
+    title: 'Could not record your report',
+    body: 'Please try again.',
+  },
   cancelTrade: { terminal: false, title: 'Could not cancel', body: 'Please try again.' },
 }
 
@@ -243,6 +249,11 @@ const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
     body: 'It may have been removed. The details have been updated.',
   },
   reportNotReceived: {
+    terminal: true,
+    title: 'That trade is no longer available',
+    body: 'It may have been removed. The details have been updated.',
+  },
+  reportNoShow: {
     terminal: true,
     title: 'That trade is no longer available',
     body: 'It may have been removed. The details have been updated.',
@@ -537,6 +548,50 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       stale: true,
       title: 'You already answered this',
       body: 'Your answer was recorded and cannot be changed. The details have been updated.',
+    },
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That trade is no longer available',
+      body: 'It may have been removed. The details have been updated.',
+    },
+  },
+  // Every refusal here names what is actually wrong and says nothing about fault. NONE of these
+  // may imply the report succeeded, that anyone failed, or that an outcome followed.
+  reportNoShow: {
+    [TRADE_CANCELLED]: {
+      terminal: true,
+      stale: true,
+      title: 'This trade was cancelled',
+      body: 'This trade was cancelled, so there is nothing to report. The details have been updated.',
+    },
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not yours to report',
+      body: 'Only the provider receiving this can report that it did not happen.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      // Two causes share this code and the copy must be true under BOTH: the obligation has no
+      // scheduled time at all, or the scheduled time has not arrived yet. Saying "not yet" for
+      // the first would promise the control returns later, when it never will.
+      terminal: false,
+      stale: true,
+      title: 'Cannot report this yet',
+      body:
+        'A no-show can only be reported for a trade with a scheduled time, once that time has'
+        + ' passed. The details have been updated.',
+    },
+    [ANSWER_ALREADY_RECORDED]: {
+      terminal: true,
+      stale: true,
+      title: 'You already confirmed this',
+      body:
+        'You confirmed you received this, so it cannot be reported as a no-show. The details'
+        + ' have been updated.',
+    },
+    [INVALID_PARAMETER]: {
+      terminal: false,
+      title: 'That reason is too long',
+      body: 'Please shorten it and try again.',
     },
     [CHECK_VIOLATION]: {
       terminal: true,

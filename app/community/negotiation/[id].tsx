@@ -29,6 +29,7 @@ import {
   NegotiationRow,
   ProposalVersion,
   reportObligationNotReceived,
+  reportObligationNoShow,
   submitCounter,
 } from '@/lib/negotiation'
 import { BarterWriteRequest, runBarterWrite } from '@/lib/negotiationWrite'
@@ -53,7 +54,9 @@ import {
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
   NEEDS_ATTENTION_LABEL,
+  UNDER_REVIEW_LABEL,
   NOT_RECEIVED_COPY,
+  REPORT_NO_SHOW_COPY,
   ObligationActionCopy,
   obligationRole,
   obligationTimeline,
@@ -346,7 +349,7 @@ export default function NegotiationScreen() {
   // timestamp. This function cannot express "mark their obligation delivered" — there is no
   // parameter for it here and no RPC for it there.
   async function runObligationWrite(
-    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived',
+    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived' | 'reportNoShow',
     obligationId: string,
   ) {
     if (busy) return
@@ -360,13 +363,15 @@ export default function NegotiationScreen() {
           ? markObligationDelivered(obligationId)
           : op === 'confirmReceived'
             ? confirmObligationReceived(obligationId)
-            : reportObligationNotReceived(obligationId),
+            : op === 'reportNotReceived'
+              ? reportObligationNotReceived(obligationId)
+              : reportObligationNoShow(obligationId),
     })
   }
 
   function askThenWrite(
     copy: ObligationActionCopy,
-    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived',
+    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived' | 'reportNoShow',
     obligationId: string,
   ) {
     Alert.alert(copy.title, copy.body, [
@@ -532,6 +537,10 @@ export default function NegotiationScreen() {
       tradeCancelled,
       obligation.receiverWindowState,
       obligation.confirmationDeadline,
+      // Under Review and the no-show offer are BOTH the server's answers, arriving on the same
+      // row as the window state. This screen compares nothing to a clock of its own.
+      obligation.underReview,
+      obligation.canReportNoShow,
     )
     return (
       <View style={styles.term}>
@@ -558,7 +567,11 @@ export default function NegotiationScreen() {
               // Same colour rule as Trade Activity, so one state does not change meaning when
               // the viewer moves between the two surfaces: amber for "your turn, still in
               // time", the warmer tone for "the window has passed".
-              o.attention === NEEDS_ATTENTION_LABEL ? styles.attentionChipLate : null,
+              o.attention === UNDER_REVIEW_LABEL
+                ? styles.attentionChipReview
+                : o.attention === NEEDS_ATTENTION_LABEL
+                  ? styles.attentionChipLate
+                  : null,
             ]}
           >
             <Text style={styles.attentionChipText}>{o.attention}</Text>
@@ -616,6 +629,25 @@ export default function NegotiationScreen() {
               }
             >
               <Text style={styles.secondaryText}>{RESPOND_LABELS.notReceived}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {/* A SEPARATE row from the receipt answers, because it answers a different question:
+            those are "did you get it", this is "did the booking happen at all". Offered only
+            when the SERVER says so — it decided that the scheduled time has arrived, that
+            nothing is reported yet and that the trade is live. Rendered even once a report
+            exists is impossible: `canReportNoShow` goes false the moment one is filed, so the
+            control cannot invite a duplicate. */}
+        {o.canReportNoShow ? (
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+              disabled={busy}
+              onPress={() =>
+                askThenWrite(REPORT_NO_SHOW_COPY, 'reportNoShow', obligation.id)
+              }
+            >
+              <Text style={styles.secondaryText}>{RESPOND_LABELS.noShow}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -1014,6 +1046,12 @@ const styles = StyleSheet.create({
   attentionChipLate: {
     backgroundColor: 'rgba(214,124,79,0.18)',
     borderColor: 'rgba(214,124,79,0.5)',
+  },
+  // Same third state, same tone, same meaning as the list — one product state must not change
+  // colour when the viewer moves between the two surfaces.
+  attentionChipReview: {
+    backgroundColor: 'rgba(120,150,190,0.18)',
+    borderColor: 'rgba(120,150,190,0.5)',
   },
   attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
   obligationNote: {

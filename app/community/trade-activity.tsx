@@ -29,7 +29,7 @@ import {
   tradeActivitySection,
   tradeRowState,
 } from '@/lib/tradeActivity'
-import { NEEDS_ATTENTION_LABEL } from '@/lib/obligationState'
+import { NEEDS_ATTENTION_LABEL, UNDER_REVIEW_LABEL } from '@/lib/obligationState'
 
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
@@ -282,9 +282,11 @@ export default function TradeActivityScreen() {
                       <View
                         style={[
                           styles.attentionChip,
-                          state.attention === NEEDS_ATTENTION_LABEL
-                            ? styles.attentionChipLate
-                            : null,
+                          state.attention === UNDER_REVIEW_LABEL
+                            ? styles.attentionChipReview
+                            : state.attention === NEEDS_ATTENTION_LABEL
+                              ? styles.attentionChipLate
+                              : null,
                         ]}
                       >
                         <Text style={styles.attentionChipText}>{state.attention}</Text>
@@ -520,6 +522,14 @@ const styles = StyleSheet.create({
   attentionChipLate: {
     backgroundColor: 'rgba(214,124,79,0.18)',
     borderColor: 'rgba(214,124,79,0.5)',
+  },
+  // A THIRD state, and deliberately a cool tone rather than a hotter one. Under Review is more
+  // consequential than an elapsed window, but escalating the colour would read as an alarm or a
+  // verdict — and nothing has been decided. Cool reads as "with someone else now", which is
+  // exactly what it means.
+  attentionChipReview: {
+    backgroundColor: 'rgba(120,150,190,0.18)',
+    borderColor: 'rgba(120,150,190,0.5)',
   },
   attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
 })

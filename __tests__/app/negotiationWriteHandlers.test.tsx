@@ -148,6 +148,10 @@ function makeObligation(
     confirmationAnchor: null,
     confirmationDeadline: null,
     receiverWindowState: 'none',
+    // Nothing reported, so no review. Overridden per case where one exists.
+    underReview: false,
+    noShowReportedAt: null,
+    canReportNoShow: false,
     ...over,
   }
 }

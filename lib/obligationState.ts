@@ -101,6 +101,15 @@ export interface ObligationView {
    */
   attention: string | null
   /**
+   * Whether the receiver may report a no-show right now.
+   *
+   * Decided by the SERVER (`my_barter_obligations.can_report_no_show`) and passed straight
+   * through — this module never compares `scheduled_at` to a clock, for the same reason it
+   * never compares the PD-057 deadline to one. Only the receiver ever sees it: the deliverer
+   * cannot report themselves as a no-show.
+   */
+  canReportNoShow: boolean
+  /**
    * The response deadline worth showing, with the label that makes it true for THIS viewer, or
    * null when there is no live window. The timestamp is returned raw and the caller formats it,
    * so one formatter renders every time on the card.
@@ -292,6 +301,14 @@ export function obligationView(
   tradeCancelled = false,
   window: ReceiverWindowState = 'none',
   confirmationDeadline: string | null = null,
+  /**
+   * The SERVER's derived Under Review state for THIS obligation, and its offer of the no-show
+   * control. Both default to the silent/withholding value so a caller that has not been given
+   * them cannot accidentally assert that a trade needs review or offer a control that can only
+   * fail — the same fail-closed direction as `window`.
+   */
+  underReview = false,
+  canReportNoShow = false,
 ): ObligationView {
   const c = COPY[role][status]
   // A window belongs ONLY to a delivered, unanswered obligation, and only to an uncancelled
@@ -306,6 +323,12 @@ export function obligationView(
   // became reachable when the live window stopped being unlabelled. It must not depend on one
   // query being right.
   const w = WINDOW[role][tradeCancelled || status !== 'delivered' ? 'none' : window]
+  // UNDER REVIEW OUTRANKS THE WINDOW, and cancellation outranks both. A trade a human has to
+  // resolve is a truer thing to say than "the response window passed" — the window is about a
+  // missing answer, and once a report exists the answer is no longer what the trade is waiting
+  // on. It is still not a verdict: `UNDER_REVIEW_NOTE` says nothing has been decided, and the
+  // receiver's controls stay live beneath it because they genuinely still work.
+  const review = underReview && !tradeCancelled
   return {
     title: TITLE[role],
     state: c.state,
@@ -317,10 +340,14 @@ export function obligationView(
     // The window's note WINS when it has one: "the window passed and this is unanswered" is
     // strictly truer than "waiting for the other provider to confirm", which stops being
     // accurate the moment the deadline goes by.
-    note: tradeCancelled ? null : (w.note ?? c.note),
+    note: tradeCancelled ? null : review ? UNDER_REVIEW_NOTE[role] : (w.note ?? c.note),
     canMarkDelivered: c.canMarkDelivered && !tradeCancelled,
     canRespond: c.canRespond && !tradeCancelled,
-    attention: w.attention,
+    // Offered ONLY to the receiver, and only when the server says the moment has come. The
+    // role check is a second, independent refusal: the server already refuses a deliverer, and
+    // a button that can only fail must never be drawn.
+    canReportNoShow: role === 'receiver' && canReportNoShow && !tradeCancelled,
+    attention: review ? UNDER_REVIEW_LABEL : w.attention,
     // Shown only when the server gave both a live window state and a deadline. Guarding on both
     // means a missing deadline degrades to no line, never to a label with nothing after it.
     deadline:
@@ -369,6 +396,45 @@ export const NOT_RECEIVED_COPY: ObligationActionCopy = {
 }
 
 /**
+ * Reporting that a SCHEDULED service did not happen.
+ *
+ * The body says three true things and no more: what is being recorded, that it decides nothing,
+ * and what happens next. It deliberately does NOT say the provider failed, that the reporter
+ * has won, that anything is unfulfilled or resolved, or that a refund or penalty follows — none
+ * of those exist, and a confirmation dialog is exactly where a product accidentally promises
+ * an outcome it cannot deliver.
+ */
+export const REPORT_NO_SHOW_COPY: ObligationActionCopy = {
+  title: 'Report that this did not happen?',
+  body:
+    'This records that the scheduled service did not take place. It does not decide who was at'
+    + ' fault, and it does not end or cancel the trade — the trade will need review.',
+  confirmLabel: 'Report no-show',
+  cancelLabel: 'Go back',
+}
+
+/** The one short label for a trade that needs manual resolution. */
+export const UNDER_REVIEW_LABEL = 'Under review'
+
+/**
+ * What an obligation under review says.
+ *
+ * ONE sentence per role, and neither accuses anybody. The receiver is told their report was
+ * recorded; the deliverer is told the trade needs review WITHOUT being told they did anything
+ * wrong, because nothing has been decided and saying otherwise would be a verdict this product
+ * cannot support. "Nothing has been decided" is the same sentence PD-058 already requires after
+ * a `not_received`, for the same reason.
+ */
+export const UNDER_REVIEW_NOTE: Record<ObligationRole, string> = {
+  receiver:
+    'This trade needs review. What you reported has been recorded. Nothing has been decided'
+    + ' yet.',
+  deliverer:
+    'This trade needs review. The other provider reported a problem with this. Nothing has been'
+    + ' decided yet.',
+}
+
+/**
  * The button labels, DERIVED from the confirmation copy rather than restated.
  *
  * Spelled twice, they can diverge — and then a button says one thing while the dialog it opens
@@ -378,6 +444,7 @@ export const NOT_RECEIVED_COPY: ObligationActionCopy = {
 export const RESPOND_LABELS = {
   received: CONFIRM_RECEIVED_COPY.confirmLabel,
   notReceived: NOT_RECEIVED_COPY.confirmLabel,
+  noShow: REPORT_NO_SHOW_COPY.confirmLabel,
 } as const
 
 /**

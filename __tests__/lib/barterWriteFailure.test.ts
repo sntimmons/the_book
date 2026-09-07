@@ -11,10 +11,10 @@ import { barterWriteFailure, BarterWriteOp, interpretWrite } from '../../lib/bar
 // union. So the list silently fell behind twice: the negotiation slice's two operations were
 // excluded, the comment was rewritten to say the list was union-driven, and the array stayed a
 // hand-written literal — which then excluded the delivery slice's three as well. Nine entries
-// against a twelve-member union, compiling green.
+// against a thirteen-member union, compiling green.
 //
 // A total `Record<BarterWriteOp, true>` cannot do that: omit a member and it is a COMPILE
-// error, so a thirteenth operation must be added here before `npm run check` will pass. The
+// error, so a fourteenth operation must be added here before `npm run check` will pass. The
 // keys are then the whole union, which is what both safety suites below need — one asserts
 // that an unrecognised SQLSTATE stays retryable, the other that a zero-row write is terminal,
 // and an operation missing from either is an operation whose refusals nothing checks.
@@ -31,6 +31,7 @@ const OPS: Record<BarterWriteOp, true> = {
   markDelivered: true,
   confirmReceived: true,
   reportNotReceived: true,
+  reportNoShow: true,
   cancelTrade: true,
 }
 const ALL_OPS = Object.keys(OPS) as BarterWriteOp[]
@@ -342,10 +343,12 @@ describe('PT409 means exactly one thing per operation', () => {
   })
 
   it('never tells a provider a cancelled trade is merely "already confirmed"', () => {
-    // The three obligation writes are the ones the cancellation guard raises PT409 for. If a
+    // The four obligation writes are the ones the cancellation guard raises PT409 for. If a
     // future edit let CONFIRMED_TRADE win in one of their maps, the user would be told the
     // trade is confirmed and unchangeable — true, but it hides that it was cancelled.
-    for (const op of ['markDelivered', 'confirmReceived', 'reportNotReceived'] as const) {
+    for (const op of [
+      'markDelivered', 'confirmReceived', 'reportNotReceived', 'reportNoShow',
+    ] as const) {
       const f = barterWriteFailure(op, pgErr(PT409))
       expect(f.title.toLowerCase()).toContain('cancelled')
       expect(f.terminal).toBe(true)
