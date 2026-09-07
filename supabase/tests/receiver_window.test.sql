@@ -6,13 +6,27 @@
 -- the SERVER's clock and nothing else, (c) that the participant scoping and grants are unchanged
 -- in strength, and (d) that no outcome vocabulary was created.
 --
--- AGEING A TRADE. `due_at` must be in the FUTURE when a proposal is written, so a naturally
--- past deadline cannot occur inside one transaction. The fixtures below therefore AGE a trade as
--- `service_role`, which is legitimate rather than a trick: `enforce_barter_obligations_immutable`
--- returns early for `service_role` (20261004000000 line 96) and
--- `enforce_barter_obligation_consistent` is a BEFORE INSERT trigger only, so a service-role
--- UPDATE of the timing columns is permitted by design. Every CHECK constraint still applies.
--- This lets every boundary be proven against the REAL VIEW, not only against the calculator.
+-- AGEING A TRADE, WITHOUT A CONTRACT-FIELD BYPASS. `due_at` must be in the FUTURE when a
+-- proposal is written, so a naturally elapsed window cannot occur inside one transaction. Since
+-- 20261011000000 § 3b the obligation's `due_at`/`scheduled_at` are frozen against EVERY writer
+-- including `service_role`, so the fixture may NOT simply UPDATE them — and deliberately does
+-- not, because a test that needed that bypass would be a test arguing against the Founder ruling
+-- it is meant to protect.
+--
+-- Instead `pg_temp.rw_age_terms` ages the trade the only legitimate way: it moves the ACCEPTED
+-- TERM's timing (`barter_proposal_terms` is append-only to end users but privileged-writable, and
+-- its guard is unchanged by this slice), deletes the derived obligations, and RE-DERIVES them
+-- through the real `public.create_barter_obligation_pair`. The resulting rows are produced by
+-- production code from a real term and satisfy `enforce_barter_obligation_consistent`, so they
+-- are exactly the rows that would exist naturally once that much time had passed.
+--
+-- The one synthetic step left is `pg_temp.rw_backdate_delivery`, which moves `delivered_at`
+-- only. That is a LIFECYCLE column, not a contract field: the Founder ruling names the contract
+-- fields, and privileged maintenance keeps its existing latitude over the three lifecycle
+-- columns. It is called out here rather than buried so the boundary of what the fixture assumes
+-- is visible.
+--
+-- Together these let every boundary be proven against the REAL VIEW, not only the calculator.
 --
 -- RACES. This harness runs in ONE transaction and cannot stage a race. That is not a gap that
 -- needed papering over here: this slice adds no write, so there is no new race-sensitive path to
@@ -73,17 +87,66 @@ returns uuid language sql as $$
    where agreement_id = p_agreement and side = p_side
 $$;
 
--- Move an obligation's timing into the past, as service_role. Keeps
--- `barter_obligations_scheduled_before_due` satisfied by shifting both columns together.
-create or replace function pg_temp.rw_age(p_obligation uuid, p_by interval)
+-- Age a trade by moving its ACCEPTED TERM's timing into the past and re-deriving the obligation
+-- pair from it through production code. Touches no obligation contract field directly.
+--
+-- Obligation ids CHANGE across this call — the old rows are deleted and new ones inserted — so a
+-- caller must re-read them with `pg_temp.rw_of` afterwards, and any delivery or answer recorded
+-- before the call is gone. Call it BEFORE delivering.
+create or replace function pg_temp.rw_age_terms(p_agreement uuid, p_by interval)
+returns void language plpgsql as $$
+declare v_ver uuid;
+begin
+  perform pg_temp.act_service();
+  select accepted_version_id into v_ver from public.barter_agreements where id = p_agreement;
+  -- Shifts `created_at` with the timing, deliberately. `barter_proposal_terms` carries
+  -- `due_at > created_at` and `scheduled_at > created_at` CHECK constraints, and CHECKs bind
+  -- service_role too — as they should. Moving all three together keeps the row internally
+  -- consistent, which is the point: the fixture must produce a row that could genuinely have
+  -- existed, not one the schema would have refused.
+  update public.barter_proposal_terms
+     set created_at = created_at - p_by,
+         due_at = due_at - p_by,
+         scheduled_at = case when scheduled_at is null then null else scheduled_at - p_by end
+   where version_id = v_ver;
+  -- Privileged DELETE is deliberately still permitted (account erasure cascades depend on it),
+  -- and the pair creator refuses a PARTIAL pair, so both rows go.
+  delete from public.barter_obligations where agreement_id = p_agreement;
+  perform public.create_barter_obligation_pair(p_agreement);
+end $$;
+
+-- Backdate the DELIVERY stamp only. A lifecycle column, not a contract field — see the header.
+create or replace function pg_temp.rw_backdate_delivery(p_obligation uuid, p_by interval)
 returns void language plpgsql as $$
 begin
   perform pg_temp.act_service();
   update public.barter_obligations
-     set due_at = due_at - p_by,
-         scheduled_at = case when scheduled_at is null then null else scheduled_at - p_by end,
-         delivered_at = case when delivered_at is null then null else delivered_at - p_by end
-   where id = p_obligation;
+     set delivered_at = delivered_at - p_by
+   where id = p_obligation and delivered_at is not null;
+end $$;
+
+-- One confirmed trade whose receiver window has ALREADY CLOSED, built only through legitimate
+-- paths: age the accepted term, re-derive the pair through production code, deliver through the
+-- real RPC, then backdate the delivery stamp (the one lifecycle column, see the header).
+--
+-- Ordering matters and is the whole reason this is a helper: ageing the term re-derives the
+-- obligations, so it must happen BEFORE the delivery, or the delivery is discarded with the row
+-- that recorded it.
+create or replace function pg_temp.rw_expired(
+  p_ou uuid, p_ru uuid, p_tag text, p_by interval default interval '30 days',
+  out o_ag uuid, out o_ob uuid
+)
+language plpgsql as $$
+begin
+  o_ag := pg_temp.rw_agreement(p_ou, p_ru, p_tag,
+                               pg_temp.rw_due(7), null, pg_temp.rw_due(8), null);
+  perform pg_temp.rw_age_terms(o_ag, p_by);
+  -- Re-read: the id changed when the pair was re-derived.
+  o_ob := pg_temp.rw_of(o_ag, 'offer_owner');
+  perform pg_temp.act(p_ou);
+  perform public.mark_barter_obligation_delivered(o_ob);
+  perform pg_temp.rw_backdate_delivery(o_ob, p_by);
+  perform pg_temp.act_service();
 end $$;
 
 -- The window state the given caller sees for one obligation, through the real view.
@@ -126,6 +189,10 @@ declare
   sun timestamptz := '2026-10-11 09:00+00';  -- delivered late
   fri timestamptz := '2026-10-09 17:00+00';  -- a due date with no scheduled time
 begin
+  -- Computation runs in the harness's owner context. The fixture block above deliberately ends
+  -- as `anon`, and anon has EXECUTE revoked on all three functions -- which § 11 asserts on
+  -- purpose. These blocks are arithmetic assertions, not authorization ones.
+  perform pg_temp.act_service();
   -- A. scheduled Saturday, delivered Thursday -> anchors on SATURDAY. An early delivery must not
   -- start the receiver's clock before the service was even due to happen.
   perform pg_temp.chk('receiver_window', 'A: early delivery anchors on scheduled_at',
@@ -167,6 +234,7 @@ declare
   sat timestamptz := '2026-10-10 09:00+00';
   fri timestamptz := '2026-10-09 17:00+00';
 begin
+  perform pg_temp.act_service();
   perform pg_temp.chk('receiver_window', 'deadline is the anchor plus 7 days',
     (sat + interval '7 days')::text,
     public.barter_confirmation_deadline('2026-10-08 09:00+00', sat, fri + interval '2 days')::text);
@@ -182,8 +250,10 @@ do $$
 declare
   d timestamptz := '2026-10-10 09:00+00';
   due timestamptz := '2026-10-10 09:00+00';
-  dl timestamptz := public.barter_confirmation_deadline(d, null, due);
+  dl timestamptz;
 begin
+  perform pg_temp.act_service();
+  dl := public.barter_confirmation_deadline(d, null, due);
   perform pg_temp.chk('receiver_window', 'one microsecond before the deadline: not yet attention',
     'awaiting_receiver',
     public.barter_receiver_window('delivered', d, null, due, false,
@@ -209,6 +279,7 @@ declare
   d timestamptz := '2026-10-10 09:00+00';
   late timestamptz := '2026-11-30 09:00+00';   -- long past any deadline
 begin
+  perform pg_temp.act_service();
   -- Undelivered: nothing is waiting on a receiver, however old the obligation is.
   perform pg_temp.chk('receiver_window', 'a pending obligation never needs attention',
     'none', public.barter_receiver_window('pending', null, null, d, false, late));
@@ -243,9 +314,11 @@ end $$;
 do $$
 declare
   d timestamptz := '2026-10-10 09:00+00';
-  dl timestamptz := public.barter_confirmation_deadline(d, null, d);
+  dl timestamptz;
   v_bad integer;
 begin
+  perform pg_temp.act_service();
+  dl := public.barter_confirmation_deadline(d, null, d);
   select count(*) into v_bad from (
     select public.barter_receiver_window('received', d, null, d, false, t) as s
       from generate_series(dl - interval '10 days', dl + interval '10 days',
@@ -274,7 +347,8 @@ declare
   ou uuid := current_setting('b5b.rw_ou')::uuid;
   ru uuid := current_setting('b5b.rw_ru')::uuid;
   xu uuid := current_setting('b5b.rw_xu')::uuid;
-  v_ag uuid; v_ob uuid; v_n integer; v_dl timestamptz; v_anchor timestamptz; v_code text;
+  v_ag uuid; v_ob uuid; v_ag2 uuid; v_ob2 uuid;
+  v_n integer; v_dl timestamptz; v_anchor timestamptz; v_code text;
 begin
   -- Owner delivers their side; responder is the receiver of it.
   v_ag := pg_temp.rw_agreement(ou, ru, 'live', pg_temp.rw_due(7), null, pg_temp.rw_due(8), null);
@@ -311,16 +385,24 @@ begin
   perform pg_temp.chk('receiver_window',
     'view: no per-row clock and no settable input decides the state', '0', v_n::text);
 
-  -- AFTER the deadline, unresolved IS Needs Attention — on the real view.
-  perform pg_temp.rw_age(v_ob, interval '30 days');
+  -- AFTER the deadline, unresolved IS Needs Attention — on the real view. A SEPARATE trade,
+  -- because ageing re-derives the obligation pair and would discard the delivery recorded above.
+  select o_ag, o_ob into v_ag2, v_ob2 from pg_temp.rw_expired(ou, ru, 'expired');
   perform pg_temp.chk('receiver_window', 'view: past the deadline, unanswered needs attention',
-    'needs_attention', pg_temp.rw_state(ru, v_ob));
+    'needs_attention', pg_temp.rw_state(ru, v_ob2));
   perform pg_temp.chk('receiver_window', 'view: the deliverer sees it too — both are unresolved',
-    'needs_attention', pg_temp.rw_state(ou, v_ob));
+    'needs_attention', pg_temp.rw_state(ou, v_ob2));
+  -- The aged row is a REAL row: still `delivered`, with its own past deadline.
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.my_barter_obligations b
+   where b.id = v_ob2 and b.status = 'delivered' and b.confirmation_deadline < now();
+  perform pg_temp.chk('receiver_window',
+    'view: and the aged row really is delivered with a past deadline', '1', v_n::text);
 
   -- The receiver may STILL answer after the deadline, and the answer clears the condition.
   -- STILL ANSWERABLE. The deadline means "this needs attention", not "you lost your right to
   -- answer", and the server agrees: no RPC consults it.
+  v_ob := v_ob2;
   perform pg_temp.act(ru);
   begin
     perform public.confirm_barter_obligation_received(v_ob);
@@ -345,11 +427,7 @@ declare
   ru uuid := current_setting('b5b.rw_ru')::uuid;
   v_ag uuid; v_ob uuid; v_n integer; v_code text;
 begin
-  v_ag := pg_temp.rw_agreement(ou, ru, 'notrec', pg_temp.rw_due(7), null, pg_temp.rw_due(8), null);
-  v_ob := pg_temp.rw_of(v_ag, 'offer_owner');
-  perform pg_temp.act(ou);
-  perform public.mark_barter_obligation_delivered(v_ob);
-  perform pg_temp.rw_age(v_ob, interval '30 days');
+  select o_ag, o_ob into v_ag, v_ob from pg_temp.rw_expired(ou, ru, 'notrec');
   perform pg_temp.chk('receiver_window', 'unanswered and aged: needs attention',
     'needs_attention', pg_temp.rw_state(ru, v_ob));
 
@@ -380,11 +458,12 @@ declare
   v_ag uuid; v_ob uuid; v_n integer; v_code text;
 begin
   v_ag := pg_temp.rw_agreement(ou, ru, 'cxl', pg_temp.rw_due(7), null, pg_temp.rw_due(8), null);
+  -- Aged FIRST, so this is a genuinely stale cancelled trade rather than one whose window simply
+  -- has not opened. Nothing was delivered, so there was never anything to await.
+  perform pg_temp.rw_age_terms(v_ag, interval '60 days');
   v_ob := pg_temp.rw_of(v_ag, 'offer_owner');
   perform pg_temp.act(ou);
   perform public.cancel_barter_agreement(v_ag, null);
-  -- Nothing was delivered, so nothing could be awaited; ageing it changes nothing.
-  perform pg_temp.rw_age(v_ob, interval '60 days');
   perform pg_temp.chk('receiver_window', 'a cancelled trade shows no attention state for either',
     'none', pg_temp.rw_state(ru, v_ob));
   perform pg_temp.chk('receiver_window', 'nor for the other participant',
@@ -422,7 +501,7 @@ do $$
 declare
   ou uuid := current_setting('b5b.rw_ou')::uuid;
   ru uuid := current_setting('b5b.rw_ru')::uuid;
-  v_ag uuid; v_ob uuid;
+  v_ag uuid; v_ob uuid; v_ag2 uuid; v_ob2 uuid;
 begin
   v_ag := pg_temp.rw_agreement(ou, ru, 'ta', pg_temp.rw_due(7), null, pg_temp.rw_due(8), null);
   v_ob := pg_temp.rw_of(v_ag, 'offer_owner');
@@ -451,20 +530,33 @@ begin
   perform pg_temp.chk('receiver_window', 'TA: a live window carries its deadline',
     'false', (pg_temp.rw_ta(ru, v_ag, 'my_response_deadline') = 'NULL')::text);
 
-  -- Aged: both see Needs Attention, still on their own side of it.
-  perform pg_temp.rw_age(v_ob, interval '30 days');
-  perform pg_temp.chk('receiver_window', 'TA: past the deadline the receiver needs attention',
-    'needs_attention', pg_temp.rw_ta(ru, v_ag, 'my_response_state'));
-  perform pg_temp.chk('receiver_window', 'TA: and so does the deliverer, on their side',
-    'needs_attention', pg_temp.rw_ta(ou, v_ag, 'their_response_state'));
-
-  -- Answered: clears for both.
+  -- Answered: clears for both, on the live trade.
   perform pg_temp.act(ru);
   perform public.confirm_barter_obligation_received(v_ob);
   perform pg_temp.chk('receiver_window', 'TA: an explicit answer clears it for the receiver',
     'none', pg_temp.rw_ta(ru, v_ag, 'my_response_state'));
   perform pg_temp.chk('receiver_window', 'TA: and for the deliverer',
     'none', pg_temp.rw_ta(ou, v_ag, 'their_response_state'));
+
+  -- Past the deadline, on a separate already-expired trade: both see Needs Attention, each still
+  -- on their own side of it.
+  select o_ag, o_ob into v_ag2, v_ob2 from pg_temp.rw_expired(ou, ru, 'taexp');
+  perform pg_temp.chk('receiver_window', 'TA: past the deadline the receiver needs attention',
+    'needs_attention', pg_temp.rw_ta(ru, v_ag2, 'my_response_state'));
+  perform pg_temp.chk('receiver_window', 'TA: and so does the deliverer, on their side',
+    'needs_attention', pg_temp.rw_ta(ou, v_ag2, 'their_response_state'));
+  perform pg_temp.chk('receiver_window',
+    'TA: and the deliverer is still not the one asked to act',
+    'none', pg_temp.rw_ta(ou, v_ag2, 'my_response_state'));
+
+  -- An explicit answer AFTER the deadline clears it there too.
+  perform pg_temp.act(ru);
+  perform public.confirm_barter_obligation_received(v_ob2);
+  perform pg_temp.chk('receiver_window',
+    'TA: a post-deadline answer clears Needs Attention for the receiver',
+    'none', pg_temp.rw_ta(ru, v_ag2, 'my_response_state'));
+  perform pg_temp.chk('receiver_window', 'TA: and for the deliverer',
+    'none', pg_temp.rw_ta(ou, v_ag2, 'their_response_state'));
 end $$;
 
 -- ── 10. Trade Activity on a cancelled trade ─────────────────────────────
@@ -493,12 +585,9 @@ declare
   ru uuid := current_setting('b5b.rw_ru')::uuid;
   xu uuid := current_setting('b5b.rw_xu')::uuid;
   v_ag uuid; v_ob uuid; v_n integer; v_code text;
+  v_c1 text; v_c2 text; v_c3 text; v_c4 text; v_c5 text;
 begin
-  v_ag := pg_temp.rw_agreement(ou, ru, 'scope', pg_temp.rw_due(7), null, pg_temp.rw_due(8), null);
-  v_ob := pg_temp.rw_of(v_ag, 'offer_owner');
-  perform pg_temp.act(ou);
-  perform public.mark_barter_obligation_delivered(v_ob);
-  perform pg_temp.rw_age(v_ob, interval '30 days');
+  select o_ag, o_ob into v_ag, v_ob from pg_temp.rw_expired(ou, ru, 'scope');
 
   -- An unrelated authenticated provider sees NOTHING — not the row, and therefore not its
   -- derived state. The view adds no WHERE clause of its own; this is
@@ -519,42 +608,47 @@ begin
     'needs_attention', pg_temp.rw_state(ru, v_ob));
 
   -- anon reaches nothing: neither view, nor any of the three functions.
+  --
+  -- Every code is collected FIRST and asserted after the role is restored. `anon` holds no
+  -- INSERT on the harness's pg_temp `_results` table, so calling `chk` while still acting as
+  -- anon fails on the assertion rather than on the thing under test — which is itself a small
+  -- proof that the anon role is genuinely assumed here and not merely claimed.
   perform pg_temp.act(null, 'anon');
   begin
     select count(*) into v_n from public.my_barter_obligations;
-    v_code := 'ALLOWED';
-  exception when others then v_code := sqlstate;
+    v_c1 := 'ALLOWED';
+  exception when others then v_c1 := sqlstate;
   end;
-  perform pg_temp.chk('receiver_window', 'anon cannot read the obligation view',
-    '42501', v_code);
   begin
     select count(*) into v_n from public.my_trade_activity;
-    v_code := 'ALLOWED';
-  exception when others then v_code := sqlstate;
+    v_c2 := 'ALLOWED';
+  exception when others then v_c2 := sqlstate;
   end;
-  perform pg_temp.chk('receiver_window', 'anon cannot read trade activity', '42501', v_code);
   begin
     perform public.barter_receiver_window('delivered', now(), null, now(), false, now());
-    v_code := 'ALLOWED';
-  exception when others then v_code := sqlstate;
+    v_c3 := 'ALLOWED';
+  exception when others then v_c3 := sqlstate;
   end;
-  perform pg_temp.chk('receiver_window', 'anon cannot call the window function',
-    '42501', v_code);
   begin
     perform public.barter_confirmation_anchor(now(), null, now());
-    v_code := 'ALLOWED';
-  exception when others then v_code := sqlstate;
+    v_c4 := 'ALLOWED';
+  exception when others then v_c4 := sqlstate;
   end;
-  perform pg_temp.chk('receiver_window', 'anon cannot call the anchor function',
-    '42501', v_code);
   begin
     perform public.barter_confirmation_deadline(now(), null, now());
-    v_code := 'ALLOWED';
-  exception when others then v_code := sqlstate;
+    v_c5 := 'ALLOWED';
+  exception when others then v_c5 := sqlstate;
   end;
-  perform pg_temp.chk('receiver_window', 'anon cannot call the deadline function',
-    '42501', v_code);
   perform pg_temp.act_service();
+  perform pg_temp.chk('receiver_window', 'anon cannot read the obligation view',
+    '42501', v_c1);
+  perform pg_temp.chk('receiver_window', 'anon cannot read trade activity', '42501', v_c2);
+  perform pg_temp.chk('receiver_window', 'anon cannot call the window function',
+    '42501', v_c3);
+  perform pg_temp.chk('receiver_window', 'anon cannot call the anchor function',
+    '42501', v_c4);
+  perform pg_temp.chk('receiver_window', 'anon cannot call the deadline function',
+    '42501', v_c5);
 end $$;
 
 -- ── 12. The view is not a write path ────────────────────────────────────
@@ -621,19 +715,63 @@ begin
      and pg_get_userbyid(c.relowner) = 'postgres';
   perform pg_temp.chk('receiver_window', 'and both are postgres-owned', '2', v_n::text);
 
-  -- The three functions: IMMUTABLE, search_path pinned, postgres-owned, and NOT definer — they
-  -- hold no authority, so definer would grant reach they have no use for.
+  -- All three: search_path pinned, postgres-owned, and NOT definer — they hold no authority, so
+  -- definer would grant reach they have no use for.
   select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and p.proname in ('barter_confirmation_anchor', 'barter_confirmation_deadline',
                        'barter_receiver_window')
-     and p.provolatile = 'i'
      and not p.prosecdef
      and pg_get_userbyid(p.proowner) = 'postgres'
      and array_to_string(p.proconfig, ',') like '%search_path=%';
   perform pg_temp.chk('receiver_window',
-    'all three functions are immutable, invoker-rights, owned and search_path pinned',
+    'all three functions are invoker-rights, postgres-owned and search_path pinned',
     '3', v_n::text);
+
+  -- VOLATILITY IS DECLARED HONESTLY, per function. `timestamptz + interval` is the STABLE
+  -- operator `timestamptz_pl_interval`, so anything doing calendar arithmetic must be STABLE;
+  -- claiming IMMUTABLE would be a promise to the planner that PostgreSQL does not verify at
+  -- CREATE FUNCTION and would therefore fail silently. Asserted per function rather than in
+  -- aggregate, so the two cannot be confused for each other.
+  perform pg_temp.chk('receiver_window',
+    'the anchor is genuinely IMMUTABLE — case/greatest/coalesce only', 'i',
+    (select p.provolatile::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'barter_confirmation_anchor'));
+  perform pg_temp.chk('receiver_window',
+    'the deadline is STABLE, not IMMUTABLE — it does calendar arithmetic', 's',
+    (select p.provolatile::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'barter_confirmation_deadline'));
+  perform pg_temp.chk('receiver_window',
+    'and the window is STABLE, because it calls the deadline', 's',
+    (select p.provolatile::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'barter_receiver_window'));
+
+  -- THE DEADLINE IS ONE INSTANT FOR EVERYBODY. The timezone is pinned in the function's own
+  -- config, so a role-level `alter role ... set TimeZone`, a db-pre-request hook or a psql
+  -- session cannot move the boundary — which would otherwise let the two participants of one
+  -- trade disagree by up to an hour about whether it needs attention.
+  perform pg_temp.chk('receiver_window',
+    'the deadline pins its timezone, so both participants compute the same instant', 'true',
+    (select (array_to_string(p.proconfig, ',') ilike '%timezone=utc%')::text
+       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'barter_confirmation_deadline'));
+
+  -- And prove it behaves that way, not merely that it is configured that way: the same row read
+  -- under two session timezones that straddle a DST transition must yield the identical instant.
+  declare
+    v_a timestamptz; v_b timestamptz;
+  begin
+    set local timezone = 'UTC';
+    v_a := public.barter_confirmation_deadline(
+             '2026-03-04 12:00+00', null, '2026-03-04 12:00+00');
+    set local timezone = 'America/Chicago';
+    v_b := public.barter_confirmation_deadline(
+             '2026-03-04 12:00+00', null, '2026-03-04 12:00+00');
+    set local timezone = 'UTC';
+    perform pg_temp.chk('receiver_window',
+      'the deadline is identical across a DST-straddling session timezone', 'true',
+      (v_a = v_b)::text);
+  end;
 
   -- They read no table, so they cannot be an existence oracle.
   select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -728,6 +866,209 @@ begin
   perform pg_temp.chk('receiver_window',
     'an expired window leaves the row `delivered` — no automatic Fulfilled or Completed',
     'true', (v_n > 0)::text);
+end $$;
+
+-- ── 14b. The agreed trade is frozen against service_role too (Founder ruling) ──
+-- The core obligation contract fields must not be silently rewritten after the agreement exists,
+-- by ANY writer. This is the assertion the ageing fixture above deliberately does not rely on:
+-- if this section passed while `rw_age_terms` still UPDATEd `barter_obligations.due_at`, the
+-- suite would be arguing with itself.
+do $$
+declare
+  ou uuid := current_setting('b5b.rw_ou')::uuid;
+  ru uuid := current_setting('b5b.rw_ru')::uuid;
+  xu uuid := current_setting('b5b.rw_xu')::uuid;
+  v_ag uuid; v_ob uuid; v_code text; v_n integer; v_before jsonb; v_after jsonb;
+begin
+  v_ag := pg_temp.rw_agreement(ou, ru, 'frozen',
+                               pg_temp.rw_due(7), pg_temp.rw_due(5), pg_temp.rw_due(8), null);
+  v_ob := pg_temp.rw_of(v_ag, 'offer_owner');
+  perform pg_temp.act_service();
+  select to_jsonb(o) into v_before from public.barter_obligations o where o.id = v_ob;
+
+  -- Every contract field, one at a time, AS service_role. Each must be refused.
+  begin
+    update public.barter_obligations set due_at = due_at - interval '30 days' where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window',
+    'service_role cannot move due_at — the PD-057 anchor is not rewritable', '23514', v_code);
+
+  begin
+    update public.barter_obligations set scheduled_at = scheduled_at - interval '30 days'
+     where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window', 'service_role cannot move scheduled_at',
+    '23514', v_code);
+
+  begin
+    update public.barter_obligations set receiver_user_id = xu where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window',
+    'service_role cannot reassign the receiver — the read scoping key is not rewritable',
+    '23514', v_code);
+
+  begin
+    update public.barter_obligations set deliverer_user_id = xu where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window', 'service_role cannot reassign the deliverer',
+    '23514', v_code);
+
+  begin
+    update public.barter_obligations
+       set receiver_provider_id = (select id from public.providers where user_id = xu)
+     where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window', 'service_role cannot reassign the receiving provider',
+    '23514', v_code);
+
+  begin
+    update public.barter_obligations
+       set deliverer_provider_id = (select id from public.providers where user_id = xu)
+     where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window', 'service_role cannot reassign the delivering provider',
+    '23514', v_code);
+
+  begin
+    update public.barter_obligations set agreed_description = 'rewritten' where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window',
+    'service_role cannot rewrite the agreed description', '23514', v_code);
+
+  begin
+    update public.barter_obligations set side = 'responder' where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window', 'service_role cannot flip the side', '23514', v_code);
+
+  begin
+    update public.barter_obligations set agreement_id = gen_random_uuid() where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window', 'service_role cannot move it to another agreement',
+    '23514', v_code);
+
+  begin
+    update public.barter_obligations set source_term_id = gen_random_uuid() where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window', 'service_role cannot repoint the source term',
+    '23514', v_code);
+
+  -- The no-JWT maintenance path is the OTHER disjunct of the old bypass, and is bound too.
+  perform pg_temp.act(null, 'authenticated');
+  perform set_config('request.jwt.claims', '{}', true);
+  perform set_config('role', 'none', true);
+  begin
+    update public.barter_obligations set due_at = due_at - interval '30 days' where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window',
+    'and neither can the no-JWT maintenance path — both disjuncts are bound', '23514', v_code);
+
+  -- Nothing above changed a single byte of the agreed trade.
+  perform pg_temp.act_service();
+  select to_jsonb(o) into v_after from public.barter_obligations o where o.id = v_ob;
+  perform pg_temp.chk('receiver_window',
+    'and the obligation row is byte-identical after every attempt', 'true',
+    (v_before is not distinct from v_after)::text);
+
+  -- WHAT IS STILL PERMITTED, so this is a narrowing and not a lockout. The three lifecycle
+  -- columns keep their previous privileged latitude (the Founder ruling names the contract
+  -- fields), which is what maintenance and the ageing fixture above rely on.
+  begin
+    update public.barter_obligations set status = 'delivered', delivered_at = clock_timestamp()
+     where id = v_ob;
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window',
+    'a privileged lifecycle write is still permitted — this is a narrowing, not a lockout',
+    'OK', v_code);
+
+  -- Privileged DELETE is still permitted, deliberately: every auth.users and barter_agreements
+  -- FK here is ON DELETE CASCADE, so account erasure removes obligations as a privileged
+  -- cascade. Tightening this would break a capability two earlier migrations preserved.
+  begin
+    delete from public.barter_obligations where agreement_id = v_ag;
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window',
+    'privileged DELETE still works, so account erasure is not broken', 'OK', v_code);
+  select count(*) into v_n from public.barter_obligations where agreement_id = v_ag;
+  perform pg_temp.chk('receiver_window', 'and both rows went', '0', v_n::text);
+
+  -- An ordinary participant still cannot write anything at all: the grant, not the trigger, is
+  -- their outer wall, and neither changed.
+  v_ag := pg_temp.rw_agreement(ou, ru, 'frozen2',
+                               pg_temp.rw_due(7), null, pg_temp.rw_due(8), null);
+  v_ob := pg_temp.rw_of(v_ag, 'offer_owner');
+  perform pg_temp.act(ru);
+  begin
+    update public.barter_obligations set due_at = due_at - interval '1 day' where id = v_ob;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('receiver_window', 'a participant cannot move due_at either',
+    '42501', v_code);
+  perform pg_temp.act_service();
+end $$;
+
+-- ── 14c. The participant sets the two read policies scope on cannot diverge ──
+-- The window's cancellation input is `exists(...)` over barter_agreement_cancellations, whose
+-- read policy scopes on the AGREEMENT's participants, while the obligation's read policy scopes
+-- on the OBLIGATION's. Those are different columns, and the view's correctness depends on them
+-- naming the same two people. 14b is what makes that structural; this asserts it directly.
+do $$
+declare v_n integer;
+begin
+  perform pg_temp.act_service();
+  select count(*) into v_n
+    from public.barter_obligations o
+    join public.barter_agreements ag on ag.id = o.agreement_id
+   where o.deliverer_user_id not in (ag.owner_user_id, ag.responder_user_id)
+      or o.receiver_user_id  not in (ag.owner_user_id, ag.responder_user_id)
+      or o.deliverer_user_id = o.receiver_user_id;
+  perform pg_temp.chk('receiver_window',
+    'every obligation names exactly the two people its agreement names', '0', v_n::text);
+
+  -- And each participant is the deliverer of exactly one and the receiver of exactly one, which
+  -- is what makes my_response_* / their_response_* scalar reads rather than aggregates.
+  select count(*) into v_n from (
+    select o.agreement_id, o.receiver_user_id, count(*) as c
+      from public.barter_obligations o
+     group by o.agreement_id, o.receiver_user_id
+    having count(*) <> 1
+  ) q;
+  perform pg_temp.chk('receiver_window',
+    'and receives exactly one obligation per agreement — so the lateral joins are scalar',
+    '0', v_n::text);
+  select count(*) into v_n from (
+    select o.agreement_id, o.deliverer_user_id, count(*) as c
+      from public.barter_obligations o
+     group by o.agreement_id, o.deliverer_user_id
+    having count(*) <> 1
+  ) q;
+  perform pg_temp.chk('receiver_window', 'and delivers exactly one', '0', v_n::text);
 end $$;
 
 -- ── 15. The receiver RPCs were not touched ──────────────────────────────

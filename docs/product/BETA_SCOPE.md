@@ -54,7 +54,7 @@ create *trust*.
 | Analytics | **REAL (dev-data caveat)** | Client-side metrics; revenue = completed only (4A). |
 | Reels / content | **REAL** | Content feed + posts/reels. |
 | Follows | **REAL** | `provider_follows` / `saved_providers`. |
-| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, proposal/version negotiation, PR #50 agreement finalization, PR #54's two directed obligations per agreement, PR #56's delivery mark and one-time receiver answer, and PR #58's **pre-delivery cancellation** — either participant may cancel before anything is delivered, and two independent acts classify as mutually cancelled (**PD-046**, **PD-060**, **PD-061**). Those answers are **events, not verdicts**: no fulfilment outcome, timeout, no-show or adjudication model exists yet, and cancellation decides nothing about whether anyone fulfilled anything. See Community / barter. |
+| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, proposal/version negotiation, PR #50 agreement finalization, PR #54's two directed obligations per agreement, PR #56's delivery mark and one-time receiver answer, and PR #58's **pre-delivery cancellation** — either participant may cancel before anything is delivered, and two independent acts classify as mutually cancelled (**PD-046**, **PD-060**, **PD-061**) — and PR #62's **7-day receiver-response window and Needs Attention** (**PD-057**, **PD-059**), derived server-side. Those answers are **events, not verdicts**: no fulfilment outcome, no-show or adjudication model exists yet, an elapsed response window creates no outcome either, and cancellation decides nothing about whether anyone fulfilled anything. See Community / barter. |
 | Care / reminders | **REAL (beta)** | Care reminders. |
 | Payments revenue / platform fee | **UNDECIDED — BUSINESS MODEL RESEARCH** | See Revenue model. |
 | Discovery ranking | **UNDECIDED — RESEARCH** | Fair-opportunity direction; weights undefined. |
@@ -120,9 +120,17 @@ in-thread notice states only that both providers cancelled — never that they a
 Once anything is delivered, ordinary cancellation is gone for good (**PD-046**). Cancelling ends
 the trade and **decides nothing** about whether anyone fulfilled anything.
 
-**What is NOT built:** the 7-day receiver-window timeout (its future anchor is **PD-057**),
-automatic fulfilment, automatic completion,
-no-show, Needs Attention, Under Review, adjudication, terminal obligation outcomes
+**Also built, as of PR #62 (PD-057, PD-059):** the **7-day receiver-response window** and
+**Needs Attention**, as derived read state. The deadline is
+`max(delivered_at, scheduled_at ?? due_at) + 7 days`, decided by the server's clock, and attention
+begins the moment it passes. It is an **unresolved operational state and nothing more** — an
+elapsed window creates no outcome, the obligation stays `delivered`, and the receiver may still
+answer. Trade Activity surfaces it role-relatively: **Action needed** for the receiver inside the
+window, **Waiting for confirmation** for the deliverer, **Needs attention** for either once it
+elapses.
+
+**What is NOT built:** automatic fulfilment, automatic completion,
+no-show, Under Review, adjudication, terminal obligation outcomes
 (Fulfilled / Unfulfilled / Closed Without Resolution), terminal agreement outcomes, barter
 reviews and reputation. Nothing yet signals a receiver that a delivery happened (**PD-059**).
 See [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 for the authoritative gap list.

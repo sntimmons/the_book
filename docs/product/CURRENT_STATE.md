@@ -293,6 +293,9 @@ agreement id and an optional reason and cannot name the actor, the time or the o
 `validateDraft`, `draftPayload`), `lib/obligationState.ts` holds the per-obligation role, state
 and copy rules (`obligationRole`, `obligationView`, `obligationTimeline`, plus `anyDelivered` —
 the PD-046 precondition, kept out of JSX so it can be tested) with no I/O,
+`lib/obligationState.ts` also owns the client half of the PD-057 receiver window
+(`ReceiverWindowState`, the role x window copy table, `NEEDS_ATTENTION_LABEL`) — the SERVER
+decides the state and this module only words it,
 `lib/negotiationWrite.ts` owns the write-operation sequence every one of those writes shares —
 busy on, write, busy off in a `finally`, interpret the refusal via `lib/barterErrors.ts`, say it
 once, decide whether the screen is stale, re-read authoritative state — with the per-operation
@@ -316,15 +319,38 @@ above both obligations (`lib/negotiationState.ts:169-180`, `lib/obligationState.
 refusals, including `PT412` for an answer already recorded (`:142-145`) and `PT409` read as
 "this trade was cancelled" for the three obligation operations (`:124-136`).
 
-**Nothing sends the receiver a push, device or email notification.** PD-059 is unchanged: no
-such path exists anywhere in the chain. What PR #58 added is narrower and only for
+**The receiver-response window and Needs Attention now exist** (PD-057, PD-059), as DERIVED read
+state. `public.barter_confirmation_anchor` returns
+`max(delivered_at, coalesce(scheduled_at, due_at))` and NULL before delivery;
+`public.barter_confirmation_deadline` is that plus 7 days and is the only place the interval is
+written; `public.barter_receiver_window` returns `none | awaiting_receiver | needs_attention` and
+begins attention at `server_now >= deadline`, **inclusive**. `public.my_barter_obligations`
+(security_invoker, scoped by the existing participant policy) exposes the anchor, the deadline,
+the state and `server_now`; `my_trade_activity` gained role-relative `my_response_state` /
+`their_response_state`. **No column, trigger, background job or scheduler was added** — nothing
+flips a row at a deadline, so there is no persisted transition to disagree with the timestamps.
+An elapsed window leaves the row `delivered`: the four-value `status` vocabulary is unchanged and
+**Needs Attention is not a status value**, not an outcome, and not Fulfilled, Unfulfilled,
+Completed, Under Review, Disputed, a no-show or an adjudication. **The receiver may still answer
+after the deadline** — no RPC consults it, asserted over `prosrc` — and an explicit answer clears
+the condition however long ago the window closed (PD-058). Cancelled trades never enter the flow.
+The same migration also **froze the obligation's contract fields against every writer, including
+`service_role`** (Founder ruling 2026-09-06): agreement, participants, source term, description,
+`due_at` and `scheduled_at` can no longer be rewritten after the agreement exists, because they
+are now the read-scoping keys and the deadline anchor. Privileged DELETE is deliberately still
+permitted, so account-erasure cascades still work.
+(`supabase/migrations/20261011000000_barter_receiver_window_needs_attention.sql`,
+`lib/obligationState.ts`, `lib/tradeActivity.ts`.)
+
+**Nothing sends the receiver a push, device or email notification.** PD-059's push half is
+unchanged: no such path exists anywhere in the chain. What PR #58 added is narrower and only for
 cancellation — a durable in-thread system message, written best-effort into the pair's existing
 conversation (`20261009000000_pair_conversation_notice.sql`). **A delivery still produces no
 signal of any kind**: `20261004000000_barter_obligation_delivery.sql` creates no notification
 path and `lib/tradeActivity.ts` has no obligation awareness, so a delivery is visible **only** on
 the negotiation screen, which refreshes on focus (`app/community/negotiation/[id].tsx:170-175`).
-PD-059 records that as a known gap belonging to later Session 7 attention / timeout UX, not as an
-oversight.
+The Trade Activity attention UX that PD-059 required before beta **is now built** (above); the
+**push** half of PD-059 remains a known, scheduled gap rather than an oversight.
 
 Regression coverage: `supabase/tests/barter.test.sql`, `supabase/tests/negotiation.test.sql`,
 `supabase/tests/agreement.test.sql`, `supabase/tests/obligation.test.sql` and
@@ -333,6 +359,9 @@ the B5B runner at `scripts/db-security-test.mjs` (lines 47–51), plus
 `__tests__/lib/tradeActivity.test.ts`, `__tests__/lib/negotiationState.test.ts`,
 `__tests__/lib/obligationState.test.ts` and `__tests__/lib/tradeCancellation.test.ts` for the
 pure client rules, `__tests__/lib/negotiationWrite.test.ts` for the shared write sequence, and
+`__tests__/lib/receiverWindow.test.ts` for the PD-057 window's client half (that it consumes the
+server's state rather than deriving one, with a word-boundary vocabulary sweep over the whole
+role x status x window x cancelled matrix), and
 `__tests__/app/negotiationWriteHandlers.test.tsx` — the first suite here that RENDERS a screen —
 which drives all six negotiation write controls and pins, per control, the RPC called, the exact
 payload, the refusal copy, whether the screen re-reads and whether that re-read blocks. Those

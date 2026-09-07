@@ -1,10 +1,17 @@
 -- Receiver-confirmation window and Needs Attention.
 --
 -- Makes PD-057 and PD-059 real, as DERIVED READ STATE. This migration adds NO column, NO row,
--- NO write path, NO background job and NO new RPC. Every fact it exposes is computed from the
--- immutable timestamps `20261003000000` and `20261004000000` already store, plus the SERVER's
--- clock. Nothing here can be flipped by a client, and there is no persisted transition to fall
--- out of step with the timestamps it was derived from.
+-- NO write path, NO background job, NO new RPC and NO trigger. Every fact it exposes is computed
+-- from the immutable timestamps `20261003000000` and `20261004000000` already store, plus the
+-- SERVER's clock. Nothing here can be flipped by a client, and there is no persisted transition
+-- to fall out of step with the timestamps it was derived from.
+--
+-- ONE THING IT DOES TIGHTEN, and it is a narrowing rather than a new capability: § 3b replaces
+-- the body of `public.enforce_barter_obligations_immutable` so the obligation's CONTRACT FIELDS
+-- are frozen against EVERY writer, `service_role` and the no-JWT maintenance path included
+-- (Founder ruling, 2026-09-06). Nothing gains a write it did not have. This belongs in this
+-- migration rather than a later one because it is this migration that makes those columns
+-- load-bearing for a second read surface and for a deadline both providers act on.
 --
 -- ── THE ANCHOR (PD-057) ────────────────────────────────────────────────────
 --
@@ -78,6 +85,9 @@ create or replace function public.barter_confirmation_anchor(
 )
 returns timestamptz
 language sql
+-- Genuinely IMMUTABLE, unlike the two functions below: `case`, `greatest` and `coalesce` over
+-- `timestamptz` are all immutable, and nothing here does calendar arithmetic. The difference in
+-- volatility between this function and the deadline is deliberate, not an oversight.
 immutable
 set search_path = ''
 as $$
@@ -102,8 +112,24 @@ create or replace function public.barter_confirmation_deadline(
 )
 returns timestamptz
 language sql
-immutable
+-- STABLE, not IMMUTABLE, and the distinction is real rather than pedantic. `timestamptz +
+-- interval '7 days'` is `timestamptz_pl_interval`, which is **STABLE**: it converts to local
+-- time in the session's TimeZone, adds the calendar day component, and converts back. Declaring
+-- it IMMUTABLE would be a false promise to the planner — PostgreSQL does not verify volatility
+-- claims at CREATE FUNCTION, so the lie would be silent. `stable` is also the repo's own
+-- precedent for exactly this shape (`public.review_window_closed`,
+-- 20260902000000_reviews_phase0_foundation.sql). Neither function is used in an index or a
+-- generated column, so STABLE costs nothing.
+stable
 set search_path = ''
+-- And the timezone is PINNED, which is the half that actually protects the product. Without it
+-- the boundary is timezone-RELATIVE while `now()` is absolute, so two sessions whose TimeZone
+-- straddles a DST transition would disagree by up to an hour about whether a trade needs
+-- attention — the two participants of one trade seeing different answers. Pinning UTC makes the
+-- deadline one instant for everybody. It changes nothing under Supabase's UTC default; it stops
+-- a role-level `alter role ... set TimeZone`, a db-pre-request hook or a psql session from
+-- moving the boundary.
+set timezone = 'UTC'
 as $$
   select public.barter_confirmation_anchor(p_delivered_at, p_scheduled_at, p_due_at)
          + interval '7 days'
@@ -121,6 +147,22 @@ comment on function public.barter_confirmation_deadline(timestamptz, timestamptz
 -- grants no access — so a caller passing a fabricated `p_as_of` learns nothing it could not
 -- compute locally from columns it can already read.
 --
+-- ON `coalesce(p_trade_cancelled, true)`, AND WHAT IT DOES *NOT* PROTECT. Treating UNKNOWN as
+-- cancelled is the safe direction — withhold an attention state, never invent one — but be
+-- precise about the reach of that branch. The view below passes an `exists (...)` subquery, and
+-- SQL `EXISTS` returns true or false and NEVER NULL, not even when RLS filters every candidate
+-- row away. So the `coalesce` is UNREACHABLE from the view, and the view's cancellation input is
+-- NOT fail-closed by it. It is retained for a direct caller (who holds no authority and learns
+-- nothing) and for a future caller that resolves cancellation some other way.
+--
+-- What actually keeps the view correct is a structural invariant. The obligation read policy
+-- scopes on the obligation's participant columns while the cancellation read policy scopes on
+-- the agreement's, and those two sets are pinned to each other: the consistency trigger derives
+-- them at INSERT, and as of § 3b above they are frozen against EVERY writer including
+-- `service_role`. A caller who can see the obligation can therefore always see its cancellation
+-- acts, so `exists` cannot return false for a cancelled trade the caller is party to. That
+-- invariant is asserted directly in supabase/tests/receiver_window.test.sql § 14c.
+--
 -- `p_status = 'delivered'` IS "delivered and unanswered", guaranteed by two CHECK constraints on
 -- the table: `barter_obligations_delivered_stamp` ties pending to a null `delivered_at`, and
 -- `barter_obligations_response_stamp` ties an answered status to a non-null
@@ -136,13 +178,16 @@ create or replace function public.barter_receiver_window(
 )
 returns text
 language sql
-immutable
+-- STABLE because it calls `barter_confirmation_deadline`, which is STABLE. A function may not
+-- claim stricter volatility than anything it calls. The comparison itself is between two
+-- absolute `timestamptz` values, so this one needs no timezone pin of its own — the deadline
+-- function has already resolved the only timezone-sensitive step.
+stable
 set search_path = ''
 as $$
   select case
-    -- Fail closed on a missing input rather than reporting a state. `coalesce(p_..., true)` for
-    -- the cancellation flag deliberately treats UNKNOWN as cancelled: the safe direction is to
-    -- withhold an attention state, never to invent one.
+    -- Unknown is treated as cancelled. See the note above this function on what that does and
+    -- does not protect.
     when coalesce(p_trade_cancelled, true) then 'none'
     when p_status is distinct from 'delivered' then 'none'
     when p_delivered_at is null then 'none'
@@ -160,6 +205,128 @@ comment on function public.barter_receiver_window(
   'p_as_of >= deadline, inclusive. An answered or cancelled obligation is always none. NOT a '
   'verdict: needs_attention is an unresolved operational state, never Fulfilled, Unfulfilled, '
   'Completed, Under Review, Disputed, a no-show or an adjudication, none of which exist.';
+
+-- ── 3b. The agreed trade is frozen against EVERY writer, service_role included ──
+--
+-- FOUNDER RULING, 2026-09-06. The core obligation contract fields stay immutable even to
+-- ordinary `service_role` maintenance paths once the agreement exists:
+--
+--   agreement_id, source_term_id, side,
+--   deliverer_provider_id, deliverer_user_id, receiver_provider_id, receiver_user_id,
+--   agreed_description, due_at, scheduled_at
+--
+-- These are the OFFICIAL ACCEPTED TRADE. Two providers agreed to exactly this, an agreement was
+-- written on it (PD-055), and it must not be silently rewritten afterwards by anyone. If an
+-- operator correction is ever needed it must be an explicit, audited workflow with its own
+-- Founder approval — **this slice does not build that**, and nothing here is a substitute for it.
+--
+-- WHY THIS SLICE IS WHERE IT LANDS. This migration makes those columns load-bearing in two new
+-- ways: `deliverer_user_id`/`receiver_user_id` become the scoping keys of a second read surface
+-- (`my_barter_obligations`), and `due_at`/`scheduled_at` become the PD-057 anchor that decides
+-- Needs Attention for both participants. A privileged rewrite of either would silently move a
+-- deadline both providers are acting on, or move an obligation into a different pair of hands.
+--
+-- WHAT CHANGED, PRECISELY. The live definition is
+-- `20261004000000_barter_obligation_delivery.sql:87-152` (read from MIGRATION_LEDGER.md's
+-- functions table, not from the file that first created it). Its first statement was an
+-- unconditional early return for `service_role` OR a null `auth.uid()`, covering UPDATE and
+-- DELETE alike. That early return is now SPLIT:
+--
+--   * DELETE keeps its previous behaviour exactly — privileged callers may delete, everyone else
+--     is refused absolutely. This is deliberate and must not be tightened here: every
+--     `auth.users` and `barter_agreements` FK in this graph is ON DELETE CASCADE, so account
+--     erasure and agreement removal delete obligations as a privileged cascade. Blocking that
+--     would break erasure, which is a capability two earlier migrations spent paragraphs
+--     preserving.
+--   * The CONTRACT-FIELD diff now runs for EVERY writer, before the privileged branch.
+--   * The three LIFECYCLE columns (`status`, `delivered_at`, `receipt_responded_at`) keep their
+--     existing treatment: privileged maintenance may write them, and non-privileged callers must
+--     still come through the write marker and a legal transition. The Founder ruling names the
+--     contract fields only, and the CHECK constraints added by 20261004000000 remain what binds
+--     a lifecycle stamp to its status for a privileged writer.
+--
+-- Still DENIED BY DEFAULT rather than by an allowlist: the whole row MINUS the three lifecycle
+-- keys must be identical, so a column added by a later migration is frozen unless somebody
+-- deliberately subtracts it below. The message and SQLSTATE are unchanged, so nothing that
+-- reports this refusal has to change.
+create or replace function public.enforce_barter_obligations_immutable()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_marker text := current_setting('app.barter_obligation_write', true);
+  -- `service_role` OR a null `auth.uid()`. BOTH disjuncts, named once: the second is the
+  -- no-JWT maintenance path, and a reader pointed only at `service_role` is being shown half
+  -- the reason a privileged write succeeds.
+  v_privileged boolean :=
+    (select auth.role()) = 'service_role' or (select auth.uid()) is null;
+begin
+  -- DELETE first, and unchanged from the live definition in both directions.
+  if tg_op = 'DELETE' then
+    if v_privileged then
+      return old;
+    end if;
+    -- History is retained (PD-043); a delete would destroy the counterparty's record.
+    raise exception 'A barter obligation cannot be edited or deleted.'
+      using errcode = 'check_violation';
+  end if;
+
+  -- THE AGREED TRADE. Checked before the privileged branch, so it binds service_role and the
+  -- no-JWT path as well.
+  if (to_jsonb(new) - 'status' - 'delivered_at' - 'receipt_responded_at')
+     is distinct from
+     (to_jsonb(old) - 'status' - 'delivered_at' - 'receipt_responded_at') then
+    raise exception 'A barter obligation cannot be edited or deleted.'
+      using errcode = 'check_violation';
+  end if;
+
+  -- Beyond the agreed trade, privileged maintenance keeps exactly the latitude it had: the three
+  -- lifecycle columns, without the marker or the transition table.
+  if v_privileged then
+    return new;
+  end if;
+
+  if v_marker is null or v_marker = '' or v_marker <> old.id::text then
+    raise exception 'A barter obligation may only be updated by a delivery operation.'
+      using errcode = 'insufficient_privilege';
+  end if;
+
+  -- Legal transitions, exhaustively. Anything else — including delivered → pending, a repeat
+  -- of the same transition, and received ↔ not_received — is refused here regardless of which
+  -- RPC published the marker.
+  if not (
+    (old.status = 'pending' and new.status = 'delivered')
+    or (old.status = 'delivered' and new.status in ('received', 'not_received'))
+  ) then
+    raise exception 'That is not a change this obligation can make.'
+      using errcode = 'check_violation';
+  end if;
+
+  -- Write-once stamps. The CHECK constraints bind a stamp to its status; these bind it to the
+  -- moment it was first written, so no later transition can move an earlier one.
+  if old.delivered_at is not null and new.delivered_at is distinct from old.delivered_at then
+    raise exception 'A delivery time cannot be changed once it is recorded.'
+      using errcode = 'check_violation';
+  end if;
+  if old.receipt_responded_at is not null
+     and new.receipt_responded_at is distinct from old.receipt_responded_at then
+    raise exception 'A receipt answer cannot be changed once it is recorded.'
+      using errcode = 'check_violation';
+  end if;
+
+  return new;
+end;
+$$;
+
+alter function public.enforce_barter_obligations_immutable() owner to postgres;
+revoke all on function public.enforce_barter_obligations_immutable()
+  from public, anon, authenticated;
+
+-- The trigger itself is NOT recreated: `create or replace function` replaces the body in place
+-- and the existing `barter_obligations_immutable` trigger (20261004000000) already points at
+-- this name. Dropping and recreating it would widen the change for no gain.
 
 -- ── 4. Participant-scoped obligation read ──────────────────────────────────
 -- `security_invoker = true`, matching `my_barter_proposals` and `my_trade_activity`: the view
@@ -330,7 +497,9 @@ grant execute on function public.barter_receiver_window(
 
 -- ── 7. What this migration deliberately does NOT create ────────────────────
 -- No column, no table, no trigger, no RPC, no background job, no scheduled task, no persisted
--- transition, and no new write path of any kind. No Under Review, no no-show, no adjudication,
+-- transition, and no new write path of any kind. The one function body it replaces
+-- (`enforce_barter_obligations_immutable`, § 3b) only REMOVES a write that was previously
+-- permitted; it grants nothing. No Under Review, no no-show, no adjudication,
 -- no Fulfilled, no Unfulfilled, no Completed, no Closed Without Resolution, no Partially
 -- Fulfilled, no terminal obligation outcome and no terminal agreement outcome. The three
 -- obligation RPCs and every cancellation object are untouched: `git diff` on this migration
