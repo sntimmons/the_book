@@ -2,7 +2,7 @@ import { supabase } from './supabase'
 import { fetchProviderInfoMap, CommunityProviderInfo } from './community'
 import { interpretWrite } from './barterErrors'
 import type { BarterInterestStatus, BarterReleaseReason } from './tradeActivity'
-import type { ReceiverWindowState } from './obligationState'
+import type { ReceiverWindowState, TerminalOutcome } from './obligationState'
 
 // The status vocabulary and the Trade Activity section mapping live in lib/tradeActivity.ts --
 // a PURE module, so they can be unit tested. This module imports the Supabase client, which
@@ -308,6 +308,20 @@ export interface TradeActivityRow {
    * own answer is still what the trade waits on; `agreementUnderReview` decides the headline.
    */
   myUnderReview: boolean
+  /**
+   * The terminal outcome of each obligation, NAMED FOR THE OBLIGATION.
+   *
+   * The view's columns are `my_terminal_outcome` / `their_terminal_outcome`, and those prefixes
+   * mean *whose RESPONSE is due* — `my_` is the lateral where `receiver_user_id = auth.uid()`,
+   * i.e. the obligation the viewer RECEIVES and must answer for. Carried through under the same
+   * prefixes, they read as *whose PERFORMANCE it was*, which is the opposite pairing; the
+   * mapping is renamed here so the inversion cannot be made again downstream. See
+   * `TradeRowFacts` in lib/tradeActivity.ts for the sentence it produced.
+   *
+   * Two per-obligation facts, because there is no agreement-level outcome in this product.
+   */
+  receivedTerminalOutcome: TerminalOutcome | null
+  deliveredTerminalOutcome: TerminalOutcome | null
   provider: CommunityProviderInfo
 }
 
@@ -330,7 +344,8 @@ export async function fetchTradeActivity(): Promise<{
         'offering_service, seeking_service, offer_is_active, my_role, ' +
         'counterparty_provider_id, conversation_id, agreement_id, ' +
         'i_cancelled, they_cancelled, my_response_state, my_response_deadline, ' +
-        'their_response_state, agreement_under_review, my_under_review',
+        'their_response_state, agreement_under_review, my_under_review, ' +
+        'my_terminal_outcome, their_terminal_outcome',
     )
     .order('created_at', { ascending: false })
   // A failure is NOT an empty list. Collapsing the two let the screen say "No trade activity
@@ -362,6 +377,8 @@ export async function fetchTradeActivity(): Promise<{
           their_response_state: ReceiverWindowState | null
           agreement_under_review: boolean | null
           my_under_review: boolean | null
+          my_terminal_outcome: TerminalOutcome | null
+          their_terminal_outcome: TerminalOutcome | null
         }[]
       | null) ?? []
   const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
@@ -392,6 +409,9 @@ export async function fetchTradeActivity(): Promise<{
     // Fail closed the same way: absence withholds the review state rather than asserting one.
     agreementUnderReview: r.agreement_under_review ?? false,
     myUnderReview: r.my_under_review ?? false,
+    // Fail closed: absent means NOT resolved.
+    receivedTerminalOutcome: r.my_terminal_outcome ?? null,
+    deliveredTerminalOutcome: r.their_terminal_outcome ?? null,
       provider: infoMap.get(r.counterparty_provider_id) ?? {
         name: 'Provider',
         photo: null,

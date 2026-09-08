@@ -21,6 +21,8 @@ import {
   ACTION_NEEDED_LABEL,
   AttentionLabel,
   NEEDS_ATTENTION_LABEL,
+  TERMINAL_OUTCOME_LABEL,
+  TerminalOutcome,
   UNDER_REVIEW_LABEL,
 } from './obligationState'
 
@@ -148,6 +150,31 @@ export interface TradeRowFacts {
    * Defaulted like the rest, and fail-closed in the same direction.
    */
   myUnderReview?: boolean
+  /**
+   * The TERMINAL outcome of each of the trade's two obligations. Null while unresolved.
+   *
+   * NAMED FOR THE OBLIGATION, NOT FOR "MINE" AND "THEIRS", and that is the point rather than a
+   * style preference. The view's `my_` / `their_` prefixes mean *whose RESPONSE is due* —
+   * `my_response_state` is the state of the obligation this viewer RECEIVES, because they are
+   * the one who owes an answer on it. Read as *whose PERFORMANCE it was*, the same prefixes
+   * mean the opposite, and a first cut of this file did read them that way: it told the provider
+   * who had performed that "your side" was the one resolved `unfulfilled`. Under PD-065 that is
+   * the worst sentence this list can produce — permanent, and about the wrong person.
+   *
+   * So: `receivedTerminalOutcome` is what the viewer was PROMISED (the counterparty performed
+   * it); `deliveredTerminalOutcome` is what the viewer AGREED TO PROVIDE. The negotiation
+   * screen titles those same two obligations "You will receive" and "You agreed to provide", and
+   * the two surfaces must agree about which is which.
+   *
+   * TWO PER-SIDE FACTS, NOT A ROLL-UP, because there IS no agreement-level outcome: no
+   * Completed, no Partially Fulfilled, no Not Completed exists in this product, and computing a
+   * single verdict for the trade here is exactly what the next slice is for. A row may
+   * truthfully report that one side is resolved while the other is not.
+   *
+   * Defaulted like the rest, in the withholding direction: absent means not resolved.
+   */
+  receivedTerminalOutcome?: TerminalOutcome | null
+  deliveredTerminalOutcome?: TerminalOutcome | null
 }
 
 export interface TradeRowState {
@@ -384,6 +411,22 @@ const WAITING_NOTE =
   + 'delivery.'
 const CONFIRMED_NOTE = CONFIRMED_TRADE_NOTE.none
 
+/**
+ * How each of the two obligations is NAMED when its outcome is reported.
+ *
+ * The subject is the obligation, never a provider — PD-065 — and each phrase says whose promise
+ * it was without saying anything about who the person is. "Your side" and "Theirs" were the
+ * first wording and are not recoverable: they read as whose PERFORMANCE it was, while the facts
+ * they were attached to are named for whose RESPONSE is due, which is the opposite pairing.
+ */
+const OUTCOME_PHRASE = {
+  delivered: 'What you agreed to provide',
+  received: 'What you were promised',
+} as const
+
+/** The outcome as it reads mid-sentence. One place, so the two branches cannot diverge. */
+const outcomeWord = (o: TerminalOutcome) => TERMINAL_OUTCOME_LABEL[o].toLowerCase()
+
 const WINDOW_NOTE: Record<ReceiverWindowState, Record<ReceiverWindowState, string>> = {
   //                       theirs: none          awaiting_receiver     needs_attention
   none: {
@@ -460,10 +503,44 @@ function confirmedTradeNote(f: TradeRowFacts): string {
   // "Needs attention: say whether you received it" on a trade that was cancelled before anything
   // could be delivered would be the worst sentence this list could produce.
   if (cancelled !== 'none') return CONFIRMED_TRADE_NOTE[cancelled]
-  // UNDER REVIEW OUTRANKS EVERY WINDOW STATE. Once a trade needs a human, "the response window
-  // passed" and "action needed" are both about a missing answer that is no longer what the
-  // trade is waiting on. Cancellation still outranks this, above: a cancelled trade ended
-  // before any of it, and the server returns no review for one either.
+  // BOTH OBLIGATIONS RESOLVED — and this is still NOT an agreement outcome. The row says what
+  // happened to each obligation; it does not compute a verdict for the trade, because none
+  // exists. Each phrase names the OBLIGATION, never the provider: PD-065.
+  const received = f.receivedTerminalOutcome ?? null
+  const delivered = f.deliveredTerminalOutcome ?? null
+  if (received && delivered) {
+    return 'Both obligations were reviewed.'
+      + ` ${OUTCOME_PHRASE.delivered}: ${outcomeWord(delivered)}.`
+      + ` ${OUTCOME_PHRASE.received}: ${outcomeWord(received)}.`
+  }
+  // ONE OBLIGATION RESOLVED, the other not. The resolution is STATED, and then whatever the
+  // trade is still waiting on is stated after it, by the same rules that would have applied if
+  // nothing were resolved. It is composed rather than re-worded because the alternative — a
+  // bespoke second clause — is how the first cut of this branch came to delete the viewer's own
+  // outstanding instruction and to say "not resolved yet" about an obligation nobody has
+  // reported and no process will ever look at.
+  if (received || delivered) {
+    const done = received
+      ? `${OUTCOME_PHRASE.received} was reviewed: ${outcomeWord(received)}.`
+      : `${OUTCOME_PHRASE.delivered} was reviewed: ${outcomeWord(delivered!)}.`
+    const rest = outstandingNote(f)
+    // "Trade confirmed. The agreed terms can no longer change." is what `outstanding` says when
+    // nothing is outstanding, and appending it after a resolution would read as a non-sequitur.
+    return rest === CONFIRMED_NOTE ? done : `${done} ${rest}`
+  }
+  return outstandingNote(f)
+}
+
+/**
+ * What the trade is still WAITING ON, ignoring any resolution — the review headline or the
+ * window matrix.
+ *
+ * Extracted so the one-obligation-resolved branch above can compose it rather than write a
+ * second, drifting version of it. Under Review outranks every window state (once a trade needs a
+ * human, a missing answer is no longer what it is waiting on) and cancellation outranks that,
+ * which the caller checks first.
+ */
+function outstandingNote(f: TradeRowFacts): string {
   if (f.agreementUnderReview) {
     // The viewer's OWN answer is still live and still theirs to give: say both, headline first.
     // If their own obligation is the one under review, their answer is genuinely no longer what
@@ -507,16 +584,23 @@ const ROW_STATE: Record<BarterInterestStatus, (f: TradeRowFacts) => TradeRowStat
       note: confirmedTradeNote(f),
       attention: cancelled
         ? null
-        : f.agreementUnderReview
-          ? UNDER_REVIEW_LABEL
-          : windowAttention(mine, f.theirResponseState ?? 'none'),
+        // BOTH sides resolved: nothing is waiting on anyone, so no attention badge at all. This
+        // is deliberately NOT a new agreement-level label — the absence of a badge is the
+        // absence of outstanding work, not a verdict about the trade.
+        : f.receivedTerminalOutcome && f.deliveredTerminalOutcome
+          ? null
+          : f.agreementUnderReview
+            ? UNDER_REVIEW_LABEL
+            : windowAttention(mine, f.theirResponseState ?? 'none'),
       // The deadline is suppressed only when the VIEWER'S OWN obligation is under review — then
       // their answer really is no longer what settles it, and a countdown would say otherwise.
       // When the review belongs to the obligation they DELIVER, their own answer is still live
       // and still due, so the deadline stays (Founder ruling 2026-09-07: an agreement-level
       // headline must not delete an obligation-level action).
+      // No countdown once the viewer's own side is resolved: their answer is not what settles
+      // it, and it never will be again.
       deadline:
-        cancelled || f.myUnderReview
+        cancelled || f.myUnderReview || f.receivedTerminalOutcome
           ? null
           : rowDeadline(mine, f.myResponseDeadline ?? null),
     }

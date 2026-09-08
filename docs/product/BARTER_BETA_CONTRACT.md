@@ -184,7 +184,9 @@ Unresolved disagreement routes **Needs Attention → Under Review → manual adj
 (Founder-operated in the beta). **Partly superseded, 2026-09-07:** an explicit **no-show** or
 **`not_received`** now enters **Under Review DIRECTLY**, without passing through Needs Attention
 (§ 7.4, PD-062). Whether a plain unanswered Needs Attention ever escalates into Under Review is
-**undecided** and belongs to the adjudication slice; **adjudication itself is not built.**
+still **undecided**. **Manual adjudication IS now built** (PD-064 … PD-067): an operator — and
+only an operator — can resolve an obligation that is Under Review. No operator SCREEN exists yet,
+and who performs a review through what surface is an open Founder question.
 
 ### 7.4 No-show
 
@@ -212,8 +214,9 @@ A valid report is **immutable** and routes the obligation and its agreement to *
 The route is therefore **no-show → Under Review**. It is **NOT** no-show → Needs Attention →
 adjudication → Unfulfilled. Specifically, a no-show produces **no** automatic Needs Attention,
 **no** Unfulfilled, **no** finding of fault, **no** reliability or reputation impact and **no**
-terminal outcome — none of which exist. Adjudication and any operator decision path remain
-unbuilt.
+terminal outcome. **Amended 2026-09-07 (PD-064):** a terminal outcome can now FOLLOW, but only
+because a person decided it — never automatically, and never as a consequence of the report
+itself. Reporting a no-show still decides nothing.
 
 Once a report exists, **ordinary pre-delivery cancellation is no longer available** (PD-063):
 a trade cannot be cancelled out of review, and a cancellation can never erase or hide a recorded
@@ -225,6 +228,17 @@ Attention might later enter Under Review is deliberately UNDECIDED** and will be
 adjudication / review workflow — see § 7.5 and OPEN_QUESTIONS.
 
 ### 7.5 Terminal truth
+
+> **⚠️ HALF BUILT, 2026-09-07 (PD-064 … PD-067).** The **OBLIGATION** half is implemented: an
+> operator can resolve one obligation as **Fulfilled**, **Unfulfilled** or **Closed without
+> resolution**, one obligation at a time, and the record is immutable. The **AGREEMENT** table
+> below is still a TARGET: no `Completed`, `Partially Fulfilled` or `Not Completed` exists in the
+> code, nothing rolls two obligation outcomes into one verdict, and `supabase/tests/
+> adjudication.test.sql` asserts that absence rather than assuming it. Read the table as what the
+> agreement level is meant to become, not as what it does.
+>
+> `Under Review` and `Cancelled` in the table are DERIVED read states that already exist and are
+> not outcomes; `Closed Without Resolution` exists at the obligation level only.
 
 Overall agreement state:
 
@@ -240,7 +254,10 @@ Overall agreement state:
 **Individual obligation truth survives independently of the overall agreement state.** An
 obligation that was genuinely fulfilled stays Fulfilled even if the agreement as a whole ends
 Partially Fulfilled or Closed Without Resolution. Rolling the legs up into one verdict would
-destroy the only record of who actually did their part.
+destroy the only record of who actually did their part. **This is the clause the implemented half
+follows literally** (PD-065): obligations are resolved independently, one may be Fulfilled while
+the other is still Under Review, and neither participant's screen computes a trade-level verdict
+from the pair.
 
 Two rules carry over unchanged: outcomes must be **truthful** — a false success is worse than
 an ugly truth — and **history is retained**; a participant cannot destructively erase the

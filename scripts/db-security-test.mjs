@@ -51,6 +51,7 @@ const SUITES = [
   'supabase/tests/cancellation.test.sql',
   'supabase/tests/receiver_window.test.sql',
   'supabase/tests/no_show_under_review.test.sql',
+  'supabase/tests/adjudication.test.sql',
   'supabase/tests/_report.sql',
 ]
 

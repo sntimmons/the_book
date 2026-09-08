@@ -396,4 +396,58 @@ describe('PT409 means exactly one thing per operation', () => {
     expect(cancelled.title).not.toBe(confirmed.title)
     expect(cancelled.body).not.toBe(confirmed.body)
   })
+
+  // PD-064/PD-066's SQLSTATE, and the reason it is its OWN code rather than a reuse of PT412.
+  // This shipped wrong for exactly one migration: the resolved-obligation refusal borrowed
+  // PT412, so a receiver who had answered NOTHING was told "You already answered this. Your
+  // answer was recorded and cannot be changed." These four assertions are what would have
+  // caught that.
+  const PT424 = 'PT424'
+  const RESOLVABLE = ['markDelivered', 'confirmReceived', 'reportNotReceived',
+    'reportNoShow'] as const
+
+  it('maps PT424 to a terminal, stale resolved refusal on every write it can reach', () => {
+    for (const op of RESOLVABLE) {
+      const f = barterWriteFailure(op, pgErr(PT424))
+      expect([op, f.terminal]).toEqual([op, true])
+      expect([op, f.stale]).toEqual([op, true])
+      expect(f.title.toLowerCase()).toContain('resolved')
+      // It must NOT be the retryable default — retrying is permanently impossible.
+      const retry = barterWriteFailure(op, pgErr('08006'))
+      expect(f.title).not.toBe(retry.title)
+      expect(f.body).not.toBe(retry.body)
+    }
+  })
+
+  // THE DISTINCTION THIS CODE EXISTS FOR. "Already answered" and "already resolved" must not
+  // read the same, or the new code buys nothing.
+  it('never tells a resolved obligation’s participant that they already answered', () => {
+    for (const op of RESOLVABLE) {
+      const f = barterWriteFailure(op, pgErr(PT424))
+      expect(f.title.toLowerCase()).not.toContain('already answered')
+      expect(f.title.toLowerCase()).not.toContain('already confirmed')
+      expect(f.body.toLowerCase()).not.toContain('your answer was recorded')
+      // Nor that it was cancelled, nor that it is still under review — it is neither.
+      expect(f.body.toLowerCase()).not.toContain('cancelled')
+      expect(f.body.toLowerCase()).not.toContain('under review')
+    }
+  })
+
+  it('keeps PT412 meaning what it meant on the writes that still raise it', () => {
+    for (const op of ['confirmReceived', 'reportNotReceived'] as const) {
+      const answered = barterWriteFailure(op, pgErr('PT412'))
+      const resolved = barterWriteFailure(op, pgErr(PT424))
+      expect(answered.title.toLowerCase()).toContain('already answered')
+      expect(answered.title).not.toBe(resolved.title)
+      expect(answered.body).not.toBe(resolved.body)
+    }
+  })
+
+  it('leaves PT424 retryable on every operation that cannot produce it', () => {
+    for (const op of ALL_OPS) {
+      if ((RESOLVABLE as readonly string[]).includes(op)) continue
+      const f = barterWriteFailure(op, pgErr(PT424))
+      expect([op, f.terminal]).toEqual([op, false])
+    }
+  })
 })

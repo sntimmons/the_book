@@ -21,6 +21,7 @@ import {
   ObligationRole,
   ObligationStatus,
   ReceiverWindowState,
+  TerminalOutcome,
   UNDER_REVIEW_LABEL,
 } from '@/lib/obligationState'
 import { cancellationView, CancellationFacts } from '@/lib/tradeCancellation'
@@ -30,12 +31,21 @@ const ROLES: ObligationRole[] = ['deliverer', 'receiver']
 const STATUSES: ObligationStatus[] = ['pending', 'delivered', 'received', 'not_received']
 const WINDOWS: ReceiverWindowState[] = ['none', 'awaiting_receiver', 'needs_attention']
 const BOOLS = [false, true]
+// null FIRST, so the unresolved case is not a special case bolted onto the end: the sweep is
+// over four values of one fact, one of which is "no outcome".
+const OUTCOMES: (TerminalOutcome | null)[] =
+  [null, 'fulfilled', 'unfulfilled', 'closed_without_resolution']
 const DEADLINE = '2026-10-17T09:00:00.000Z'
 
 describe('obligationView — the full matrix still answers identically', () => {
-  // 2 roles x 4 statuses x 3 windows x cancelled x review x canReport = 192 combinations.
-  // Every one is exercised, so a refactor that changed ANY cell fails here rather than in a
-  // hand-picked case someone remembered to write.
+  // 2 roles x 4 statuses x 3 windows x cancelled x review x canReport x 4 outcomes = 768
+  // combinations. Every one is exercised, so a refactor that changed ANY cell fails here rather
+  // than in a hand-picked case someone remembered to write.
+  //
+  // `terminalOutcome` was added to this sweep when it was added to the module, and belongs here
+  // rather than only in the feature's own file for the reason this file exists: it sits at the
+  // DOMINANT precedence rank — above Under Review, below cancellation — so a refactor of
+  // precedence that this sweep could not see would be a refactor of the thing it guards.
   it('is total and self-consistent across every supported combination', () => {
     let seen = 0
     for (const role of ROLES) {
@@ -44,9 +54,10 @@ describe('obligationView — the full matrix still answers identically', () => {
           for (const tradeCancelled of BOOLS) {
             for (const obligationUnderReview of BOOLS) {
               for (const canReportNoShow of BOOLS) {
+                for (const terminalOutcome of OUTCOMES) {
                 const v = obligationView({
                   role, status, window, tradeCancelled,
-                  obligationUnderReview, canReportNoShow,
+                  obligationUnderReview, canReportNoShow, terminalOutcome,
                   confirmationDeadline: DEADLINE,
                 })
                 seen += 1
@@ -55,9 +66,27 @@ describe('obligationView — the full matrix still answers identically', () => {
                 expect(v.title.length).toBeGreaterThan(0)
                 expect(v.state.length).toBeGreaterThan(0)
 
-                // CANCELLATION OUTRANKS EVERYTHING. Frozen behaviour.
+                // CANCELLATION OUTRANKS EVERYTHING, the terminal outcome included. The server
+                // refuses to adjudicate a cancelled trade, so the two can never both be true;
+                // where the client is handed both anyway it must prefer the one the database
+                // would have allowed.
                 if (tradeCancelled) {
                   expect(v.note).toBeNull()
+                  expect(v.attention).toBeNull()
+                  expect(v.terminalOutcome).toBeNull()
+                  expect(v.canMarkDelivered).toBe(false)
+                  expect(v.canRespond).toBe(false)
+                  expect(v.canReportNoShow).toBe(false)
+                  expect(v.deadline).toBeNull()
+                  continue
+                }
+
+                // A TERMINAL OUTCOME OUTRANKS EVERYTHING BELOW CANCELLATION. Nothing is waiting
+                // on anyone, so no attention state and no control survives it — a resolution
+                // rendered beside a stale request is the caption-contradicts-capability defect
+                // in its worst form.
+                if (terminalOutcome) {
+                  expect(v.terminalOutcome).toBe(terminalOutcome)
                   expect(v.attention).toBeNull()
                   expect(v.canMarkDelivered).toBe(false)
                   expect(v.canRespond).toBe(false)
@@ -65,6 +94,8 @@ describe('obligationView — the full matrix still answers identically', () => {
                   expect(v.deadline).toBeNull()
                   continue
                 }
+                // And it is never invented from anything else the module knows.
+                expect(v.terminalOutcome).toBeNull()
 
                 // UNDER REVIEW OUTRANKS THE WINDOW, and is obligation-level.
                 if (obligationUnderReview) {
@@ -86,13 +117,14 @@ describe('obligationView — the full matrix still answers identically', () => {
                 if (v.attention === NEEDS_ATTENTION_LABEL) {
                   expect(status).toBe('delivered')
                 }
+                }
               }
             }
           }
         }
       }
     }
-    expect(seen).toBe(2 * 4 * 3 * 2 * 2 * 2)
+    expect(seen).toBe(2 * 4 * 3 * 2 * 2 * 2 * 4)
   })
 
   // The refactor's whole point: named fields cannot transpose. Order is now irrelevant.
@@ -155,8 +187,12 @@ describe('the attention tone mapping is single-sourced and total', () => {
       for (const status of STATUSES) {
         for (const window of WINDOWS) {
           for (const obligationUnderReview of BOOLS) {
-            const a = obligationView({ role, status, window, obligationUnderReview }).attention
-            if (a) emitted.add(a)
+            for (const terminalOutcome of OUTCOMES) {
+              const a = obligationView({
+                role, status, window, obligationUnderReview, terminalOutcome,
+              }).attention
+              if (a) emitted.add(a)
+            }
           }
         }
       }
@@ -172,14 +208,18 @@ describe('the attention tone mapping is single-sourced and total', () => {
     expect(attentionTone('Something nobody defined')).toBe<AttentionTone>('live')
   })
 
-  // TRADE ACTIVITY is the more likely source of a fourth attention state — adjudication is
-  // agreement-level — so the sweep covers the labels IT emits, not only obligationView's.
+  // TRADE ACTIVITY carries its own attention vocabulary, so the sweep covers the labels IT
+  // emits, not only obligationView's — and it varies the two per-obligation outcomes, because
+  // adjudication is OBLIGATION-level (PD-065) and a row can hold one resolved obligation beside
+  // one that is not.
   it('covers every label tradeRowState can emit', () => {
     const WINDOWS_ALL = ['none', 'awaiting_receiver', 'needs_attention'] as const
     const emitted = new Set<string>()
     for (const mine of WINDOWS_ALL) {
       for (const theirs of WINDOWS_ALL) {
         for (const agreementUnderReview of BOOLS) {
+          for (const receivedTerminalOutcome of OUTCOMES) {
+            for (const deliveredTerminalOutcome of OUTCOMES) {
           const a = tradeRowState({
             status: 'accepted',
             myRole: 'owner',
@@ -193,8 +233,12 @@ describe('the attention tone mapping is single-sourced and total', () => {
             myResponseState: mine,
             theirResponseState: theirs,
             agreementUnderReview,
+            receivedTerminalOutcome,
+            deliveredTerminalOutcome,
           }).attention
           if (a) emitted.add(a)
+            }
+          }
         }
       }
     }

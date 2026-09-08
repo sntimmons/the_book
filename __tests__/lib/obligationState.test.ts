@@ -85,9 +85,15 @@ describe('obligationView capability', () => {
 })
 
 describe('obligationView copy is truthful and non-final', () => {
-  // The words this slice may not say. There is no timeout, no automatic fulfilment, no
-  // cancellation, no-show, Needs Attention, Under Review or adjudication — so copy claiming any
-  // of them would describe a product that does not exist.
+  // The words an UNRESOLVED obligation may not say. Every call in this block passes no
+  // cancellation, no window, no review and NO TERMINAL OUTCOME, so the card is describing a
+  // trade that is simply in progress — and none of these words is true of one.
+  //
+  // Several of them ARE true elsewhere now: an operator can resolve an obligation as fulfilled,
+  // unfulfilled or closed without resolution (PD-064/PD-065), and `terminalOutcome.test.ts`
+  // asserts that copy. This sweep is therefore about the DEFAULT state, not about the product's
+  // vocabulary — the distinction matters, because the value here is that a resolution can never
+  // appear on a card the server did not resolve.
   const FORBIDDEN = [
     'complete',
     'completed',
@@ -106,7 +112,7 @@ describe('obligationView copy is truthful and non-final', () => {
     'closed without resolution',
   ]
 
-  it('says none of the states that do not exist yet', () => {
+  it('says none of those states on an obligation that is merely in progress', () => {
     const labels = obligationTimeline('2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z')
       .map((t) => t.label)
       .join(' ')

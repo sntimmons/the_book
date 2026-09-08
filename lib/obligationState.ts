@@ -5,17 +5,23 @@
 //
 // USER LANGUAGE, NOT SCHEMA LANGUAGE. Nothing here says status, enum, row or transition.
 //
-// TRUTHFUL AND NON-FINAL. Three things now EXIST: the receiver-response window and Needs
-// Attention (PD-057, PD-059), and — by Founder ruling, 2026-09-07 — receiver-reported NO-SHOW
-// and the derived UNDER REVIEW state. All three are UNRESOLVED OPERATIONAL STATES and nothing
-// more. Under Review means a human has to look; it does not mean anyone is at fault.
+// TRUTHFUL. Four things EXIST. Three are UNRESOLVED OPERATIONAL STATES and nothing more — the
+// receiver-response window and Needs Attention (PD-057, PD-059), and receiver-reported NO-SHOW
+// with the derived UNDER REVIEW state (PD-062). Under Review means a human has to look; it does
+// not mean anyone is at fault. **None of those three may ever be worded as an outcome.**
 //
-// What still does NOT exist: automatic fulfilment, automatic completion, adjudication, any
-// operator decision path, and every terminal outcome — Fulfilled, Unfulfilled, Completed,
-// Closed Without Resolution, Partially Fulfilled, Not Completed — plus reputation. **No copy in
-// this module may say an obligation is complete, fulfilled, unfulfilled, disputed or resolved,
-// may name a fault except to deny one, or may promise an outcome.** Needs Attention and Under
-// Review must never be worded as any of the above.
+// The fourth is an outcome, and it is the ONLY one: a TERMINAL OBLIGATION OUTCOME recorded by an
+// operator — Fulfilled, Unfulfilled, or Closed without resolution (PD-064, PD-065). It is
+// obligation-level, it is decided by a person rather than by a clock, and this module reports it
+// rather than deriving it: `terminalOutcome` arrives from the server and is never inferred from
+// a status, a window or a review.
+//
+// What still does NOT exist, and no copy here may claim: automatic fulfilment, automatic
+// completion, any AGREEMENT-level outcome — Completed, Partially Fulfilled, Not Completed — and
+// reputation, ratings, penalties or refunds. **No copy in this module may name a fault except to
+// deny one, may promise an outcome, or may say a TRADE is complete or resolved.** An obligation
+// may be described as fulfilled, unfulfilled or closed without resolution ONLY when the server
+// says an operator decided so, and never as a consequence of silence.
 //
 // The window is decided by the SERVER. This module receives `receiver_window_state` already
 // computed against the server's clock and never re-derives it from `Date.now()`; a device with a
@@ -115,6 +121,12 @@ export interface ObligationView {
    * fourth attention state cannot reach a screen without a tone.
    */
   attention: AttentionLabel | null
+  /**
+   * The operator's terminal resolution, or null. When set, `attention` is null, every `can*`
+   * flag is false and `note` is the outcome's own sentence — the card is reporting a conclusion,
+   * not a pending request.
+   */
+  terminalOutcome: TerminalOutcome | null
   /**
    * Whether the receiver may report a no-show right now.
    *
@@ -321,15 +333,29 @@ export interface ObligationViewFacts {
   /**
    * The SERVER's derived Under Review state for **THIS ONE OBLIGATION** (PD-062).
    *
-   * OBLIGATION-LEVEL, and the name says so. The agreement-level roll-up — "is EITHER obligation
-   * under review" — is `CancellationViewFacts.agreementUnderReview`, and it gates a different
-   * thing (the ordinary exit, PD-063). Both were called `underReview` until this cleanup; they
-   * align today only because a trade with one reported obligation is a trade under review, and
-   * a future adjudication slice could have mutated one while assuming the other.
+   * OBLIGATION-LEVEL, and the name says so. Two other predicates are nearby and are NOT this one:
+   * `TradeRowFacts.agreementUnderReview` is the agreement-level DISPLAY roll-up, and
+   * `CancellationViewFacts.noShowReported` gates the ordinary exit (PD-063) on the report alone,
+   * which is the same predicate `PT423` evaluates. All three were once called `underReview`; the
+   * pre-adjudication cleanup split the names and aligned the PD-063 gate with its server rule, so
+   * they can no longer be mistaken for one another.
    */
   obligationUnderReview?: boolean
   /** The SERVER's answer to "may this receiver report a no-show right now?" (PD-062). */
   canReportNoShow?: boolean
+  /**
+   * The operator's TERMINAL resolution of this obligation, or null while there is none.
+   *
+   * DOMINATES EVERYTHING BELOW CANCELLATION. Once set, this obligation is no longer Action
+   * needed, Waiting for confirmation, Needs Attention or Under Review, and no participant
+   * control is offered — the server refuses those writes with `PT412`, and a control that can
+   * only fail must never be drawn.
+   *
+   * Defaulted to null like every other optional fact: absent means "not resolved", which is the
+   * withholding direction. Manufacturing an outcome from a missing field would tell two
+   * providers their trade was decided when nobody decided it.
+   */
+  terminalOutcome?: TerminalOutcome | null
 }
 
 export function obligationView(f: ObligationViewFacts): ObligationView {
@@ -341,6 +367,7 @@ export function obligationView(f: ObligationViewFacts): ObligationView {
     confirmationDeadline = null,
     obligationUnderReview = false,
     canReportNoShow = false,
+    terminalOutcome = null,
   } = f
   const c = COPY[role][status]
   // A window belongs ONLY to a delivered, unanswered obligation, and only to an uncancelled
@@ -354,13 +381,24 @@ export function obligationView(f: ObligationViewFacts): ObligationView {
   // caption-contradicts-capability defect this module exists to prevent, and the one shape that
   // became reachable when the live window stopped being unlabelled. It must not depend on one
   // query being right.
-  const w = WINDOW[role][tradeCancelled || status !== 'delivered' ? 'none' : window]
-  // UNDER REVIEW OUTRANKS THE WINDOW, and cancellation outranks both. A trade a human has to
-  // resolve is a truer thing to say than "the response window passed" — the window is about a
-  // missing answer, and once a report exists the answer is no longer what the trade is waiting
-  // on. It is still not a verdict: `UNDER_REVIEW_NOTE` says nothing has been decided, and the
-  // receiver's controls stay live beneath it because they genuinely still work.
-  const review = obligationUnderReview && !tradeCancelled
+  // PRECEDENCE, top to bottom: cancellation, then the terminal outcome, then Under Review, then
+  // the window. Each silences everything below it, so the card carries exactly ONE answer.
+  //
+  // TERMINAL OUTCOME DOMINATES all but cancellation. A resolved obligation is not waiting on
+  // anybody, so the window, the review state and every control go together — a resolution
+  // rendered beside a stale request would be the caption-contradicts-capability defect in its
+  // worst form. Cancellation still outranks it because a cancelled trade cannot be adjudicated
+  // at all (the server refuses it), so the two can never both be true, and preferring
+  // cancellation keeps the client from asserting a resolution the database would not have
+  // allowed.
+  //
+  // UNDER REVIEW OUTRANKS THE WINDOW for the reason it always did: once a report exists, a
+  // missing answer is no longer what the trade is waiting on.
+  const resolved = terminalOutcome && !tradeCancelled ? terminalOutcome : null
+  const review = obligationUnderReview && !tradeCancelled && !resolved
+  const w = WINDOW[role][
+    tradeCancelled || resolved || status !== 'delivered' ? 'none' : window
+  ]
   return {
     title: TITLE[role],
     state: c.state,
@@ -372,14 +410,24 @@ export function obligationView(f: ObligationViewFacts): ObligationView {
     // The window's note WINS when it has one: "the window passed and this is unanswered" is
     // strictly truer than "waiting for the other provider to confirm", which stops being
     // accurate the moment the deadline goes by.
-    note: tradeCancelled ? null : review ? UNDER_REVIEW_NOTE[role] : (w.note ?? c.note),
-    canMarkDelivered: c.canMarkDelivered && !tradeCancelled,
-    canRespond: c.canRespond && !tradeCancelled,
+    note: tradeCancelled
+      ? null
+      : resolved
+        ? TERMINAL_OUTCOME_NOTE[resolved][role]
+        : review
+          ? UNDER_REVIEW_NOTE[role]
+          : (w.note ?? c.note),
+    canMarkDelivered: c.canMarkDelivered && !tradeCancelled && !resolved,
+    canRespond: c.canRespond && !tradeCancelled && !resolved,
     // Offered ONLY to the receiver, and only when the server says the moment has come. The
     // role check is a second, independent refusal: the server already refuses a deliverer, and
     // a button that can only fail must never be drawn.
-    canReportNoShow: role === 'receiver' && canReportNoShow && !tradeCancelled,
+    canReportNoShow: role === 'receiver' && canReportNoShow && !tradeCancelled && !resolved,
     attention: review ? UNDER_REVIEW_LABEL : w.attention,
+    // The RESOLUTION, reported separately from `attention` on purpose: attention states are
+    // things still waiting on somebody, and this is the opposite of that. A screen renders one
+    // or the other, never both — `attention` is null whenever this is set.
+    terminalOutcome: resolved,
     // Shown only when the server gave both a live window state and a deadline. Guarding on both
     // means a missing deadline degrades to no line, never to a label with nothing after it.
     deadline:
@@ -509,6 +557,57 @@ export function noShowStatement(
   }
 }
 
+/**
+ * The three TERMINAL obligation outcomes, decided by an operator and by nobody else.
+ *
+ * OBLIGATION-LEVEL. One side of a trade can be resolved while the other is still Under Review,
+ * and there is deliberately no agreement-level outcome — no Completed, no Partially Fulfilled,
+ * no Not Completed exists in this product.
+ */
+export type TerminalOutcome = 'fulfilled' | 'unfulfilled' | 'closed_without_resolution'
+
+/**
+ * What each outcome is CALLED to a participant, and what none of them may imply.
+ *
+ * TOTAL over the three, so a fourth outcome is a compile error rather than an unlabelled state.
+ *
+ * NO BLAME LANGUAGE. None of these says a provider lied, was at fault, was penalised, or that a
+ * reliability score moved — none of which exist. `closed_without_resolution` in particular is
+ * NOT a softer `unfulfilled`: it records that the information did not support either finding,
+ * which is the honest answer when there is no honest answer.
+ */
+export const TERMINAL_OUTCOME_LABEL: Record<TerminalOutcome, string> = {
+  fulfilled: 'Fulfilled',
+  unfulfilled: 'Unfulfilled',
+  closed_without_resolution: 'Closed without resolution',
+}
+
+/**
+ * The sentence beneath the label, per outcome and per role.
+ *
+ * TOTAL over outcome x role. Written so neither provider reads a verdict about a PERSON: the
+ * subject of every sentence is the obligation, never the other provider. The deliverer's and
+ * receiver's wording differ only in whose side it was, never in who is blamed.
+ */
+export const TERMINAL_OUTCOME_NOTE: Record<TerminalOutcome, Record<ObligationRole, string>> = {
+  fulfilled: {
+    deliverer: 'This was reviewed and resolved as fulfilled.',
+    receiver: 'This was reviewed and resolved as fulfilled.',
+  },
+  unfulfilled: {
+    deliverer: 'This was reviewed and resolved as not fulfilled.',
+    receiver: 'This was reviewed and resolved as not fulfilled.',
+  },
+  closed_without_resolution: {
+    deliverer:
+      'This was reviewed and closed without a resolution — the available information did not'
+      + ' support deciding either way.',
+    receiver:
+      'This was reviewed and closed without a resolution — the available information did not'
+      + ' support deciding either way.',
+  },
+}
+
 /** The one short label for a trade that needs manual resolution. */
 export const UNDER_REVIEW_LABEL = 'Under review'
 
@@ -606,18 +705,31 @@ export const RESPOND_LABELS = {
  * sweep as every other string on the card, and so the answer time is shown at all — it is the
  * fact most likely to matter if the two providers later disagree about what happened.
  *
+ * The three entries are the three things that HAPPENED, kept even when a later one contradicts
+ * an earlier one: a delivery, an answer and a resolution all stand together, because an
+ * adjudication does not rewrite history (PD-066).
+ *
  * Values are returned raw; the caller formats them, so ONE formatter is used for every
  * timestamp on the card.
  */
 export function obligationTimeline(
   deliveredAt: string | null,
   receiptRespondedAt: string | null,
+  adjudicatedAt: string | null = null,
 ): { key: string; label: string; at: string }[] {
   const out: { key: string; label: string; at: string }[] = []
   if (deliveredAt) out.push({ key: 'delivered', label: 'Marked delivered', at: deliveredAt })
   if (receiptRespondedAt) {
     out.push({ key: 'answered', label: 'Answered', at: receiptRespondedAt })
   }
+  // WHEN it was resolved, which PD-067 makes participant-visible along with the outcome itself.
+  // Last, because it is last: it is the only entry that ends the obligation. The label says
+  // "Reviewed" and not the outcome — the outcome is stated once, by the chip, and repeating it
+  // in a timestamp row would be two places to keep in agreement.
+  //
+  // Defaulted to null so the parameter WITHHOLDS when a caller has not been updated, in the same
+  // direction as every other optional fact in this module.
+  if (adjudicatedAt) out.push({ key: 'resolved', label: 'Reviewed', at: adjudicatedAt })
   return out
 }
 

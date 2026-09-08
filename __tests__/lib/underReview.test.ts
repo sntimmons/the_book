@@ -24,8 +24,11 @@ import { cancellationView } from '@/lib/tradeCancellation'
 const ROLES: ObligationRole[] = ['deliverer', 'receiver']
 const STATUSES: ObligationStatus[] = ['pending', 'delivered', 'received', 'not_received']
 
-// The vocabulary this product does not have. A review is an UNRESOLVED condition; none of these
-// exist, and copy that used one would be announcing an outcome nothing can produce.
+// The vocabulary a REVIEW may not use. A review is an UNRESOLVED condition, so none of these
+// words may appear on one — announcing an outcome is what an adjudication does, and only after
+// an operator has decided (PD-064). Some of these words are now legitimate on a RESOLVED
+// obligation, which is a different state with different copy and its own tests
+// (`terminalOutcome.test.ts`); none of the calls below passes a terminal outcome.
 const FORBIDDEN = [
   'fulfilled', 'unfulfilled', 'completed', 'complete', 'failed', 'guilty',
   'refund', 'penalty', 'dispute', 'disputed', 'adjudicat', 'won', 'lost',
