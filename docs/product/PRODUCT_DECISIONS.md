@@ -1,12 +1,13 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** the manual-adjudication branch, which records **PD-064** through **PD-069**
-and carries its own implementation notes in with its code, as PR #64 did for PD-062 / PD-063 and
-PR #62 did for PD-057 / PD-059. Its PR number is unknown while this is written; the previous
-known-numbered edits were PR #65 (the reconciliation that corrected PR #64's citations), the
-unnumbered reconciliation that followed PR #66, and **PR #69** (`c04e5bd`) — which added
-[FUTURE_PRODUCT_IDEAS.md](FUTURE_PRODUCT_IDEAS.md) and the marketing message bank and
+**Last edited by:** the derived-agreement-presentation branch, which records **PD-070** and
+removes the last live barter dollar-value UX under PD-069. Before it, the manual-adjudication
+branch (PR #68, `5c24e8f`) recorded **PD-064** through **PD-069**. Each carries its own
+implementation notes in with its code, as PR #64 did for PD-062 / PD-063 and PR #62 did for
+PD-057 / PD-059. Earlier known-numbered edits: PR #65 (the reconciliation that corrected PR #64's
+citations), the unnumbered reconciliation that followed PR #66, and **PR #69** (`c04e5bd`) —
+which added [FUTURE_PRODUCT_IDEAS.md](FUTURE_PRODUCT_IDEAS.md) and the marketing message bank and
 **decided nothing**, so it appears in no entry below.
 
 **Nothing here was decided, superseded or reopened by PR #66** (`0f2b93c`), the
@@ -30,9 +31,13 @@ a gap in the running product, but it is now a **named pre-beta requirement** rat
 question. **PD-069** settles the adjacent one the pressure test raised: the platform does not
 appraise the trade, and adjudication concerns **performance, not value**.
 
-**Still genuinely open after PD-068 / PD-069:** how a plain Needs Attention might enter Under
-Review, and whether a terminal AGREEMENT-level outcome should be **persisted or derived** from
-the obligation outcomes — the roll-up PD-065 deferred.
+**PD-070 closes the persist-vs-derive question** that PD-065 deferred and the paragraph above
+recorded as open: agreement-level resolution is **derived** from the immutable obligation,
+adjudication and cancellation facts, never stored, and no roll-up label may overstate what was
+found. **No open question was ever minted for it, and none should be.**
+
+**Still genuinely open after PD-068 … PD-070:** how a plain Needs Attention might enter Under
+Review. That is the last undecided question in the barter lifecycle engine.
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -1045,6 +1050,61 @@ as locked decisions.
   nothing to build, and the entry exists so that building any of it is a decision to reverse this
   one. **One pre-existing exception is unreconciled** and named above: the optional
   provider-declared estimated value on a barter POST, pending a Founder ruling.
+
+---
+
+### PD-070 — Agreement-level barter resolution is DERIVED, and no roll-up may overstate what was found
+- **Decided:** 2026-09-08
+- **Decision:** **Agreement-level barter resolution is derived from the immutable underlying
+  facts — the two obligation states, their adjudication outcomes, cancellation acts and the
+  derived Under Review state — and is NEVER persisted as a second terminal state.** No
+  `completed`, `partially_fulfilled` or `not_completed` column, status value or stored verdict is
+  added to `barter_agreements`, now or as part of this decision's implementation. **And where a
+  single roll-up label would overstate the underlying findings, The Book presents the two
+  obligation truths instead of inventing a broader verdict.** Two combinations make that concrete
+  and are ruled on directly: **`Fulfilled + Closed without resolution` must NOT become *Partially
+  Fulfilled***, because that label asserts the other side was found **Unfulfilled** and *closed
+  without resolution* is the opposite of a finding; and **`Closed + Closed` must NOT become *Not
+  Completed***, because that asserts performance failed and nothing was found to have failed.
+- **Why:** The usual reason to persist a roll-up is that derivation is unstable — and here it is
+  not. **The inputs cannot change:** an adjudication is append-only and immutable (PD-066) and a
+  cancellation is append-only, so a value derived from them is stable and cannot drift.
+  Persisting one would therefore buy nothing and create a second source of truth that could
+  disagree with the first — which is precisely the failure `20261020000000` was written against:
+  *"the read model saying 'Under Review' while the record says 'unfulfilled'."* Two further
+  reasons carried weight. **Concurrency:** a stored roll-up makes `barter_agreements` a write
+  target on every adjudication, adding a write-write hotspot and a fresh lock-order obligation to
+  a graph that has already produced one reproduced deadlock. **The vocabulary is not ready:** the
+  six-value agreement table in `BARTER_BETA_CONTRACT` § 7.5 predates the three obligation
+  outcomes and does not compose with them, and persisting a verdict would freeze a vocabulary
+  the product has zero operational experience with. Deriving lets the mapping change later with
+  no backfill and no migration of stored values.
+- **Consequences:** The client derives a **coarse resolution state**, deliberately not a verdict:
+  nothing resolved, one side resolved, both resolved **and both fulfilled**, or both resolved in
+  any other combination. Only *both fulfilled* gets its own sentence, because it is the one
+  combination a summary cannot distort; every other pair reports **that** both sides were
+  reviewed and lets each obligation card state **what** was found — once, where the outcome
+  already lives. **This resolves the persist-vs-derive question PD-065 deferred and PD-068's
+  preamble recorded as open; no OQ was ever minted for it, and none should be.** The immediate
+  user-visible consequence is that a confirmed trade whose obligations are resolved no longer
+  tells both providers to *"Arrange the details in your conversation."* — an instruction that,
+  on a trade an operator had just resolved `unfulfilled`, asked two people to go and arrange
+  something that had been found not to have happened. **What this does NOT create:** no
+  agreement-level outcome column, no fifth obligation status, no new participant control, no
+  operator surface, no notification, and no change to who may adjudicate (PD-064, PD-068 stand).
+  The agreement's headline stays **Trade confirmed** for the whole life of the trade, because
+  renaming it *would be* the stored verdict this decision refuses to create.
+- **Evidence:** Founder ruling, 2026-09-08. `lib/obligationState.ts` (`agreementResolution`, which
+  owns the rule and the fail-closed short-list case), `lib/negotiationState.ts`
+  (`AgreementResolution`, and `CONFIRMED_DETAIL`, total over it so a fifth value is a compile
+  error). Proven by `__tests__/lib/negotiationState.test.ts`, which asserts **all nine outcome
+  pairs** land where this entry says — the eight non-`allFulfilled` pairs on the neutral state —
+  that no banner in any resolution state contains *completed*, *partially fulfilled* or *not
+  completed*, that the resolved states contain no instruction to arrange anything, that a mixed
+  or closed pair assigns no fault, and that cancellation still outranks every resolution state.
+  `supabase/tests/adjudication.test.sql` continues to assert that **no agreement-level outcome
+  column exists** — this decision is the reason that assertion is permanent rather than pending.
+- **Status:** Locked; **implemented**
 
 ---
 

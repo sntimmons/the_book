@@ -2349,3 +2349,103 @@ begin
     'an illegal transition is refused by write_integrity, not by the post guard',
     '23514', v_code);
 end $$;
+
+-- ── THE BARTER OFFER NO LONGER CARRIES A DOLLAR VALUE (PD-069) ────────────
+--
+-- The Book does not appraise, equalize or compare a trade. `offering_value` predates that
+-- ruling and is DEPRECATED rather than dropped — the column stays so historical rows and the
+-- immutable proposal-version snapshots that copied it are not destroyed. What these assertions
+-- pin is that no NEW value can be recorded, from any client, and that a legacy row stays
+-- editable so the deprecation cannot strand somebody's old offer.
+do $$
+declare
+  ou uuid := current_setting('b5b.bt_ou')::uuid;
+  opid uuid := current_setting('b5b.bt_opid')::uuid;
+  o uuid; v_val integer; v_code text;
+begin
+  -- 1. A CLIENT THAT STILL SENDS A VALUE IS NOT REFUSED — it is silently ignored. A mobile build
+  --    ships on its own cadence, and refusing would break posting for every installed old client
+  --    to enforce a field its user cannot even see.
+  perform pg_temp.act(ou);
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service,
+                                   offering_value)
+  values (opid, ou, 'headshots', 'haircut', 200) returning id into o;
+  select offering_value into v_val from public.barter_offers where id = o;
+  perform pg_temp.chk('barter', 'a new offer records NO estimated value, even if one is sent',
+    'NULL', coalesce(v_val::text, 'NULL'));
+
+  -- 2. AND IT CANNOT BE INTRODUCED LATER by updating the row.
+  begin
+    update public.barter_offers set offering_value = 150 where id = o;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'an estimated value cannot be added to an existing offer',
+    '23514', v_code);
+  select offering_value into v_val from public.barter_offers where id = o;
+  perform pg_temp.chk('barter', 'and the refusal changed nothing',
+    'NULL', coalesce(v_val::text, 'NULL'));
+
+  -- 3. A LEGACY ROW STAYS EDITABLE. Simulated the only way a value can now exist: written
+  --    privileged, as one written before the ruling would have been. Editing an unrelated field
+  --    must NOT be rejected for carrying the value it inherited, or the deprecation would strand
+  --    every pre-ruling offer.
+  perform pg_temp.act_service();
+  update public.barter_offers set offering_value = 80 where id = o;
+  perform pg_temp.act(ou);
+  begin
+    update public.barter_offers set notes = 'still editable' where id = o;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a legacy offer carrying a value is still editable',
+    'ALLOWED', v_code);
+  select offering_value into v_val from public.barter_offers where id = o;
+  perform pg_temp.chk('barter', 'and its historical value is retained, not erased',
+    '80', coalesce(v_val::text, 'NULL'));
+
+  -- 4. AND IT MAY BE CLEARED. One-directional: the field can only ever go away.
+  begin
+    update public.barter_offers set offering_value = null where id = o;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'a legacy value may be cleared', 'ALLOWED', v_code);
+  -- ...but not swapped for a different one.
+  perform pg_temp.act_service();
+  update public.barter_offers set offering_value = 80 where id = o;
+  perform pg_temp.act(ou);
+  begin
+    update public.barter_offers set offering_value = 999 where id = o;
+    v_code := 'ALLOWED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('barter', 'and never exchanged for a different figure', '23514', v_code);
+  perform pg_temp.act_service();
+end $$;
+
+-- NO REPLACEMENT VALUATION FIELD WAS INVENTED. A scope pin in the same spirit as the
+-- adjudication sweeps: PD-069 bans valuation, equivalency, fairness scoring, credits, points and
+-- tokens outright, so a column or function shaped like any of them must fail here rather than
+-- arrive quietly under a new name.
+do $$
+declare v_n integer;
+begin
+  select count(*) into v_n from information_schema.columns
+   where table_schema = 'public'
+     and column_name ~* ('estimated_value|market_value|retail_price|fair_value|equivalen'
+       || '|credit_balance|barter_credit|barter_point|barter_token|exchange_ratio')
+     and table_name like 'barter%';
+  perform pg_temp.chk('barter',
+    'no valuation, equivalency, credit, point or token column exists on any barter table',
+    '0', v_n::text);
+
+  select count(*) into v_n from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname ~* ('appraise|valuation|equivalen|fairness|exchange_ratio'
+       || '|barter_credit|barter_point|barter_token');
+  perform pg_temp.chk('barter',
+    'and no function appraises, scores or compares the value of a trade',
+    '0', v_n::text);
+end $$;

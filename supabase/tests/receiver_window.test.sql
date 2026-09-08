@@ -660,30 +660,62 @@ declare
 begin
   v_ag := pg_temp.rw_agreement(ou, ru, 'noweb', pg_temp.rw_due(7), null, pg_temp.rw_due(8), null);
   v_ob := pg_temp.rw_of(v_ag, 'offer_owner');
-  -- Needs Attention must not create a write bypass. A simple view over one table is
-  -- auto-updatable unless the grants say otherwise, and these do.
+  -- Needs Attention must not create a write bypass.
+  --
+  -- THE REFUSAL IS ASSERTED AS "REFUSED", NOT AS ONE SQLSTATE, AND THAT CHANGE IS DELIBERATE.
+  -- Until `20261027000000` this view was a simple select over one table, so it was AUTO-UPDATABLE
+  -- and the only thing refusing a write was the grant — `42501`. Computing the suppression
+  -- predicate once added a lateral join, and a view that does not select from a single table is
+  -- not auto-updatable at all, so the rewriter now refuses first with `55000`.
+  --
+  -- That is STRICTLY STRONGER: the write is structurally impossible rather than merely
+  -- unprivileged, and both refusals are in force. Pinning the exact code would have made this
+  -- test fail for a security IMPROVEMENT, so it pins the property that actually matters — no
+  -- write reaches the table through this view — and the grant posture is asserted separately
+  -- below so the older guarantee cannot lapse unnoticed if the view ever becomes simple again.
   perform pg_temp.act(ru);
   begin
     update public.my_barter_obligations set status = 'received' where id = v_ob;
     v_code := 'ALLOWED';
-  exception when others then v_code := sqlstate;
+  exception when others then v_code := 'REFUSED';
   end;
   perform pg_temp.chk('receiver_window', 'no UPDATE through the obligation view',
-    '42501', v_code);
+    'REFUSED', v_code);
   begin
     insert into public.my_barter_obligations(id) values (gen_random_uuid());
     v_code := 'ALLOWED';
-  exception when others then v_code := sqlstate;
+  exception when others then v_code := 'REFUSED';
   end;
   perform pg_temp.chk('receiver_window', 'no INSERT through the obligation view',
-    '42501', v_code);
+    'REFUSED', v_code);
   begin
     delete from public.my_barter_obligations where id = v_ob;
     v_code := 'ALLOWED';
-  exception when others then v_code := sqlstate;
+  exception when others then v_code := 'REFUSED';
   end;
   perform pg_temp.chk('receiver_window', 'no DELETE through the obligation view',
-    '42501', v_code);
+    'REFUSED', v_code);
+  -- THE GRANT-LEVEL GUARANTEE, kept explicit now that the structural one fires first. Without
+  -- this, a future migration simplifying the view back to one table would silently restore
+  -- auto-updatability and nothing here would notice whether the grants still refused.
+  perform pg_temp.chk('receiver_window',
+    'and authenticated still holds NO write privilege on the obligation view',
+    'false',
+    (has_table_privilege('authenticated', 'public.my_barter_obligations', 'insert')
+     or has_table_privilege('authenticated', 'public.my_barter_obligations', 'update')
+     or has_table_privilege('authenticated', 'public.my_barter_obligations', 'delete'))::text);
+  -- AND THE PROPERTY WHOSE SILENT LOSS WOULD BE CATASTROPHIC. `my_barter_obligations` is
+  -- security_invoker, so it is the CALLER's RLS that scopes every row it returns. Recreated
+  -- without that option it would run as its postgres owner and hand every provider every other
+  -- provider's obligations — a total read bypass, with no error anywhere. `my_trade_activity`
+  -- has been pinned this way since it shipped; this view never was, and `20261027000000` had to
+  -- drop and recreate it, which is exactly when an option gets lost.
+  perform pg_temp.chk('receiver_window', 'the obligation view is security_invoker',
+    'true',
+    (select coalesce(array_to_string(reloptions, ',') like '%security_invoker=true%', false)
+       from pg_class where oid = 'public.my_barter_obligations'::regclass)::text);
+  perform pg_temp.chk('receiver_window', 'and anon cannot read it at all',
+    'false', has_table_privilege('anon', 'public.my_barter_obligations', 'select')::text);
   -- And the underlying table is still SELECT-only for participants: the view changed nothing
   -- about the table's own posture.
   begin
@@ -1111,4 +1143,80 @@ begin
           or p.prosrc ilike '%needs_attention%' or p.prosrc ilike '%receiver_window%');
   perform pg_temp.chk('receiver_window',
     'no obligation RPC consults the deadline or the window state', '0', v_n::text);
+end $$;
+
+-- ── SUPPRESSION IS ONE EXPRESSION, AND THE PARAMETER SAYS WHAT IT MEANS ────
+--
+-- `20261020000000` fed `cancelled OR adjudicated` into three derived functions so the rule was
+-- applied once — but SPELLED IT OUT three times inside a view that must be restated in full on
+-- every change. Adding a fourth suppressor then means editing three identical expressions, and
+-- editing two of three produces the exact failure that migration was written against: the read
+-- model saying "Under Review" while the record says "unfulfilled". This graph has already had
+-- one silent copy-forward revert, so the hazard is demonstrated rather than hypothetical.
+--
+-- `20261027000000` computes it once in a lateral. These assertions read the LIVE view definition
+-- so a future restatement that re-inlines the predicate fails here instead of being noticed by
+-- eye — the same reason the append-only trigger's predicate is pinned by source text.
+do $$
+declare
+  v_def text;
+  v_n integer;
+begin
+  v_def := pg_get_viewdef('public.my_barter_obligations'::regclass, true);
+
+  -- The cancellation half of the predicate appears ONCE, in the lateral, not once per call site.
+  select count(*) into v_n from regexp_matches(
+    lower(v_def), 'from barter_agreement_cancellations', 'g');
+  perform pg_temp.chk('receiver_window',
+    'the suppression predicate reads barter_agreement_cancellations exactly once',
+    '1', v_n::text);
+
+  -- And every derived column consumes that single value.
+  perform pg_temp.chk('receiver_window',
+    'and all three derived columns are still produced',
+    'true',
+    (v_def like '%receiver_window_state%'
+     and v_def like '%under_review%'
+     and v_def like '%can_report_no_show%')::text);
+end $$;
+
+-- THE PARAMETER NAME. `p_trade_cancelled` carried "cancelled OR has-a-terminal-outcome" for six
+-- migrations, which is a name that lies about what the value means — and these three functions
+-- CANNOT distinguish a cancelled trade from a resolved one, so an editor who believed the name
+-- would apply cancellation copy to every adjudicated obligation. Renamed by `20261027000000`.
+-- Pinned by name, because `create or replace function` cannot rename a parameter: reverting this
+-- requires a deliberate drop-and-recreate, and it should fail here when someone does it.
+do $$
+declare v_n integer;
+begin
+  select count(*) into v_n from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('barter_receiver_window', 'barter_obligation_under_review',
+                       'barter_can_report_no_show')
+     and 'p_suppressed' = any (p.proargnames);
+  perform pg_temp.chk('receiver_window',
+    'all three derived-state helpers take p_suppressed, not p_trade_cancelled',
+    '3', v_n::text);
+
+  select count(*) into v_n from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and 'p_trade_cancelled' = any (p.proargnames);
+  perform pg_temp.chk('receiver_window',
+    'and the misleading old name is gone from every function in the schema',
+    '0', v_n::text);
+
+  -- The rename required a DROP, which is where a grant or an owner gets lost. Re-pinned here.
+  select count(*) into v_n from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('barter_receiver_window', 'barter_obligation_under_review',
+                       'barter_can_report_no_show')
+     and pg_get_userbyid(p.proowner) = 'postgres'
+     and coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=%'
+     and has_function_privilege('authenticated', p.oid, 'execute')
+     and not has_function_privilege('anon', p.oid, 'execute');
+  perform pg_temp.chk('receiver_window',
+    'and all three kept owner, pinned search_path, the authenticated grant and no anon grant',
+    '3', v_n::text);
 end $$;

@@ -32,7 +32,7 @@
 // an input that freezes the controls and drops the what-happens-next notes. "Didn't receive"
 // records what the receiver said and nothing more.
 
-import type { ProposalSide, TradeRole } from './negotiationState'
+import type { AgreementResolution, ProposalSide, TradeRole } from './negotiationState'
 import { sideForRole } from './negotiationState'
 
 /**
@@ -664,6 +664,45 @@ export const ATTENTION_TONE: Record<AttentionLabel, AttentionTone> = {
   [ACTION_NEEDED_LABEL]: 'live',
   [NEEDS_ATTENTION_LABEL]: 'elapsed',
   [UNDER_REVIEW_LABEL]: 'review',
+}
+
+/**
+ * How far a trade's two obligations have been resolved — the AGREEMENT-level fact, derived.
+ *
+ * PD-070: agreement-level resolution is DERIVED from the immutable underlying facts and never
+ * persisted as a second terminal state. The inputs cannot drift — an adjudication is append-only
+ * and immutable (PD-066) — so a value computed from them is stable, and storing a roll-up beside
+ * them would only create something that could disagree with them.
+ *
+ * WHY THIS RETURNS A COARSE STATE AND NOT A VERDICT. The tempting shape is a nine-cell map from
+ * (outcome, outcome) to a single word. It cannot be written honestly:
+ *
+ *   * `fulfilled + closed_without_resolution` is NOT "partially fulfilled". That label asserts
+ *     the other side was found UNFULFILLED, and *closed without resolution* is the opposite of a
+ *     finding — it records that the information did not support either answer (PD-065).
+ *   * `closed + closed` is NOT "not completed", which asserts performance failed. Nothing was
+ *     found to have failed.
+ *
+ * So where a roll-up would overstate what was found, this reports only that both sides were
+ * reviewed and lets each obligation state its own outcome. `allFulfilled` is separated because
+ * it is the one combination a summary cannot distort.
+ *
+ * FAIL-CLOSED ON A SHORT LIST. A trade has exactly two obligations by database construction, so
+ * any other length means the read did not land — and that is reported as 'none', because
+ * assuming nothing has been decided is the withholding direction. It is the same rule every
+ * optional fact in this module follows.
+ */
+export function agreementResolution(
+  outcomes: readonly (TerminalOutcome | null | undefined)[],
+): AgreementResolution {
+  if (outcomes.length !== 2) return 'none'
+  const resolved = outcomes.filter((o): o is TerminalOutcome => o != null)
+  if (resolved.length === 0) return 'none'
+  if (resolved.length < outcomes.length) return 'partial'
+  // Compared against the vocabulary rather than `!== 'unfulfilled'`, so an outcome this build
+  // does not recognise cannot be reported as fulfilled. Unknown falls to `allResolved`, which
+  // claims nothing about what was found.
+  return resolved.every((o) => o === 'fulfilled') ? 'allFulfilled' : 'allResolved'
 }
 
 /**

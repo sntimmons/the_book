@@ -2,8 +2,9 @@
 
 **Status:** **Exploratory — NOT authoritative.** Owner: Founder (Stephen).
 **Category:** Product / exploration.
-**Last substantive update:** 2026-09-08 — barter pressure-test findings added (§ 3),
-alongside the earlier payment pressure-test reconciliation (§ 2).
+**Last substantive update:** 2026-09-08 — barter pressure-test findings (§ 3), reconciled after
+the derived-agreement-presentation slice (PD-070) and the removal of the barter estimated-value
+UX (PD-069), alongside the earlier payment pressure-test reconciliation (§ 2).
 
 > **READ THIS BEFORE ANYTHING ELSE IN THIS FILE.**
 >
@@ -678,6 +679,10 @@ around.
 
 - **Community-first.** The Book is a marketplace between grown professionals, not a
   price-comparison engine. Providers are the ones who know what their work is worth to them.
+  **As of 2026-09-08 this is enforced by absence rather than by restraint:** the barter composer
+  has no value input and the board has no `~$N value` badge, because both were removed under
+  PD-069. Any idea below that would put a dollar figure back onto a barter offer is reversing a
+  shipped decision, not proposing a feature.
 - **Subjective value is the point, not a defect.** A photographer who normally charges $200 may
   genuinely value a $40 haircut more than the session they are giving up. Retail price does not
   determine subjective value, and a platform that says otherwise is telling a provider they
@@ -791,8 +796,11 @@ a back door into reputation.
   turnaround time.
 - **PD-064 … PD-067** — operator-only adjudication, three obligation-level terminal outcomes,
   immutability, and the internal-rationale boundary.
-- **PD-065** — there is **no agreement-level terminal outcome**, and none may be implied by a
-  matching or history feature.
+- **PD-065 / PD-070** — there is **no agreement-level terminal outcome and there will not be
+  one**: agreement resolution is DERIVED from the immutable obligation facts and never stored,
+  and where a single label would overstate what was found the product states the two obligation
+  truths instead. No matching, history, export or reputation idea may imply a stored trade
+  verdict, and none may turn *closed without resolution* into a finding of fault.
 - **PD-032** — two parties. Three-way matching is an *exploration*; it is not permission.
 - **PD-031** — barter is **not** a discount mechanism.
 - **BARTER_BETA_CONTRACT § 8** — no barter reviews, no reputation or ranking effect in the

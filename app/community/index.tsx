@@ -941,12 +941,11 @@ function BarterCard({
         </View>
       </View>
 
-      {offer.offeringValue != null ? (
-        <View style={styles.valueBadge}>
-          <Text style={styles.valueBadgeText}>~${offer.offeringValue} value</Text>
-        </View>
-      ) : null}
-
+      {/* NO `~$N value` BADGE (PD-069). A legacy offer may still carry `offeringValue` in the
+          database, and it is deliberately NOT rendered: The Book does not appraise, equalize or
+          compare a trade, and a platform-drawn dollar figure beside a barter offer invites the
+          price comparison that decision exists to prevent. The field is deprecated server-side
+          and no new offer records one. Do not render it, sort by it, or filter on it. */}
       {offer.notes ? <Text style={styles.notes}>{offer.notes}</Text> : null}
 
       <View style={styles.cardActions}>
@@ -1355,19 +1354,6 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
     lineHeight: 21,
-  },
-  valueBadge: {
-    alignSelf: 'flex-start',
-    marginTop: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    backgroundColor: 'rgba(200,146,42,0.12)',
-  },
-  valueBadgeText: {
-    fontSize: 11,
-    color: '#C8922A',
-    fontFamily: 'Manrope_600SemiBold',
   },
   notes: {
     fontSize: 14,

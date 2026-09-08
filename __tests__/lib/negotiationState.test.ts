@@ -15,6 +15,7 @@ import {
   termsTimingStillValid,
   validateDraft,
 } from '@/lib/negotiationState'
+import { agreementResolution } from '@/lib/obligationState'
 
 // Negotiation copy and capability rules. These live in a pure module and are tested here for
 // the same reason the Trade Activity rules are: every defect that surface shipped was a copy
@@ -36,6 +37,9 @@ function facts(over: Partial<NegotiationFacts> = {}): NegotiationFacts {
     everBothAccepted: false,
     agreementId: null,
     tradeCancelled: false,
+    // Nothing resolved unless a case says otherwise — the same fail-closed default the field
+    // documents, so every pre-existing assertion keeps testing the behaviour it was written for.
+    resolution: 'none',
     ...over,
   }
 }
@@ -562,6 +566,157 @@ describe('term copy describes two sides, not a list', () => {
     for (const d of drafts) {
       const msg = validateDraft(d) ?? ''
       expect(msg).not.toMatch(/\b(item|items|list|at least one)\b/i)
+    }
+  })
+})
+
+// ── THE DERIVED AGREEMENT PRESENTATION (PD-070) ───────────────────────────
+//
+// The agreement has NO stored terminal outcome and never gains one. What the banner says about a
+// confirmed trade is derived from how far its two obligations have been resolved, and these
+// tests pin the three things that derivation must never do: instruct when nothing remains,
+// invent a trade-level verdict, or turn a *closed without resolution* into a finding of fault.
+describe('agreementResolution', () => {
+  const F = 'fulfilled' as const
+  const U = 'unfulfilled' as const
+  const C = 'closed_without_resolution' as const
+
+  it('reports nothing resolved when neither side is', () => {
+    expect(agreementResolution([null, null])).toBe('none')
+  })
+
+  it('reports partial when exactly one side carries an outcome, either side', () => {
+    expect(agreementResolution([F, null])).toBe('partial')
+    expect(agreementResolution([null, F])).toBe('partial')
+    expect(agreementResolution([U, null])).toBe('partial')
+    expect(agreementResolution([null, C])).toBe('partial')
+  })
+
+  it('separates BOTH FULFILLED, the one pair a summary cannot distort', () => {
+    expect(agreementResolution([F, F])).toBe('allFulfilled')
+  })
+
+  // THE COMBINATIONS THE FOUNDER RULING NAMES. Each of these must land on `allResolved`, which
+  // asserts only that both sides were reviewed.
+  it.each([
+    [F, U],
+    [U, F],
+    [U, U],
+    [F, C],
+    [C, F],
+    [U, C],
+    [C, U],
+    [C, C],
+  ])('reports allResolved for %s + %s, claiming nothing about what was found', (a, b) => {
+    expect(agreementResolution([a, b])).toBe('allResolved')
+  })
+
+  it('FAILS CLOSED on a list that is not two obligations', () => {
+    // A trade has exactly two by database construction, so any other length means the read did
+    // not land. Reporting 'none' keeps the screen from announcing a resolution it cannot see.
+    expect(agreementResolution([])).toBe('none')
+    expect(agreementResolution([F])).toBe('none')
+    expect(agreementResolution([F, F, F])).toBe('none')
+    expect(agreementResolution([undefined, undefined])).toBe('none')
+  })
+
+  it('does not report an UNRECOGNISED outcome as fulfilled', () => {
+    // Same server-column boundary the outcome label and note defend: a widened CHECK constraint
+    // reaches installed clients before the matching build does. An unknown value must not be
+    // summarised as "both were fulfilled".
+    const unknown = 'partially_fulfilled' as unknown as typeof F
+    expect(agreementResolution([F, unknown])).toBe('allResolved')
+    expect(agreementResolution([unknown, unknown])).toBe('allResolved')
+  })
+})
+
+describe('the confirmed-trade banner follows the resolution, not the clock', () => {
+  const confirmed = (resolution: NegotiationFacts['resolution']) =>
+    negotiationView(facts({ agreementId: 'a1', resolution }))
+
+  it('still tells providers to arrange the details while nothing is resolved', () => {
+    expect(confirmed('none').detail).toContain('Arrange the details')
+  })
+
+  // THE DEFECT THIS FIXES. A trade whose obligations were both resolved `unfulfilled` told two
+  // providers to go and arrange a trade an operator had just concluded did not happen.
+  it.each(['allFulfilled', 'allResolved'] as const)(
+    'never instructs anyone to arrange anything once both sides are resolved (%s)',
+    (r) => {
+      const d = confirmed(r).detail
+      expect(d).not.toContain('Arrange the details')
+      expect(d.toLowerCase()).not.toContain('arrange')
+    },
+  )
+
+  it('still points at what is outstanding when only ONE side is resolved', () => {
+    // The other obligation is genuinely still live, so the banner must not read as finished.
+    const d = confirmed('partial').detail
+    expect(d.toLowerCase()).toContain('outstanding')
+    expect(d.toLowerCase()).not.toContain('nothing further')
+  })
+
+  it('says nothing further is needed ONLY when both sides were fulfilled', () => {
+    expect(confirmed('allFulfilled').detail.toLowerCase()).toContain('nothing further is needed')
+    for (const r of ['none', 'partial', 'allResolved'] as const) {
+      expect(confirmed(r).detail.toLowerCase()).not.toContain('nothing further is needed')
+    }
+  })
+
+  // NO TRADE-LEVEL VERDICT, in any resolution state. These three words do not exist in the
+  // product (PD-065, PD-070) and the banner is the most likely place to invent one.
+  it.each(['none', 'partial', 'allFulfilled', 'allResolved'] as const)(
+    'invents no agreement-level verdict in %s',
+    (r) => {
+      const d = confirmed(r).detail.toLowerCase()
+      for (const word of ['completed', 'partially fulfilled', 'not completed', 'incomplete']) {
+        expect(d).not.toContain(word)
+      }
+    },
+  )
+
+  // A *closed without resolution* pair reaches `allResolved`. That sentence must not read as a
+  // finding about anybody, or the honest third answer becomes a soft accusation.
+  it('never assigns fault or names an outcome for a mixed or closed pair', () => {
+    const d = confirmed('allResolved').detail.toLowerCase()
+    for (const word of ['unfulfilled', 'fault', 'failed', 'did not', 'blame', 'closed without']) {
+      expect(d).not.toContain(word)
+    }
+  })
+
+  // The state itself is unchanged: an agreement stays "Trade confirmed" for its whole life,
+  // because renaming it would BE the agreement-level verdict PD-070 refuses to create.
+  it.each(['none', 'partial', 'allFulfilled', 'allResolved'] as const)(
+    'keeps the agreement state and headline stable in %s',
+    (r) => {
+      expect(confirmed(r).state).toBe('confirmed')
+      expect(confirmed(r).headline).toBe('Trade confirmed')
+    },
+  )
+
+  it('lets CANCELLATION outrank every resolution state', () => {
+    for (const r of ['none', 'partial', 'allFulfilled', 'allResolved'] as const) {
+      const v = negotiationView(facts({ agreementId: 'a1', tradeCancelled: true, resolution: r }))
+      expect(v.state).toBe('cancelled')
+      expect(v.detail).not.toContain('Arrange the details')
+      expect(v.detail.toLowerCase()).not.toContain('nothing further is needed')
+    }
+  })
+
+  it('uses no state-machine vocabulary a provider should never read', () => {
+    for (const r of ['none', 'partial', 'allFulfilled', 'allResolved'] as const) {
+      const d = confirmed(r).detail.toLowerCase()
+      for (const jargon of [
+        'proposal version',
+        'terminal',
+        'adjudicat',
+        'suppress',
+        'immutable',
+        'derived',
+        'read model',
+      ]) {
+        expect(d).not.toContain(jargon)
+      }
     }
   })
 })

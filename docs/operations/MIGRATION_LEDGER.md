@@ -1038,6 +1038,73 @@ redefining anything.** "The migration that created it" and "the migration that d
 different files, and the more discoverable one — the one carrying all the design rationale — is
 usually the wrong one.
 
+## 2026-09-08 — `20261027000000` … `20261028000000` **APPLIED to non-production 2026-09-08** (PD-069, PD-070)
+
+> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`).** **67** versions,
+> local and remote agree, no drift. **B5B: 1226/1226 passed, 0 failed** (17 new). **Concurrency:
+> 181/181 passed, 0 failed**, zero residue. Production (`kxregomuawwcqvisuhtr`) never targeted,
+> never queried.
+
+**`20261027000000` — suppression computed ONCE, and a parameter that stops lying.** Two findings
+deferred from PR #68's review, done together because they are one defect seen twice.
+
+`20261020000000` reused the existing dominance rule rather than minting a second predicate — the
+right call — but spelled `cancelled OR adjudicated` out **verbatim three times** inside a view
+that must be restated in full on every change. Adding a fourth suppressor meant editing three
+identical expressions, and editing two of three reproduces exactly the failure that migration's
+header names: *the read model saying "Under Review" while the record says "unfulfilled."* Now
+computed once per row in a lateral and passed to all three derived columns; `exists(no_show)` was
+duplicated the same way and is deduplicated alongside it.
+
+**`p_trade_cancelled` is now `p_suppressed`.** It has carried `cancelled OR
+has-a-terminal-outcome` since `20261020000000`, and `20261026000000` could only WARN about that
+in the comments because `create or replace function` cannot rename a parameter. The hazard was
+concrete: these three functions **cannot distinguish a cancelled trade from a resolved one**, so
+an editor trusting the old name would have applied cancellation copy to every adjudicated
+obligation.
+
+**A drop-and-recreate of two views and three functions is the riskiest operation in this schema,
+so the ground was checked before it was done, and this is the record of that check.** `pg_depend`
+reports exactly two dependents (`my_barter_obligations` on the functions, `my_trade_activity` on
+that view), both recreated. **Every call site is positional** — `adjudicate_barter_obligation`
+and `enforce_barter_adjudication_consistent` reference `barter_obligation_under_review` in
+plpgsql, which resolves by name and argtypes at runtime, both unchanged; no named-argument
+notation exists anywhere in the repository. **Every body and both view definitions were taken
+from `pg_get_functiondef` / `pg_get_viewdef` against the live database**, not from the migration
+that last wrote them. Owner, grants and `security_invoker` were read from the live catalog first
+and re-established explicitly.
+
+**Two test consequences, and neither is a test edited to fit a change.** First, the obligation
+view is **no longer auto-updatable** — a view that does not select from a single table cannot be
+— so a write through it is now refused by the rewriter (`55000`) before the grant check
+(`42501`) is reached. That is **strictly stronger**: structurally impossible rather than merely
+unprivileged, with both refusals in force. Pinning the exact SQLSTATE would have failed the suite
+for a security IMPROVEMENT, so `receiver_window.test.sql` now pins the property that matters —
+no write reaches the table through this view — **and asserts the grant posture separately**, so
+the older guarantee cannot lapse unnoticed if the view is ever simplified back. Second, and found
+while doing this: **`my_barter_obligations` was never pinned as `security_invoker`** (its sibling
+`my_trade_activity` always was). Recreated without that option it would run as its `postgres`
+owner and hand every provider every other provider's obligations — a silent total read bypass.
+The pin was added **before** the view was touched.
+
+**`20261028000000` — the barter offer stops carrying a dollar value (PD-069).** `offering_value`
+predates the ruling: the composer asked a provider to price their own barter offer and the board
+rendered `~$N value` to everyone browsing. **The column is DEPRECATED, not dropped**, and that is
+deliberate — dropping it would destroy historical rows AND leave `20260917000000`'s immutable
+proposal-version snapshot builder referencing a column that no longer exists. Stopping collection
+is a product change; erasing a record somebody entered is a different decision with its own
+retention question.
+
+The rule lives in the existing `enforce_barter_offer_write` trigger rather than a new one, with
+the live body preserved exactly around it. **On INSERT the value is silently NULLED, not
+refused** — a React Native build ships on its own cadence, so an installed client will keep
+sending the field for weeks; refusing would break posting entirely for those users to enforce a
+field they can no longer see. **On UPDATE the value is one-directional**: it may be kept (so a
+legacy offer stays editable rather than being rejected for carrying a value it inherited) or
+cleared, never introduced and never changed.
+
+---
+
 ## 2026-09-08 — `20261026000000` **APPLIED to non-production 2026-09-08** (security review follow-up)
 
 > **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`).** **65** versions,
@@ -1234,7 +1301,8 @@ NOT in the migration that created it.
 | `public.enforce_barter_adjudication_consistent` / `public.enforce_barter_adjudication_append_only` (new) | `20261019000000_barter_obligation_adjudication.sql` | **`20261023000000`** (consistent) and **`20261026000000`** (append-only — NOT `20261024000000`, which it supersedes) | Both were redefined by the review corrections and both carry a rule that is invisible from the body alone. **Append-only's live body is `20261026000000`**, which narrowed the privileged predicate in BOTH branches to *no claims AND no subject*; copying `20261024000000`'s body forward reintroduces the loose `auth.uid() is null` disjunct that `20261023000000` had already diagnosed as unsound — the `prosrc` pin in `adjudication.test.sql` now fails on exactly that. **Consistent** now refuses a NULL `adjudicator_user_id` explicitly — load-bearing since `20261023000000` made the column nullable for erasure, because the participant test below it evaluates to NULL rather than true on a null and would let an insert naming nobody through. **Append-only** now permits exactly ONE update: a privileged caller setting `adjudicator_user_id` from non-null to null, with every other column proven identical by a whole-row comparison. That is the FK's own erasure write and nothing else; copying `20261019000000`'s body forward restores a state where an operator account cannot be deleted at all. Neither trigger is recreated by those migrations — `create or replace function` preserves the OID. |
 | `public.mark_barter_obligation_delivered` / `public.record_barter_obligation_receipt` | `20261004000000_barter_obligation_delivery.sql` | **`20261022000000_obligation_resolved_sqlstate.sql`** | Both gained a cancellation check placed **after** the obligation row lock — the half of the delivery/cancel race contract that `cancel_barter_agreement` depends on. Every guard from `20261004000000` survives in order; the check precedes the idempotent no-op branch so a cancelled trade is never reported as a successful delivery. The two public receipt wrappers (`confirm_barter_obligation_received`, `report_barter_obligation_not_received`) are untouched and still resolve, because `create or replace` preserves the OID — and note `record_barter_obligation_receipt` itself holds **no grant to `authenticated`**; those two wrappers are its only callers. **`20261020000000` adds the PD-066 refusal** to both functions, placed after the row lock and before the idempotent branch, beside the cancellation check it mirrors. Both bodies were written from `20261005000000`, the live definition, and diffed before commit. **`20261022000000` then gave that refusal its own `PT424`** — `mark_barter_obligation_delivered` has no `PT412` client mapping at all, so the borrowed code fell through to "Please try again" on a permanently impossible action. |
 | `public.enforce_barter_cancellation_consistent` | `20261005000000_barter_pre_delivery_cancellation.sql` | **`20261017000000_restore_cancellation_actor_binding.sql`** | Redefined THREE times. `20261006000000` added the server-stamped `created_at` and the ACTOR-IS-THE-CALLER check. **`20261015000000` then silently reverted both by writing its new body from `20261005000000` instead of the live `20261006000000`** — the exact hazard this table exists to prevent; B5B caught it at `cancellation.test.sql:752-759` on the first run after apply. `20261017000000` restores `20261006000000` verbatim and re-adds the PD-063 `PT423` check on top. |
-| `public.my_barter_obligations` / `public.my_trade_activity` (VIEWS, not functions) | `20261011000000` / `20260929000000` | **`20261020000000`** (obligations) and **`20261021000000`** (trade activity) | Listed here although this table is named for functions, because both views are recreated IN FULL by `create or replace view` and the same copy-forward hazard applies. `20261012000000` is the more discoverable file — it carries the design rationale — and copying its `my_trade_activity` body forward would reinstate the inline eligibility predicate `20261013000000` removed, while copying its `my_barter_obligations` body would drop `can_report_no_show` and `no_show_reason`. **Both were redefined again for adjudication:** `20261020000000` feeds `cancelled OR adjudicated` into the three derived functions and appends `terminal_outcome` / `adjudicated_at` (written from `20261016000000`); `20261021000000` appends `my_terminal_outcome` / `their_terminal_outcome` (written from `20261013000000`). **Neither view exposes `rationale` or `adjudicator_user_id`, and neither may** — PD-067 makes those internal, and a view is exactly how that would be undone by accident. |
+| `public.my_barter_obligations` / `public.my_trade_activity` (VIEWS, not functions) | `20261011000000` / `20260929000000` | **`20261027000000`** (BOTH — it dropped and recreated them to rename a parameter, superseding `20261020000000` and `20261021000000`) | Listed here although this table is named for functions, because both views are recreated IN FULL by `create or replace view` and the same copy-forward hazard applies. `20261012000000` is the more discoverable file — it carries the design rationale — and copying its `my_trade_activity` body forward would reinstate the inline eligibility predicate `20261013000000` removed, while copying its `my_barter_obligations` body would drop `can_report_no_show` and `no_show_reason`. **Both were redefined again for adjudication:** `20261020000000` feeds `cancelled OR adjudicated` into the three derived functions and appends `terminal_outcome` / `adjudicated_at` (written from `20261016000000`); `20261021000000` appends `my_terminal_outcome` / `their_terminal_outcome` (written from `20261013000000`). **Neither view exposes `rationale` or `adjudicator_user_id`, and neither may** — PD-067 makes those internal, and a view is exactly how that would be undone by accident. **`20261027000000` is now the live definition of BOTH**, taken from `pg_get_viewdef` rather than from any migration: it computes the suppression predicate ONCE in a lateral instead of inlining it three times, and it had to DROP both views (not `create or replace`) because renaming a function parameter requires dropping the function. Two consequences a future editor must know: the obligation view is **no longer auto-updatable** (it now joins), so writes are refused with `55000` by the rewriter before the grant check returns `42501` — both refusals hold, and B5B pins the property rather than the code; and `security_invoker=true` on **both** views is now pinned by B5B, because recreating either without it is a silent, total RLS read bypass. |
+| `public.enforce_barter_offer_write` | `20260830010000` (batch 3b write integrity) | **`20261028000000_deprecate_barter_offering_value.sql`** | Gained the PD-069 `offering_value` rule and nothing else — the `service_role` short-circuit, the INSERT `created_at` stamp and the id / created_at immutability check are preserved verbatim from the live body. **On INSERT the value is NULLED, not refused**, so a not-yet-updated mobile client keeps posting offers; on UPDATE it is **one-directional** — keepable (a legacy offer stays editable) or clearable, never introduced or changed. Copying an older body forward silently restores a field The Book has ruled it will not collect. The column is deliberately NOT dropped: `20260917000000` copies it into immutable proposal-version snapshots. |
 | `public.enforce_barter_obligations_immutable` | `20261004000000_barter_obligation_delivery.sql` | **`20261011000000_barter_receiver_window_needs_attention.sql`** | **The privileged early return was SPLIT, and copying the `20261004000000` body forward would silently re-open a `service_role` rewrite of the agreed trade.** Founder ruling 2026-09-06: the obligation's CONTRACT FIELDS — `agreement_id`, `source_term_id`, `side`, the four deliverer/receiver identity columns, `agreed_description`, `due_at`, `scheduled_at` — are now frozen against EVERY writer, `service_role` and the no-JWT maintenance path included. The contract-field diff runs BEFORE the privileged branch; the diff is denied by default (the whole row MINUS `status`, `delivered_at` and `receipt_responded_at` must be identical), so a column added by a later migration is frozen unless deliberately subtracted. **Privileged DELETE is unchanged and must stay that way** — every `auth.users` and `barter_agreements` FK in this graph is `ON DELETE CASCADE`, so account erasure and agreement removal depend on it. The three lifecycle columns keep their prior privileged latitude, still bound by the `20261004000000` CHECK constraints. **This is a narrowing only: nothing gains a write it did not have.** It landed in this migration because this migration made those columns load-bearing — the identity columns became the scoping keys of `my_barter_obligations`, and `due_at`/`scheduled_at` became the PD-057 deadline anchor both participants act on. Message and SQLSTATE unchanged. Asserted by the service_role freeze matrix in `supabase/tests/receiver_window.test.sql` § 14b, which also pins that privileged DELETE and privileged lifecycle writes still work. |
 | `public.release_barter_interest` | `20260909000000_barter_interest_release.sql` | **`20260913000000_trade_activity_hardening.sql`** | `20260910000000` added the in-transaction counterparty signal; `20260911000000` made that signal unable to veto the release and added the provider-identity assertion. **`20260909000000`'s header instructs future slices to add the agreement guard "HERE, inside this function", and `20260911000000` repeats it saying "THIS definition, the live one". BOTH now point at DEAD definitions. Extend the current one.** `20260912000000` adds the post-context label and addresses the notice via `system_recipient_id`. |
 | `public.enforce_barter_interest_write` | `20260906000000_barter_integrity_slice1.sql` | **`20260909000000_barter_interest_release.sql`** | Adds the `accepted -> released` transition and the release-column allow-list, gated on a transaction-local marker **and** the transition itself. The trigger **derives** `released_at` / `released_by` / `release_reason` rather than trusting them, so attribution is non-forgeable independent of the caller — that clamp is the load-bearing part, not the marker. The INSERT path additionally null-clamps the three new release columns so they are never author-supplied. The pre-existing owner-only `pending -> accepted\|declined` rule and the pre-existing INSERT clamps are carried through unchanged. |

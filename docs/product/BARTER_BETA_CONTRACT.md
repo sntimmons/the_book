@@ -177,14 +177,17 @@ clear, mutual, and accountable.**
   **proposal version** carries **exactly two directed terms and no value field** (§ 4) — the
   negotiation itself is where the enforcement bites, and `20260925000000` removed
   `estimated_value` from the proposal for exactly this reason.
-- **⚠️ ONE PRE-EXISTING EXCEPTION, unreconciled and not to be cited away.** A barter **POST**
-  still carries an optional provider-declared `offering_value`: an *"ESTIMATED VALUE (OPTIONAL)"*
-  dollar field in the composer, a `~$N value` badge on every board card, and a copy in each
-  proposal version's post snapshot. It is **poster-declared, never platform-computed**, and
-  nothing compares two figures or warns about parity — so The Book still does not appraise. But
-  it is a monetary figure shown beside a barter offer, it is in tension with this section, and
-  **whether it survives PD-069 is an open Founder question** (§ 12). It was deliberately not
-  removed by the adjudication slice.
+- **RESOLVED 2026-09-08 — the estimated-value field is GONE from the live product.** A barter
+  post used to carry an optional provider-declared `offering_value`: an *"ESTIMATED VALUE
+  (OPTIONAL)"* dollar field in the composer and a `~$N value` badge on every board card. The
+  Founder ruled it out. **No new offer records a value** — the server nulls it on insert and
+  refuses to introduce or change it on update — **and no live surface renders one.**
+- **The column is DEPRECATED, not dropped, and that is deliberate.** `barter_offers.offering_value`
+  remains so that historical rows, and the **immutable proposal-version post snapshots** that
+  copied the figure at the time, are not destroyed. Stopping collection is a product change;
+  deleting a record somebody entered is not, and is a separate decision. Legacy rows stay
+  **editable** — a provider can still fix their wording without the write being rejected for
+  carrying a value it inherited — and the value can be cleared but never re-introduced.
 
 ## 6. Delivery and confirmation
 
@@ -279,27 +282,49 @@ adjudication / review workflow — see § 7.5 and OPEN_QUESTIONS.
 
 ### 7.5 Terminal truth
 
-> **⚠️ HALF BUILT, 2026-09-07 (PD-064 … PD-067).** The **OBLIGATION** half is implemented: an
-> operator can resolve one obligation as **Fulfilled**, **Unfulfilled** or **Closed without
-> resolution**, one obligation at a time, and the record is immutable. The **AGREEMENT** table
-> below is still a TARGET: no `Completed`, `Partially Fulfilled` or `Not Completed` exists in the
-> code, nothing rolls two obligation outcomes into one verdict, and `supabase/tests/
-> adjudication.test.sql` asserts that absence rather than assuming it. Read the table as what the
-> agreement level is meant to become, not as what it does.
+> **⚠️ SUPERSEDED IN PART, 2026-09-08 (PD-070).** The **OBLIGATION** half is implemented and
+> unchanged: an operator resolves one obligation as **Fulfilled**, **Unfulfilled** or **Closed
+> without resolution**, one at a time, and the record is immutable (PD-064 … PD-067).
 >
-> `Under Review` and `Cancelled` in the table are DERIVED read states that already exist and are
-> not outcomes; `Closed Without Resolution` exists at the obligation level only.
+> **The AGREEMENT table below is NO LONGER A TARGET. It is superseded.** It was written before
+> the three obligation outcomes existed and does not compose with them, and **PD-070 rules that
+> agreement-level resolution is DERIVED and never stored** — there is no `Completed`, no
+> `Partially Fulfilled` and no `Not Completed` column, status or verdict, and none is coming.
+> `supabase/tests/adjudication.test.sql` asserts that absence permanently rather than pending a
+> future slice. The table is kept, struck through, so a reader who has seen this vocabulary
+> elsewhere can find out what replaced it.
 
-Overall agreement state:
+~~Overall agreement state:~~
 
-| State | Meaning |
+| ~~State~~ | ~~Meaning~~ |
 |---|---|
-| **Completed** | All required obligations Fulfilled |
-| **Partially Fulfilled** | At least one Fulfilled **and** at least one Unfulfilled |
-| **Cancelled** | Ended before any delivery, through the cancellation path |
-| **Not Completed** | No required obligation fulfilled, and performance failed |
-| **Under Review** | Active investigation / adjudication |
-| **Closed Without Resolution** | The platform could not establish what happened. **Terminal**, and **no reliability judgment is assigned** from the unresolved obligation |
+| ~~**Completed**~~ | ~~All required obligations Fulfilled~~ |
+| ~~**Partially Fulfilled**~~ | ~~At least one Fulfilled **and** at least one Unfulfilled~~ |
+| ~~**Cancelled**~~ | ~~Ended before any delivery, through the cancellation path~~ |
+| ~~**Not Completed**~~ | ~~No required obligation fulfilled, and performance failed~~ |
+| ~~**Under Review**~~ | ~~Active investigation / adjudication~~ |
+| ~~**Closed Without Resolution**~~ | ~~The platform could not establish what happened~~ |
+
+**CURRENT BEHAVIOUR (PD-070). A trade is READ, not labelled.** The agreement keeps one state for
+its whole life — **Trade confirmed** — because renaming it *would be* the stored verdict PD-070
+refuses to create. What a participant sees is derived from how far the two obligations have been
+resolved:
+
+| What is true | What the trade says |
+|---|---|
+| Neither obligation resolved | The terms are agreed; arrange the details in your conversation |
+| **One** resolved, the other still live | That side has been reviewed, **and what is still outstanding is stated after it** |
+| Both resolved, **both Fulfilled** | Both sides were reviewed and fulfilled; nothing further is needed |
+| Both resolved, **any other combination** | Both sides have been reviewed — **each outcome is shown on its own obligation**, and no trade-level verdict is stated |
+| Cancelled | Cancelled. This **outranks every resolution state** |
+
+**The fourth row is the one that matters, and it is a ruling rather than an implementation
+detail.** *Closed without resolution* records that the available information did not support
+either finding. So **`Fulfilled + Closed` is NOT "Partially Fulfilled"** — that label asserts the
+other side was found **Unfulfilled** — and **`Closed + Closed` is NOT "Not Completed"**, which
+asserts performance failed. Where a single word would overstate what was found, the product
+**states the two obligation truths and stops**. `Under Review` and `Cancelled` remain DERIVED
+read states, not outcomes.
 
 **Individual obligation truth survives independently of the overall agreement state.** An
 obligation that was genuinely fulfilled stays Fulfilled even if the agreement as a whole ends
@@ -408,15 +433,14 @@ Recorded so the gap is visible rather than assumed closed:
 - **Blocking and reporting** (§ 9) do not exist.
 - The **internal Review Queue / operator surface** (§ 7.5, **PD-068**) does not exist. The
   secure adjudication path does; nothing calls it. Required **before live barter beta**.
-- The **terminal AGREEMENT-level outcome** (§ 7.5 table) does not exist, and whether it should
-  be **persisted or derived** from the two obligation outcomes is undecided.
-- The **optional estimated value on a barter POST** (§ 5.1) is unreconciled with **PD-069**.
-  The composer field, the `~$N value` board badge and the proposal-version snapshot all ship;
-  PD-069 forbids platform valuation but this figure is provider-declared. **Needs a Founder
-  ruling:** keep it, stop displaying it, or remove it.
-- The **negotiation detail banner** still reads *"Arrange the details in your conversation"* on
-  a confirmed trade whose obligations have been terminally resolved — `negotiationView` takes no
-  terminal-outcome input, so the page headline cannot yet see what the obligation cards below it
-  say. The Trade Activity row already handles this correctly. Deferred to the agreement-level
-  read-model slice rather than patched here, because what the banner should say when only ONE
-  side is resolved *is* the deferred roll-up question.
+- ~~The **terminal AGREEMENT-level outcome** (§ 7.5 table) does not exist, and whether it should
+  be **persisted or derived** is undecided.~~ **RESOLVED by PD-070:** it is **derived** and will
+  not be persisted. No stored agreement verdict exists, and none is coming. The § 7.5 table below
+  is therefore a description of how a trade READS, not of a column.
+- ~~The **optional estimated value on a barter POST** is unreconciled with PD-069.~~
+  **RESOLVED 2026-09-08:** removed from the live product; the column is deprecated legacy data.
+  See § 5.1.
+- ~~The **negotiation detail banner** still reads *"Arrange the details in your conversation"* on
+  a confirmed trade whose obligations have been terminally resolved.~~ **FIXED** by the derived
+  presentation (PD-070): the banner follows how far the obligations are resolved, and instructs
+  nobody once both are.
