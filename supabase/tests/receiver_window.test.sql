@@ -854,9 +854,15 @@ begin
                            'barter_obligation_under_review',
                            'barter_can_report_no_show',
                            'enforce_barter_no_show_append_only',
-                           'enforce_barter_no_show_consistent');
+                           'enforce_barter_no_show_consistent',
+                           -- The three objects 20261019000000 added, exempted BY NAME for the
+                           -- same reason as the no-show five: adjudication is now ruled in, and
+                           -- a fourth adjudication-shaped function still has to be deliberate.
+                           'adjudicate_barter_obligation',
+                           'enforce_barter_adjudication_append_only',
+                           'enforce_barter_adjudication_consistent');
   perform pg_temp.chk('receiver_window',
-    'no adjudication, fulfilment, expiry, timeout or dispute function beyond the ruled no-show',
+    'no fulfilment, expiry, timeout or dispute function beyond the ruled no-show and adjudication',
     '0', v_n::text);
 
   -- No trigger and no scheduled job to flip rows at a deadline. The state is derived; a job

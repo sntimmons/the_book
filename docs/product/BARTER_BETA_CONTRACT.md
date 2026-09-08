@@ -1,8 +1,18 @@
 # Barter — first Houston closed beta contract
 
 **Status:** Authoritative for the **first Houston closed beta**. Owner: Founder (Stephen).
-**Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** PR #41
+**Reconciled against:** `main` @ `c04e5bd` (2026-09-08, after PR #69), **plus the unmerged
+adjudication branch** whose clauses are marked where they appear.
+**Last edited by:** the manual-adjudication branch (PD-064 … PD-069). Previously PR #41, whose
+provenance line survived four months of edits and was corrected here — including edits dated
+2026-09-08, which the stale header dated 2026-09-04.
+
+> **⚠️ READ THE PROVENANCE.** Sections describing **manual adjudication and the three terminal
+> OBLIGATION outcomes** (§ 7.5, and the PD-068 / PD-069 clauses in §§ 4, 5.1, 7.5, 12) describe
+> the **unmerged** adjudication branch, not `main`. Until it merges,
+> [CURRENT_STATE.md](CURRENT_STATE.md) is the authority for what `main` actually contains, and it
+> correctly still says no adjudication exists there. Reconciling it is a **merge-time
+> obligation** for the Project State Steward.
 
 > **Purpose.** This document makes already-approved barter decisions **durable**. It is not a
 > design session and introduces nothing new: every clause below was approved by the Founder,
@@ -105,6 +115,17 @@ pre-agreement path only: once an agreement is formed the post is consumed and cl
   standing in for terms.
 - An **official agreement is required before a trade is real**. Conversation alone — however
   clear — does not create a trade.
+- **Acceptance defines the bargain (PD-069).** Once both providers knowingly accept the same
+  current version, **the agreed exchange IS the deal**. The platform does not second-guess it,
+  and later regret about pricing or value is not a dispute the platform entertains.
+
+**Direct barter remains the beta model, and this is a decision rather than a stage.** Provider A
+↔ Provider B, two parties, no third leg. **No credits, no barter points, no tokens, no
+stored-value currency, no cash hybrid, no multi-party or three-way transaction** exists or may
+be added in beta (**PD-069**, and PD-032 for the two-party limit). Reciprocal matching, a
+provider Wants list, matching suggestions and three-way matching are **future exploration only**
+— see [FUTURE_PRODUCT_IDEAS.md](FUTURE_PRODUCT_IDEAS.md) — and the matching problem must be
+proven with real user data before any currency is invented to solve it.
 
 
 > **Built as of Slice 3a — the proposal machinery, not the agreement.** Inside an accepted
@@ -135,6 +156,35 @@ pre-agreement path only: once an agreement is formed the post is consumed and cl
   not tradeable consideration.
 - What is offered is either an **existing service** the provider already lists, or a **custom
   barter package** defined for that trade.
+
+### 5.1 Value belongs to the providers
+
+Locked 2026-09-08 — **PD-069**. **The Book does not appraise the trade. It makes the trade
+clear, mutual, and accountable.**
+
+- The platform does **not** appraise, equalize or compare the economic value of a trade.
+  Providers decide for themselves whether an exchange is worth accepting.
+- **Retail price does not determine subjective value.** A photographer who normally charges
+  $200 may genuinely value a $40 haircut more than the session they are giving up. That trade
+  is **valid**, and the product must **never** warn that a trade "appears unequal".
+- **Quantity and description define the commitment, not parity.** *1 headshot session with 10
+  edited photos*, *4 haircuts*, *6 training sessions*, *1 logo package*. The system may need
+  quantity for obligation clarity; it must not use quantity to decide economic equality. The
+  question is **"what did you promise?"**, never **"is it worth the same?"**.
+- **NOT BUILT and not to be built in beta:** forced dollar valuation, negotiation-time market
+  valuation, automated valuation, equivalency math, fairness warnings, a platform-recommended
+  exchange ratio, Book Credits, barter points, internal tokens, stored-value currency. A
+  **proposal version** carries **exactly two directed terms and no value field** (§ 4) — the
+  negotiation itself is where the enforcement bites, and `20260925000000` removed
+  `estimated_value` from the proposal for exactly this reason.
+- **⚠️ ONE PRE-EXISTING EXCEPTION, unreconciled and not to be cited away.** A barter **POST**
+  still carries an optional provider-declared `offering_value`: an *"ESTIMATED VALUE (OPTIONAL)"*
+  dollar field in the composer, a `~$N value` badge on every board card, and a copy in each
+  proposal version's post snapshot. It is **poster-declared, never platform-computed**, and
+  nothing compares two figures or warns about parity — so The Book still does not appraise. But
+  it is a monetary figure shown beside a barter offer, it is in tension with this section, and
+  **whether it survives PD-069 is an open Founder question** (§ 12). It was deliberately not
+  removed by the adjudication slice.
 
 ## 6. Delivery and confirmation
 
@@ -184,7 +234,9 @@ Unresolved disagreement routes **Needs Attention → Under Review → manual adj
 (Founder-operated in the beta). **Partly superseded, 2026-09-07:** an explicit **no-show** or
 **`not_received`** now enters **Under Review DIRECTLY**, without passing through Needs Attention
 (§ 7.4, PD-062). Whether a plain unanswered Needs Attention ever escalates into Under Review is
-**undecided** and belongs to the adjudication slice; **adjudication itself is not built.**
+still **undecided**. **Manual adjudication IS now built** (PD-064 … PD-067): an operator — and
+only an operator — can resolve an obligation that is Under Review. No operator SCREEN exists yet,
+and who performs a review through what surface is an open Founder question.
 
 ### 7.4 No-show
 
@@ -212,8 +264,9 @@ A valid report is **immutable** and routes the obligation and its agreement to *
 The route is therefore **no-show → Under Review**. It is **NOT** no-show → Needs Attention →
 adjudication → Unfulfilled. Specifically, a no-show produces **no** automatic Needs Attention,
 **no** Unfulfilled, **no** finding of fault, **no** reliability or reputation impact and **no**
-terminal outcome — none of which exist. Adjudication and any operator decision path remain
-unbuilt.
+terminal outcome. **Amended 2026-09-07 (PD-064):** a terminal outcome can now FOLLOW, but only
+because a person decided it — never automatically, and never as a consequence of the report
+itself. Reporting a no-show still decides nothing.
 
 Once a report exists, **ordinary pre-delivery cancellation is no longer available** (PD-063):
 a trade cannot be cancelled out of review, and a cancellation can never erase or hide a recorded
@@ -225,6 +278,17 @@ Attention might later enter Under Review is deliberately UNDECIDED** and will be
 adjudication / review workflow — see § 7.5 and OPEN_QUESTIONS.
 
 ### 7.5 Terminal truth
+
+> **⚠️ HALF BUILT, 2026-09-07 (PD-064 … PD-067).** The **OBLIGATION** half is implemented: an
+> operator can resolve one obligation as **Fulfilled**, **Unfulfilled** or **Closed without
+> resolution**, one obligation at a time, and the record is immutable. The **AGREEMENT** table
+> below is still a TARGET: no `Completed`, `Partially Fulfilled` or `Not Completed` exists in the
+> code, nothing rolls two obligation outcomes into one verdict, and `supabase/tests/
+> adjudication.test.sql` asserts that absence rather than assuming it. Read the table as what the
+> agreement level is meant to become, not as what it does.
+>
+> `Under Review` and `Cancelled` in the table are DERIVED read states that already exist and are
+> not outcomes; `Closed Without Resolution` exists at the obligation level only.
 
 Overall agreement state:
 
@@ -240,12 +304,37 @@ Overall agreement state:
 **Individual obligation truth survives independently of the overall agreement state.** An
 obligation that was genuinely fulfilled stays Fulfilled even if the agreement as a whole ends
 Partially Fulfilled or Closed Without Resolution. Rolling the legs up into one verdict would
-destroy the only record of who actually did their part.
+destroy the only record of who actually did their part. **This is the clause the implemented half
+follows literally** (PD-065): obligations are resolved independently, one may be Fulfilled while
+the other is still Under Review, and neither participant's screen computes a trade-level verdict
+from the pair.
 
 Two rules carry over unchanged: outcomes must be **truthful** — a false success is worse than
 an ugly truth — and **history is retained**; a participant cannot destructively erase the
 counterparty's record of an interaction (**PD-043**), with legitimate account erasure a
 separate path that outranks retention.
+
+**What a review is about, and who runs it — PD-068 / PD-069.**
+
+- **The Book adjudicates performance, not value.** Valid performance issues: a promised service
+  not delivered, a no-show, a receiver reporting non-receipt, an agreed quantity not performed,
+  an agreed commitment materially not delivered. **Not** performance issues, and not grounds
+  for review: *"my normal rate is higher"*, *"their service is worth less"*, *"I could have
+  charged more"*, *"I changed my mind about the value"*, *"their retail price is $40 and mine is
+  $200"*. This narrows what an operator may consider; it does **not** narrow the three outcomes,
+  and *Closed without resolution* stays the honest answer where performance cannot be
+  established. It is also **not** a quality-dispute engine — quality is a different question
+  from delivery and is not decided here.
+- **Only an authorized internal operator adjudicates during beta.** Participants may never
+  adjudicate their own trade, and no participant-facing adjudication path exists.
+- **No operator surface is shipped, and a minimal internal Review Queue is REQUIRED before live
+  barter beta.** It must let an authorized operator view the agreement, view the obligation,
+  view the recorded participant facts and evidence, choose exactly one terminal outcome, enter
+  the required internal rationale, and submit through the already-secured adjudication path.
+  Until it exists, no obligation can actually reach a terminal outcome in the running product.
+- **No resolution SLA is promised.** Participant-facing language says **"This trade is under
+  review."** — not 24 hours, not 48 hours, not "X business days", and not a guaranteed
+  resolution. Do not add one to copy.
 
 ## 8. Reviews and reputation
 
@@ -309,7 +398,25 @@ Recorded so the gap is visible rather than assumed closed:
 - The **eligibility conjunct** (§ 2) is not implemented. `caller_provider_id()` provides the
   seam without the `is_approved` condition.
 - The **Open to Trades** opt-in control (§ 2) is not built.
-- **Agreements and obligations** (§§ 4, 6, 7) do not exist as schema. Nothing in `barter_offers`
-  or `barter_interests` implements them. Slice 3 is where they land.
+- ~~**Agreements and obligations** (§§ 4, 6, 7) do not exist as schema. Nothing in
+  `barter_offers` or `barter_interests` implements them. Slice 3 is where they land.~~
+  **CLOSED** — `barter_agreements` landed in `20260927000000_barter_agreement_finalization.sql`
+  and `barter_obligations` in `20261003000000_barter_obligations_foundation.sql`, with a dozen
+  further migrations on top through `20261025000000`. This line survived two months after the
+  thing it describes shipped; struck through rather than deleted, as § 11 already does.
 - The **3-post** and **5-offer/day** limits (§ 10) are not server-enforced.
 - **Blocking and reporting** (§ 9) do not exist.
+- The **internal Review Queue / operator surface** (§ 7.5, **PD-068**) does not exist. The
+  secure adjudication path does; nothing calls it. Required **before live barter beta**.
+- The **terminal AGREEMENT-level outcome** (§ 7.5 table) does not exist, and whether it should
+  be **persisted or derived** from the two obligation outcomes is undecided.
+- The **optional estimated value on a barter POST** (§ 5.1) is unreconciled with **PD-069**.
+  The composer field, the `~$N value` board badge and the proposal-version snapshot all ship;
+  PD-069 forbids platform valuation but this figure is provider-declared. **Needs a Founder
+  ruling:** keep it, stop displaying it, or remove it.
+- The **negotiation detail banner** still reads *"Arrange the details in your conversation"* on
+  a confirmed trade whose obligations have been terminally resolved — `negotiationView` takes no
+  terminal-outcome input, so the page headline cannot yet see what the obligation cards below it
+  say. The Trade Activity row already handles this correctly. Deferred to the agreement-level
+  read-model slice rather than patched here, because what the banner should say when only ONE
+  side is resolved *is* the deferred roll-up question.

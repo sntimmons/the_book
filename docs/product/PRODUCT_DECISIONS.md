@@ -1,17 +1,38 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** PR #65 (previous edit: PR #64). PR #64 recorded **PD-062** and **PD-063** and
-carried its own implementation notes in with its code, as PR #62 did for PD-057 / PD-059; PR #65
-was the reconciliation that corrected the citations afterwards, and its number — unknown when that
-edit was written — is now recorded. **This** reconciliation, which follows PR #66, was itself not
-given a PR number, so this field again names the last mutation whose number is known.
+**Last edited by:** the manual-adjudication branch, which records **PD-064** through **PD-069**
+and carries its own implementation notes in with its code, as PR #64 did for PD-062 / PD-063 and
+PR #62 did for PD-057 / PD-059. Its PR number is unknown while this is written; the previous
+known-numbered edits were PR #65 (the reconciliation that corrected PR #64's citations), the
+unnumbered reconciliation that followed PR #66, and **PR #69** (`c04e5bd`) — which added
+[FUTURE_PRODUCT_IDEAS.md](FUTURE_PRODUCT_IDEAS.md) and the marketing message bank and
+**decided nothing**, so it appears in no entry below.
 
 **Nothing here was decided, superseded or reopened by PR #66** (`0f2b93c`), the
 behaviour-preserving pre-adjudication cleanup: it added no migration and no database object, and
 **PD-062 and PD-063 remain Locked and implemented exactly as PR #64 merged them**. One
 implementation detail inside PD-063's *Consequences* was renamed by that PR and is corrected below;
 the decision itself is untouched.
+
+**PD-064 … PD-067 record manual adjudication and the three terminal OBLIGATION outcomes.** They
+do **not** create an agreement-level outcome — that roll-up is deferred — and they do **not**
+resolve how a plain Needs Attention might enter Under Review, which remains open.
+
+**The question those four decisions raised is now ANSWERED by PD-068.** It read: the
+adjudication path exists, but **no shipped surface calls it**, so no obligation can actually
+reach a terminal outcome in the running product — who performs a review, through what surface,
+and within what expectation? The Founder answered on 2026-09-08: **an authorized operator and
+never a participant**; **a minimal internal Review Queue, required before live beta and
+deliberately not built in the adjudication slice**; and **no public resolution SLA at all** —
+participants are told only "This trade is under review." The gap PD-064 left is therefore still
+a gap in the running product, but it is now a **named pre-beta requirement** rather than an open
+question. **PD-069** settles the adjacent one the pressure test raised: the platform does not
+appraise the trade, and adjudication concerns **performance, not value**.
+
+**Still genuinely open after PD-068 / PD-069:** how a plain Needs Attention might enter Under
+Review, and whether a terminal AGREEMENT-level outcome should be **persisted or derived** from
+the obligation outcomes — the roll-up PD-065 deferred.
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -260,9 +281,9 @@ as locked decisions.
 
   **§ 7.2 is now implemented.** PR #58 (`5b1a7a9`) adds `barter_agreement_cancellations` and `cancel_barter_agreement(uuid, text)` in `supabase/migrations/20261005000000_barter_pre_delivery_cancellation.sql`, hardened by `20261006000000` and carrying the counterparty signal through `20261007000000`, `20261008000000`, `20261009000000` and `20261010000000` (the live definition of the RPC **until PR #64**, whose `20261015000000_under_review_precedes_cancellation.sql` is now the live body — see PD-063). What the code does matches this decision on each clause: either participant may cancel before **any** delivery without the other's permission; the actor, timing and optional reason are recorded; **Mutually Cancelled is derived from two explicit acts** and **Cancelled by Participant** from one, with neither stored (`20261005000000:11-15`, `:263-284`); once anything is delivered the ordinary exit is refused permanently (`:252-260`); and no review, reputation or ranking effect is produced anywhere. One nuance the code records rather than this entry deciding: the classification is derived from a **row count**, so two participants cancelling concurrently also reach `mutually_cancelled` — the Founder ruling behind `20261010000000` kept that classification and changed only the thread wording, to "Both providers cancelled…", because two acts prove each cancelled and not that either assented (`20261010000000:11-35`).
 
-  **§ 7.3–7.5 are now PARTLY implemented, and this sentence is the one to read carefully.** **Needs Attention** exists as of PR #62 (PD-057/PD-059), and **no-show reporting** and **Under Review** exist as of PR #64 — the Founder rulings of 2026-09-07, now recorded as **PD-062** and **PD-063** and implemented across the **seven** migrations `20261012000000` … `20261018000000`. All three are DERIVED read states with no status value, no column and no persisted transition, so none of them is an outcome. What remains **not implemented**: no 7-day timeout TRANSITION, no automatic fulfilment or completion, **no adjudication and no operator decision path**, no terminal obligation outcome (Fulfilled / Unfulfilled / Closed Without Resolution) and no terminal agreement outcome. Two further absences are **deliberate and recorded rather than merely pending**: how a plain Needs Attention might later enter Under Review is **UNRESOLVED** — no second timer, no automatic escalation, no participant escalation action and no operator auto-escalation exists — and a **no-show in-thread conversation notice is DEFERRED** to the adjudication / review workflow.
+  **§ 7.3–7.5 are now PARTLY implemented, and this sentence is the one to read carefully.** **Needs Attention** exists as of PR #62 (PD-057/PD-059), and **no-show reporting** and **Under Review** exist as of PR #64 — the Founder rulings of 2026-09-07, now recorded as **PD-062** and **PD-063** and implemented across the **seven** migrations `20261012000000` … `20261018000000`. All three are DERIVED read states with no status value, no column and no persisted transition, so none of them is an outcome. **§ 7.5 is now PARTLY implemented too, and this clause is newer than the rest of the paragraph:** manual **operator adjudication** and the three **terminal OBLIGATION outcomes** (Fulfilled / Unfulfilled / Closed without resolution) exist as of PD-064 … PD-067. Unlike Needs Attention and Under Review, a terminal outcome IS persisted — it is a decision somebody made, not a state derived from timestamps — and it lives in its own immutable record rather than on the obligation. What remains **not implemented**: no 7-day timeout TRANSITION, no automatic fulfilment or completion, no automatic agreement finalization, and **no terminal AGREEMENT outcome** (no Completed / Partially Fulfilled / Not Completed) — that roll-up is deferred, and PD-065 asserts its absence rather than assuming it. Two further absences are **deliberate and recorded rather than merely pending**: how a plain Needs Attention might later enter Under Review is **UNRESOLVED** — no second timer, no automatic escalation, no participant escalation action and no operator auto-escalation exists — and a **no-show in-thread conversation notice is DEFERRED** to the adjudication / review workflow.
 
-  **A citation correction, recorded rather than quietly fixed.** This entry previously cited `supabase/tests/cancellation.test.sql:700-713` as proof of that absence. That assertion named a function `report_barter_no_show`, which has never existed under that spelling — so it passed vacuously and would not have noticed the real `report_barter_obligation_no_show` when it shipped. The assertion is now a PATTERN sweep (`supabase/tests/cancellation.test.sql:707-722`) with an explicit five-name exemption, matching `receiver_window.test.sql`, and the absence of adjudication and terminal outcomes is asserted there and in `supabase/tests/no_show_under_review.test.sql`. Note the migrations are the *implementation*, not the approval. **The ledger gap this paragraph used to record is now closed:** it read "no PD yet records the 2026-09-07 no-show / Under Review ruling; one should be assigned by the Founder rather than minted here." The Founder assigned two — **PD-062** and **PD-063** below, both `Locked; implemented` — so that sentence is **superseded**.
+  **A citation correction, recorded rather than quietly fixed.** This entry previously cited `supabase/tests/cancellation.test.sql:700-713` as proof of that absence. That assertion named a function `report_barter_no_show`, which has never existed under that spelling — so it passed vacuously and would not have noticed the real `report_barter_obligation_no_show` when it shipped. The assertion is now a PATTERN sweep (`supabase/tests/cancellation.test.sql:707-722`) with an explicit five-name exemption, matching `receiver_window.test.sql`, and the absence of adjudication and terminal outcomes was asserted there and in `supabase/tests/no_show_under_review.test.sql`. **Those sweeps were amended when adjudication shipped** (PD-064 … PD-067): the three objects `20261019000000` adds are exempted BY NAME in each, a fourth adjudication-shaped function still fails, and the agreement-level roll-up vocabulary remains banned outright. Note the migrations are the *implementation*, not the approval. **The ledger gap this paragraph used to record is now closed:** it read "no PD yet records the 2026-09-07 no-show / Under Review ruling; one should be assigned by the Founder rather than minted here." The Founder assigned two — **PD-062** and **PD-063** below, both `Locked; implemented` — so that sentence is **superseded**.
 - **Status:** Locked
 
 ### PD-047 — The barter post stays editable; the proposal snapshots it
@@ -712,6 +733,318 @@ as locked decisions.
   neither deadlocks — an assertion that **caught a real `40P01`** before `20261014000000` fixed
   the lock order.
 - **Status:** Locked; **implemented**
+
+---
+
+### PD-064 — Only an operator can resolve an obligation, and only one that is Under Review
+- **Decided:** 2026-09-07
+- **Decision:** An obligation reaches a terminal outcome in exactly one way: a **manual decision
+  by an operator**. **Participants may not adjudicate their own trade**, and **no
+  participant-facing adjudication path exists** — not a button, not an RPC, not a policy that
+  could be reached with a crafted request. An obligation is **eligible only while it is Under
+  Review**, which remains the two acts PD-062 named: an explicit **no-show report**, or an
+  explicit **`not_received`** answer. **None of these makes an obligation eligible:** a passed
+  confirmation deadline, **Needs Attention**, a deliverer having marked it delivered, a passed
+  `due_at`, a passed `scheduled_at`. A **cancelled** agreement cannot be adjudicated at all.
+- **Why:** A terminal outcome is the strongest statement this product makes about a trade, and
+  the two people with an interest in what it says are the two who cannot be allowed to write it.
+  Restricting eligibility to Under Review keeps that statement tied to somebody having actually
+  reported that something went wrong, rather than to a clock — a deadline passing is silence,
+  and silence is not a finding.
+- **Consequences:** `public.adjudicate_barter_obligation(uuid, text, uuid, text)` holds
+  `EXECUTE` **granted to `service_role` alone** — revoked from `public`, `anon` and
+  `authenticated`. Three independent refusals enforce the boundary: the grant; a
+  privileged-caller check inside the RPC; and a **the adjudicator may not be a participant**
+  check made in the RPC and **re-made in the BEFORE INSERT trigger**, so it holds even for a
+  privileged caller and a compromised operator process cannot record a provider as the
+  adjudicator of their own trade.
+
+  **A PRECISION CORRECTION, recorded rather than quietly fixed, because a future editor deciding
+  which guard is safe to change would rely on it.** This sentence read *"each sufficient on its
+  own."* That is true of the first two and **not** of the third, because they constrain different
+  things: the grant and the in-RPC predicate constrain **who may CALL**, while the
+  participant check constrains **who may be RECORDED as adjudicator**. With both outer layers
+  removed, a participant could adjudicate their own trade by naming an unrelated user as the
+  adjudicator, and both copies of the third check would pass. The redundancy that IS real is the
+  third layer's own — RPC and trigger, each proven independently by disabling the other inside
+  the harness transaction — which is what stops a compromised privileged process, not what stops
+  a participant. Nothing is exploitable: all three layers are present and asserted. The decision
+  is unchanged; only the claim about its structure is corrected. Ineligibility is refused with
+  `object_not_in_prerequisite_state`; a cancelled agreement with **`PT409`**.
+  **NO OPERATOR UI IS BUILT, and that is a decision rather than an omission.** `app/admin` is
+  `__DEV__`-only and gated merely on "is a provider" (`app/admin/_layout.tsx`), so it is **not a
+  trusted operator surface**; building the first real one is a larger question than this slice.
+  Per the Founder ruling, the secure server path lands first and the screen is deferred rather
+  than authorization being weakened to make a screen easy to build.
+  **How a plain Needs Attention might enter Under Review is still UNRESOLVED** — this decision
+  does not resolve it, and no automatic escalation, second timer, participant escalation action
+  or operator auto-escalation was created.
+- **Evidence:** Founder ruling, 2026-09-07.
+  `supabase/migrations/20261019000000_barter_obligation_adjudication.sql`, hardened by
+  `20261023000000_adjudication_hardening.sql` — **which is where the RPC's half of the
+  participant check actually landed.** `20261019000000` asserted the two-layer design in five
+  places and implemented only the trigger's layer; nothing was exploitable, but the redundancy
+  this entry describes did not exist until `20261023000000`. It also narrowed the RPC's
+  privileged predicate, which admitted a no-`sub` `anon` request in the very scenario its comment
+  claimed to cover. Proven by `supabase/tests/adjudication.test.sql`: participants, unrelated
+  users and `anon` are each refused (`42501`); merely delivered and Needs-Attention-only
+  obligations are refused (`55000`); a cancelled agreement is refused (`PT409`); the grant posture
+  is asserted directly (`service_role` yes, `authenticated` / `anon` / `PUBLIC` no); and **each
+  participant-refusal layer is proven independently**, by disabling the trigger inside the
+  harness transaction and asserting the RPC still refuses.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-065 — Three terminal OBLIGATION outcomes, resolved one obligation at a time
+- **Decided:** 2026-09-07
+- **Decision:** Exactly three terminal outcomes exist, and they are **obligation-level**:
+  **Fulfilled**, **Unfulfilled**, and **Closed without resolution**. *Closed without resolution*
+  records that the available information did not support either finding — it is **not** a softer
+  *Unfulfilled*, **not** a finding of fault, and carries **no reputation effect**. Each of a
+  trade's two obligations is resolved **independently**: one side may be Fulfilled while the
+  other is still Under Review, Unfulfilled, or closed. **No agreement-level outcome exists and
+  none was created** — there is no *Completed*, no *Partially Fulfilled*, no *Not Completed*, and
+  adjudicating both obligations triggers no roll-up.
+- **Why:** The two obligations are separate promises and the evidence for them is separate.
+  Forcing both to resolve together would make an operator decide a side they may know nothing
+  about in order to close the side they do. And the product needs an honest third answer, or an
+  operator is pushed into inventing a verdict to close a case.
+- **Consequences:** The agreement-level roll-up is **DEFERRED, not half-built**: no column, no
+  view field and no vocabulary for it exists anywhere. A trade whose two obligations are resolved
+  differently simply reports each. Where one side is terminal and the other is not, the
+  **agreement headline may legitimately still read Under review** — the trade does have work
+  outstanding — while the resolved side is stated rather than hidden. Presentation carries **no
+  blame language**: the subject of every sentence is the obligation, never the other provider.
+- **Evidence:** Founder ruling, 2026-09-07. `20261019000000` (the three-value CHECK),
+  `20261020000000` (the `terminal_outcome` column on `my_barter_obligations`), `20261021000000`
+  (the two per-side columns on `my_trade_activity`), `lib/obligationState.ts`
+  (`TERMINAL_OUTCOME_LABEL` / `TERMINAL_OUTCOME_NOTE`, both total `Record`s so a fourth outcome is
+  a compile error), `lib/tradeActivity.ts`. Asserted by `supabase/tests/adjudication.test.sql`
+  (both sides may hold different outcomes at once; **no agreement-level terminal column exists**;
+  Trade Activity exposes only the two per-side columns) and
+  `__tests__/lib/terminalOutcome.test.ts`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-066 — An adjudication is immutable, and it does not rewrite history
+- **Decided:** 2026-09-07
+- **Decision:** An obligation receives **at most one** final adjudication. There is **no edit, no
+  deletion through any ordinary path, and no outcome flip**. Re-submitting the **same** outcome
+  is safe and changes nothing; a **different** outcome is refused. An adjudication **does not
+  rewrite what happened**: `delivered_at`, `status`, `receipt_responded_at`, a no-show report and
+  its reason, `scheduled_at`, `due_at` and cancellation history all stand exactly as the
+  participants left them. **A receiver's "Didn't receive" and a later Fulfilled outcome coexist
+  permanently, and that is correct.**
+- **Why:** One is what a participant reported; the other is what an operator concluded. Editing
+  the first to agree with the second would destroy the evidence the second was reached from. And
+  a terminal decision a trusted caller can quietly amend is not terminal.
+- **Consequences:** A `UNIQUE (obligation_id)` constraint makes one-outcome-per-obligation a
+  **database fact** rather than a check the RPC has to win a race to enforce. **UPDATE is refused
+  for every caller, the privileged one included**; DELETE stays privileged-only because account
+  and agreement erasure cascade through it. A second, different outcome is refused with
+  **`PT412`**. Once an outcome exists the obligation is **resolved for participants too**:
+  `mark_barter_obligation_delivered`, `record_barter_obligation_receipt` and
+  `report_barter_obligation_no_show` each refuse with **`PT424`**, a refusal placed after the row
+  lock and before the idempotent branch. **`PT424` is a NEW SQLSTATE, and the reason is PD-063's
+  reason repeated:** every neighbouring code would say something false. `PT412` on those same
+  functions already means *"your answer is recorded"* — a resolved obligation's receiver may never
+  have answered at all; `PT409` means cancelled, which it is not; `PT423` means under review,
+  which it no longer is, because the review ENDED. **This is recorded because it shipped wrong
+  once inside this slice:** `20261020000000` reused `PT412`, so a receiver who had answered
+  nothing would have been told *"You already answered this. Your answer was recorded and cannot be
+  changed."*, and `mark_barter_obligation_delivered` — which has no `PT412` mapping at all — would
+  have fallen through to *"Please try again."* on a permanently impossible action.
+  `20261022000000` corrects it forward; `20261020000000` is applied history and was not edited.
+  `adjudicate_barter_obligation`'s own `PT412` is unchanged and correct: there the caller is an
+  operator and the obligation genuinely has already been resolved. A correction workflow, if the product ever needs one,
+  must be its own explicitly approved and audited mechanism — **it is not in scope here.**
+  **"Never withdrawn" survives the OPERATOR, too, and that took two more migrations.**
+  `adjudicator_user_id` was originally `ON DELETE CASCADE`, copied from the no-show reports table
+  — where the actor IS a participant and the cascade is coherent. Here the adjudicator is by
+  construction *not* a participant, so erasing an operator's account deleted their decisions about
+  other people's trades; and because every derived state keys on whether an adjudication exists,
+  those obligations silently reverted to Under Review with the unique row gone, so a different
+  outcome could then be recorded. It is now `ON DELETE SET NULL` (`20261023000000`), with the
+  append-only trigger permitting **exactly that one update** — privileged caller,
+  `adjudicator_user_id` the only column that may differ, non-null to null only
+  (`20261024000000`). The decision survives; only who made it is forgotten, which is what an
+  erasure is for and costs the participants nothing, since PD-067 already withholds the
+  adjudicator from them. **TRUNCATE is also revoked from every role including `service_role`**
+  (`20261025000000`): the append-only trigger is row-level and TRUNCATE fires no row triggers, so
+  it was the one path that could discard every terminal outcome without a trigger seeing it.
+- **Evidence:** Founder ruling, 2026-09-07. `20261019000000` (constraint and append-only
+  trigger), `20261020000000` (the three participant refusals), `20261022000000` (their SQLSTATE),
+  `20261023000000` / `20261024000000` (the erasure path) and `20261025000000` (TRUNCATE). Client copy in `lib/barterErrors.ts`, pinned by
+  `__tests__/lib/barterWriteFailure.test.ts` — which asserts, specifically, that a resolved
+  refusal never tells a participant they already answered. Proven by
+  `supabase/tests/adjudication.test.sql` (the receiver's `not_received` survives a contradicting
+  Fulfilled; the no-show reason and the timings survive; a repeat is safe and creates nothing; a
+  flip is refused; direct INSERT/UPDATE/DELETE are refused, and privileged UPDATE with them) and
+  by `scripts/negotiation-concurrency.mjs`, which races two operators to **different** outcomes
+  and asserts exactly one commits with the loser refused `PT412`. The erasure half is proven in
+  B5B: an operator's `auth.users` row is deleted and the outcome, both participants' view of it,
+  and the refusal of a second decision all survive — while the outcome, rationale and timestamp
+  are still unchangeable by the same privileged caller.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-067 — What a participant may see of an adjudication
+- **Decided:** 2026-09-07
+- **Decision:** **Both participants may read the final outcome** and when it was decided.
+  **The operator's rationale is INTERNAL and is not participant-visible.** **Which operator
+  decided is likewise not participant-visible.** Nobody outside the trade may read any of it.
+- **Why:** The outcome is the answer the two people are owed. The reasoning behind it is written
+  for the operator's own record, often summarises what one participant said about the other, and
+  becomes a different artefact the moment it is addressed to them. No documented rule defined
+  this split before this decision, so it is recorded here rather than left to whichever query
+  someone writes next.
+- **Consequences:** Enforced by **column-level grants**, because an RLS policy cannot hide a
+  column and a table-wide `select` would expose the rationale through PostgREST:
+  `grant select (id, obligation_id, agreement_id, outcome, adjudicated_at) to authenticated`, and
+  nothing more. `rationale` and `adjudicator_user_id` carry **no participant privilege at all** —
+  selecting either raises `42501` for a participant, not merely an empty result, and so does
+  *filtering or ordering by* either, so there is no blind-filter oracle. Because the adjudicator
+  is withheld from participants anyway, forgetting it on operator-account erasure (PD-066) costs
+  them nothing. Neither column
+  appears in `my_barter_obligations` or `my_trade_activity`. `anon` holds nothing on the table,
+  and it is in **no realtime publication**. **No reason-code taxonomy was invented:** the record
+  carries one required free-text rationale (1–500 chars), and since it is not participant-visible
+  there is nothing here for a participant-facing code to describe. If a participant-visible
+  reason is ever wanted, it is a new decision and a new, deliberately designed field.
+- **Evidence:** `20261019000000` § 4 (the grant block). Asserted directly by
+  `supabase/tests/adjudication.test.sql`: both participants read the outcome; an unrelated user
+  sees neither the obligation nor the adjudication row; each participant is refused `42501` on
+  `rationale` and on `adjudicator_user_id` while the outcome columns remain readable.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-068 — During beta only an operator adjudicates, a Review Queue is required before live beta, and no resolution SLA is promised
+- **Decided:** 2026-09-08
+- **Decision:** Three things are settled together, because they are the same question asked at
+  three depths. **(1) Authority.** During beta, **only an authorized internal The Book
+  operator/admin may adjudicate an Under Review barter obligation.** Participants may **never**
+  adjudicate their own trade — no participant adjudication RPC, no participant-reachable path,
+  no broadening of privileged write authority, and no broad `service_role` bypass beyond the
+  narrow trusted server/operator path that already exists. The contract fields stay immutable.
+  This restates PD-064's boundary as a **standing beta rule**, so that a future slice needing a
+  screen cannot reach it by loosening authorization. **(2) Operator surface.** The secure
+  adjudication backend **may ship without an operator UI** — PR #68 does not need one and must
+  not build one. But **before live barter beta, a minimal internal Review Queue MUST exist.**
+  Minimal means an authorized operator can, on one surface: view the agreement; view the
+  obligation; view the historical participant facts, evidence and context already recorded;
+  choose **exactly one** terminal obligation outcome (Fulfilled / Unfulfilled / Closed Without
+  Resolution); enter the required internal rationale; and submit through the **already-secured**
+  adjudication path — not a new one. **(3) Timing.** **No public resolution SLA is promised.**
+  Participant-facing language may say **"This trade is under review."** and nothing more. Not 24
+  hours, not 48 hours, not "X business days", not a guaranteed resolution.
+- **Why:** The adjudication path exists and no shipped surface calls it, so no obligation can
+  reach a terminal outcome in the running product while a provider who reports a no-show is told
+  a review will happen. That gap is real, and the honest answer is not to weaken authorization
+  until a screen becomes easy to build — it is to name the operator surface as a **pre-beta
+  requirement** with a defined minimum, and to keep the boundary that produced the security
+  posture in the first place. On timing: an SLA is a promise about staffing the product does not
+  yet have. Promising one and missing it damages trust more than saying nothing, and "under
+  review" is already the truthful statement.
+- **Consequences:** This is the **answer** to the question PD-064 … PD-067 raised and deferred —
+  *who performs a review, through what surface, and within what expectation.* Who: an authorized
+  operator, never a participant. Through what surface: a minimal internal Review Queue, required
+  before live beta and deliberately not built in the adjudication slice. Within what expectation:
+  none stated publicly. **What is still NOT resolved by this entry:** how a plain Needs Attention
+  might enter Under Review remains open, and the Review Queue does not change eligibility — an
+  obligation is still adjudicable only while Under Review (PD-064). The queue is a surface over
+  the existing RPC; building it must add no new privileged path, no new grant, and no
+  participant-reachable adjudication. `app/admin` remains `__DEV__`-only and gated on "is a
+  provider", so it is **not** that surface and must not be mistaken for it.
+- **Evidence:** Founder ruling, 2026-09-08. The authority half is already implemented and proven —
+  `public.adjudicate_barter_obligation` is granted to `service_role` alone, with the
+  privileged-caller check and the not-a-participant check made in both the RPC and the BEFORE
+  INSERT trigger (`supabase/migrations/20261019000000_barter_obligation_adjudication.sql`,
+  `20261023000000_adjudication_hardening.sql`), and `supabase/tests/adjudication.test.sql`
+  refuses participants, unrelated users and `anon` at each layer independently. The Review Queue
+  and the SLA silence are **requirements recorded here, not code**: nothing in this repository
+  implements either, and this entry is the reason the first is not an omission.
+- **Status:** Locked; **authority implemented**, operator surface **required pre-beta and not
+  built**, SLA **deliberately absent**
+
+---
+
+### PD-069 — Barter value is participant-defined; The Book adjudicates performance, not value
+- **Decided:** 2026-09-08
+- **Decision:** **The Book does not appraise, equalize, or compare the economic value of a
+  barter trade.** Two grown providers decide for themselves whether an exchange is worth
+  accepting, and **once both knowingly accept the same current trade terms, the agreed exchange
+  IS the bargain.** Quantity and description exist **only to define what was promised** — *1
+  headshot session with 10 edited photos*, *4 haircuts*, *6 training sessions*, *1 logo package*
+  — and the system must **never** use them to decide economic equality. The question the product
+  asks is **"what did you promise?"**, never **"is it worth the same?"**. Beta stays **direct
+  two-provider barter**. **NOT BUILT, and not to be built in beta:** forced dollar valuation,
+  optional negotiation-time market valuation, automated valuation, equivalency math, fairness or
+  "this trade appears unequal" warnings, a platform-recommended exchange ratio, Book Credits,
+  barter points, internal barter tokens, stored-value currency, cash hybrid, multi-party or
+  three-way transactions. **Adjudication concerns performance, not value.** These are **not**
+  performance disputes: *"my normal rate is higher"*, *"their service is worth less"*, *"I could
+  have charged more"*, *"I changed my mind about the value"*, *"their retail price is $40 and
+  mine is $200"*. These are: a promised service not delivered, a no-show, a receiver reporting
+  non-receipt, an agreed quantity not performed, an agreed commitment materially not delivered.
+- **Why:** The Book is a community marketplace between professionals, and retail price does not
+  determine subjective value. A photographer who normally charges $200 may genuinely value a
+  $40 haircut more than the session they are giving up — that trade is **valid**, and a platform
+  warning that it "appears unequal" would be the platform substituting its arithmetic for the
+  provider's own judgment about their own work. Every valuation mechanism, including a merely
+  optional one, quietly teaches that parity is the standard and makes the unequal-looking trade
+  feel like a mistake. And a value-regret channel into adjudication would turn an operator into
+  an appraiser of two businesses they do not run — a job the product cannot do correctly and
+  should not claim to.
+- **Consequences:** The two durable principles this locks are: **"The Book does not appraise the
+  trade. It makes the trade clear, mutual, and accountable."** and **"The Book adjudicates
+  performance, not value."** Later regret about pricing is **not** a dispute the platform
+  entertains — it is not a valid Under Review entry and not a valid adjudication input. This
+  **narrows** what an operator may consider without narrowing the three terminal outcomes
+  (PD-065): *Closed without resolution* remains the honest answer where performance genuinely
+  cannot be established, and is not a place to file a value complaint. This entry does **not**
+  reopen or expand PD-065's outcome vocabulary, and it does **not** authorize a quality-dispute
+  engine — quality is a different question from delivery and is not decided here.
+  Reciprocal matching, a provider Wants list, matching suggestions and three-way matching are
+  **future exploration only**, recorded in
+  [FUTURE_PRODUCT_IDEAS.md](FUTURE_PRODUCT_IDEAS.md) and **not** current scope; credits are
+  intentionally not a beta answer, and the matching/liquidity problem must be proven with real
+  user data before any currency is invented.
+- **Evidence:** Founder ruling, 2026-09-08, following the barter pressure test. Most of the
+  absence is already true in code and asserted rather than merely intended: a **proposal version**
+  carries **exactly two directed terms and no value field** (`lib/negotiationState.ts:33-46`;
+  `20260925000000_negotiation_directed_terms.sql:5` REMOVED `estimated_value` from the proposal
+  for exactly this reason), § 5 has required no dollar equivalence and banned cash hybrid since
+  2026-09-04, PD-032 holds the beta to two parties, and no equivalency, fairness-warning, credit,
+  point or token object exists anywhere in `supabase/migrations/`, `lib/` or `app/`. The scope-pin
+  sweeps in `supabase/tests/obligation.test.sql`, `cancellation.test.sql`,
+  `no_show_under_review.test.sql` and `receiver_window.test.sql` fail on an unexempted
+  adjudication-shaped or completion-shaped function, which is the mechanism by which a future
+  valuation slice would have to be deliberate rather than accidental.
+
+  **ONE THING THIS DECISION DOES NOT YET MATCH, RECORDED RATHER THAN GLOSSED.** A first draft of
+  this entry claimed no valuation object existed anywhere. **That was false, and the false version
+  is the reason this paragraph exists.** `barter_offers.offering_value` is live: providers type a
+  dollar figure into **"ESTIMATED VALUE (OPTIONAL)"** in the post composer
+  (`app/community/barter-compose.tsx:133-145`), every browsing provider sees a **`~$N value`
+  badge** on the board card (`app/community/index.tsx:944-948`), and the figure is copied into
+  each proposal version's immutable post snapshot
+  (`20260917000000_barter_proposal_versions.sql:384`). It predates this ruling, it is
+  **poster-declared rather than platform-computed**, and nothing compares two of them, scores
+  equivalence or warns about parity — so it is **not** an appraisal by The Book. But it is a
+  monetary figure the product renders next to a barter offer, which is in tension with this
+  decision's *Why*, and **whether it survives PD-069 is a Founder question that this entry does
+  NOT answer.** It was deliberately **not** removed here: deleting a live, user-visible field is a
+  product decision and a behaviour change, and neither belongs in the adjudication slice. Recorded
+  as an open gap in `BARTER_BETA_CONTRACT.md` § 12 until ruled on. **Until then, no one may cite
+  this entry as proof that no monetary figure appears anywhere in barter.**
+- **Status:** Locked as a **rule**; **the prohibitions are implemented as an absence** — there is
+  nothing to build, and the entry exists so that building any of it is a decision to reverse this
+  one. **One pre-existing exception is unreconciled** and named above: the optional
+  provider-declared estimated value on a barter POST, pending a Founder ruling.
 
 ---
 

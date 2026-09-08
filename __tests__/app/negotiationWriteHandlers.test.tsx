@@ -161,6 +161,9 @@ function makeObligation(
     noShowReportedAt: null,
     canReportNoShow: false,
     noShowReason: null,
+    // Not adjudicated. Overridden per case where an outcome exists.
+    terminalOutcome: null,
+    adjudicatedAt: null,
     ...over,
   }
 }

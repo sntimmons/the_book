@@ -85,9 +85,15 @@ describe('obligationView capability', () => {
 })
 
 describe('obligationView copy is truthful and non-final', () => {
-  // The words this slice may not say. There is no timeout, no automatic fulfilment, no
-  // cancellation, no-show, Needs Attention, Under Review or adjudication — so copy claiming any
-  // of them would describe a product that does not exist.
+  // The words an UNRESOLVED obligation may not say. Every call in this block passes no
+  // cancellation, no window, no review and NO TERMINAL OUTCOME, so the card is describing a
+  // trade that is simply in progress — and none of these words is true of one.
+  //
+  // Several of them ARE true elsewhere now: an operator can resolve an obligation as fulfilled,
+  // unfulfilled or closed without resolution (PD-064/PD-065), and `terminalOutcome.test.ts`
+  // asserts that copy. This sweep is therefore about the DEFAULT state, not about the product's
+  // vocabulary — the distinction matters, because the value here is that a resolution can never
+  // appear on a card the server did not resolve.
   const FORBIDDEN = [
     'complete',
     'completed',
@@ -106,8 +112,17 @@ describe('obligationView copy is truthful and non-final', () => {
     'closed without resolution',
   ]
 
-  it('says none of the states that do not exist yet', () => {
-    const labels = obligationTimeline('2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z')
+  it('says none of those states on an obligation that is merely in progress', () => {
+    // THE ADJUDICATION TIMESTAMP IS PASSED so the 'Reviewed' entry is in the swept text.
+    // `obligationTimeline` gained its third parameter with the adjudication slice, and every
+    // call site here still passed two — so the one label that slice ADDED to the card was
+    // outside the sweep its own docstring says covers it. That is exactly the gap this sweep
+    // exists to close, reopened by a new argument rather than by a new string.
+    const labels = obligationTimeline(
+      '2026-01-01T00:00:00Z',
+      '2026-01-02T00:00:00Z',
+      '2026-01-03T00:00:00Z',
+    )
       .map((t) => t.label)
       .join(' ')
     for (const role of ROLES) {
@@ -191,6 +206,39 @@ describe('obligationTimeline', () => {
     for (const entry of obligationTimeline('2026-01-01T00:00:00Z', '2026-01-03T00:00:00Z')) {
       expect(entry.at).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     }
+  })
+
+  // ── THE RESOLUTION ENTRY (PD-066 / PD-067) ──────────────────────────────
+  // The third parameter shipped with the adjudication slice and had NO coverage: not that the
+  // entry appears, not that it is last, not that the label withholds the outcome, not that the
+  // default omits it. Each of those is a property the docstring states and a later editor could
+  // break silently.
+
+  it('shows when it was resolved, which PD-067 makes participant-visible', () => {
+    const t = obligationTimeline(null, null, '2026-01-05T00:00:00Z')
+    expect(t).toEqual([{ key: 'resolved', label: 'Reviewed', at: '2026-01-05T00:00:00Z' }])
+  })
+
+  it('puts the resolution LAST, because it is the only entry that ends the obligation', () => {
+    const t = obligationTimeline('2026-01-01T00:00:00Z', '2026-01-03T00:00:00Z', '2026-01-05T00:00:00Z')
+    expect(t.map((x) => x.key)).toEqual(['delivered', 'answered', 'resolved'])
+  })
+
+  it('does NOT repeat the outcome in the timestamp row', () => {
+    // The outcome is stated once, by the chip. Two places to keep in agreement is how a card
+    // starts contradicting itself — and an outcome word here would also sit outside the
+    // forbidden-vocabulary sweep's per-status assertions.
+    const t = obligationTimeline(null, null, '2026-01-05T00:00:00Z')
+    expect(t[0].label).toBe('Reviewed')
+    for (const word of ['fulfilled', 'unfulfilled', 'closed', 'resolution']) {
+      expect(t[0].label.toLowerCase()).not.toContain(word)
+    }
+  })
+
+  it('WITHHOLDS the entry when the caller has not been updated', () => {
+    // The parameter defaults to null in the withholding direction, like every other optional
+    // fact in the module. A two-argument caller must not manufacture a resolution.
+    expect(obligationTimeline('2026-01-01T00:00:00Z', '2026-01-03T00:00:00Z')).toHaveLength(2)
   })
 })
 

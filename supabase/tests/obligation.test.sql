@@ -698,9 +698,15 @@ begin
                            'barter_obligation_under_review',
                            'barter_can_report_no_show',
                            'enforce_barter_no_show_append_only',
-                           'enforce_barter_no_show_consistent');
+                           'enforce_barter_no_show_consistent',
+                           -- The three objects 20261019000000 added, exempted BY NAME for the
+                           -- same reason as the no-show five: adjudication is now ruled in, and
+                           -- a fourth adjudication-shaped function still has to be deliberate.
+                           'adjudicate_barter_obligation',
+                           'enforce_barter_adjudication_append_only',
+                           'enforce_barter_adjudication_consistent');
   perform pg_temp.chk('obligation',
-    'no adjudication, completion or obligation-cancellation function beyond the ruled no-show',
+    'no completion or obligation-cancellation function beyond the ruled no-show and adjudication',
     '0', v_n::text);
   -- ANCHORED the same way: prove the table name matches something before asserting an absence
   -- against it.

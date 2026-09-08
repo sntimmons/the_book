@@ -159,6 +159,21 @@ const ANSWER_ALREADY_RECORDED = 'PT412'
 // delivered, and telling a provider it had would be a false statement about their own trade.
 const TRADE_UNDER_REVIEW = 'PT423'
 
+// PD-064/PD-066: an operator has resolved this obligation, so no further participant action is
+// taken on it. Its OWN code for the same reason `PT423` is: every neighbouring code would say
+// something false here. `PT412` means "your answer is already recorded" — a resolved obligation's
+// receiver may never have answered at all; `PT409` means cancelled, which it is not; `PT423`
+// means under review, which it no longer is, because the review ENDED. Reusing `PT412` is not a
+// hypothetical: it shipped that way for one migration and told a receiver who had answered
+// nothing that their answer "was recorded and cannot be changed".
+const OBLIGATION_RESOLVED = 'PT424'
+
+// The one sentence every resolved-refusal shares. Says the outcome exists and stops there: it
+// does not name the outcome (the screen re-reads and shows it), does not say who decided, and
+// implies nothing about fault. `stale: true` everywhere — the details really have moved.
+const RESOLVED_BODY =
+  'This was reviewed and resolved, so it can no longer be changed. The details have been updated.'
+
 const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
   respond: { terminal: false, title: 'Could not send', body: 'Please try again.' },
   accept: { terminal: false, title: 'Could not accept', body: 'Please try again.' },
@@ -485,6 +500,12 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       title: 'This trade was cancelled',
       body: 'This trade was cancelled, so it can no longer be delivered. The details have been updated.',
     },
+    [OBLIGATION_RESOLVED]: {
+      terminal: true,
+      stale: true,
+      title: 'This was already resolved',
+      body: RESOLVED_BODY,
+    },
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,
       // Names the rule, not the caller's mistake: only the provider who owes something can
@@ -505,6 +526,12 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       stale: true,
       title: 'This trade was cancelled',
       body: 'This trade was cancelled, so there is nothing to confirm. The details have been updated.',
+    },
+    [OBLIGATION_RESOLVED]: {
+      terminal: true,
+      stale: true,
+      title: 'This was already resolved',
+      body: RESOLVED_BODY,
     },
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,
@@ -538,6 +565,12 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       title: 'This trade was cancelled',
       body: 'This trade was cancelled, so there is nothing to answer for. The details have been updated.',
     },
+    [OBLIGATION_RESOLVED]: {
+      terminal: true,
+      stale: true,
+      title: 'This was already resolved',
+      body: RESOLVED_BODY,
+    },
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,
       title: 'Not yours to answer',
@@ -569,6 +602,12 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       stale: true,
       title: 'This trade was cancelled',
       body: 'This trade was cancelled, so there is nothing to report. The details have been updated.',
+    },
+    [OBLIGATION_RESOLVED]: {
+      terminal: true,
+      stale: true,
+      title: 'This was already resolved',
+      body: RESOLVED_BODY,
     },
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,

@@ -2,7 +2,8 @@
 
 **Status:** **Exploratory — NOT authoritative.** Owner: Founder (Stephen).
 **Category:** Product / exploration.
-**Last substantive update:** 2026-09-08 — payment pressure-test reconciliation.
+**Last substantive update:** 2026-09-08 — barter pressure-test findings added (§ 3),
+alongside the earlier payment pressure-test reconciliation (§ 2).
 
 > **READ THIS BEFORE ANYTHING ELSE IN THIS FILE.**
 >
@@ -661,7 +662,145 @@ Locked or already-positioned, and **not reopened by anything in this file**:
 
 ---
 
-# 3. Payment rollout strategy — staged, and exploratory
+# 3. Barter exploration — matching, liquidity, and why credits are not the answer
+
+**EXPLORED CONCEPT · NOT YET IMPLEMENTED · NOT YET PROMISED EXTERNALLY · NOT CURRENT SCOPE ·
+REQUIRES PRODUCT REVIEW.**
+
+Everything in this section is **future exploration**. None of it belongs in the current barter
+slice, and none of it may be built without a Founder ruling and a PD entry.
+
+## 3.1 The philosophy this exploration must serve
+
+Recorded first, because it is the constraint every idea below has to survive. The locked form
+is **PD-069**; this is why it is the right constraint rather than a limitation to engineer
+around.
+
+- **Community-first.** The Book is a marketplace between grown professionals, not a
+  price-comparison engine. Providers are the ones who know what their work is worth to them.
+- **Subjective value is the point, not a defect.** A photographer who normally charges $200 may
+  genuinely value a $40 haircut more than the session they are giving up. Retail price does not
+  determine subjective value, and a platform that says otherwise is telling a provider they
+  misjudged their own business.
+- **Providers decide what is worthwhile.** *"The Book does not appraise the trade. It makes the
+  trade clear, mutual, and accountable."*
+- **Every provider needs another provider.** That is the actual thesis behind barter — not
+  saving money, and not getting things for free.
+
+**Any matching, liquidity or discovery idea below that requires appraising the trade is
+already dead** by PD-069, whatever else it does well.
+
+## 3.2 Reciprocal matching may matter more than a passive board
+
+**The strongest single finding from the barter pressure test.** The current model is a board:
+a provider posts an offer and waits for someone to want it. That works when supply and demand
+happen to meet, and does nothing when they do not.
+
+The reciprocal case is the one that actually closes: **the barber needs photos and the
+photographer needs a cut.** A passive board finds that pair only by luck. A system that knows
+what each provider *wants* finds it deliberately.
+
+Ideas worth exploring, in rough order of ambition:
+
+- **A provider Wants list** — what a provider is looking for, kept alongside what they offer.
+  This is the cheap half and probably the highest-value one.
+- **Live provider service categories** as first-class matching input rather than display text.
+- **Automatic reciprocal suggestions** — *"this provider wants what you offer, and offers what
+  you want."*
+- **Three-way matching** — A wants B's service, B wants C's, C wants A's. This is a real answer
+  to the coincidence-of-wants problem, and it is **explicitly the thing to try BEFORE inventing
+  a currency.**
+
+**A consequence worth naming:** if this works, the **board becomes secondary** — a browsing
+surface rather than the mechanism. That is a large product change and is not proposed here; it
+is recorded so that heavy investment in the board is a deliberate choice rather than an
+assumption.
+
+## 3.3 Credits are intentionally NOT the beta answer
+
+Book Credits, barter points, internal tokens, stored-value currency — the standard answer to
+"barter is hard to match" — are **out of scope by PD-069**, and this section records *why*
+rather than just *that*.
+
+- A credit is a **currency**. Issuing one makes The Book a party to value, which is exactly what
+  PD-069 says it is not. The moment a haircut is worth *N* credits, the platform has appraised
+  the haircut.
+- Credits carry **regulatory and accounting weight** — stored value, unredeemed balances, and a
+  tax surface — that a direct two-party trade does not.
+- **The matching/liquidity problem must be PROVEN with real user data before any currency is
+  invented to solve it.** Credits solve a coincidence-of-wants problem that The Book has not yet
+  demonstrated it has at scale. Three-way matching is the cheaper, more reversible experiment,
+  and it does not require the platform to price anything.
+
+## 3.4 Negotiation UX may be simplifiable without simplifying the model
+
+**PRESSURE-TEST FINDING.** The proposal-versioning model is correct and load-bearing — every
+version is immutable, a counter creates a new version, and both providers must accept the *same
+current* version (PD-053 … PD-055). None of that changes.
+
+What may be wrong is how much of it the **screen** shows. A possible future shape:
+
+- **chat**, plus
+- **one editable trade card**, plus
+- **Accept / Edit**
+
+with **proposal versioning preserved underneath, unchanged**. This is a presentation
+exploration, not a model change, and § 2.1's conclusion applies directly: *internal complexity
+is not visible UX*. Anything here that would weaken the versioning guarantees is out.
+
+## 3.5 Other barter concepts recorded for later
+
+Recorded so they are not re-derived from scratch. **None is designed, and none is approved.**
+
+| Concept | Note |
+|---|---|
+| **Release / forgive a remaining obligation** | A graceful exit that is not a cancellation and not an adjudication. Would need its own outcome semantics — do **not** fold it into the three terminal outcomes (PD-065). |
+| **"Received, but there was a problem"** | A third receiver answer. **Careful:** this is the doorway to a quality-dispute engine, which PD-069 does not authorize. See § 2.9 — subjective quality is unresolved for payments too. |
+| **Category-locked barter offers** | *"I will trade this, but only with providers in these categories."* Cheap, and closer to matching than to policy. |
+| **Trade history export** | Provider-facing record of completed trades. |
+| **Tax and legal review of barter** | **Required before any credit, token, or valuation concept is taken seriously**, and worth doing on plain direct barter first. Bartered services can carry tax consequences The Book currently says nothing about. |
+| **Private barter reliability implications** | Whether trade behaviour should inform anything internal. Constrained hard by PD-069 and by BETA_SCOPE's ban on automatic punitive escalation. |
+| **Concierge first Houston trades** | Run the first trades by hand. Consistent with the manual-first posture in § 4 and § 2.14. |
+
+## 3.6 Barter trust and safety — future, and one item is high priority
+
+**None of this is built, and none of it belongs in the adjudication slice.**
+
+- **Lead generation disguised as barter — HIGH PRIORITY.** A "trade" whose real purpose is
+  harvesting contacts or selling into the other provider. This is the most likely early abuse of
+  a provider-to-provider marketplace and the one most likely to be mistaken for legitimate
+  networking.
+- **Sexual or personal solicitation** through a barter offer.
+- **A false no-show report**, and its mirror, **a false non-receipt report.** The adjudication
+  model assumes an operator can tell; nothing yet establishes how.
+- **Harassment** through the barter thread.
+- **Off-platform solicitation.** Related to § 2.13, and note BETA_SCOPE holds enforcement
+  **UNDECIDED** — no message scanning or keyword blocking is invented here.
+
+**Still correct, and not reopened:** **no public barter reviews or reputation in beta**
+(BARTER_BETA_CONTRACT § 8). A dispute outcome is not a review, and adjudication must not become
+a back door into reputation.
+
+## 3.7 What this barter exploration must NOT contradict
+
+- **PD-069** — the platform does not appraise, equalize or compare trade value; no valuation,
+  equivalency, credits, tokens, stored value, cash hybrid or multi-party trades in beta;
+  adjudication concerns **performance, not value**.
+- **PD-068** — only an authorized operator adjudicates; a minimal internal Review Queue is
+  required before live beta; **no public resolution SLA**. Nothing here may promise a
+  turnaround time.
+- **PD-064 … PD-067** — operator-only adjudication, three obligation-level terminal outcomes,
+  immutability, and the internal-rationale boundary.
+- **PD-065** — there is **no agreement-level terminal outcome**, and none may be implied by a
+  matching or history feature.
+- **PD-032** — two parties. Three-way matching is an *exploration*; it is not permission.
+- **PD-031** — barter is **not** a discount mechanism.
+- **BARTER_BETA_CONTRACT § 8** — no barter reviews, no reputation or ranking effect in the
+  first beta.
+
+---
+
+# 4. Payment rollout strategy — staged, and exploratory
 
 **EXPLORED CONCEPT · NOT YET IMPLEMENTED · NOT CURRENT SCOPE.**
 
@@ -684,7 +823,7 @@ not commit the beta to a payments phase at all.
 
 ---
 
-# 4. Professionalism and accountability — both directions
+# 5. Professionalism and accountability — both directions
 
 **EXPLORED CONCEPT · NOT YET IMPLEMENTED · NOT YET PROMISED EXTERNALLY · REQUIRES PRODUCT
 REVIEW.**
@@ -704,10 +843,10 @@ both sides can act on prevents more bad outcomes than any penalty schedule.**
 
 ---
 
-# 5. Where the rest of the ideas live
+# 6. Where the rest of the ideas live
 
-This file is the payments/protection exploration. Other future-facing material has homes and
-is **not** duplicated here:
+This file holds the payments/protection exploration (§ 2) and the barter exploration (§ 3).
+Other future-facing material has homes and is **not** duplicated here:
 
 - **Undecided product questions** → [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) (OQ-NNN)
 - **Sequencing of approved work** → [ROADMAP.md](ROADMAP.md)
@@ -718,7 +857,7 @@ is **not** duplicated here:
 
 ---
 
-# 6. The workflow rule
+# 7. The workflow rule
 
 When future product work turns up something worth saying out loud:
 

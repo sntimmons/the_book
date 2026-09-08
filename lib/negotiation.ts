@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import type { ProposalDraft, ProposalSide, TradeSide } from './negotiationState'
 import { draftPayload } from './negotiationState'
-import type { ObligationStatus, ReceiverWindowState } from './obligationState'
+import type { ObligationStatus, ReceiverWindowState, TerminalOutcome } from './obligationState'
 
 /** What the server reports after a cancellation act. Derived there from the acts on record. */
 export type TradeCancellationResult = 'cancelled_by_participant' | 'mutually_cancelled'
@@ -101,9 +101,12 @@ export interface BarterObligation {
    *
    * OBLIGATION-GRANULAR, and the name says so: one side of a trade can be under review while
    * the other is untouched, and this says nothing about the other side. The AGREEMENT-level
-   * roll-up is derived from these by the screen and is named `agreementUnderReview` there. It means a human must look — never that anyone
-   * is at fault, and never Fulfilled, Unfulfilled, Completed or any terminal outcome, none of
-   * which exist. A cancelled trade is always false.
+   * roll-up is NOT derived from these anywhere on the client — it is the SERVER's
+   * `my_trade_activity.agreement_under_review`, mapped in lib/barter.ts and named
+   * `agreementUnderReview` on `TradeRowFacts`. Deriving it a second time here is exactly what
+   * that split exists to prevent. Under review means a human must look — never that anyone is at
+   * fault, and never an outcome: an outcome is `terminalOutcome` below, and only an operator
+   * can produce one. A cancelled trade is always false.
    */
   obligationUnderReview: boolean
   /**
@@ -126,6 +129,16 @@ export interface BarterObligation {
    * the device clock, exactly as it never recomputes the PD-057 window.
    */
   canReportNoShow: boolean
+  /**
+   * The operator's TERMINAL resolution of this obligation, or null.
+   *
+   * Obligation-granular: the other side of the same agreement is unaffected and may still be
+   * unresolved. There is deliberately no agreement-level outcome — none exists in this product.
+   * The operator's rationale is NOT exposed; participants hold no privilege on that column.
+   */
+  terminalOutcome: TerminalOutcome | null
+  /** When it was resolved, or null. Display only; the server owns the timestamp. */
+  adjudicatedAt: string | null
   /**
    * The reporting participant's own words, or null. The reporter is always this obligation's
    * RECEIVER, so the viewer's role attributes it — there is no second column saying who wrote it.
@@ -335,7 +348,7 @@ export async function fetchNegotiation(proposalId: string): Promise<{
         'id, agreement_id, side, agreed_description, due_at, scheduled_at, status,'
         + ' delivered_at, receipt_responded_at, confirmation_anchor, confirmation_deadline,'
         + ' receiver_window_state, under_review, no_show_reported_at,'
-        + ' can_report_no_show, no_show_reason',
+        + ' can_report_no_show, no_show_reason, terminal_outcome, adjudicated_at',
       )
       .eq('agreement_id', row.agreementId)
       .order('side', { ascending: true })
@@ -357,6 +370,8 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       no_show_reported_at: string | null
       can_report_no_show: boolean | null
       no_show_reason: string | null
+      terminal_outcome: TerminalOutcome | null
+      adjudicated_at: string | null
     }[] | null) ?? []).map((o) => ({
       id: o.id,
       agreementId: o.agreement_id,
@@ -381,6 +396,10 @@ export async function fetchNegotiation(proposalId: string): Promise<{
       // only be refused.
       canReportNoShow: o.can_report_no_show ?? false,
       noShowReason: o.no_show_reason,
+      // Fail closed: absent means NOT resolved. Manufacturing an outcome from a missing field
+      // would tell two providers their trade was decided when nobody decided it.
+      terminalOutcome: o.terminal_outcome ?? null,
+      adjudicatedAt: o.adjudicated_at,
     }))
   }
 
@@ -496,8 +515,10 @@ export async function confirmObligationReceived(
 /**
  * The receiver records that they did not receive the delivery.
  *
- * This records a STATEMENT and nothing else. It does not cancel, adjudicate, mark the
- * obligation unfulfilled or change the agreement — none of which exist yet.
+ * This records a STATEMENT and nothing else. It does not cancel the trade, adjudicate, mark the
+ * obligation unfulfilled or change the agreement. It DOES route the obligation into the derived
+ * Under Review state, which is where an operator — and only an operator (PD-064) — may later
+ * resolve it. The participant records what happened; they never decide it.
  */
 export async function reportObligationNotReceived(
   obligationId: string,

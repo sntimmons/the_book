@@ -197,19 +197,28 @@ begin
   perform pg_temp.chk('no_show',
     'the four-value status vocabulary is unchanged — Under Review is not a status',
     '1', v_n::text);
+  -- ADJUDICATION EXISTS NOW (20261019000000), and this pin was written before it did. What it
+  -- still guards is what it always meant: this slice creates no AUTOMATIC outcome. The three
+  -- objects the adjudication migration added are exempted by name — a fourth, or anything
+  -- reputation- or penalty-shaped, still fails. The agreement-level roll-up vocabulary
+  -- (`closed_without`, `partially`, `not_completed`) remains banned outright: it is deferred.
   select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and (p.proname ~* 'adjudicat|fulfil|unfulfil|reputation|verdict|penalt|refund'
-          or p.proname ~* 'closed_without|partially|not_completed');
+          or p.proname ~* 'closed_without|partially|not_completed')
+     and p.proname not in ('adjudicate_barter_obligation',
+                           'enforce_barter_adjudication_append_only',
+                           'enforce_barter_adjudication_consistent');
   perform pg_temp.chk('no_show',
-    'no adjudication, fulfilment, reputation, penalty or refund function exists',
+    'no fulfilment, reputation, penalty or refund function beyond the ruled adjudication',
     '0', v_n::text);
   select count(*) into v_n from information_schema.tables
    where table_schema = 'public'
      and (table_name ~* 'adjudicat|reputation|verdict|penalt'
-          or table_name ~* 'review_case|review_decision|outcome');
+          or table_name ~* 'review_case|review_decision|outcome')
+     and table_name <> 'barter_obligation_adjudications';
   perform pg_temp.chk('no_show',
-    'no adjudication, review-case, outcome or reputation TABLE exists', '0', v_n::text);
+    'no review-case, outcome or reputation TABLE beyond the adjudication record', '0', v_n::text);
   select count(*) into v_n from pg_extension where extname in ('pg_cron', 'pg_timetable');
   perform pg_temp.chk('no_show',
     'no scheduler was installed — nothing escalates on a timer', '0', v_n::text);

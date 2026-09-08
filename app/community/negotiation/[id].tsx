@@ -56,6 +56,7 @@ import {
   MARK_DELIVERED_COPY,
   attentionTone,
   AttentionTone,
+  terminalOutcomeLabel,
   MAX_NO_SHOW_REASON,
   NO_SHOW_REASON_NOTE,
   NO_SHOW_REASON_PLACEHOLDER,
@@ -111,12 +112,18 @@ import { formatTradeDate } from '@/lib/tradeActivity'
 // has to look. It decides no fault, creates no outcome, and does not close the receiver's
 // controls: a reported trade still accepts their answer.
 //
-// That is all it can do. There is still no timeout TRANSITION (the window changes no status),
-// no automatic fulfilment or completion, no adjudication, no operator decision path and no
-// terminal outcome — for the obligation or for the agreement — so no copy on this screen may say
-// a trade is booked, complete, fulfilled, unfulfilled, disputed or resolved, may name a fault
-// except to deny one, or may promise an outcome. Until it is cancelled the agreement stays
-// "Trade confirmed" while its obligations progress.
+// An obligation under review can be RESOLVED, by an operator and by nobody else (PD-064): the
+// three terminal OBLIGATION outcomes are Fulfilled, Unfulfilled and Closed without resolution,
+// and this screen reports whichever the server gives. A resolved obligation shows its outcome
+// where an attention chip would otherwise be, and offers no control — the two are mutually
+// exclusive by construction in `obligationView`.
+//
+// What is still absent, and no copy here may claim: a timeout TRANSITION (the window changes no
+// status), automatic fulfilment or completion, and any AGREEMENT-level outcome — no Completed,
+// no Partially Fulfilled, no Not Completed. So no copy on this screen may say a TRADE is booked,
+// complete or resolved, may name a fault except to deny one, or may promise an outcome. Until it
+// is cancelled the agreement stays "Trade confirmed" while its obligations progress — including
+// when one of them has been resolved and the other has not.
 
 const EMPTY_DRAFT: ProposalDraft = {
   ownerGives: '',
@@ -586,6 +593,9 @@ export default function NegotiationScreen() {
       confirmationDeadline: obligation.confirmationDeadline,
       obligationUnderReview: obligation.obligationUnderReview,
       canReportNoShow: obligation.canReportNoShow,
+      // The operator's resolution, also the server's answer. Once set it dominates: the module
+      // silences every control and every attention state, so no stale button survives it.
+      terminalOutcome: obligation.terminalOutcome,
     })
     return (
       <View style={styles.term}>
@@ -607,6 +617,17 @@ export default function NegotiationScreen() {
             wrong (Founder ruling 2026-09-07). THREE chip tones, and the difference is meaning,
             not emphasis: amber for "your turn, still in time", warmer for "the window passed",
             cool for "with someone else now". Deliberately no alarm colour on any of them. */}
+        {/* THE RESOLUTION, where an attention chip would otherwise be. The two are mutually
+            exclusive by construction — `attention` is null whenever `terminalOutcome` is set —
+            so a card never shows a conclusion beside a pending request. Its own tone, because
+            it is neither: nothing is waiting on anyone. */}
+        {terminalOutcomeLabel(o.terminalOutcome ?? '') ? (
+          <View style={[styles.attentionChip, styles.outcomeChip]}>
+            <Text style={styles.attentionChipText}>
+              {terminalOutcomeLabel(o.terminalOutcome ?? '')}
+            </Text>
+          </View>
+        ) : null}
         {o.attention ? (
           <View
             style={[
@@ -621,7 +642,11 @@ export default function NegotiationScreen() {
           </View>
         ) : null}
         <Text style={styles.obligationState}>{o.state}</Text>
-        {obligationTimeline(obligation.deliveredAt, obligation.receiptRespondedAt).map((t) => (
+        {obligationTimeline(
+          obligation.deliveredAt,
+          obligation.receiptRespondedAt,
+          obligation.adjudicatedAt,
+        ).map((t) => (
           // Labels come from the module, so they are covered by the same forbidden-vocabulary
           // sweep as the rest of the card. Formatted with `formatTermTime`, the SAME formatter
           // the due and scheduled lines above use — the date-only history formatter dropped the
@@ -1094,6 +1119,14 @@ const styles = StyleSheet.create({
   attentionChipReview: {
     backgroundColor: 'rgba(120,150,190,0.18)',
     borderColor: 'rgba(120,150,190,0.5)',
+  },
+  // A RESOLVED obligation, and deliberately the quietest tone of the four: the other three are
+  // states waiting on somebody, this one is finished. Neutral rather than green or red — the
+  // same chip carries Fulfilled, Unfulfilled and Closed without resolution, because colouring
+  // them differently would editorialise a decision the product reports rather than celebrates.
+  outcomeChip: {
+    backgroundColor: 'rgba(240,232,213,0.10)',
+    borderColor: 'rgba(240,232,213,0.30)',
   },
   attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
   obligationNote: {

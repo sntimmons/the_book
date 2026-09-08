@@ -11,7 +11,7 @@
 // RPC. A `pg_sleep` before the call widens the window so the overlap is real rather than
 // hopeful.
 //
-// The numbered groups below are THEMES, not scenario numbers — the body runs seventeen
+// The numbered groups below are THEMES, not scenario numbers — the body runs twenty-four
 // scenarios and each carries its own `── N. …` heading. The two indexes drifted apart once
 // cancellation was appended, so this one no longer pretends to be an ordered list.
 //
@@ -48,6 +48,14 @@
 //      both landing. Two participants cancelling at once must record exactly two acts (and so
 //      report "mutually cancelled") without losing either; the same participant cancelling
 //      twice at once must record exactly one.
+//
+//   H. Adjudication races. A terminal outcome is the one write in this slice that no participant
+//      can reach, so its races are about PRECEDENCE and IMMUTABILITY rather than authority
+//      alone: an outcome colliding with a participant act must leave exactly one authoritative
+//      state with the participant's own history intact, two operators deciding differently must
+//      leave exactly one outcome with the loser refused, an identical repeat must be safe for
+//      both callers, and a participant racing an operator must be refused without ever
+//      contending for the row.
 //
 // Everything it writes is deleted at the end and the counts are re-asserted at zero.
 //
@@ -333,6 +341,23 @@ const ids = {
   interest20: randomUUID(),
   offer21: randomUUID(),
   interest21: randomUUID(),
+  offer22: randomUUID(),
+  interest22: randomUUID(),
+  offer23: randomUUID(),
+  interest23: randomUUID(),
+  offer24: randomUUID(),
+  interest24: randomUUID(),
+  offer25: randomUUID(),
+  interest25: randomUUID(),
+  offer26: randomUUID(),
+  interest26: randomUUID(),
+  offer27: randomUUID(),
+  interest27: randomUUID(),
+  offer28: randomUUID(),
+  interest28: randomUUID(),
+  // The OPERATOR. An auth user with no provider row and no part in any trade here, because an
+  // adjudicator may not be a participant — the RPC and the trigger both refuse one.
+  op: randomUUID(),
 }
 
 // Every interest this harness creates, in one place: the cleanup and the residue assertions
@@ -342,11 +367,18 @@ const ALL_INTERESTS = [
   ids.interest7, ids.interest8, ids.interest9, ids.interest10, ids.interest11, ids.interest12,
   ids.interest13, ids.interest14, ids.interest15, ids.interest16, ids.interest17,
   ids.interest18, ids.interest19, ids.interest20, ids.interest21,
+  ids.interest22, ids.interest23, ids.interest24, ids.interest25,
+  ids.interest26, ids.interest27, ids.interest28,
 ]
 const ALL_OFFERS = [
   ids.offer, ids.offer2, ids.offer3, ids.offer4, ids.offer5, ids.offer6, ids.offer7,
   ids.offer8, ids.offer9, ids.offer10, ids.offer11, ids.offer12,
   ids.offer13, ids.offer14, ids.offer15, ids.offer16, ids.offer17,
+  // 18-21 were absent, so four offers were left on the target and the residue count could not
+  // see them. Listed now, with the adjudication scenarios' own.
+  ids.offer18, ids.offer19, ids.offer20, ids.offer21,
+  ids.offer22, ids.offer23, ids.offer24, ids.offer25,
+  ids.offer26, ids.offer27, ids.offer28,
 ]
 // The interests that reach an official agreement, and therefore have obligations.
 const AGREEMENT_INTERESTS = [
@@ -354,6 +386,8 @@ const AGREEMENT_INTERESTS = [
   ids.interest10, ids.interest11, ids.interest12,
   ids.interest13, ids.interest14, ids.interest15, ids.interest16, ids.interest17,
   ids.interest18, ids.interest19, ids.interest20, ids.interest21,
+  ids.interest22, ids.interest23, ids.interest24, ids.interest25,
+  ids.interest26, ids.interest27, ids.interest28,
 ]
 const quoted = (list) => list.map((v) => `'${v}'`).join(',')
 
@@ -366,7 +400,7 @@ begin
   -- early-return, exactly as pg_temp.act_service() does in the B5B fixtures. The RACES below
   -- run as real authenticated users; only the setup is privileged.
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
-  insert into auth.users(id) values ('${ids.ou}'), ('${ids.ru}');
+  insert into auth.users(id) values ('${ids.ou}'), ('${ids.ru}'), ('${ids.op}');
   insert into public.providers(user_id, display_name, username)
     values ('${ids.ou}', 'Conc Owner ${tag}', 'cco_${tag}') returning id into opid;
   insert into public.providers(user_id, display_name, username)
@@ -410,7 +444,14 @@ begin
            ('${ids.offer18}', opid, '${ids.ou}', 'conc offering18 ${tag}', 'conc seeking'),
            ('${ids.offer19}', opid, '${ids.ou}', 'conc offering19 ${tag}', 'conc seeking'),
            ('${ids.offer20}', opid, '${ids.ou}', 'conc offering20 ${tag}', 'conc seeking'),
-           ('${ids.offer21}', opid, '${ids.ou}', 'conc offering21 ${tag}', 'conc seeking');
+           ('${ids.offer21}', opid, '${ids.ou}', 'conc offering21 ${tag}', 'conc seeking'),
+           ('${ids.offer22}', opid, '${ids.ou}', 'conc offering22 ${tag}', 'conc seeking'),
+           ('${ids.offer23}', opid, '${ids.ou}', 'conc offering23 ${tag}', 'conc seeking'),
+           ('${ids.offer24}', opid, '${ids.ou}', 'conc offering24 ${tag}', 'conc seeking'),
+           ('${ids.offer25}', opid, '${ids.ou}', 'conc offering25 ${tag}', 'conc seeking'),
+           ('${ids.offer26}', opid, '${ids.ou}', 'conc offering26 ${tag}', 'conc seeking'),
+           ('${ids.offer27}', opid, '${ids.ou}', 'conc offering27 ${tag}', 'conc seeking'),
+           ('${ids.offer28}', opid, '${ids.ou}', 'conc offering28 ${tag}', 'conc seeking');
   insert into public.barter_interests(id, offer_id, interested_provider_id, interested_user_id,
     message, status) values
     ('${ids.interest4}', '${ids.offer4}', rpid, '${ids.ru}', 'x', 'accepted'),
@@ -430,7 +471,14 @@ begin
     ('${ids.interest18}', '${ids.offer18}', rpid, '${ids.ru}', 'x', 'accepted'),
     ('${ids.interest19}', '${ids.offer19}', rpid, '${ids.ru}', 'x', 'accepted'),
     ('${ids.interest20}', '${ids.offer20}', rpid, '${ids.ru}', 'x', 'accepted'),
-    ('${ids.interest21}', '${ids.offer21}', rpid, '${ids.ru}', 'x', 'accepted');
+    ('${ids.interest21}', '${ids.offer21}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest22}', '${ids.offer22}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest23}', '${ids.offer23}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest24}', '${ids.offer24}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest25}', '${ids.offer25}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest26}', '${ids.offer26}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest27}', '${ids.offer27}', rpid, '${ids.ru}', 'x', 'accepted'),
+    ('${ids.interest28}', '${ids.offer28}', rpid, '${ids.ru}', 'x', 'accepted');
 end $$;`)
   if (!r.ok) {
     console.error('seed failed:', r.out)
@@ -1283,6 +1331,282 @@ async function raceCancelUnauthorizedAndLate() {
   chk('and the obligation is untouched', 'pending', ob.status)
 }
 
+
+// ── Adjudication helpers ───────────────────────────────────────────────────
+// The operator's write path, as a plpgsql statement. `runTimedMaintenance` supplies the
+// service_role claim, which is the ONLY context that can reach this function: `execute` is
+// granted to service_role alone. There is deliberately no `runTimedUser` equivalent, and the
+// participant-racing-operator scenario below proves an authenticated caller is refused.
+const adjudicate = (interest, side, outcome, why) =>
+  `perform public.adjudicate_barter_obligation(`
+  + `${obligationOf(interest, side)}, '${outcome}', '${ids.op}', '${why}');`
+
+async function adjudicationRows(interest) {
+  const r = await runSql(`
+select count(*) as n,
+       min(a.outcome) as outcome,
+       count(distinct a.outcome) as outcomes,
+       min(a.rationale) as rationale,
+       min(a.adjudicator_user_id::text) as adjudicator
+  from public.barter_obligation_adjudications a
+  join public.barter_agreements ag on ag.id = a.agreement_id
+ where ag.interest_id = '${interest}';`)
+  return {
+    n: scalar(r.out, 'n'),
+    outcome: nullable(scalar(r.out, 'outcome')),
+    outcomes: scalar(r.out, 'outcomes'),
+    rationale: nullable(scalar(r.out, 'rationale')),
+    adjudicator: nullable(scalar(r.out, 'adjudicator')),
+  }
+}
+
+// An obligation that is genuinely UNDER REVIEW, reached only through real participant acts:
+// delivered by its deliverer, then reported as a no-show by its receiver. `p_delivered` false
+// leaves it undelivered, which is what the mark-delivered race needs.
+async function underReviewByNoShow(interest, delivered = true) {
+  await confirmedScheduledTradeInPast(interest)
+  if (delivered) {
+    await runSql(asUser(ids.ou,
+      `perform public.mark_barter_obligation_delivered(${obligationOf(interest, 'offer_owner')});`))
+  }
+  await runSql(asUser(ids.ru,
+    `perform public.report_barter_obligation_no_show(`
+    + `${obligationOf(interest, 'offer_owner')}, 'nobody came');`))
+}
+
+// ── 22. Adjudication racing the receiver's confirm-received ────────────────
+// The operator resolves a trade at the instant its receiver changes their mind. Both acts are
+// legal at that instant, and the ORDER decides only whether the participant's answer lands:
+// once an outcome exists every participant write on that obligation is refused PT424, while an
+// answer that lands first does not un-report the no-show, so the obligation is still Under
+// Review and still adjudicable. The adjudication therefore wins either way — and, crucially,
+// the receiver's answer is never rewritten to agree with the outcome.
+async function raceAdjudicateVsConfirmReceived() {
+  await underReviewByNoShow(ids.interest22)
+  const confirm =
+    `perform public.confirm_barter_obligation_received(${obligationOf(ids.interest22, 'offer_owner')});`
+  const blocker = blockObligation(ids.interest22, 'offer_owner')
+  await delay(2000)
+  const [a, c] = await Promise.all([
+    runTimedMaintenance(adjudicate(ids.interest22, 'offer_owner', 'fulfilled', 'Evidence stands.')),
+    runTimedUser(ids.ru, confirm),
+  ])
+  await blocker
+  chk('adjudication and confirm-received genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, c.timing)))
+  chk('neither act deadlocked', 'true',
+    String(a.timing?.code !== '40P01' && c.timing?.code !== '40P01'))
+  chk('the adjudication lands whichever order the two resolve in', 'true', String(a.opOk))
+  const rows = await adjudicationRows(ids.interest22)
+  chk('exactly one terminal outcome exists', '1', rows.n)
+  chk('and it is the one the operator decided', 'fulfilled', rows.outcome)
+  const ob = await obligationRow(ids.interest22, 'offer_owner')
+  // Two legal shapes and nothing else. The participant answer either landed before the outcome
+  // and STAYS on the record beside it, or it was refused with the code the client maps.
+  const answerLanded = c.opOk && ob.status === 'received'
+  const answerRefused = !c.opOk && c.timing?.code === 'PT424' && ob.status === 'delivered'
+  chk('the receiver answer either landed or was refused as resolved — never both, never neither',
+    'true', String(answerLanded !== answerRefused))
+  chk('and the end state is one of those two shapes', 'true', String(answerLanded || answerRefused))
+  const reports = await noShowRows(ids.interest22)
+  chk('the no-show report survives the outcome — history is not rewritten', '1', reports.n)
+}
+
+// ── 23. Adjudication racing the receiver's "Didn't receive" ────────────────
+// The same boundary from the other direction: the participant is making the complaint that
+// would normally PRECEDE a review while the operator is already closing one.
+async function raceAdjudicateVsNotReceived() {
+  await underReviewByNoShow(ids.interest23)
+  const deny =
+    `perform public.report_barter_obligation_not_received(${obligationOf(ids.interest23, 'offer_owner')});`
+  const blocker = blockObligation(ids.interest23, 'offer_owner')
+  await delay(2000)
+  const [a, d] = await Promise.all([
+    runTimedMaintenance(
+      adjudicate(ids.interest23, 'offer_owner', 'unfulfilled', 'Nothing was provided.')),
+    runTimedUser(ids.ru, deny),
+  ])
+  await blocker
+  chk('adjudication and "didn\'t receive" genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, d.timing)))
+  chk('neither of those two deadlocked', 'true',
+    String(a.timing?.code !== '40P01' && d.timing?.code !== '40P01'))
+  chk('the adjudication lands here too', 'true', String(a.opOk))
+  const rows = await adjudicationRows(ids.interest23)
+  chk('exactly one terminal outcome exists after that race', '1', rows.n)
+  const ob = await obligationRow(ids.interest23, 'offer_owner')
+  const answerLanded = d.opOk && ob.status === 'not_received'
+  const answerRefused = !d.opOk && d.timing?.code === 'PT424' && ob.status === 'delivered'
+  chk('the denial either landed or was refused as resolved', 'true',
+    String(answerLanded !== answerRefused))
+  chk('and no third shape is reachable', 'true', String(answerLanded || answerRefused))
+  // The coexistence the product depends on: a receiver's "Didn't receive" and an operator's
+  // determination are BOTH on the record when the answer got there first.
+  chk('a landed denial coexists with the outcome rather than being overwritten', 'true',
+    String(!answerLanded || (ob.status === 'not_received' && rows.n === '1')))
+}
+
+// ── 24. Adjudication racing a no-show report ───────────────────────────────
+// Under Review reached by the OTHER route (`not_received`), so the report being raced is a
+// genuinely new participant act rather than a repeat of the one that opened the review.
+async function raceAdjudicateVsNoShowReport() {
+  await confirmedScheduledTradeInPast(ids.interest24)
+  await runSql(asUser(ids.ou,
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest24, 'offer_owner')});`))
+  await runSql(asUser(ids.ru,
+    `perform public.report_barter_obligation_not_received(${obligationOf(ids.interest24, 'offer_owner')});`))
+  const report =
+    `perform public.report_barter_obligation_no_show(`
+    + `${obligationOf(ids.interest24, 'offer_owner')}, 'they never came');`
+  const blocker = blockObligation(ids.interest24, 'offer_owner')
+  await delay(2000)
+  const [a, n] = await Promise.all([
+    runTimedMaintenance(adjudicate(ids.interest24, 'offer_owner', 'closed_without_resolution',
+      'Conflicting accounts and no evidence either way.')),
+    runTimedUser(ids.ru, report),
+  ])
+  await blocker
+  chk('adjudication and a no-show report genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, n.timing)))
+  chk('neither the outcome nor the report deadlocked', 'true',
+    String(a.timing?.code !== '40P01' && n.timing?.code !== '40P01'))
+  chk('the adjudication lands', 'true', String(a.opOk))
+  const rows = await adjudicationRows(ids.interest24)
+  chk('one terminal outcome, and it is the one decided', '1', rows.n)
+  chk('closed without resolution is recorded as itself', 'closed_without_resolution', rows.outcome)
+  const reports = await noShowRows(ids.interest24)
+  const reportLanded = n.opOk && reports.n === '1'
+  const reportRefused = !n.opOk && n.timing?.code === 'PT424' && reports.n === '0'
+  chk('the report either landed before the outcome or was refused as resolved', 'true',
+    String(reportLanded !== reportRefused))
+  chk('and never both', 'true', String(reportLanded || reportRefused))
+  const ob = await obligationRow(ids.interest24, 'offer_owner')
+  chk('the receiver\'s earlier answer is untouched by the outcome', 'not_received', ob.status)
+}
+
+// ── 25. Adjudication racing mark-delivered ─────────────────────────────────
+// The obligation is UNDELIVERED and under review by no-show report, so the deliverer marking it
+// delivered is a legal act at that instant. Whichever lands, `delivered_at` is never invented
+// and never erased: a delivery that got there first stands as a fact beside the outcome.
+async function raceAdjudicateVsMarkDelivered() {
+  await underReviewByNoShow(ids.interest25, false)
+  const mark =
+    `perform public.mark_barter_obligation_delivered(${obligationOf(ids.interest25, 'offer_owner')});`
+  const blocker = blockObligation(ids.interest25, 'offer_owner')
+  await delay(2000)
+  const [a, m] = await Promise.all([
+    runTimedMaintenance(
+      adjudicate(ids.interest25, 'offer_owner', 'unfulfilled', 'The appointment did not happen.')),
+    runTimedUser(ids.ou, mark),
+  ])
+  await blocker
+  chk('adjudication and mark-delivered genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, m.timing)))
+  chk('neither the outcome nor the delivery deadlocked', 'true',
+    String(a.timing?.code !== '40P01' && m.timing?.code !== '40P01'))
+  chk('the adjudication lands against an undelivered obligation under review', 'true',
+    String(a.opOk))
+  const rows = await adjudicationRows(ids.interest25)
+  chk('exactly one terminal outcome after the delivery race', '1', rows.n)
+  const ob = await obligationRow(ids.interest25, 'offer_owner')
+  const deliveryLanded = m.opOk && ob.status === 'delivered' && ob.deliveredAt !== null
+  const deliveryRefused =
+    !m.opOk && m.timing?.code === 'PT424' && ob.status === 'pending' && ob.deliveredAt === null
+  chk('the delivery either landed or was refused as resolved', 'true',
+    String(deliveryLanded !== deliveryRefused))
+  chk('and the obligation is in exactly one of those two shapes', 'true',
+    String(deliveryLanded || deliveryRefused))
+  chk('an outcome never erases a delivery that got there first', 'false',
+    String(m.opOk && ob.deliveredAt === null))
+}
+
+// ── 26. Two operators, two DIFFERENT outcomes, at once ─────────────────────
+// The scenario the whole immutability design exists for. Exactly one must commit; the other
+// must be refused rather than overwriting, and the surviving row must be the winner's — not a
+// blend, and not the later one silently replacing the earlier.
+async function raceTwoOperatorsDifferentOutcomes() {
+  await underReviewByNoShow(ids.interest26)
+  const blocker = blockObligation(ids.interest26, 'offer_owner')
+  await delay(2000)
+  const [f, u] = await Promise.all([
+    runTimedMaintenance(
+      adjudicate(ids.interest26, 'offer_owner', 'fulfilled', 'Operator A: it was provided.')),
+    runTimedMaintenance(
+      adjudicate(ids.interest26, 'offer_owner', 'unfulfilled', 'Operator B: it was not.')),
+  ])
+  await blocker
+  chk('the two operator decisions genuinely overlapped',
+    'true', String(intervalsOverlap(f.timing, u.timing)))
+  chk('neither operator deadlocked', 'true',
+    String(f.timing?.code !== '40P01' && u.timing?.code !== '40P01'))
+  chk('exactly one of the two conflicting outcomes commits', 'true', String(f.opOk !== u.opOk))
+  chk('and the loser is refused as already resolved', 'PT412',
+    f.opOk ? u.timing?.code : f.timing?.code)
+  const rows = await adjudicationRows(ids.interest26)
+  chk('exactly one adjudication row exists', '1', rows.n)
+  chk('and only one outcome value is present', '1', rows.outcomes)
+  chk('the surviving outcome is the one that succeeded', f.opOk ? 'fulfilled' : 'unfulfilled',
+    rows.outcome)
+  chk('the rationale stored is the winner\'s, not a merge',
+    f.opOk ? 'Operator A: it was provided.' : 'Operator B: it was not.', rows.rationale)
+}
+
+// ── 27. The same decision submitted twice at once ──────────────────────────
+// The double tap on an operator tool. BOTH must succeed — a retried identical decision is not
+// an error — and exactly one row may exist, with one of the two rationales rather than a
+// second row or an overwritten one.
+async function raceDuplicateAdjudication() {
+  await underReviewByNoShow(ids.interest27)
+  const blocker = blockObligation(ids.interest27, 'offer_owner')
+  await delay(2000)
+  const [a, b] = await Promise.all([
+    runTimedMaintenance(
+      adjudicate(ids.interest27, 'offer_owner', 'fulfilled', 'first submission')),
+    runTimedMaintenance(
+      adjudicate(ids.interest27, 'offer_owner', 'fulfilled', 'second submission')),
+  ])
+  await blocker
+  chk('the two identical decisions genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('a concurrent duplicate decision is safe for both callers', 'true',
+    String(a.opOk && b.opOk))
+  const rows = await adjudicationRows(ids.interest27)
+  chk('and records exactly one adjudication', '1', rows.n)
+  chk('with the decided outcome', 'fulfilled', rows.outcome)
+  chk('and one of the two rationales, not a merge of both', 'true',
+    String(rows.rationale === 'first submission' || rows.rationale === 'second submission'))
+}
+
+// ── 28. A participant racing the operator ──────────────────────────────────
+// The authority boundary under contention. `execute` on the RPC is granted to service_role
+// alone, so an authenticated participant is refused at the privilege check — before any row is
+// touched, which is why they cannot even make the operator wait.
+async function raceParticipantVsOperator() {
+  await underReviewByNoShow(ids.interest28)
+  const blocker = blockObligation(ids.interest28, 'offer_owner')
+  await delay(2000)
+  const [op, party] = await Promise.all([
+    runTimedMaintenance(
+      adjudicate(ids.interest28, 'offer_owner', 'fulfilled', 'Operator decision.')),
+    runTimedUser(ids.ru,
+      adjudicate(ids.interest28, 'offer_owner', 'unfulfilled', 'Participant decision.')),
+  ])
+  await blocker
+  chk('the participant is refused without ever contending for the locked row',
+    'true', String(refusedWithoutWaiting(party.timing, op.timing)))
+  chk('the operator wins', 'true', String(op.opOk))
+  chk('and the participant is refused for want of privilege', '42501', party.timing?.code)
+  const rows = await adjudicationRows(ids.interest28)
+  chk('exactly one adjudication exists', '1', rows.n)
+  chk('and it is the operator\'s', 'fulfilled', rows.outcome)
+  chk('recorded against the operator, never the participant', ids.op, rows.adjudicator)
+  // And the same refusal holds sequentially, with no contention at all to explain it away.
+  const after = await runTimedUser(ids.ou,
+    adjudicate(ids.interest28, 'offer_owner', 'fulfilled', 'Deliverer decision.'))
+  chk('the deliverer cannot adjudicate either, uncontended', '42501', after.timing?.code)
+  chk('and no second adjudication was created', '1', (await adjudicationRows(ids.interest28)).n)
+}
+
 async function cleanup() {
   const r = await runSql(`
 do $$
@@ -1295,6 +1619,12 @@ begin
   delete from public.barter_agreement_cancellations c
    using public.barter_agreements ag
    where c.agreement_id = ag.id and ag.interest_id in (${quoted(AGREEMENT_INTERESTS)});
+  -- Adjudications would cascade with the agreement anyway; deleted explicitly for the same
+  -- reason cancellations are, so the residue count below is testing the delete and not the
+  -- cascade. The append-only trigger permits DELETE from a privileged caller only.
+  delete from public.barter_obligation_adjudications a
+   using public.barter_agreements ag
+   where a.agreement_id = ag.id and ag.interest_id in (${quoted(AGREEMENT_INTERESTS)});
   delete from public.barter_agreements
    where interest_id in (${quoted(AGREEMENT_INTERESTS)});
   delete from public.barter_version_acceptances a using public.barter_proposal_versions v,
@@ -1314,7 +1644,7 @@ begin
    where id in (${quoted(ALL_INTERESTS)});
   delete from public.barter_offers where id in (${quoted(ALL_OFFERS)});
   delete from public.providers where user_id in ('${ids.ou}','${ids.ru}');
-  delete from auth.users where id in ('${ids.ou}','${ids.ru}');
+  delete from auth.users where id in ('${ids.ou}','${ids.ru}','${ids.op}');
 end $$;`)
   if (!r.ok) console.error('cleanup failed:', r.out)
 
@@ -1338,15 +1668,20 @@ select (select count(*) from public.barter_offers where id in
        (select count(*) from public.barter_obligation_no_show_reports r
           join public.barter_agreements ag on ag.id = r.agreement_id
           where ag.interest_id in (${quoted(AGREEMENT_INTERESTS)})) as no_show_reports,
+       (select count(*) from public.barter_obligation_adjudications a
+          join public.barter_agreements ag on ag.id = a.agreement_id
+          where ag.interest_id in (${quoted(AGREEMENT_INTERESTS)})) as adjudications,
        (select count(*) from public.messages
           where conversation_id = '${ids.conv}') as messages,
        (select count(*) from public.conversation
           where id = '${ids.conv}') as conversations,
        (select count(*) from public.providers where user_id in
           ('${ids.ou}','${ids.ru}')) as providers,
-       (select count(*) from auth.users where id in ('${ids.ou}','${ids.ru}')) as users;`)
+       (select count(*) from auth.users
+         where id in ('${ids.ou}','${ids.ru}','${ids.op}')) as users;`)
   for (const k of ['offers', 'interests', 'proposals', 'obligations', 'agreements',
-    'cancellations', 'no_show_reports', 'messages', 'conversations', 'providers', 'users']) {
+    'cancellations', 'no_show_reports', 'adjudications', 'messages', 'conversations',
+    'providers', 'users']) {
     chk(`zero residue: ${k}`, '0', scalar(q.out, k))
   }
 }
@@ -1373,6 +1708,13 @@ await raceDoubleNoShow()
 await raceNoShowVsConfirmReceived()
 await raceNoShowVsCancel()
 await raceNoShowUnauthorized()
+await raceAdjudicateVsConfirmReceived()
+await raceAdjudicateVsNotReceived()
+await raceAdjudicateVsNoShowReport()
+await raceAdjudicateVsMarkDelivered()
+await raceTwoOperatorsDifferentOutcomes()
+await raceDuplicateAdjudication()
+await raceParticipantVsOperator()
 await cleanup()
 
 const failed = results.filter((r) => !r.ok).length
