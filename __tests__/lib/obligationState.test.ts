@@ -44,7 +44,7 @@ describe('obligationView capability', () => {
   it('offers Mark delivered only to the deliverer, and only before delivery', () => {
     for (const role of ROLES) {
       for (const status of STATUSES) {
-        const v = obligationView(role, status)
+        const v = obligationView({ role, status })
         expect(v.canMarkDelivered).toBe(role === 'deliverer' && status === 'pending')
       }
     }
@@ -53,7 +53,7 @@ describe('obligationView capability', () => {
   it('offers the receiver answer only to the receiver, and only after delivery', () => {
     for (const role of ROLES) {
       for (const status of STATUSES) {
-        const v = obligationView(role, status)
+        const v = obligationView({ role, status })
         expect(v.canRespond).toBe(role === 'receiver' && status === 'delivered')
       }
     }
@@ -62,7 +62,7 @@ describe('obligationView capability', () => {
   it('never offers both controls at once', () => {
     for (const role of ROLES) {
       for (const status of STATUSES) {
-        const v = obligationView(role, status)
+        const v = obligationView({ role, status })
         expect(v.canMarkDelivered && v.canRespond).toBe(false)
       }
     }
@@ -71,7 +71,7 @@ describe('obligationView capability', () => {
   it('offers nothing once an answer is recorded', () => {
     for (const role of ROLES) {
       for (const status of ['received', 'not_received'] as ObligationStatus[]) {
-        const v = obligationView(role, status)
+        const v = obligationView({ role, status })
         expect(v.canMarkDelivered).toBe(false)
         expect(v.canRespond).toBe(false)
       }
@@ -79,8 +79,8 @@ describe('obligationView capability', () => {
   })
 
   it('titles each obligation by the viewer’s end of it', () => {
-    expect(obligationView('deliverer', 'pending').title).toBe('You agreed to provide')
-    expect(obligationView('receiver', 'pending').title).toBe('You will receive')
+    expect(obligationView({ role: 'deliverer', status: 'pending' }).title).toBe('You agreed to provide')
+    expect(obligationView({ role: 'receiver', status: 'pending' }).title).toBe('You will receive')
   })
 })
 
@@ -112,7 +112,7 @@ describe('obligationView copy is truthful and non-final', () => {
       .join(' ')
     for (const role of ROLES) {
       for (const status of STATUSES) {
-        const v = obligationView(role, status)
+        const v = obligationView({ role, status })
         // The timeline labels are card copy too, and were the one string on the card
         // authored in the screen and therefore outside this sweep.
         const text = `${v.title} ${v.state} ${v.note ?? ''} ${labels}`.toLowerCase()
@@ -124,20 +124,20 @@ describe('obligationView copy is truthful and non-final', () => {
   })
 
   it('never claims a delivery is confirmed on the deliverer’s say-so', () => {
-    const v = obligationView('deliverer', 'delivered')
+    const v = obligationView({ role: 'deliverer', status: 'delivered' })
     expect(v.state).toContain('You marked this delivered')
     expect(v.note).toContain('Waiting for the other provider to confirm')
   })
 
   it('reports a denial as the receiver’s statement, and decides nothing', () => {
-    expect(obligationView('receiver', 'not_received').state).toBe(
+    expect(obligationView({ role: 'receiver', status: 'not_received' }).state).toBe(
       "We've recorded that you didn't receive this.",
     )
-    expect(obligationView('deliverer', 'not_received').state).toContain(
+    expect(obligationView({ role: 'deliverer', status: 'not_received' }).state).toContain(
       'recorded that they did not receive this',
     )
     for (const role of ROLES) {
-      expect(obligationView(role, 'not_received').note).toContain('Nothing has been decided')
+      expect(obligationView({ role, status: 'not_received' }).note).toContain('Nothing has been decided')
     }
   })
 
@@ -146,23 +146,23 @@ describe('obligationView copy is truthful and non-final', () => {
     // instruct someone to go and use it.
     for (const role of ROLES) {
       for (const status of STATUSES) {
-        const v = obligationView(role, status)
+        const v = obligationView({ role, status })
         expect(`${v.state} ${v.note ?? ''}`.toLowerCase()).not.toContain('conversation')
       }
     }
   })
 
   it('tells each side who they are waiting on before delivery', () => {
-    expect(obligationView('receiver', 'pending').note).toContain(
+    expect(obligationView({ role: 'receiver', status: 'pending' }).note).toContain(
       'Waiting for the other provider to mark this delivered',
     )
-    expect(obligationView('deliverer', 'pending').state).toContain('not marked this delivered')
+    expect(obligationView({ role: 'deliverer', status: 'pending' }).state).toContain('not marked this delivered')
   })
 
   it('gives every role and status a non-empty state sentence', () => {
     for (const role of ROLES) {
       for (const status of STATUSES) {
-        expect(obligationView(role, status).state.length).toBeGreaterThan(0)
+        expect(obligationView({ role, status }).state.length).toBeGreaterThan(0)
       }
     }
   })

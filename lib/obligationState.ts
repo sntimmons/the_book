@@ -110,8 +110,11 @@ export interface ObligationView {
    *
    * A separate field rather than words spliced into `state`, so a screen can render it as a
    * badge and so the forbidden-vocabulary sweep has one string to check.
+   *
+   * Typed as the LABEL UNION, not `string`: that is what makes `ATTENTION_TONE` total, so a
+   * fourth attention state cannot reach a screen without a tone.
    */
-  attention: string | null
+  attention: AttentionLabel | null
   /**
    * Whether the receiver may report a no-show right now.
    *
@@ -211,17 +214,6 @@ const TITLE: Record<ObligationRole, string> = {
   receiver: 'You will receive',
 }
 
-/**
- * @param tradeCancelled has the AGREEMENT been cancelled by either participant? A cancelled
- * trade freezes both controls: the server refuses a delivery or an answer on one (`PT409`),
- * and rendering a button that can only fail is the capability-contradicts-caption defect this
- * module exists to prevent. The rule lives here, not in the screen, so it is covered by the
- * same exhaustive role × status sweep as the copy.
- *
- * The state sentence is unchanged when cancelled — "You have not marked this delivered yet."
- * stays true — because the cancellation itself is said once, by `lib/tradeCancellation.ts`,
- * above both obligations rather than repeated inside each.
- */
 /** The one short label for an elapsed, unanswered response window. */
 export const NEEDS_ATTENTION_LABEL = 'Needs attention'
 
@@ -239,7 +231,7 @@ export const ACTION_NEEDED_LABEL = 'Action needed'
 interface WindowCopy {
   /** Replaces the status note when there is something truer to say about the window. */
   note: string | null
-  attention: string | null
+  attention: AttentionLabel | null
   deadlineLabel: string | null
 }
 
@@ -301,27 +293,55 @@ const WINDOW: Record<ObligationRole, Record<ReceiverWindowState, WindowCopy>> = 
 }
 
 /**
- * @param window the SERVER's `receiver_window_state`. Defaulted to `none` so a caller that has
- * not been given one cannot accidentally assert an attention state — the safe direction is to
- * say nothing about a window, never to invent one.
- * @param confirmationDeadline the server's `confirmation_deadline` for this obligation. Only
- * rendered; never compared against a local clock here.
+ * Everything `obligationView` needs to describe ONE obligation, as named fields.
+ *
+ * WHY AN OBJECT AND NOT PARAMETERS. This grew to seven positional arguments ending in two
+ * adjacent, same-typed, same-defaulted booleans (`underReview`, `canReportNoShow`). Transposing
+ * those two type-checked cleanly and produced two opposite defects at once: an unreported
+ * obligation labelled "Under review", and the no-show control offered on a trade the server
+ * would refuse. Named fields make that transposition impossible to write, and they make every
+ * call site say which fact it is supplying.
+ *
+ * EVERY OPTIONAL FIELD DEFAULTS TO THE WITHHOLDING VALUE. A caller that has not been given a
+ * fact must not be able to assert one: no window, no review, no control. That direction is the
+ * same one the server takes and the same one `TradeRowFacts` takes, and it is why these are
+ * optional rather than required — a missing fact is a real state, not a caller error.
  */
-export function obligationView(
-  role: ObligationRole,
-  status: ObligationStatus,
-  tradeCancelled = false,
-  window: ReceiverWindowState = 'none',
-  confirmationDeadline: string | null = null,
+export interface ObligationViewFacts {
+  /** Which end of this obligation the viewer is on. */
+  role: ObligationRole
+  /** What has happened to it. Server-owned. */
+  status: ObligationStatus
+  /** Has the AGREEMENT been cancelled by either participant? Outranks everything below. */
+  tradeCancelled?: boolean
+  /** The SERVER's PD-057 window state for this obligation. Never recomputed here. */
+  window?: ReceiverWindowState
+  /** The server's `confirmation_deadline`. Only rendered; never compared to a local clock. */
+  confirmationDeadline?: string | null
   /**
-   * The SERVER's derived Under Review state for THIS obligation, and its offer of the no-show
-   * control. Both default to the silent/withholding value so a caller that has not been given
-   * them cannot accidentally assert that a trade needs review or offer a control that can only
-   * fail — the same fail-closed direction as `window`.
+   * The SERVER's derived Under Review state for **THIS ONE OBLIGATION** (PD-062).
+   *
+   * OBLIGATION-LEVEL, and the name says so. The agreement-level roll-up — "is EITHER obligation
+   * under review" — is `CancellationViewFacts.agreementUnderReview`, and it gates a different
+   * thing (the ordinary exit, PD-063). Both were called `underReview` until this cleanup; they
+   * align today only because a trade with one reported obligation is a trade under review, and
+   * a future adjudication slice could have mutated one while assuming the other.
    */
-  underReview = false,
-  canReportNoShow = false,
-): ObligationView {
+  obligationUnderReview?: boolean
+  /** The SERVER's answer to "may this receiver report a no-show right now?" (PD-062). */
+  canReportNoShow?: boolean
+}
+
+export function obligationView(f: ObligationViewFacts): ObligationView {
+  const {
+    role,
+    status,
+    tradeCancelled = false,
+    window = 'none',
+    confirmationDeadline = null,
+    obligationUnderReview = false,
+    canReportNoShow = false,
+  } = f
   const c = COPY[role][status]
   // A window belongs ONLY to a delivered, unanswered obligation, and only to an uncancelled
   // trade. The server already guarantees both — `barter_receiver_window` returns `none` for any
@@ -340,7 +360,7 @@ export function obligationView(
   // missing answer, and once a report exists the answer is no longer what the trade is waiting
   // on. It is still not a verdict: `UNDER_REVIEW_NOTE` says nothing has been decided, and the
   // receiver's controls stay live beneath it because they genuinely still work.
-  const review = underReview && !tradeCancelled
+  const review = obligationUnderReview && !tradeCancelled
   return {
     title: TITLE[role],
     state: c.state,
@@ -491,6 +511,62 @@ export function noShowStatement(
 
 /** The one short label for a trade that needs manual resolution. */
 export const UNDER_REVIEW_LABEL = 'Under review'
+
+/**
+ * The ONE mapping from an attention label to its presentation tone.
+ *
+ * WHY THIS EXISTS. The label → chip-style ternary was hand-copied into both
+ * `app/community/negotiation/[id].tsx` and `app/community/trade-activity.tsx`, along with six
+ * rgba literals, and each file carried a comment asserting the invariant that two independent
+ * copies structurally cannot enforce — that one product state does not change meaning when the
+ * viewer moves between surfaces. This slice's own third state was added to both by hand.
+ *
+ * GENUINELY TOTAL over the labels, and the typing is the point rather than decoration. Keyed by
+ * `AttentionLabel` — a union of the three exported constants — so adding a fourth label without
+ * a tone is a COMPILE error here. A `Record<string, …>` would have accepted any key and required
+ * none, which is the silent fallthrough this table exists to prevent; the first draft of this
+ * comment claimed the guarantee while the type did not provide it.
+ *
+ * TONE, NOT COLOUR. This names the MEANING; each screen owns its own palette and maps the tone
+ * to its own StyleSheet. That keeps one authoritative mapping without dragging a theme system
+ * into a behaviour-preserving cleanup, and without a lib module importing React Native styles.
+ *
+ *   `live`     — your turn, still in time
+ *   `elapsed`  — the window has passed
+ *   `review`   — with someone else now
+ *
+ * Deliberately NO alarm tone in the set: nothing here is a failure, a dispute or a review of a
+ * person, and an alarm colour would state something the product cannot support.
+ */
+export type AttentionTone = 'live' | 'elapsed' | 'review'
+
+/** Every label `obligationView` or `tradeRowState` can put in an `attention` field. */
+export type AttentionLabel =
+  | typeof ACTION_NEEDED_LABEL
+  | typeof NEEDS_ATTENTION_LABEL
+  | typeof UNDER_REVIEW_LABEL
+
+export const ATTENTION_TONE: Record<AttentionLabel, AttentionTone> = {
+  [ACTION_NEEDED_LABEL]: 'live',
+  [NEEDS_ATTENTION_LABEL]: 'elapsed',
+  [UNDER_REVIEW_LABEL]: 'review',
+}
+
+/**
+ * The tone for a rendered attention label, or null when there is no label.
+ *
+ * Takes `string | null` rather than `AttentionLabel | null` as BELT AND BRACES, not because the
+ * callers need the widening — both view models now type `attention` as the union, so every real
+ * call is already narrow. The looser parameter plus the `?? 'live'` fallback means a label
+ * arriving from somewhere the type system does not cover (a persisted value, a future server
+ * field) still renders in the least-alarming tone instead of crashing a screen. That path is
+ * unreachable today, which the union-keyed `ATTENTION_TONE` enforces at compile time and
+ * `obligationViewShape.test.ts` re-checks over every label BOTH view models can emit.
+ */
+export function attentionTone(label: string | null): AttentionTone | null {
+  if (!label) return null
+  return (ATTENTION_TONE as Record<string, AttentionTone>)[label] ?? 'live'
+}
 
 /**
  * What an obligation under review says.

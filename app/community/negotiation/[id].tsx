@@ -14,6 +14,7 @@ import {
 import { Feather } from '@expo/vector-icons'
 import { router, useFocusEffect, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import ReasonComposer from '@/components/ReasonComposer'
 import { useAuth } from '@/context/AuthContext'
 import {
   acceptVersion,
@@ -53,8 +54,8 @@ import {
   anyDelivered,
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
-  NEEDS_ATTENTION_LABEL,
-  UNDER_REVIEW_LABEL,
+  attentionTone,
+  AttentionTone,
   MAX_NO_SHOW_REASON,
   NO_SHOW_REASON_NOTE,
   NO_SHOW_REASON_PLACEHOLDER,
@@ -228,16 +229,22 @@ export default function NegotiationScreen() {
   // Derived by lib/obligationState.ts, not here: this is the PD-046 precondition that decides
   // whether an irreversible control is rendered, and a rule computed in JSX cannot be tested.
   const delivered = anyDelivered(obligations)
-  // PD-063: once a no-show is reported the ordinary exit is gone and does not come back. The
-  // SERVER decides this — it arrives as `underReview` on the obligation row — and the screen
-  // only stops drawing a control that could now only be refused.
-  const underReview = obligations.some((o) => o.underReview)
+  // PD-063, AND THE SAME PREDICATE THE SERVER USES. `PT423` fires on the existence of a no-show
+  // report, so this asks exactly that — not the broader `under_review`, which also counts
+  // `not_received` and agreed with `PT423` only by a coincidence between two guards two
+  // migrations apart. Agreement-level: the exit closes for the whole trade the moment ANY
+  // obligation is reported, so a viewer whose own side is clean still loses the control.
+  const noShowReported = obligations.some((o) => o.noShowReportedAt !== null)
   const cancellationFacts = {
     iCancelled: row?.iCancelled ?? false,
     theyCancelled: row?.theyCancelled ?? false,
     cancelledAt: row?.cancelledAt ?? null,
   }
-  const cancel = cancellationView(cancellationFacts, delivered, underReview)
+  const cancel = cancellationView({
+    ...cancellationFacts,
+    anyDelivered: delivered,
+    noShowReported,
+  })
   // Participant-visible context, per the ruling on PR #58. Attribution is derived by
   // lib/tradeCancellation.ts rather than by a ternary here: putting the wrong label on a
   // provider's stated reason for abandoning a commitment is the one mistake this must not make.
@@ -566,17 +573,20 @@ export default function NegotiationScreen() {
     // happened there, against the server's clock. Nothing on this screen recomputes it, so a
     // device with a wrong clock cannot put this obligation into, or out of, Needs Attention, and
     // both participants are looking at the same answer.
-    const o = obligationView(
+    // NAMED FIELDS, so no two of these can silently swap places. `obligationUnderReview` and
+    // `canReportNoShow` are both server answers arriving on the same row as the window state,
+    // and both are booleans — as positional arguments they were one transposition away from
+    // labelling an unreported obligation "Under review" while offering a control the server
+    // would refuse.
+    const o = obligationView({
       role,
-      obligation.status,
+      status: obligation.status,
       tradeCancelled,
-      obligation.receiverWindowState,
-      obligation.confirmationDeadline,
-      // Under Review and the no-show offer are BOTH the server's answers, arriving on the same
-      // row as the window state. This screen compares nothing to a clock of its own.
-      obligation.underReview,
-      obligation.canReportNoShow,
-    )
+      window: obligation.receiverWindowState,
+      confirmationDeadline: obligation.confirmationDeadline,
+      obligationUnderReview: obligation.obligationUnderReview,
+      canReportNoShow: obligation.canReportNoShow,
+    })
     return (
       <View style={styles.term}>
         <Text style={styles.termSide}>{o.title}</Text>
@@ -601,14 +611,10 @@ export default function NegotiationScreen() {
           <View
             style={[
               styles.attentionChip,
-              // Same colour rule as Trade Activity, so one state does not change meaning when
-              // the viewer moves between the two surfaces: amber for "your turn, still in
-              // time", the warmer tone for "the window has passed".
-              o.attention === UNDER_REVIEW_LABEL
-                ? styles.attentionChipReview
-                : o.attention === NEEDS_ATTENTION_LABEL
-                  ? styles.attentionChipLate
-                  : null,
+              // WHICH tone applies is decided once, in lib/obligationState.ts, so one state
+              // cannot change meaning when the viewer moves between this screen and Trade
+              // Activity. Only the palette below is local.
+              CHIP_TONE[attentionTone(o.attention) ?? 'live'],
             ]}
           >
             <Text style={styles.attentionChipText}>{o.attention}</Text>
@@ -676,34 +682,16 @@ export default function NegotiationScreen() {
             exists is impossible: `canReportNoShow` goes false the moment one is filed, so the
             control cannot invite a duplicate. */}
         {o.canReportNoShow ? (
-          <View style={styles.cancelBlock}>
-            {/* The disclosure sits ABOVE the input, before the writer commits — the same rule
-                PD-060/PD-062 set for the cancellation reason, and for the same reason: someone
-                writing about a counterparty must know who reads it before they write. */}
-            <Text style={styles.cancelDetail}>{NO_SHOW_REASON_NOTE}</Text>
-            <TextInput
-              style={styles.input}
-              placeholder={NO_SHOW_REASON_PLACEHOLDER}
-              placeholderTextColor="rgba(240,232,213,0.35)"
-              value={noShowReason[obligation.id] ?? ''}
-              onChangeText={(t) =>
-                setNoShowReason((r) => ({ ...r, [obligation.id]: t }))
-              }
-              maxLength={MAX_NO_SHOW_REASON}
-              multiline
-            />
-            <View style={styles.actions}>
-              <TouchableOpacity
-                style={[styles.secondaryBtn, busy && styles.btnDisabled]}
-                disabled={busy}
-                onPress={() =>
-                  askThenWrite(REPORT_NO_SHOW_COPY, 'reportNoShow', obligation.id)
-                }
-              >
-                <Text style={styles.secondaryText}>{RESPOND_LABELS.noShow}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+          <ReasonComposer
+            note={NO_SHOW_REASON_NOTE}
+            placeholder={NO_SHOW_REASON_PLACEHOLDER}
+            value={noShowReason[obligation.id] ?? ''}
+            onChangeText={(t: string) => setNoShowReason((r) => ({ ...r, [obligation.id]: t }))}
+            maxLength={MAX_NO_SHOW_REASON}
+            submitLabel={RESPOND_LABELS.noShow}
+            onSubmit={() => askThenWrite(REPORT_NO_SHOW_COPY, 'reportNoShow', obligation.id)}
+            busy={busy}
+          />
         ) : null}
         {/* The reporter's own words, once a report exists. ATTRIBUTION comes from
             lib/obligationState.ts, never from a ternary here: it is a STATEMENT by one
@@ -860,39 +848,28 @@ export default function NegotiationScreen() {
                   either obligation is delivered the control disappears for good — PD-046
                   removes it permanently, and a later "didn't receive" does not bring it back,
                   so this must never reappear on that state.
-                  Gated on `obligationsLoaded` as well: `anyDelivered` AND `underReview` are both
-                  derived from the obligation rows, and an EMPTY list reads as "nothing delivered,
-                  nothing under review" — which is indistinguishable from the truth. Offering an irreversible action off a
+                  Gated on `obligationsLoaded` as well: `anyDelivered` AND `noShowReported` are
+                  both derived from the obligation rows, and an EMPTY list reads as "nothing
+                  delivered, nothing reported" — which is indistinguishable from the truth. Offering an irreversible action off a
                   precondition computed from data the screen has just said it could not load is
                   exactly the case the message above warns about. */}
               {obligationsLoaded && (cancel.canCancel || cancel.canAgree) ? (
-                <View style={styles.cancelBlock}>
-                  <Text style={styles.cancelDetail}>{CANCEL_REASON_NOTE}</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder={CANCEL_REASON_PLACEHOLDER}
-                    placeholderTextColor="rgba(240,232,213,0.35)"
-                    value={cancelReason}
-                    onChangeText={setCancelReason}
-                    maxLength={MAX_CANCEL_REASON}
-                    multiline
-                  />
-                  <View style={styles.actions}>
-                    <TouchableOpacity
-                      style={[styles.secondaryBtn, busy && styles.btnDisabled]}
-                      disabled={busy}
-                      onPress={() =>
-                        askThenCancel(cancel.canAgree ? AGREE_TO_CANCEL_COPY : CANCEL_TRADE_COPY)
-                      }
-                    >
-                      <Text style={styles.secondaryText}>
-                        {cancel.canAgree
-                          ? AGREE_TO_CANCEL_COPY.confirmLabel
-                          : CANCEL_TRADE_COPY.confirmLabel}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
+                <ReasonComposer
+                  note={CANCEL_REASON_NOTE}
+                  placeholder={CANCEL_REASON_PLACEHOLDER}
+                  value={cancelReason}
+                  onChangeText={setCancelReason}
+                  maxLength={MAX_CANCEL_REASON}
+                  submitLabel={
+                    cancel.canAgree
+                      ? AGREE_TO_CANCEL_COPY.confirmLabel
+                      : CANCEL_TRADE_COPY.confirmLabel
+                  }
+                  onSubmit={() =>
+                    askThenCancel(cancel.canAgree ? AGREE_TO_CANCEL_COPY : CANCEL_TRADE_COPY)
+                  }
+                  busy={busy}
+                />
               ) : null}
 
               {view.state !== 'confirmed' && view.state !== 'cancelled' ? (
@@ -1086,16 +1063,15 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     marginTop: 4,
   },
-  cancelBlock: { marginTop: 16 },
   obligationState: { color: '#F0E8D5', fontSize: 13, lineHeight: 19, marginTop: 8 },
-  // The same two chips Trade Activity uses, with the same meanings. Colour carries the
-  // difference between "your turn, still in time" (amber base) and "the window has passed"
-  // (the warmer `Late` variant) — the base alone was the LATE colour, so a live obligation was
-  // being shown in the elapsed treatment here while the list showed it as live.
+  // The chip. WHICH tone applies is decided ONCE, by `attentionTone` in lib/obligationState.ts;
+  // this screen only maps a tone to its own palette (see CHIP_TONE below). Before that split the
+  // ternary and these literals were hand-copied here and in Trade Activity, and each file
+  // asserted an invariant two independent copies cannot enforce.
   //
-  // Deliberately NOT red in either state: an elapsed response window is an unresolved
-  // condition, not a failure, a dispute or a review, and an alarm colour would say something
-  // the product cannot support.
+  // Deliberately NOT red in any state: an elapsed window or a trade needing review is an
+  // unresolved condition, not a failure, a dispute or a review of a person, and an alarm colour
+  // would say something the product cannot support.
   attentionChip: {
     alignSelf: 'flex-start',
     marginTop: 8,
@@ -1110,8 +1086,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(214,124,79,0.18)',
     borderColor: 'rgba(214,124,79,0.5)',
   },
-  // Same third state, same tone, same meaning as the list — one product state must not change
-  // colour when the viewer moves between the two surfaces.
+  // Same values as Trade Activity's, and DELIBERATELY DUPLICATED: there is no theme module and
+  // per-screen palettes are the repo-wide convention. What is single-sourced is the MAPPING
+  // (label -> tone, in lib/obligationState.ts); these six literals are hand-kept in step, so a
+  // palette edit here must be made there too. Stated plainly rather than claimed as an invariant
+  // two independent copies cannot enforce.
   attentionChipReview: {
     backgroundColor: 'rgba(120,150,190,0.18)',
     borderColor: 'rgba(120,150,190,0.5)',
@@ -1161,3 +1140,15 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 })
+
+// This screen's palette for the three tones. The MAPPING from label to tone is single-sourced in
+// lib/obligationState.ts; only the colours are local, so a fourth tone is a compile error there
+// and a deliberate palette choice here rather than a silent fallthrough on one of two screens.
+const CHIP_TONE: Record<AttentionTone, object> = {
+  // `live` IS the base style — the amber is already on `attentionChip`, which the array applies
+  // first. Repeating it here is inert and deliberate: it keeps the table TOTAL, so a fourth tone
+  // is a missing key rather than a silent fallthrough to whatever the base happened to be.
+  live: styles.attentionChip,
+  elapsed: styles.attentionChipLate,
+  review: styles.attentionChipReview,
+}

@@ -29,7 +29,7 @@ import {
   tradeActivitySection,
   tradeRowState,
 } from '@/lib/tradeActivity'
-import { NEEDS_ATTENTION_LABEL, UNDER_REVIEW_LABEL } from '@/lib/obligationState'
+import { attentionTone, AttentionTone } from '@/lib/obligationState'
 
 // TRADE ACTIVITY — durable access to barter relationships, independent of the discovery feed.
 //
@@ -286,11 +286,10 @@ export default function TradeActivityScreen() {
                       <View
                         style={[
                           styles.attentionChip,
-                          state.attention === UNDER_REVIEW_LABEL
-                            ? styles.attentionChipReview
-                            : state.attention === NEEDS_ATTENTION_LABEL
-                              ? styles.attentionChipLate
-                              : null,
+                          // WHICH tone applies is decided once, in lib/obligationState.ts, so
+                          // one state cannot change meaning between this list and the trade's
+                          // own screen. Only the palette below is local.
+                          CHIP_TONE[attentionTone(state.attention) ?? 'live'],
                         ]}
                       >
                         <Text style={styles.attentionChipText}>{state.attention}</Text>
@@ -510,9 +509,16 @@ const styles = StyleSheet.create({
   btnDisabled: { opacity: 0.5 },
   historyNote: { color: 'rgba(240,232,213,0.45)', fontSize: 12.5, marginTop: 10 },
   // Self-sizing so the label reads as a chip, not a full-width band. Colour carries the
-  // difference between "your turn, still in time" and "the window has passed": amber for the
-  // first, a warmer tone for the second. Deliberately NOT red — nothing has failed, nothing is
-  // disputed and nobody is being reviewed, so an alarm colour would state something untrue.
+  // difference between THREE states: amber for "your turn, still in time", a warmer tone for
+  // "the window has passed", a cool one for "with someone else now". Deliberately NOT red in any
+  // of them — an elapsed window or a trade awaiting review is an unresolved condition, not a
+  // failure, a dispute or a judgement about a person, so an alarm colour would state something
+  // the product cannot support.
+  //
+  // These six literals are DELIBERATELY DUPLICATED in app/community/negotiation/[id].tsx: there
+  // is no theme module and per-screen palettes are the repo convention. What is single-sourced
+  // is the MAPPING (label -> tone, in lib/obligationState.ts). A palette edit here must be made
+  // there too — said plainly rather than claimed as an invariant two copies cannot enforce.
   attentionChip: {
     alignSelf: 'flex-start',
     marginTop: 10,
@@ -537,3 +543,13 @@ const styles = StyleSheet.create({
   },
   attentionChipText: { color: '#F0E8D5', fontSize: 11.5, fontWeight: '600' },
 })
+
+// This screen's palette for the three tones. The MAPPING from label to tone is single-sourced in
+// lib/obligationState.ts; only the colours are local. `live` IS the base style, applied first by
+// the array — repeating it keeps the table TOTAL, so a fourth tone is a missing key rather than a
+// silent fallthrough on whichever screen was not updated.
+const CHIP_TONE: Record<AttentionTone, object> = {
+  live: styles.attentionChip,
+  elapsed: styles.attentionChipLate,
+  review: styles.attentionChipReview,
+}

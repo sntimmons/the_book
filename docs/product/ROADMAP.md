@@ -323,44 +323,47 @@ and the Trade Activity half of **PD-059**), as DERIVED read state: the anchor is
 at `server_now >= deadline` inclusive, and an unanswered elapsed window leaves the obligation
 `delivered` — **it manufactures no outcome**, and the receiver may still answer. Trade Activity
 now surfaces an unanswered delivered obligation as needing the right provider's attention.
-**CARRY-FORWARD CODEBASE GATE — FIVE items, all to be cleaned up BEFORE the adjudication slice.**
-Recorded by the Codebase audits of PR #64 and ruled by the Founder, 2026-09-07: a **bounded,
-behaviour-preserving** cleanup, and **adjudication must not be added on top of any of these five
-unresolved patterns.**
+**CARRY-FORWARD CODEBASE GATE — ALL FIVE ITEMS DISCHARGED.** Raised by the Codebase audits of
+PR #62 and PR #64, ruled by the Founder on 2026-09-07 as a bounded, behaviour-preserving cleanup
+that must land BEFORE the adjudication slice. Done in `refactor/barter-pre-adjudication-cleanup`:
+**no migration, no new write path, no new lifecycle state, no product behaviour.** B5B was
+1097/1097 and concurrency 129/129 before and after — identical, which is the evidence that
+nothing server-side moved.
 
-The first two were widened by the no-show slice and must not be widened again:
+1. **`obligationView`'s positional arguments — DISCHARGED.** Seven positional parameters ending
+   in two adjacent, same-typed booleans became one `ObligationViewFacts` object; 56 call sites
+   converted and no positional call site remains. Transposing `obligationUnderReview` and
+   `canReportNoShow` now means writing different keys.
+2. **The duplicated attention-chip mapping — DISCHARGED.** The label → tone decision is
+   single-sourced as `attentionTone` / `ATTENTION_TONE`, keyed by an `AttentionLabel` union so a
+   fourth state is a COMPILE error rather than a silent fallthrough; both `attention` fields are
+   typed to that union. Each screen keeps its own palette, so no `lib/` module imports React
+   Native styles. The six colour literals remain deliberately duplicated — there is no theme
+   module and per-screen palettes are the repo convention — and the comments now say so rather
+   than claiming an invariant two copies cannot enforce.
+3. **`cancellationView`'s adjacent booleans — DISCHARGED.** Now one `CancellationViewFacts`
+   object, and **both gates are REQUIRED**: `false` on either asserts the permissive fact and
+   draws an irreversible control, so neither has a safe default. `cancellationState` still takes
+   only the two acts.
+4. **The duplicated reason composer — DISCHARGED.** Extracted to
+   `components/ReasonComposer.tsx`, styles lifted verbatim, both call sites converted. Shared
+   implementation, NOT shared meaning: a cancellation reason and a no-show reason remain
+   different products. The PD-060/PD-062 disclosure-above-input rule is now asserted by a test
+   rather than by two hand-authored copies.
+5. **`underReview` naming two predicates — DISCHARGED, and this one went further than a rename.**
+   The scope collision is split (`obligationUnderReview` per obligation,
+   `TradeRowFacts.agreementUnderReview` for the display roll-up). More importantly the SEMANTIC
+   divergence this item was actually written about is gone: the cancellation gate no longer reads
+   the server's broader `under_review` (`report OR not_received`) but the report itself, so the
+   client predicate and PD-063's `PT423` are now the SAME predicate. The coincidence that had
+   kept them equal — `not_received` implies `delivered_at is not null`, so `anyDelivered` closed
+   the exit anyway — is named in the code and pinned by a test, instead of holding by accident
+   between two guards two migrations apart.
 
-- **`obligationView`'s positional-argument expansion.** It now takes seven positional parameters
-  ending in two adjacent, same-typed, same-defaulted booleans (`underReview`, `canReportNoShow`).
-  Swapping them type-checks cleanly and produces two opposite defects at once. Every neighbouring
-  view-model in `lib/` takes a facts OBJECT; this one is the outlier. Adjudication would add an
-  eighth.
-- **The duplicated attention-chip mapping.** The label → chip-style ternary is hand-copied in
-  `app/community/negotiation/[id].tsx` and `app/community/trade-activity.tsx`, with six duplicated
-  colour literals; this slice added the third branch to both by hand, and the fallthrough is a
-  silent `null`. A fourth state would render at two different severities on two surfaces.
-
-The PR #64 re-audit added **three more, bringing the gate to five**, all found while applying the
-PD-062 / PD-063 rulings and none refactored there:
-
-- **`cancellationView` now has the same shape as `obligationView`** — three positional
-  parameters, of which the last two are adjacent booleans of identical type. A transposed call
-  type-checks silently, on the function that decides whether an irreversible control is drawn.
-  Fix it in the SAME change as `obligationView`, or the cleanup lands with the anti-pattern
-  re-established one module over.
-- **The reason composer is authored twice** in `app/community/negotiation/[id].tsx` (no-show and
-  cancellation), as two near-identical JSX blocks with parallel `validate*`/`*Payload` helpers.
-  The PD-060/PD-062 rule that the disclosure sits ABOVE the input is currently enforced by two
-  hand-authored copies and a reviewer's eye. A third composer is likely in adjudication.
-- **`underReview` names two different predicates.** The client gate is `report OR not_received`;
-  PD-063's server rule is `report exists`. They cannot diverge today only because
-  `not_received` implies `delivered_at is not null`, which independently blocks cancellation —
-  a coincidence between a CHECK constraint two migrations away and a client predicate, named
-  nowhere. Resolve it while it is still theoretical.
-
-**None was refactored inside PR #64** — the Founder ruled they are not required for that
-correction, and doing them there would have widened the diff across the surface adjudication will
-touch. **Adjudication must not widen any of these patterns further; fix them first.**
+**Adjudication may now be built on this base.** It must not reintroduce any of the five patterns:
+no positional expansion of these view models, no second copy of the tone mapping, no optional
+gate whose default grants a capability, no third hand-authored reason composer, and no reuse of
+one name for two predicates.
 
 **Recorded for Session 7 closeout / cross-app audit** (Founder rulings, 2026-09-07, both
 deliberately out of PR #62's scope):

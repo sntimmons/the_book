@@ -58,7 +58,7 @@ function assertTruthful(text: string) {
 
 describe('obligationView — the client never derives the window itself', () => {
   it('defaults to no window, so a caller that forgot to pass one asserts nothing', () => {
-    const v = obligationView('receiver', 'delivered')
+    const v = obligationView({ role: 'receiver', status: 'delivered' })
     expect(v.attention).toBeNull()
     expect(v.deadline).toBeNull()
   })
@@ -67,19 +67,19 @@ describe('obligationView — the client never derives the window itself', () => 
     // The receiver's own live obligation asks for the action it needs (Founder ruling
     // 2026-09-07); only the SERVER's `needs_attention` escalates it. The client never decides
     // which of the two applies — it is handed the state.
-    expect(obligationView('receiver', 'delivered', false, 'awaiting_receiver').attention).toBe(
+    expect(obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'awaiting_receiver' }).attention).toBe(
       ACTION_NEEDED_LABEL,
     )
-    expect(obligationView('receiver', 'delivered', false, 'needs_attention').attention).toBe(
+    expect(obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'needs_attention' }).attention).toBe(
       NEEDS_ATTENTION_LABEL,
     )
   })
 
   it('never asks the DELIVERER to act — they are not the one being awaited', () => {
-    expect(obligationView('deliverer', 'delivered', false, 'awaiting_receiver').attention)
+    expect(obligationView({ role: 'deliverer', status: 'delivered', tradeCancelled: false, window: 'awaiting_receiver' }).attention)
       .toBeNull()
     // Once elapsed the deliverer sees the trade-level state, but still no action of their own.
-    expect(obligationView('deliverer', 'delivered', false, 'needs_attention').attention).toBe(
+    expect(obligationView({ role: 'deliverer', status: 'delivered', tradeCancelled: false, window: 'needs_attention' }).attention).toBe(
       NEEDS_ATTENTION_LABEL,
     )
   })
@@ -89,30 +89,42 @@ describe('obligationView — the client never derives the window itself', () => 
   // reach in and silence this one. The receiver keeps their label, their deadline AND both
   // controls whatever the other obligation is doing.
   it('keeps the receiver’s own action, deadline and controls regardless of the other side', () => {
-    const v = obligationView('receiver', 'delivered', false, 'awaiting_receiver', DEADLINE)
+    const v = obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'awaiting_receiver', confirmationDeadline: DEADLINE })
     expect(v.attention).toBe(ACTION_NEEDED_LABEL)
     expect(v.deadline).toEqual({ label: 'Please respond by', at: DEADLINE })
     expect(v.canRespond).toBe(true)
-    // The signature carries no counterparty parameter at all — the isolation is structural.
-    expect(obligationView).toHaveLength(2)
+    // The isolation is STRUCTURAL, and still is after the facts-object refactor: the function
+    // takes exactly ONE argument, and `ObligationViewFacts` has no field describing the
+    // counterparty's obligation — so there is nothing to pass even by mistake.
+    expect(obligationView).toHaveLength(1)
+    // Belt and braces at runtime: a facts object carrying counterparty-shaped keys changes
+    // nothing, because nothing reads them.
+    const withNoise = obligationView({
+      role: 'receiver',
+      status: 'delivered',
+      window: 'awaiting_receiver',
+      confirmationDeadline: DEADLINE,
+      ...({ theirWindow: 'needs_attention', theirUnderReview: true } as object),
+    })
+    expect(withNoise).toEqual(v)
   })
 
   it('shows no deadline line when the server sent no deadline', () => {
-    expect(obligationView('receiver', 'delivered', false, 'awaiting_receiver', null).deadline)
+    expect(obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'awaiting_receiver', confirmationDeadline: null }).deadline)
       .toBeNull()
   })
 
   it('passes the server deadline through untouched — the client only formats it', () => {
-    const v = obligationView('receiver', 'delivered', false, 'awaiting_receiver', DEADLINE)
+    const v = obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'awaiting_receiver', confirmationDeadline: DEADLINE })
     expect(v.deadline).toEqual({ label: 'Please respond by', at: DEADLINE })
   })
 
   it('labels the deadline for the viewer, not generically', () => {
     expect(
-      obligationView('deliverer', 'delivered', false, 'awaiting_receiver', DEADLINE).deadline?.label,
+      obligationView({ role: 'deliverer', status: 'delivered', tradeCancelled: false, window: 'awaiting_receiver', confirmationDeadline: DEADLINE }).deadline?.label,
     ).toBe('They have until')
     expect(
-      obligationView('receiver', 'delivered', false, 'awaiting_receiver', DEADLINE).deadline?.label,
+      obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'awaiting_receiver', confirmationDeadline: DEADLINE }).deadline?.label,
     ).toBe('Please respond by')
   })
 })
@@ -122,32 +134,32 @@ describe('obligationView — the receiver keeps their controls after the deadlin
   // "you lost your right to answer". The server agrees — no RPC consults it — so withdrawing
   // the control here would hide an action that still works.
   it('still offers the answer after the window passes', () => {
-    const v = obligationView('receiver', 'delivered', false, 'needs_attention', DEADLINE)
+    const v = obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'needs_attention', confirmationDeadline: DEADLINE })
     expect(v.canRespond).toBe(true)
     expect(v.attention).toBe(NEEDS_ATTENTION_LABEL)
   })
 
   it('and says so, rather than announcing a closed window beside two working buttons', () => {
-    const v = obligationView('receiver', 'delivered', false, 'needs_attention', DEADLINE)
+    const v = obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'needs_attention', confirmationDeadline: DEADLINE })
     expect(v.note).toContain('You can still say whether you received it')
   })
 
   it('never offers the receiver the delivery control, in any window state', () => {
     for (const w of WINDOWS) {
-      expect(obligationView('receiver', 'delivered', false, w).canMarkDelivered).toBe(false)
+      expect(obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: w }).canMarkDelivered).toBe(false)
     }
   })
 
   it('never lets the deliverer answer for their own delivery, in any window state', () => {
     for (const w of WINDOWS) {
-      expect(obligationView('deliverer', 'delivered', false, w).canRespond).toBe(false)
+      expect(obligationView({ role: 'deliverer', status: 'delivered', tradeCancelled: false, window: w }).canRespond).toBe(false)
     }
   })
 })
 
 describe('obligationView — cancellation outranks the window', () => {
   it('shows no attention state on a cancelled trade even if the server sent one', () => {
-    const v = obligationView('receiver', 'delivered', true, 'needs_attention', DEADLINE)
+    const v = obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: true, window: 'needs_attention', confirmationDeadline: DEADLINE })
     expect(v.attention).toBeNull()
     expect(v.deadline).toBeNull()
     expect(v.note).toBeNull()
@@ -157,7 +169,7 @@ describe('obligationView — cancellation outranks the window', () => {
   it('for both roles and every window state', () => {
     for (const role of ['deliverer', 'receiver'] as const) {
       for (const w of WINDOWS) {
-        const v = obligationView(role, 'delivered', true, w, DEADLINE)
+        const v = obligationView({ role, status: 'delivered', tradeCancelled: true, window: w, confirmationDeadline: DEADLINE })
         expect(v.attention).toBeNull()
         expect(v.deadline).toBeNull()
       }
@@ -171,7 +183,7 @@ describe('obligationView — an answered obligation is never dragged into attent
   it('reports no attention for received or not_received', () => {
     for (const status of ['received', 'not_received'] as const) {
       for (const role of ['deliverer', 'receiver'] as const) {
-        const v = obligationView(role, status, false, 'none', DEADLINE)
+        const v = obligationView({ role, status, tradeCancelled: false, window: 'none', confirmationDeadline: DEADLINE })
         expect(v.attention).toBeNull()
         expect(v.canRespond).toBe(false)
       }
@@ -179,7 +191,7 @@ describe('obligationView — an answered obligation is never dragged into attent
   })
 
   it("keeps PD-058's 'Nothing has been decided.' on a receiver's not_received", () => {
-    expect(obligationView('receiver', 'not_received', false, 'none').note).toBe(
+    expect(obligationView({ role: 'receiver', status: 'not_received', tradeCancelled: false, window: 'none' }).note).toBe(
       'Nothing has been decided.',
     )
   })
@@ -191,7 +203,7 @@ describe('obligationView — copy is truthful for every role × status × window
       for (const status of ['pending', 'delivered', 'received', 'not_received'] as const) {
         for (const w of WINDOWS) {
           for (const cancelled of [false, true]) {
-            const v = obligationView(role, status, cancelled, w, DEADLINE)
+            const v = obligationView({ role, status, tradeCancelled: cancelled, window: w, confirmationDeadline: DEADLINE })
             assertTruthful(v.state)
             assertTruthful(v.title)
             if (v.note) assertTruthful(v.note)
@@ -204,8 +216,8 @@ describe('obligationView — copy is truthful for every role × status × window
   })
 
   it('says the window passed without blaming anyone, for both roles', () => {
-    const receiver = obligationView('receiver', 'delivered', false, 'needs_attention').note ?? ''
-    const deliverer = obligationView('deliverer', 'delivered', false, 'needs_attention').note ?? ''
+    const receiver = obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: 'needs_attention' }).note ?? ''
+    const deliverer = obligationView({ role: 'deliverer', status: 'delivered', tradeCancelled: false, window: 'needs_attention' }).note ?? ''
     expect(receiver).toContain('window has passed')
     expect(deliverer).toContain('window has passed')
     // The deliverer is told the trade is unresolved and that nothing follows from it yet.
@@ -217,7 +229,7 @@ describe('obligationView — copy is truthful for every role × status × window
   it('uses one label for the elapsed state, shared with Trade Activity', () => {
     expect(NEEDS_ATTENTION_LABEL).toBe('Needs attention')
     for (const role of ['deliverer', 'receiver'] as const) {
-      expect(obligationView(role, 'delivered', false, 'needs_attention').attention).toBe(
+      expect(obligationView({ role, status: 'delivered', tradeCancelled: false, window: 'needs_attention' }).attention).toBe(
         NEEDS_ATTENTION_LABEL,
       )
     }
@@ -484,7 +496,7 @@ describe('the two surfaces cannot drift back apart', () => {
           facts({ myResponseState: mine, theirResponseState: theirs, myResponseDeadline: AT }),
         )
         if (!row.deadline) continue
-        const detail = obligationView('receiver', 'delivered', false, mine, AT)
+        const detail = obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false, window: mine, confirmationDeadline: AT })
         expect(detail.attention).toBe(ACTION_NEEDED_LABEL)
         expect(detail.canRespond).toBe(true)
         expect(detail.deadline).toEqual({ label: 'Please respond by', at: AT })
@@ -522,7 +534,7 @@ describe('the two surfaces cannot drift back apart', () => {
   it('never labels an obligation the viewer can no longer answer', () => {
     for (const status of ['received', 'not_received'] as const) {
       for (const w of WINDOWS) {
-        const v = obligationView('receiver', status, false, w, AT)
+        const v = obligationView({ role: 'receiver', status, tradeCancelled: false, window: w, confirmationDeadline: AT })
         expect(v.canRespond).toBe(false)
         expect(v.attention).toBeNull()
       }

@@ -56,13 +56,13 @@ describe('cancellationState', () => {
 describe('cancellationView capability', () => {
   it('offers Cancel only before any delivery and only when nothing is cancelled', () => {
     for (const f of ALL) {
-      expect(cancellationView(f, false).canCancel).toBe(cancellationState(f) === 'none')
+      expect(cancellationView({ ...f, anyDelivered: false, noShowReported: false }).canCancel).toBe(cancellationState(f) === 'none')
     }
   })
 
   it('withdraws Cancel permanently once anything has been delivered', () => {
     for (const f of ALL) {
-      const v = cancellationView(f, true)
+      const v = cancellationView({ ...f, anyDelivered: true, noShowReported: false })
       expect(v.canCancel).toBe(false)
       expect(v.canAgree).toBe(false)
     }
@@ -70,21 +70,21 @@ describe('cancellationView capability', () => {
 
   it('offers Agree only to the participant who has not yet acted', () => {
     for (const f of ALL) {
-      expect(cancellationView(f, false).canAgree).toBe(cancellationState(f) === 'byThem')
+      expect(cancellationView({ ...f, anyDelivered: false, noShowReported: false }).canAgree).toBe(cancellationState(f) === 'byThem')
     }
   })
 
   it('never offers both controls at once', () => {
     for (const f of ALL) {
       for (const delivered of [false, true]) {
-        const v = cancellationView(f, delivered)
+        const v = cancellationView({ ...f, anyDelivered: delivered, noShowReported: false })
         expect(v.canCancel && v.canAgree).toBe(false)
       }
     }
   })
 
   it('says nothing at all when the trade is not cancelled', () => {
-    const v = cancellationView(ALL[0], false)
+    const v = cancellationView({ ...ALL[0], anyDelivered: false, noShowReported: false })
     expect(v.headline).toBe('')
     expect(v.detail).toBe('')
   })
@@ -113,7 +113,7 @@ describe('cancellation copy is truthful', () => {
   it('claims no outcome, verdict or process that does not exist', () => {
     const texts = [
       ...ALL.map((f) => {
-        const v = cancellationView(f, false)
+        const v = cancellationView({ ...f, anyDelivered: false, noShowReported: false })
         return `${v.headline} ${v.detail}`
       }),
       `${CANCEL_TRADE_COPY.title} ${CANCEL_TRADE_COPY.body}`,
@@ -129,7 +129,7 @@ describe('cancellation copy is truthful', () => {
   // disclose what cancelling takes away.
   it('never mentions a no-show in the state copy, only in the confirmation', () => {
     for (const f of ALL) {
-      const v = cancellationView(f, false)
+      const v = cancellationView({ ...f, anyDelivered: false, noShowReported: false })
       const text = `${v.headline} ${v.detail}`.toLowerCase()
       expect(text).not.toContain('no-show')
       expect(text).not.toContain('no show')
@@ -144,15 +144,15 @@ describe('cancellation copy is truthful', () => {
   })
 
   it('distinguishes who cancelled, and never calls one act mutual', () => {
-    expect(cancellationView(ALL[1], false).detail).toContain('You cancelled this trade')
-    expect(cancellationView(ALL[2], false).detail).toContain('The other provider cancelled')
-    expect(cancellationView(ALL[3], false).detail).toContain('mutually cancelled')
-    expect(cancellationView(ALL[1], false).detail.toLowerCase()).not.toContain('mutual')
-    expect(cancellationView(ALL[2], false).detail.toLowerCase()).not.toContain('mutual')
+    expect(cancellationView({ ...ALL[1], anyDelivered: false, noShowReported: false }).detail).toContain('You cancelled this trade')
+    expect(cancellationView({ ...ALL[2], anyDelivered: false, noShowReported: false }).detail).toContain('The other provider cancelled')
+    expect(cancellationView({ ...ALL[3], anyDelivered: false, noShowReported: false }).detail).toContain('mutually cancelled')
+    expect(cancellationView({ ...ALL[1], anyDelivered: false, noShowReported: false }).detail.toLowerCase()).not.toContain('mutual')
+    expect(cancellationView({ ...ALL[2], anyDelivered: false, noShowReported: false }).detail.toLowerCase()).not.toContain('mutual')
   })
 
   it('tells the counterparty that agreeing is still available', () => {
-    expect(cancellationView(ALL[2], false).detail).toContain('record that you agree')
+    expect(cancellationView({ ...ALL[2], anyDelivered: false, noShowReported: false }).detail).toContain('record that you agree')
   })
 
   it('warns both actions cannot be undone, and does not claim anyone is notified', () => {
@@ -170,14 +170,14 @@ describe('cancellation copy is truthful', () => {
 
 describe('the cancellation timestamp', () => {
   it('names nothing when the trade is not cancelled', () => {
-    const v = cancellationView(ALL[0], false)
+    const v = cancellationView({ ...ALL[0], anyDelivered: false, noShowReported: false })
     expect(v.cancelledAt).toBeNull()
     expect(v.timeLabel).toBeNull()
   })
 
   it('reports the recorded time for a one-sided cancellation', () => {
     for (const f of [ALL[1], ALL[2]]) {
-      const v = cancellationView(f, false)
+      const v = cancellationView({ ...f, anyDelivered: false, noShowReported: false })
       expect(v.cancelledAt).toBe('t')
       expect(v.timeLabel).toBe('Cancelled')
     }
@@ -187,7 +187,7 @@ describe('the cancellation timestamp', () => {
     // The server stamps `min(created_at)`, so on a mutual cancellation the timestamp is the act
     // that ENDED the trade, not the later assent. "Cancelled <t>" would be ambiguous about
     // whose act it names.
-    const v = cancellationView(ALL[3], false)
+    const v = cancellationView({ ...ALL[3], anyDelivered: false, noShowReported: false })
     expect(v.timeLabel).toBe('First cancelled')
   })
 })
@@ -219,7 +219,7 @@ describe('a cancelled trade freezes the obligation controls', () => {
   it('offers neither Mark delivered nor a receiver answer once cancelled', () => {
     for (const role of ['deliverer', 'receiver'] as const) {
       for (const status of ['pending', 'delivered', 'received', 'not_received'] as const) {
-        const v = obligationView(role, status, true)
+        const v = obligationView({ role, status, tradeCancelled: true })
         expect(v.canMarkDelivered).toBe(false)
         expect(v.canRespond).toBe(false)
       }
@@ -232,26 +232,26 @@ describe('a cancelled trade freezes the obligation controls', () => {
     // never arrive.
     for (const role of ['deliverer', 'receiver'] as const) {
       for (const status of ['pending', 'delivered', 'received', 'not_received'] as const) {
-        expect(obligationView(role, status, true).note).toBeNull()
+        expect(obligationView({ role, status, tradeCancelled: true }).note).toBeNull()
       }
     }
   })
 
   it('keeps the state sentence, which is still true', () => {
-    expect(obligationView('deliverer', 'pending', true).state).toContain(
+    expect(obligationView({ role: 'deliverer', status: 'pending', tradeCancelled: true }).state).toContain(
       'not marked this delivered',
     )
   })
 
   it('leaves the notes alone when the trade is not cancelled', () => {
-    expect(obligationView('receiver', 'pending', false).note).toContain('Waiting for')
+    expect(obligationView({ role: 'receiver', status: 'pending', tradeCancelled: false }).note).toContain('Waiting for')
   })
 
   it('leaves the controls alone when the trade is not cancelled', () => {
-    expect(obligationView('deliverer', 'pending', false).canMarkDelivered).toBe(true)
-    expect(obligationView('receiver', 'delivered', false).canRespond).toBe(true)
+    expect(obligationView({ role: 'deliverer', status: 'pending', tradeCancelled: false }).canMarkDelivered).toBe(true)
+    expect(obligationView({ role: 'receiver', status: 'delivered', tradeCancelled: false }).canRespond).toBe(true)
     // The default must be the uncancelled behaviour, so no existing call site changed meaning.
-    expect(obligationView('deliverer', 'pending').canMarkDelivered).toBe(true)
+    expect(obligationView({ role: 'deliverer', status: 'pending' }).canMarkDelivered).toBe(true)
   })
 })
 
