@@ -2,9 +2,22 @@
 
 **Status:** **Living asset — NOT authoritative for product truth.** Owner: Founder (Stephen).
 **Category:** Marketing.
+**Last substantive update:** 2026-09-08 — payment pressure-test reconciliation and two
+Founder rulings.
 
 This is a working bank of lines, hooks, angles, series concepts, and campaign ideas. It is
 meant to be added to constantly and never finished.
+
+**New in the 2026-09-08 update:** the payment-protection section rebuilt around the
+pressure-test findings ([§ 8.1](#81-positioning--what-this-would-actually-be-selling) …
+[§ 8.5](#85-the-deposit-lines)) · the building-in-public payment arc
+([§ 17.1](#171-the-payment-pressure-test-arc)) · the **Both Sides Have a Story** series
+([§ 22.1](#221-both-sides-have-a-story)) · ten payment scenarios in full format
+([§ 25.1](#251-the-ten-payment-scenarios)) · and the Founder ruling on free listing
+([§ 3.1](#31-founder-ruling--free-listing-during-the-houston-beta)).
+
+**Every payment-protection entry remains 🔴 EXPLORATORY / CONCEPT ONLY.** Payments are not
+live, **PD-042** is unchanged, and none of the pressure-test numbers is approved.
 
 > ## The one rule that outranks everything else in this file
 >
@@ -91,6 +104,8 @@ When product work turns up something worth saying out loud:
 
 # 1. Core brand
 
+**Audience:** everyone. **Format:** wordmark, outro, bio, any surface. **Safe to publish:** yes, subject to the *book* caveat below.
+
 | Line | Flag | Note |
 |---|---|---|
 | **"Everything local. One Book."** | 🟢 | The anchor. Works as a wordmark line, an outro, a bio. |
@@ -112,6 +127,8 @@ and people who need them — condescension and start-up vocabulary both read as 
 
 # 2. Client acquisition
 
+**Audience:** clients. **Format:** short-form hook, caption, paid social. **Safe to publish:** yes.
+
 | Line | Flag |
 |---|---|
 | **"Stop asking, 'Who do you know?' Check The Book."** | 🟢 |
@@ -131,6 +148,8 @@ half-remembered recommendations. The pitch is **consolidation**, not discovery-f
 
 # 3. Provider acquisition
 
+**Audience:** providers. **Format:** short-form hook, caption, DM outreach, flyer. **Safe to publish:** yes, except where flagged.
+
 | Line | Flag |
 |---|---|
 | **"You shouldn't have to become an influencer just to stay booked."** | 🟢 |
@@ -139,7 +158,8 @@ half-remembered recommendations. The pitch is **consolidation**, not discovery-f
 | "You're good at the work. You shouldn't have to be good at the algorithm too." | 🟢 |
 | "Post the work. Get the work." | 🟢 |
 | "Live the same day." | 🟢 — provider onboarding goes live immediately; **no manual approval step for beta** |
-| "Free to list." | 🟡 — nothing is charged today, but this reads as a **pricing commitment** and the revenue model is **UNDECIDED**. Safe only as "free during the Houston beta" |
+| **"Free to list during the Houston beta."** | 🟢 — **Founder ruling 2026-09-08.** This exact qualified wording only. See [§ 3.1](#31-founder-ruling--free-listing-during-the-houston-beta) |
+| "Free to list." | 🔴 **NOT SAFE unqualified** — reads as a permanent pricing commitment; the revenue model is **UNDECIDED**. Use the qualified form above |
 | "Stop running your business out of your DMs." | 🟢 |
 | "A booking system, a portfolio, and a client list. In one place." | 🟢 |
 
@@ -151,9 +171,33 @@ provider currently carries themselves.
 ranking is explicitly **UNDECIDED** ([BETA_SCOPE.md](../product/BETA_SCOPE.md) § Discovery /
 ranking) — no line may imply "post more, rank higher".
 
+## 3.1 Founder ruling — free listing during the Houston beta
+
+**Ruled 2026-09-08. Approved for publication in this exact qualified form:**
+
+> **"Free to list during the Houston beta."** — 🟢 **SHIPPED / SAFE TO MARKET**
+
+**What it does NOT mean, and none of these may be implied:** free forever · no transaction
+fees · no subscription later · no premium features · permanently free listing.
+
+**The unqualified "Free to list." remains 🔴 NOT SAFE.** The qualifier is not decoration — it
+is the entire difference between a true statement about a beta and a false statement about a
+business model.
+
+**The durable record, stated narrowly:**
+
+> During the Houston beta, providers may list on The Book without a listing fee. This
+> temporary beta acquisition policy does not settle future listing, subscription,
+> transaction, or other marketplace pricing.
+
+**This is not a Product Decision and does not create one.** The broader revenue model remains
+**UNDECIDED** ([BETA_SCOPE.md](../product/BETA_SCOPE.md) § Revenue model, **OQ-041**).
+
 ---
 
 # 4. Discovery
+
+**Audience:** clients, and providers deciding whether a profile is worth building. **Format:** short-form, screen recording. **Safe to publish:** yes.
 
 | Line | Flag |
 |---|---|
@@ -167,6 +211,8 @@ ranking) — no line may imply "post more, rank higher".
 ---
 
 # 5. Available Right Now / last-minute openings
+
+**Audience:** both. **Format:** short-form scenario, founder POV. **Safe to publish:** **NO** as a feature — future tense only.
 
 > ### 🟡 **THIS ENTIRE SECTION IS PLANNED. DO NOT PROMISE.**
 >
@@ -197,6 +243,8 @@ about it."
 
 # 6. Entertainment / Reels
 
+**Audience:** clients, plus providers with content. **Format:** Reels, TikTok, in-feed. **Safe to publish:** yes.
+
 | Line | Flag |
 |---|---|
 | "The satisfying part of the job, and the button to book it." | 🟢 |
@@ -212,6 +260,8 @@ you no way to hire that person. The Book closes the loop between watching and bo
 ---
 
 # 7. Trust & verification
+
+**Audience:** both. **Format:** short-form, talking head, caption. **Safe to publish:** the review lines only — see the warning.
 
 > ### ⚠️ THE MOST DANGEROUS SECTION IN THE BANK
 >
@@ -252,19 +302,70 @@ verification claims trades a true story for a false one.
 >
 > Full reasoning: [FUTURE_PRODUCT_IDEAS.md § 2](../product/FUTURE_PRODUCT_IDEAS.md).
 
+**Audience:** both sides, plus founder-POV audiences. **Format:** talking head, building in
+public, long caption. **Safe to publish:** only as opinion, problem framing, or a design
+question — **never** as a feature, and never with a date.
+
+## 8.1 Positioning — what this would actually be selling
+
+**The Book is not selling escrow.** It is potentially selling **confidence that the agreement
+will be handled professionally.**
+
+That distinction is not cosmetic. "Your money is held safely" is a claim about custody, and
+it is the claim that requires legal clearance and licensing review. "Both sides agreed, and
+we hold both sides to it" is a claim about **conduct**, which is what the product would
+actually be doing.
+
+**Working language, cleared for internal use only:** **Protected Booking** · **Protected
+Payment**. Both are descriptions of intent, not legal terms.
+
+## 8.2 The north-star lines
+
 | Line | Flag |
 |---|---|
 | **"If you honor the booking, The Book protects you."** | 🔴 — the north star. Vision framing only |
-| **"Your deposit shouldn't disappear just because your provider does."** | 🔴 |
-| **"A deposit should protect both people."** | 🔴 |
-| **"Stop sending deposits into the void."** | 🔴 |
+| **"The Book handles the complexity so you only have to tell us what happened."** | 🔴 |
+| **"The complicated part should be our problem, not yours."** | 🔴 |
+| **"Money follows the work."** | 🔴 — the short form of *money follows delivered value* |
+| **"The Book protects the agreement, not whichever side complains first."** | 🔴 |
+| **"Professionalism should pay off."** | 🔴 |
+
+## 8.3 Protection without friction — the pressure-test findings, as lines
+
+These came out of the finding that a *correct* payment model can still be a *bad* product.
+
+| Line | Flag |
+|---|---|
+| **"Protection without paperwork."** | 🔴 |
+| **"Built to protect the booking, not slow it down."** | 🔴 |
+| **"Small service? Keep it simple. Big project? Protect the milestones."** | 🔴 — the three-lane idea in one sentence |
+| **"Your payment system should get smarter without making your booking harder."** | 🔴 |
+| "A haircut shouldn't feel like closing on a house." | 🔴 |
+| "The rules can be complicated. Using it can't be." | 🔴 |
+
+## 8.4 Both sides, symmetrically
+
+The set has to work read from either seat, or it is not professional-first.
+
+| Line | Flag |
+|---|---|
+| **"Good providers shouldn't have to wait forever to get paid."** | 🔴 |
+| **"Good clients shouldn't have to wonder where their deposit went."** | 🔴 |
+| **"Protect the customer without making the professional bankroll the job."** | 🔴 |
 | **"We're not going to make contractors finance somebody else's project."** | 🔴 — strongest founder-POV line in the bank |
 | **"Protecting clients shouldn't mean punishing good providers."** | 🔴 |
 | **"The Book isn't trying to pick sides. We're trying to make both sides act professionally."** | 🔴 |
-| "Cash App and a prayer is not a payment system." | 🔴 |
-| "The complexity should be our problem. You just tell us what happened." | 🔴 |
-| "Rules first. Evidence first. Not whoever complains loudest." | 🔴 |
 | "Nobody should have to front $900 in materials and hope." | 🔴 |
+
+## 8.5 The deposit lines
+
+| Line | Flag |
+|---|---|
+| **"Your deposit shouldn't disappear just because your provider does."** | 🔴 |
+| **"A deposit should protect both people."** | 🔴 |
+| **"Stop sending deposits into the void."** | 🔴 |
+| "Cash App and a prayer is not a payment system." | 🔴 |
+| "Rules first. Evidence first. Not whoever complains loudest." | 🔴 |
 
 **How to use these safely.** All of them work in **building-in-public** and **founder-POV**
 formats, where the subject is *how a marketplace should work* rather than *what this app
@@ -280,6 +381,8 @@ does*. Frame as a position, a problem, or a design question:
 
 # 9. Professionalism & accountability
 
+**Audience:** both, deliberately in the same asset. **Format:** two-hander, talking head. **Safe to publish:** yes as values; no as a mechanism.
+
 | Line | Flag |
 |---|---|
 | **"Professionalism goes both ways."** | 🟢 — a value statement, safe |
@@ -292,6 +395,8 @@ does*. Frame as a position, a problem, or a design question:
 ---
 
 # 10. Barter
+
+**Audience:** providers, and provider-clients. **Format:** short-form scenario, talking head, community post. **Safe to publish:** yes, within the two hard limits below.
 
 **🟢 SHIPPED and genuinely differentiated.** Real on `main`: barter offers, interests,
 proposal/version negotiation, agreement finalization, two directed obligations per agreement,
@@ -319,6 +424,8 @@ against.
 
 # 11. Provider-to-provider value
 
+**Audience:** providers and local business owners. **Format:** short-form, spotlight, community post. **Safe to publish:** yes.
+
 | Line | Flag |
 |---|---|
 | "Your best client might be another business." | 🟢 |
@@ -329,6 +436,8 @@ against.
 ---
 
 # 12. One account — provider and client identity
+
+**Audience:** both — this is the line that stops the two audiences feeling like different products. **Format:** short-form, onboarding copy. **Safe to publish:** yes.
 
 **🟢 SHIPPED.** One account, no modes, five shared tabs — the governing navigation model
 ([NAVIGATION.md](../architecture/NAVIGATION.md)). Genuinely unusual: most marketplaces make
@@ -346,6 +455,8 @@ you pick a side and sign up twice.
 
 # 13. Provider business growth
 
+**Audience:** providers. **Format:** screen recording, carousel, talking head. **Safe to publish:** yes, except where flagged.
+
 | Line | Flag |
 |---|---|
 | "Your calendar, your clients, your work — in one place." | 🟢 |
@@ -358,6 +469,8 @@ you pick a side and sign up twice.
 
 # 14. Convenience
 
+**Audience:** clients. **Format:** short-form, caption. **Safe to publish:** yes.
+
 | Line | Flag |
 |---|---|
 | "Four taps instead of four phone calls." | 🟢 |
@@ -368,6 +481,8 @@ you pick a side and sign up twice.
 ---
 
 # 15. Houston / local launch
+
+**Audience:** Houston, both sides, plus press. **Format:** any. **Safe to publish:** yes.
 
 | Line | Flag |
 |---|---|
@@ -385,6 +500,8 @@ say so plainly rather than framing Houston as a stepping stone.
 
 # 16. Founder story
 
+**Audience:** everyone; strongest with providers. **Format:** talking head, long caption. **Safe to publish:** yes.
+
 | Line | Flag |
 |---|---|
 | "I got tired of asking the group chat." | 🟢 |
@@ -400,6 +517,10 @@ recommendation actually costs you in time.
 
 # 17. Building in public
 
+**Audience:** providers, founders, local business owners. **Format:** talking head, screen
+recording, long caption. **Safe to publish:** yes for the format itself — the flag on each
+line still governs what may be claimed inside it.
+
 | Series line | Flag |
 |---|---|
 | **"Things that make me add another feature to The Book..."** | 🟢 — recurring format |
@@ -408,6 +529,29 @@ recommendation actually costs you in time.
 | "Here's a decision I haven't made yet." | 🟢 |
 | "I was wrong about this one." | 🟢 |
 
+## 17.1 The payment pressure-test arc
+
+A genuinely good building-in-public sequence, because it has a reversal in it. Every line is
+about **the thinking**, which is why they are publishable while the feature is not.
+
+| Line | Flag |
+|---|---|
+| **"Why we changed our payment idea."** | 🔴 |
+| **"We built a fair payment system. Then realized nobody would want to use it."** | 🔴 — the honest version, and the best one |
+| **"Good policy with bad UX is still bad product."** | 🟢 — a design principle, claims nothing |
+| **"We asked providers what would make them leave."** | 🔴 |
+| **"Why a haircut shouldn't feel like financing a construction project."** | 🔴 |
+| **"Why contractors shouldn't have to bankroll your materials."** | 🔴 |
+| **"What happens when a client disputes work they actually received?"** | 🔴 — the chargeback problem |
+| **"The biggest payment problem isn't always the deposit. Sometimes it's the chargeback 40 days later."** | 🔴 |
+| **"Why we're not automatically siding with customers."** | 🔴 |
+| **"Why we're not automatically siding with providers."** | 🔴 — **run as a pair with the line above, or neither** |
+
+**The pairing rule matters.** Publishing only the customer half reads as provider-hostile;
+publishing only the provider half reads as client-hostile. Together they *are* the
+professional-first position. This is the same discipline as *Provider Problems / Client
+Problems* in [§ 22](#22-recurring-content-series).
+
 **This format is where 🔴 concepts are allowed to breathe**, because the subject is the
 *thinking*, not the product. The framing that keeps it honest: **"here's what I'm working
 through"**, never **"here's what it does."**
@@ -415,6 +559,8 @@ through"**, never **"here's what it does."**
 ---
 
 # 18. Educational content
+
+**Audience:** both, split by topic. **Format:** carousel, talking head, long caption. **Safe to publish:** yes as general education — never as a description of The Book's money handling.
 
 | Concept | Flag |
 |---|---|
@@ -429,6 +575,8 @@ through"**, never **"here's what it does."**
 ---
 
 # 19. Contrarian / debate content
+
+**Audience:** both, plus reach beyond the current user base. **Format:** hook-led short-form, talking head. **Safe to publish:** yes, within the rule below.
 
 | Hook | Flag |
 |---|---|
@@ -448,6 +596,8 @@ the audience the product depends on.
 
 # 20. Testimonials & social proof (placeholders)
 
+**Audience:** both. **Format:** quote card, video testimonial, case study. **Safe to publish:** **NO** — nothing here is real yet.
+
 **None yet. Nothing in this section may be published until it is real.**
 
 Structures to fill once genuine material exists:
@@ -466,6 +616,8 @@ invented quote attributed to a real-sounding person is not.
 
 # 21. Launch campaigns
 
+**Audience:** varies per campaign. **Format:** multi-asset campaign. **Safe to publish:** per the flag on each row.
+
 | Campaign | Concept | Flag |
 |---|---|---|
 | **"Check The Book"** | Positions the app as the answer to "who do you know?" — the phrase does the work | 🟢 |
@@ -478,6 +630,8 @@ invented quote attributed to a real-sounding person is not.
 ---
 
 # 22. Recurring content series
+
+**Audience:** varies per series. **Format:** recurring short-form. **Safe to publish:** per the flag on each row.
 
 The Founder-supplied series, plus format notes.
 
@@ -492,6 +646,45 @@ The Founder-supplied series, plus format notes.
 | **Why Is This Normal?** | Take an accepted absurdity of local services and hold it up | 🟢 |
 | **The Book Hot Takes** | Short, opinionated, one claim per video | 🟢 |
 | **Houston Talent Spotlight** | One provider, their work, what they're good at. Consent required | 🟢 |
+| **Both Sides Have a Story** | See below — the professional-first philosophy as a format | 🟢 for the format; payment-specific execution 🔴 |
+
+## 22.1 Both Sides Have a Story
+
+**The most important new series in this bank**, because it is the only format that *performs*
+the professional-first position instead of asserting it.
+
+**Structure — three beats, always in this order:**
+
+> **Provider:** *"Clients cancel and I lose hours of my day."*
+>
+> **Client:** *"Providers cancel and I'm chasing my own deposit."*
+>
+> **Founder:** *"Both are real problems. The Book shouldn't automatically believe one side.
+> Build rules for both."*
+
+**Why it works.** Marketplace marketing almost always picks a protagonist, and the audience
+can tell instantly which side it was written for. This format refuses to — and the refusal
+*is* the message. It also inoculates against the most likely criticism from either side,
+because both complaints have already been said out loud, by the platform.
+
+**Audience:** both, deliberately in the same asset. **Format:** two-hander or split screen,
+founder to camera for the third beat. **Safe to publish:** the philosophy is 🟢 where it is
+supported by shipped behaviour; **any payment-specific resolution is 🔴** and must stay a
+question rather than an answer.
+
+**Grievance pairs to draw from — all 🟢 as problem statements:**
+
+| Provider says | Client says |
+|---|---|
+| "They booked and never showed." | "They cancelled the morning of." |
+| "I blocked two hours for that." | "I took the day off for that." |
+| "They wanted to pay off-platform, then disputed it." | "I sent a deposit and never heard from them again." |
+| "They rescheduled four times." | "They rescheduled four times." |
+| "They didn't like it, so they want it free." | "It wasn't what we agreed." |
+
+**The last two rows are the point.** One is *identical* from both seats, and one is the same
+event described two irreconcilable ways. That is the honest picture of a marketplace dispute,
+and it is why [§ 2.9 subjective quality](../product/FUTURE_PRODUCT_IDEAS.md) is unresolved.
 
 **Series discipline:** each has one job. *Trades That Just Make Sense* sells barter.
 *Available Right Now* sells the cancellation-fill idea. *Why Is This Normal?* creates the
@@ -500,6 +693,8 @@ problem the others solve. Don't blend them — a series that means three things 
 ---
 
 # 23. Short-form hook bank
+
+**Audience:** varies. **Format:** first three seconds of a short-form video. **Safe to publish:** per flag.
 
 First three seconds. One idea each.
 
@@ -528,6 +723,8 @@ First three seconds. One idea each.
 
 # 24. Talking-head prompts
 
+**Audience:** providers and founder-POV viewers. **Format:** straight to camera, 30-90 seconds. **Safe to publish:** per flag.
+
 Straight to camera, 30–90 seconds. One question, one honest answer.
 
 | Prompt | Flag |
@@ -546,6 +743,9 @@ Straight to camera, 30–90 seconds. One question, one honest answer.
 
 # 25. Scenario / skit concepts
 
+**Audience:** both, usually in the same asset. **Format:** short-form scenario, two-hander,
+split screen. **Safe to publish:** per flag — and every 🔴 scenario ends on the question.
+
 | Scenario | Concept | Flag |
 |---|---|---|
 | **The Group Chat** | Six people, four recommendations, zero phone numbers. Cut to one search | 🟢 |
@@ -556,9 +756,126 @@ Straight to camera, 30–90 seconds. One question, one honest answer.
 | **The 3 PM** | Split screen: provider staring at an empty chair, client staring at their phone. Same street | 🟡 — must end on "this is what we're building" |
 | **The Void** | Someone sends a deposit. Silence. Read receipts | 🔴 — problem framing only; never resolves into "The Book protects you" |
 
+## 25.1 The ten payment scenarios
+
+**Audience:** both sides. **Format:** short-form scenario, 20–45 seconds, or a two-hander.
+**Safe to publish:** each carries its own flag — and every 🔴 one **ends on the question, not
+on a product answer.**
+
+Each scenario carries the same six parts, because the six parts are what stop it becoming an
+accidental feature claim: **hook · problem · both-side perspective · founder takeaway · the
+concept it points at · flag.**
+
+---
+
+**1. Provider cancels at 5 AM for an 8 AM appointment.**
+· **Hook:** "5 AM text: 'Something came up.'"
+· **Problem:** the client rearranged their whole day and holds a deposit they now have to chase.
+· **Both sides:** the provider may have a genuine emergency; from outside, an emergency and a
+better-paying job look identical.
+· **Takeaway:** "A provider cancelling shouldn't automatically become the client's problem to
+sort out — and it also shouldn't automatically mean the provider was lying."
+· **Concept:** provider-caused cancellation; the client chooses reschedule or exit.
+· **Flag:** 🔴
+
+**2. Client no-shows after the provider blocked two hours.**
+· **Hook:** "Two hours blocked. Nobody came."
+· **Problem:** the provider turned down other work for a slot that produced nothing.
+· **Both sides:** clients forget, and life happens — but the reserved time was consumed either
+way.
+· **Takeaway:** "Providers need protection too. That's not anti-client, it's symmetry."
+· **Concept:** disclosed cancellation and no-show protection.
+· **Flag:** 🔴
+
+**3. Handyman needs $600 of materials before day one.**
+· **Hook:** "$600 of materials. Whose money?"
+· **Problem:** the provider is being asked to finance the client's project.
+· **Both sides:** the client does not want to hand over $600 to someone who might vanish.
+· **Takeaway:** "We're not going to make contractors finance somebody else's project — and
+we're not going to let 'materials' become a way to get paid early either."
+· **Concept:** approved pre-service expenses with itemization and client approval.
+· **Flag:** 🔴
+
+**4. Client paid for custom materials and the provider cancels.**
+· **Hook:** "Custom lumber. Cut to size. Provider's gone."
+· **Problem:** the materials exist, they were the client's money, and they fit nobody else's
+job.
+· **Both sides:** the provider may have already paid the supplier and cannot return it.
+· **Takeaway:** "If your money bought something custom, there's a real argument it's yours.
+I don't think that's fully settled and I'm not going to pretend it is."
+· **Concept:** client-funded material ownership — **explicitly open, requires legal review.**
+· **Flag:** 🔴 — **ends on the open question, never on an answer.**
+
+**5. Provider finishes the job; the client charges back 40 days later.**
+· **Hook:** "Job done. Paid. Then the bank reversed it."
+· **Problem:** an external chargeback can undo a correct outcome entirely.
+· **Both sides:** some chargebacks are genuine fraud protection working as designed.
+· **Takeaway:** "The hardest payment problem isn't the deposit. It's the reversal six weeks
+later, and the only defence is evidence that already existed."
+· **Concept:** evidence generated by normal use; dispute-evidence packets.
+· **Flag:** 🔴
+
+**6. Provider says "Zelle me the rest."**
+· **Hook:** "'Just Zelle me the rest.'"
+· **Problem:** the moment the money leaves the platform, the protection leaves with it.
+· **Both sides:** the provider is dodging a fee; the client usually has no idea what they gave
+up. **Both of them lose the protection**, which is the part neither expects.
+· **Takeaway:** "Off-platform isn't just us losing a fee. It's both of you losing the record."
+· **Concept:** on-platform balance collection; protection applies only to money processed
+through The Book.
+· **Flag:** 🔴 — frame as *what both parties lose*, never as a threat or a rule.
+
+**7. Contractor completes half the project, then stops.**
+· **Hook:** "60% done. Then nothing."
+· **Problem:** deposit-plus-final-payment has no defined position between nothing and
+everything.
+· **Both sides:** the provider did real work; the client has an unusable half-finished job.
+· **Takeaway:** "'How much of it was done?' is a terrible question to answer after the fact.
+Milestones turn it into something you can just look up."
+· **Concept:** milestones; partial performance.
+· **Flag:** 🔴
+
+**8. The barber doesn't want to wait three days for $60.**
+· **Hook:** "Three days for sixty bucks?"
+· **Problem:** payout delay is a retention problem disguised as a risk control.
+· **Both sides:** holds exist because reversals are real; the barber's rent is also real.
+· **Takeaway:** "If a barber has to wait days for $60, they'll go back to Cash App — and
+they'd be right to."
+· **Concept:** fast payout after the service and its risk window; **no timing is decided.**
+· **Flag:** 🔴
+
+**9. Both parties want to reschedule.**
+· **Hook:** "Turns out neither of you can make it."
+· **Problem:** the easiest case in the whole model, and most systems still make it painful.
+· **Both sides:** genuinely aligned — nobody is at fault, nobody should be penalised.
+· **Takeaway:** "A reschedule is an amendment both people agree to. Neither side gets to move
+it alone, and neither side should be punished when they both want to."
+· **Concept:** mutual reschedule as a first-class action.
+· **Flag:** 🟡 — the *philosophy* is safe; a reschedule mechanic tied to money is 🔴.
+
+**10. The caterer already bought the food.**
+· **Hook:** "Cancelled Friday. The food was bought Wednesday."
+· **Problem:** perishable, non-returnable, already spent — the loss is real and immediate.
+· **Both sides:** the client had a genuine reason; the caterer has a fridge full of a
+cancelled event.
+· **Takeaway:** "Some costs can't be undone. Pretending otherwise just decides who eats them
+by accident."
+· **Concept:** custom/non-returnable pre-service costs; Lane C preparation milestones.
+· **Flag:** 🔴
+
+---
+
+**A discipline note for all ten.** These are the strongest emotional material in the bank
+*because* they are real problems — which is exactly why the 🔴 ones must not resolve into
+"…and The Book fixes that." The honest ending is **"here's what I think should happen — tell
+me if I'm wrong."** A scenario that ends on a fix the product does not have is the single
+easiest way to turn this bank into a false claim.
+
 ---
 
 # 26. Quote bank
+
+**Audience:** press, decks, captions, pull-quotes. **Format:** quotation. **Safe to publish:** per flag — a quote card strips context, so 🔴 quotes need visible framing.
 
 Founder-voice lines, for captions, decks, and pull-quotes. Flags still apply.
 
@@ -610,6 +927,8 @@ Founder-voice lines, for captions, decks, and pull-quotes. Flags still apply.
 
 # 27. CTA bank
 
+**Audience:** varies. **Format:** end card, caption close, button copy. **Safe to publish:** per flag.
+
 | CTA | Use | Flag |
 |---|---|---|
 | "Check The Book." | Everywhere. The brand CTA | 🟢 |
@@ -617,9 +936,10 @@ Founder-voice lines, for captions, decks, and pull-quotes. Flags still apply.
 | "See who's on The Book in Houston." | Local | 🟢 |
 | "Post your work. Get booked." | Provider | 🟢 |
 | "Go live today." | Provider — true: no manual approval for beta | 🟢 |
-| "List free." | Provider | 🟡 — a pricing claim; revenue model **UNDECIDED**. Use only with "during the beta" |
+| "List free during the Houston beta." | Provider — **Founder ruling 2026-09-08**, this qualified form only | 🟢 |
+| "List free." | Provider | 🔴 **DO NOT USE** unqualified — a permanent pricing claim; revenue model **UNDECIDED** |
 | "Browse before you commit." | Low-friction; browsing is not gated on verification | 🟢 |
-| "Browse before you sign up." | — | 🟡 — asserts a **signed-out** experience. [BETA_SCOPE.md](../product/BETA_SCOPE.md) records that browsing is not gated on *verification*; it does not say it is ungated on *auth*. Confirm against the app before publishing |
+| "Browse before you sign up." | — | 🟡 — **Founder ruling 2026-09-08: stays PLANNED.** Product truth establishes browsing without *verification*; it does **not** establish full unauthenticated, signed-out browsing. **Do not infer the behaviour** — this stays 🟡 until product truth says otherwise |
 | "Tell me if you'd use this." | Building-in-public. **The right CTA for every 🟡 and 🔴 post** | 🟢 |
 | "Comment the trade you'd make." | Barter engagement | 🟢 |
 | "What would you add?" | Feature-request format | 🟢 |
@@ -630,6 +950,8 @@ Founder-voice lines, for captions, decks, and pull-quotes. Flags still apply.
 ---
 
 # 28. Feature message sheets
+
+**Audience:** internal — this is the reference sheet writers work from. **Format:** n/a. **Safe to publish:** n/a.
 
 One sheet per major feature: both value propositions, a hook, a 15-second concept, a
 talking-head angle, a CTA, and a status flag.
@@ -733,6 +1055,8 @@ talking-head angle, a CTA, and a status flag.
 
 # 29. Words we don't use
 
+**Audience:** internal. **Format:** n/a. **Safe to publish:** n/a — this section is the list of things that are never safe.
+
 | Word / claim | Why | Use instead |
 |---|---|---|
 | **Escrow** | Regulated term; licensing implications | "held until", "released when" — and only 🔴 |
@@ -744,7 +1068,8 @@ talking-head angle, a CTA, and a status flag.
 | **Get paid faster** | Payouts depend on payments (not live) | nothing yet |
 | **Rank higher** | Discovery ranking is **UNDECIDED** | "get discovered" — no mechanism implied |
 | **Discount** (for barter) | Barter is not a discount (**PD-031**) | "trade", "no cash changes hands" |
-| **Free** (unqualified) | A pricing commitment; the revenue model is **UNDECIDED** | "free during the Houston beta" |
+| **Free** (unqualified) | A pricing commitment; the revenue model is **UNDECIDED** | **"free to list during the Houston beta"** — the ruled wording ([§ 3.1](#31-founder-ruling--free-listing-during-the-houston-beta)) |
+| **Escrow** (again, because it is the one people reach for) | We are not selling custody. We are potentially selling **confidence the agreement will be handled professionally** | **Protected Booking**, **Protected Payment** — internal working names only |
 | **Three strikes / auto-suspend** | Explicitly **not approved** | nothing |
 
 **Also avoid:** naming competitors; "Uber for X"; any number we can't source; any date on a
@@ -753,6 +1078,14 @@ talking-head angle, a CTA, and a status flag.
 ---
 
 # 30. How to add to this bank
+
+**Audience:** internal. **Format:** n/a. **Safe to publish:** n/a.
+
+**Every entry must carry four things:** its **status flag**, its **audience**, its
+**format / use**, and **whether it is safe to publish**. In the compact tables, audience and
+format are declared once per section and inherited by every line in it — the alternative is a
+four-column table repeated 200 times, which nobody would keep accurate. Where a line's
+audience or format differs from its section, it says so inline.
 
 1. **Write the line.** Don't self-censor at the idea stage — flags are the safety mechanism,
    not the drafting process.
@@ -765,6 +1098,10 @@ talking-head angle, a CTA, and a status flag.
    Product Decision. See the workflow rule at the top.
 5. **Never delete a 🔴 line for being unusable.** It becomes usable when the thing ships.
    Re-flag it then.
+
+6. **Marketing success does not create product truth.** A catchy sentence is evidence that an
+   idea is **communicable**. It is not evidence that the idea is **approved**, and it never
+   becomes one.
 
 **This file is expandable indefinitely and is expected to grow far past its current size.**
 Sections may be split into their own files when they outgrow this one; the status-flag system
