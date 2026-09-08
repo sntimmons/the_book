@@ -1,10 +1,17 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** PR #64 (previous edit: PR #62). PR #64 recorded **PD-062** and **PD-063** and
-carried its own implementation notes in with its code, as PR #62 did for PD-057 / PD-059; the
-reconciliation that corrected the citations afterwards was **not given its own PR number**, so
-this field names the last mutation whose number is known.
+**Last edited by:** PR #65 (previous edit: PR #64). PR #64 recorded **PD-062** and **PD-063** and
+carried its own implementation notes in with its code, as PR #62 did for PD-057 / PD-059; PR #65
+was the reconciliation that corrected the citations afterwards, and its number — unknown when that
+edit was written — is now recorded. **This** reconciliation, which follows PR #66, was itself not
+given a PR number, so this field again names the last mutation whose number is known.
+
+**Nothing here was decided, superseded or reopened by PR #66** (`0f2b93c`), the
+behaviour-preserving pre-adjudication cleanup: it added no migration and no database object, and
+**PD-062 and PD-063 remain Locked and implemented exactly as PR #64 merged them**. One
+implementation detail inside PD-063's *Consequences* was renamed by that PR and is corrected below;
+the decision itself is untouched.
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -680,8 +687,15 @@ as locked decisions.
   defence in depth. `PT423` is deliberately a NEW SQLSTATE rather than reuse of
   `object_not_in_prerequisite_state`, which already means "something has already been delivered" —
   a trade under review has not necessarily been delivered, and saying so would be false. The
-  client stops offering the control (`cancellationView`'s `underReview` conjunct) so no button is
-  drawn that could only be refused. **This is not a finding of fault:** refusing cancellation
+  client stops offering the control so no button is drawn that could only be refused. **Since
+  PR #66 that conjunct is named `noShowReported` and asks the same question `PT423` asks** — does a
+  `barter_obligation_no_show_reports` row exist — instead of reading the server's broader
+  `under_review` column (`report OR not_received`), which is a WIDER predicate that happened to
+  give the same answer only because `not_received` implies `delivered_at is not null` and
+  `anyDelivered` had therefore already closed the exit. That was a coincidence between two guards
+  two migrations apart, not a derivation; the decision is unchanged and the client now enforces it
+  directly (`lib/tradeCancellation.ts:157-177`, applied at `:193` and `:200`; derived at
+  `app/community/negotiation/[id].tsx:237`). **This is not a finding of fault:** refusing cancellation
   removes one exit and decides nothing. **Race safety is structural, not hopeful:** both writers
   take the `barter_agreements` row lock FIRST (`20261014000000` put the no-show RPC on that
   order), so the second to arrive blocks and then sees the first's committed state.

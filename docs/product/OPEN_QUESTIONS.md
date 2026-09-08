@@ -2,9 +2,10 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 **Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** PR #64 (previous edit: PR #62). The reconciliation that made the most recent
-corrections was **not given its own PR number**, so this field names the last mutation whose
-number is known.
+**Last edited by:** PR #65 (previous edit: PR #64). The reconciliation that made the corrections
+after PR #64 merged as **PR #65**, a number it did not have when it wrote them. The reconciliation
+that follows PR #66 — which made this edit — was again **not given its own PR number**, so this
+field names the last mutation whose number is known.
 
 > **Why the anchor did not move to `76f5632`.** The reconciliation that last edited this file
 > inspected `main` @ `76f5632` and re-verified the **barter** entries there (OQ-006, OQ-007,
@@ -31,6 +32,11 @@ number is known.
 > after that merge edited only the closed index below — to record that no-show reporting and the
 > Under Review foundation shipped and close no question here. It re-verified nothing carried by
 > OQ-011, OQ-036 or OQ-070, and it had no shell with which to confirm that SHA.
+> **It did not move for PR #65 (`1c0fe54`) or PR #66 (`0f2b93c`) either.** PR #65 was a
+> documentation-only reconciliation. PR #66 was the behaviour-preserving pre-adjudication cleanup:
+> it added no migration, no database object and no product behaviour, so it **opened no question,
+> closed none, and changed no answer** — and the reconciliation after it re-verified nothing
+> carried by OQ-011, OQ-036 or OQ-070.
 > `Last edited by:` records the edit; the anchor records the verification.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
@@ -428,11 +434,18 @@ explicit **no-show** enters **Under Review**; an explicit **`not_received`** ent
 Review** (PD-062). The escalation question will be settled with the adjudication / review
 workflow. It is filed here rather than as a numbered OQ because it is a known gap in a decided
 area, not an open product question anyone has asked — assign an OQ number if that is preferred.
-**Still true on `main` @ `23df39c`, after PR #64 merged**: the two escalation shapes the slice
+**Still true on `main` @ `0f2b93c`, after PR #64, PR #65 and PR #66 merged**: the two escalation
+shapes the slice
 declined to invent — an automatic second timer, and a manual "send this to review" action needing
 an actor nobody has defined — are recorded in the migration's own header
 (`supabase/migrations/20261012000000_barter_no_show_under_review.sql:38-52`), and § 8 of that file
-states the absences directly. **A second Founder ruling of the same date belongs beside it:** a
+states the absences directly. **PR #66 did not change this**: it added no migration (the chain is
+still 57 files, newest `20261018000000`) and no client escalation control — the negotiation
+screen's obligation card still offers only Mark delivered, Confirm received, Didn't receive and
+Report no-show (`app/community/negotiation/[id].tsx:643-695`), and `runObligationWrite` still
+accepts exactly those four ops (`:376-404`). So **no timer, no automatic escalation, no participant
+escalation action and no operator auto-escalation exists**, and the question stays UNRESOLVED and
+deliberately undecided, for the adjudication slice — which is next, and is itself not yet built. **A second Founder ruling of the same date belongs beside it:** a
 no-show **conversation / in-thread notice is DEFERRED**, to be decided with the adjudication /
 review workflow. Neither is an open question anyone has filed; both are absences by decision.
 
