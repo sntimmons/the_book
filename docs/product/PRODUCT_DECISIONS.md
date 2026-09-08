@@ -1030,26 +1030,34 @@ as locked decisions.
   adjudication-shaped or completion-shaped function, which is the mechanism by which a future
   valuation slice would have to be deliberate rather than accidental.
 
-  **ONE THING THIS DECISION DOES NOT YET MATCH, RECORDED RATHER THAN GLOSSED.** A first draft of
-  this entry claimed no valuation object existed anywhere. **That was false, and the false version
-  is the reason this paragraph exists.** `barter_offers.offering_value` is live: providers type a
-  dollar figure into **"ESTIMATED VALUE (OPTIONAL)"** in the post composer
-  (`app/community/barter-compose.tsx:133-145`), every browsing provider sees a **`~$N value`
-  badge** on the board card (`app/community/index.tsx:944-948`), and the figure is copied into
-  each proposal version's immutable post snapshot
-  (`20260917000000_barter_proposal_versions.sql:384`). It predates this ruling, it is
-  **poster-declared rather than platform-computed**, and nothing compares two of them, scores
-  equivalence or warns about parity — so it is **not** an appraisal by The Book. But it is a
-  monetary figure the product renders next to a barter offer, which is in tension with this
-  decision's *Why*, and **whether it survives PD-069 is a Founder question that this entry does
-  NOT answer.** It was deliberately **not** removed here: deleting a live, user-visible field is a
-  product decision and a behaviour change, and neither belongs in the adjudication slice. Recorded
-  as an open gap in `BARTER_BETA_CONTRACT.md` § 12 until ruled on. **Until then, no one may cite
-  this entry as proof that no monetary figure appears anywhere in barter.**
-- **Status:** Locked as a **rule**; **the prohibitions are implemented as an absence** — there is
+  **ONE EXCEPTION EXISTED, AND IT IS NOW CLOSED — the history is kept because it is instructive.**
+  A first draft of this entry claimed no valuation object existed anywhere. **That was false**,
+  and the false version is why this paragraph was written. `barter_offers.offering_value` WAS
+  live: providers typed a dollar figure into **"ESTIMATED VALUE (OPTIONAL)"** in the post
+  composer, every browsing provider saw a **`~$N value` badge** on the board card, and the figure
+  was copied into each proposal version's immutable post snapshot
+  (`20260917000000_barter_proposal_versions.sql:384`). It predated this ruling and was
+  **poster-declared rather than platform-computed**, so it was never an appraisal by The Book —
+  but it was a monetary figure rendered beside a barter offer, in tension with this decision's
+  *Why*, and it was deliberately left in place by the adjudication slice because removing a live,
+  user-visible field is a product decision rather than an implementation detail.
+
+  **RESOLVED 2026-09-08 by Founder ruling: it is REMOVED from the live product.** The composer
+  input and the board badge are gone, and `offering_value` is no longer selected, mapped or typed
+  on the client. **The COLUMN is deprecated, not dropped** — dropping it would destroy historical
+  rows and leave the immutable proposal-version snapshot builder referencing a column that no
+  longer exists; stopping collection is a product change, erasing a record somebody entered is a
+  separate decision with its own retention question. `enforce_barter_offer_write` now nulls the
+  value on INSERT (silently, so a not-yet-updated mobile client keeps posting) and makes it
+  one-directional on UPDATE: keepable, so a legacy offer stays editable, and clearable, but never
+  introduced or changed. **`service_role` remains exempt**, as it is from every guard on that
+  trigger. Proven by `supabase/tests/barter.test.sql`, which covers all four write cases plus a
+  schema-wide sweep for any replacement valuation, equivalency, credit, point or token field.
+- **Status:** Locked; **implemented.** The prohibitions are implemented as an absence — there is
   nothing to build, and the entry exists so that building any of it is a decision to reverse this
-  one. **One pre-existing exception is unreconciled** and named above: the optional
-  provider-declared estimated value on a barter POST, pending a Founder ruling.
+  one. The one pre-existing exception, the provider-declared estimated value on a barter post,
+  was **removed on 2026-09-08** (`20261028000000`); the column survives as deprecated legacy data
+  that no live surface reads.
 
 ---
 

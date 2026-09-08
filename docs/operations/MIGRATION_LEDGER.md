@@ -1038,12 +1038,23 @@ redefining anything.** "The migration that created it" and "the migration that d
 different files, and the more discoverable one — the one carrying all the design rationale — is
 usually the wrong one.
 
-## 2026-09-08 — `20261027000000` … `20261028000000` **APPLIED to non-production 2026-09-08** (PD-069, PD-070)
+## 2026-09-08 — `20261027000000` … `20261029000000` **APPLIED to non-production 2026-09-08** (PD-069, PD-070)
 
-> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`).** **67** versions,
-> local and remote agree, no drift. **B5B: 1226/1226 passed, 0 failed** (17 new). **Concurrency:
+> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`).** **68** versions,
+> local and remote agree, no drift. **B5B: 1229/1229 passed, 0 failed** (20 new). **Concurrency:
 > 181/181 passed, 0 failed**, zero residue. Production (`kxregomuawwcqvisuhtr`) never targeted,
 > never queried.
+
+**`20261029000000` — the deprecation comment names the role it does not bind.** A security-review
+follow-up, and comment-only. `20261028000000`'s column comment said, unqualified, that the
+trigger "nulls this on INSERT and refuses to introduce or change it on UPDATE" — true of
+`authenticated` and of a no-JWT session, **false of `service_role`**, which returns before either
+rule is reached. The migration header was honest; the live catalog comment was not. This repo has
+already paid for an overstated comment once (`20261026000000`, the adjudication table's "never
+edited, never withdrawn"), so the lesson is applied rather than re-learned. Nothing behavioural
+changes: the `service_role` exemption is the established posture of every guard on that trigger,
+and B5B both depends on it to plant a legacy value and proves the rule IS enforced against an
+ordinary authenticated owner (`23514`).
 
 **`20261027000000` — suppression computed ONCE, and a parameter that stops lying.** Two findings
 deferred from PR #68's review, done together because they are one defect seen twice.

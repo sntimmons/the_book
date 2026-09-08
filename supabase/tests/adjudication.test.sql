@@ -554,7 +554,9 @@ begin
   perform pg_temp.chk('adjudication',
     'side B can still be answered normally while side A is terminal', 'received', v_out);
 
-  -- BOTH sides terminal, and STILL no agreement-level roll-up. This is the deferred scope.
+  -- BOTH sides terminal, and STILL no agreement-level roll-up. PD-070 makes that PERMANENT:
+-- agreement-level resolution is DERIVED from these immutable facts and never stored. This
+-- assertion is therefore a standing rule, not a placeholder for a future slice.
   select o_ag, o_ob into v_ag, v_mine from pg_temp.ns_arrived(ou, ru, 'adj15');
   perform pg_temp.act_service();
   select id into v_theirs from public.barter_obligations
@@ -594,7 +596,7 @@ begin
           or column_name ilike '%fulfil%' or column_name ilike '%resolved%'
           or column_name ilike '%adjudicat%');
   perform pg_temp.chk('adjudication',
-    'no agreement-level terminal column exists — the roll-up is DEFERRED, not half-built',
+    'no agreement-level terminal column exists — the roll-up is REFUSED PERMANENTLY (PD-070)',
     '0', v_n::text);
   select count(*) into v_n from information_schema.columns
    where table_schema = 'public' and table_name = 'my_trade_activity'

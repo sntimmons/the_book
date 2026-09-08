@@ -294,7 +294,9 @@ export default function NegotiationScreen() {
         // "arrange the details" of a trade whose obligations an operator has already resolved.
         // `agreementResolution` owns the rule — including that a *closed without resolution*
         // side never becomes a finding of fault — so it is testable and stated once.
-        resolution: agreementResolution(obligations.map((o) => o.terminalOutcome)),
+        resolution: agreementResolution(
+          obligations.map((o) => ({ status: o.status, terminalOutcome: o.terminalOutcome })),
+        ),
         currentTermsStillValid: current ? termsTimingStillValid(current.terms) : true,
       })
     : null

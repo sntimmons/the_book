@@ -410,7 +410,18 @@ export function obligationView(f: ObligationViewFacts): ObligationView {
   ]
   return {
     title: TITLE[role],
-    state: c.state,
+    // THE STATE SENTENCE IS SOFTENED ONCE RESOLVED, and only for `pending`. A no-show can be
+    // reported on a scheduled obligation that was never delivered, so `pending` + a terminal
+    // outcome is reachable — and the pending copy is the only one phrased as an action still
+    // awaited: "You have not marked this delivered YET." / "Not marked delivered yet." Left
+    // alone it points at a control that has been permanently withdrawn (the server refuses with
+    // `PT424`), which is the caption-contradicts-capability defect this module exists to
+    // prevent. The FACT is preserved — it was never delivered, and that is exactly what the
+    // record should say — only the implication that someone may still act is dropped.
+    //
+    // Deliberately NOT applied to cancellation, where "Not marked delivered yet." stays as-is:
+    // a cancelled trade ended without a finding, and the sentence carries no verdict either way.
+    state: resolved && status === 'pending' ? NOT_DELIVERED_RESOLVED[role] : c.state,
     // DROPPED when the trade is cancelled. Every note here is about what happens next —
     // "Waiting for the other provider to mark this delivered" — and on a cancelled trade
     // nothing happens next. Suppressing both controls while leaving the sentence that promises
@@ -667,14 +678,48 @@ export const ATTENTION_TONE: Record<AttentionLabel, AttentionTone> = {
 }
 
 /**
- * How far a trade's two obligations have been resolved — the AGREEMENT-level fact, derived.
+ * One obligation's contribution to the agreement-level picture.
+ *
+ * BOTH FIELDS ARE NEEDED, and a first cut of this that took only the outcome was wrong in a way
+ * worth recording: an obligation the receiver has CONFIRMED RECEIVED is finished — nobody owes
+ * anything, no control is drawn — but it carries no terminal outcome, because no operator was
+ * ever involved. Reading outcomes alone made a fully performed trade indistinguishable from one
+ * confirmed five minutes ago, so the ordinary happy path still told both providers to go and
+ * arrange something they had already done. PD-070 says the derivation reads "the two obligation
+ * STATES, obligation adjudication outcomes, cancellation acts …" — the state is not optional.
+ */
+export interface ObligationResolutionFact {
+  status: ObligationStatus
+  terminalOutcome?: TerminalOutcome | null
+}
+
+/** Nothing is owed on this obligation by anyone. */
+function concluded(o: ObligationResolutionFact): boolean {
+  // An operator's decision ends it whatever the participants did; short of that, the receiver
+  // confirming they got it ends it. `not_received` does NOT: that is the receiver saying
+  // something went wrong, which routes to Under Review and waits for a human.
+  return o.terminalOutcome != null || o.status === 'received'
+}
+
+/** Concluded AND concluded well — nothing adverse was found or reported. */
+function concludedWell(o: ObligationResolutionFact): boolean {
+  // An adjudication OUTRANKS the participants' own record: an obligation the receiver confirmed
+  // and an operator then resolved `unfulfilled` is not a good ending. Compared against the
+  // vocabulary rather than `!== 'unfulfilled'`, so an outcome this build does not recognise is
+  // never reported as a good one.
+  if (o.terminalOutcome != null) return o.terminalOutcome === 'fulfilled'
+  return o.status === 'received'
+}
+
+/**
+ * How far a trade's two obligations have been settled — the AGREEMENT-level fact, derived.
  *
  * PD-070: agreement-level resolution is DERIVED from the immutable underlying facts and never
  * persisted as a second terminal state. The inputs cannot drift — an adjudication is append-only
- * and immutable (PD-066) — so a value computed from them is stable, and storing a roll-up beside
- * them would only create something that could disagree with them.
+ * and immutable (PD-066) and a cancellation is append-only — so a value computed from them is
+ * stable, and storing a roll-up beside them would only create something able to disagree.
  *
- * WHY THIS RETURNS A COARSE STATE AND NOT A VERDICT. The tempting shape is a nine-cell map from
+ * WHY THIS RETURNS A COARSE STATE AND NOT A VERDICT. The tempting shape is a map from
  * (outcome, outcome) to a single word. It cannot be written honestly:
  *
  *   * `fulfilled + closed_without_resolution` is NOT "partially fulfilled". That label asserts
@@ -683,26 +728,36 @@ export const ATTENTION_TONE: Record<AttentionLabel, AttentionTone> = {
  *   * `closed + closed` is NOT "not completed", which asserts performance failed. Nothing was
  *     found to have failed.
  *
- * So where a roll-up would overstate what was found, this reports only that both sides were
- * reviewed and lets each obligation state its own outcome. `allFulfilled` is separated because
- * it is the one combination a summary cannot distort.
+ * So where a roll-up would overstate what was found, this reports only that both sides are
+ * settled and lets each obligation state its own outcome. **No value here names an outcome**,
+ * which is also why `allSettled` covers both "both confirmed received" and "both adjudicated
+ * fulfilled": the two are the same fact at this altitude — nothing is owed and nothing adverse
+ * was found — and a banner that said "reviewed" over a trade nobody reviewed would be false.
  *
  * FAIL-CLOSED ON A SHORT LIST. A trade has exactly two obligations by database construction, so
- * any other length means the read did not land — and that is reported as 'none', because
- * assuming nothing has been decided is the withholding direction. It is the same rule every
- * optional fact in this module follows.
+ * any other length means the read did not land — reported as 'none', because assuming nothing is
+ * settled is the withholding direction, the rule every optional fact in this module follows.
  */
 export function agreementResolution(
-  outcomes: readonly (TerminalOutcome | null | undefined)[],
+  obligations: readonly ObligationResolutionFact[],
 ): AgreementResolution {
-  if (outcomes.length !== 2) return 'none'
-  const resolved = outcomes.filter((o): o is TerminalOutcome => o != null)
-  if (resolved.length === 0) return 'none'
-  if (resolved.length < outcomes.length) return 'partial'
-  // Compared against the vocabulary rather than `!== 'unfulfilled'`, so an outcome this build
-  // does not recognise cannot be reported as fulfilled. Unknown falls to `allResolved`, which
-  // claims nothing about what was found.
-  return resolved.every((o) => o === 'fulfilled') ? 'allFulfilled' : 'allResolved'
+  if (obligations.length !== 2) return 'none'
+  const done = obligations.filter(concluded)
+  if (done.length === 0) return 'none'
+  if (done.length < obligations.length) return 'partial'
+  return obligations.every(concludedWell) ? 'allSettled' : 'allSettledMixed'
+}
+
+/**
+ * What a never-delivered obligation's state sentence becomes once it has been resolved.
+ *
+ * States the same fact as the `pending` copy without the word "yet", which promises an action
+ * that no longer exists. Names no outcome — the chip and the note carry that, once — and blames
+ * nobody: the subject is the obligation, never the provider.
+ */
+const NOT_DELIVERED_RESOLVED: Record<ObligationRole, string> = {
+  deliverer: 'This was never marked delivered.',
+  receiver: 'This was never marked delivered.',
 }
 
 /**

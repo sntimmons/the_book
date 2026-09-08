@@ -138,10 +138,20 @@ out of review, and a cancellation can never erase a recorded report. The reason 
 the other provider** as that participant's own statement (**PD-062**), never as a platform
 finding. **Needs Attention remains a separate route** and does not escalate.
 
-**What is NOT built:** automatic fulfilment, automatic completion,
-adjudication, any operator decision path, terminal obligation outcomes
-(Fulfilled / Unfulfilled / Closed Without Resolution), terminal agreement outcomes, barter
-reviews and reputation. Nothing yet signals a receiver that a delivery happened (**PD-059**).
+**Adjudication and the three terminal OBLIGATION outcomes ARE built** as of PR #68
+(`5c24e8f`, **PD-064 … PD-067**), and this paragraph used to deny it. An **authorized operator —
+never a participant** — may resolve an obligation that is Under Review as **Fulfilled**,
+**Unfulfilled** or **Closed without resolution**; the record is immutable and the rationale is
+internal. **NO OPERATOR SURFACE IS SHIPPED**, so nothing in the running product calls it: a
+minimal internal **Review Queue is a pre-beta requirement** (**PD-068**), and **no resolution SLA
+is promised**.
+
+**What is NOT built:** automatic fulfilment, automatic completion, any participant-reachable
+adjudication path, the operator Review Queue itself, barter reviews and reputation. Nothing yet
+signals a receiver that a delivery happened (**PD-059**). **And a terminal AGREEMENT outcome is
+not merely unbuilt — it is refused permanently** (**PD-070**): agreement-level resolution is
+DERIVED from the immutable obligation facts and never stored, and where a single label would
+overstate what was found the product states the two obligation truths instead.
 See [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 for the authoritative gap list.
 
 ---

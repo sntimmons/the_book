@@ -21,7 +21,7 @@ SHA, the PR number, the prior base `1c0fe54` (PR #65), the post-merge CI run and
 migration-list state were **supplied to this reconciliation**, which had no shell; it confirmed
 independently only what a file can prove — `.git/HEAD` resolves to `refs/heads/main`, both
 `.git/refs/heads/main` and `.git/refs/remotes/origin/main` read `0f2b93c5839e970592dac747544eea862610cb3d`,
-and `supabase/migrations/*.sql` held **57** files, newest `20261018000000`, at that anchor. **It now holds 67, newest `20261028000000`** — see the staleness warning above.
+and `supabase/migrations/*.sql` held **57** files, newest `20261018000000`, at that anchor. **It now holds 68, newest `20261029000000`** — see the staleness warning above.
 **Last edited by:** PR #65 (previous edit: PR #64). PR #65 was the reconciliation that followed
 PR #64; **PR #66 did not touch this file**, which is why its § Barter line citations were stale on
 arrival. This reconciliation was **not given its own PR number**, so this field names the last

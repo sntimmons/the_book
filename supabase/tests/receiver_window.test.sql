@@ -1164,20 +1164,47 @@ declare
 begin
   v_def := pg_get_viewdef('public.my_barter_obligations'::regclass, true);
 
-  -- The cancellation half of the predicate appears ONCE, in the lateral, not once per call site.
+  -- ALL THREE DEDUPLICATIONS ARE COUNTED, not just the first. A partial re-inline that moved
+  -- cancellation into the lateral but spelled the adjudication half out at each call site would
+  -- have passed a cancellation-only assertion, which is the shape of the defect being guarded.
+  -- Each expected count is named so a deliberate change reads as deliberate.
   select count(*) into v_n from regexp_matches(
     lower(v_def), 'from barter_agreement_cancellations', 'g');
   perform pg_temp.chk('receiver_window',
-    'the suppression predicate reads barter_agreement_cancellations exactly once',
+    'cancellations are read ONCE — only the lateral needs them',
     '1', v_n::text);
 
-  -- And every derived column consumes that single value.
+  -- THREE for adjudications: the lateral's suppression test, plus the two scalar subqueries that
+  -- select DIFFERENT columns (terminal_outcome, adjudicated_at). Those two are not duplication —
+  -- they fetch values, not the predicate.
+  select count(*) into v_n from regexp_matches(
+    lower(v_def), 'from barter_obligation_adjudications', 'g');
+  perform pg_temp.chk('receiver_window',
+    'adjudications are read exactly three times: the lateral, terminal_outcome, adjudicated_at',
+    '3', v_n::text);
+
+  -- THREE for no-show reports, for the same reason: the lateral's `no_show_reported` plus
+  -- no_show_reported_at and no_show_reason.
+  select count(*) into v_n from regexp_matches(
+    lower(v_def), 'from barter_obligation_no_show_reports', 'g');
+  perform pg_temp.chk('receiver_window',
+    'no-show reports are read exactly three times: the lateral, the timestamp, the reason',
+    '3', v_n::text);
+
+  -- And the lateral itself still exists — without it the counts above could be met by a view
+  -- that simply dropped a column.
+  perform pg_temp.chk('receiver_window',
+    'the suppression lateral is present',
+    'true', (position('suppressed' in lower(v_def)) > 0)::text);
+
+  -- And every derived column is still PRODUCED. Checked as ` as <name>` so the assertion cannot
+  -- be satisfied by the function name barter_obligation_under_review merely appearing in a call.
   perform pg_temp.chk('receiver_window',
     'and all three derived columns are still produced',
     'true',
-    (v_def like '%receiver_window_state%'
-     and v_def like '%under_review%'
-     and v_def like '%can_report_no_show%')::text);
+    (position(' as receiver_window_state' in lower(v_def)) > 0
+     and position(' as under_review' in lower(v_def)) > 0
+     and position(' as can_report_no_show' in lower(v_def)) > 0)::text);
 end $$;
 
 -- THE PARAMETER NAME. `p_trade_cancelled` carried "cancelled OR has-a-terminal-outcome" for six
@@ -1213,10 +1240,14 @@ begin
      and p.proname in ('barter_receiver_window', 'barter_obligation_under_review',
                        'barter_can_report_no_show')
      and pg_get_userbyid(p.proowner) = 'postgres'
-     and coalesce(array_to_string(p.proconfig, ','), '') like '%search_path=%'
+     -- THE EMPTY search_path BY ARRAY MEMBERSHIP, not a `like '%search_path=%'` substring. That
+     -- weaker form is satisfied by `search_path=public`, which is pinned AND hijackable — the
+     -- distinction this suite already makes for barter_receiver_window and must make for all
+     -- three, since the rename dropped and recreated every one of them.
+     and 'search_path=""' = any (p.proconfig)
      and has_function_privilege('authenticated', p.oid, 'execute')
      and not has_function_privilege('anon', p.oid, 'execute');
   perform pg_temp.chk('receiver_window',
-    'and all three kept owner, pinned search_path, the authenticated grant and no anon grant',
+    'and all three kept owner, an EMPTY search_path, the authenticated grant and no anon grant',
     '3', v_n::text);
 end $$;

@@ -15,7 +15,11 @@ import {
   termsTimingStillValid,
   validateDraft,
 } from '@/lib/negotiationState'
-import { agreementResolution } from '@/lib/obligationState'
+import {
+  agreementResolution,
+  ObligationStatus,
+  TerminalOutcome,
+} from '@/lib/obligationState'
 
 // Negotiation copy and capability rules. These live in a pure module and are tested here for
 // the same reason the Trade Activity rules are: every defect that surface shipped was a copy
@@ -573,31 +577,68 @@ describe('term copy describes two sides, not a list', () => {
 // ── THE DERIVED AGREEMENT PRESENTATION (PD-070) ───────────────────────────
 //
 // The agreement has NO stored terminal outcome and never gains one. What the banner says about a
-// confirmed trade is derived from how far its two obligations have been resolved, and these
-// tests pin the three things that derivation must never do: instruct when nothing remains,
-// invent a trade-level verdict, or turn a *closed without resolution* into a finding of fault.
+// confirmed trade is derived from how far its two obligations are SETTLED, and these tests pin
+// the four things that derivation must never do: instruct when nothing remains, promise
+// outstanding work that is not there, invent a trade-level verdict, or turn a *closed without
+// resolution* into a finding of fault.
 describe('agreementResolution', () => {
   const F = 'fulfilled' as const
   const U = 'unfulfilled' as const
   const C = 'closed_without_resolution' as const
 
-  it('reports nothing resolved when neither side is', () => {
-    expect(agreementResolution([null, null])).toBe('none')
+  /** An obligation with no operator involvement, at some point in its ordinary lifecycle. */
+  const at = (status: ObligationStatus) => ({ status, terminalOutcome: null })
+  /** An obligation an operator resolved. Status is whatever it was when they did. */
+  const judged = (o: TerminalOutcome, status: ObligationStatus = 'delivered') =>
+    ({ status, terminalOutcome: o })
+
+  it('reports nothing settled while both sides are still in flight', () => {
+    for (const st of ['pending', 'delivered', 'not_received'] as const) {
+      expect(agreementResolution([at(st), at(st)])).toBe('none')
+    }
   })
 
-  it('reports partial when exactly one side carries an outcome, either side', () => {
-    expect(agreementResolution([F, null])).toBe('partial')
-    expect(agreementResolution([null, F])).toBe('partial')
-    expect(agreementResolution([U, null])).toBe('partial')
-    expect(agreementResolution([null, C])).toBe('partial')
+  // `not_received` is NOT settled: it is the receiver saying something went wrong, which routes
+  // to Under Review and waits for a human. Treating it as an ending would close a trade that has
+  // an open complaint on it.
+  it('does not treat a "did not receive" answer as settled', () => {
+    expect(agreementResolution([at('received'), at('not_received')])).toBe('partial')
   })
 
-  it('separates BOTH FULFILLED, the one pair a summary cannot distort', () => {
-    expect(agreementResolution([F, F])).toBe('allFulfilled')
+  // THE ORDINARY HAPPY PATH, and the case an outcome-only derivation could not see at all.
+  it('reports BOTH SETTLED when both receivers confirmed, with no operator involved', () => {
+    expect(agreementResolution([at('received'), at('received')])).toBe('allSettled')
   })
 
-  // THE COMBINATIONS THE FOUNDER RULING NAMES. Each of these must land on `allResolved`, which
-  // asserts only that both sides were reviewed.
+  it('reports partial only when the other side genuinely still owes something', () => {
+    for (const st of ['pending', 'delivered', 'not_received'] as const) {
+      expect(agreementResolution([judged(F), at(st)])).toBe('partial')
+      expect(agreementResolution([at(st), judged(C)])).toBe('partial')
+    }
+  })
+
+  // THE MIRROR DEFECT. One side adjudicated, the other already confirmed received — nothing is
+  // outstanding, so this must NOT be `partial`, which promises outstanding work on the card below.
+  it('does NOT report partial when the unadjudicated side is already confirmed received', () => {
+    expect(agreementResolution([judged(F), at('received')])).toBe('allSettled')
+    expect(agreementResolution([at('received'), judged(F)])).toBe('allSettled')
+    expect(agreementResolution([judged(U), at('received')])).toBe('allSettledMixed')
+    expect(agreementResolution([at('received'), judged(C)])).toBe('allSettledMixed')
+  })
+
+  it('lets an adjudication OUTRANK the participants own record', () => {
+    // A receiver confirmed it, and an operator then found it unfulfilled. That is not a good
+    // ending, whatever the status column says.
+    expect(agreementResolution([judged(U, 'received'), at('received')])).toBe('allSettledMixed')
+    expect(agreementResolution([judged(F, 'not_received'), at('received')])).toBe('allSettled')
+  })
+
+  it('reports allSettled when both were found fulfilled', () => {
+    expect(agreementResolution([judged(F), judged(F)])).toBe('allSettled')
+  })
+
+  // THE COMBINATIONS THE FOUNDER RULING NAMES. Each must land on `allSettledMixed`, which asserts
+  // only that both sides are settled — never a verdict, never a fault.
   it.each([
     [F, U],
     [U, F],
@@ -607,95 +648,96 @@ describe('agreementResolution', () => {
     [U, C],
     [C, U],
     [C, C],
-  ])('reports allResolved for %s + %s, claiming nothing about what was found', (a, b) => {
-    expect(agreementResolution([a, b])).toBe('allResolved')
+  ])('reports allSettledMixed for %s + %s, claiming nothing about what was found', (a, b) => {
+    expect(agreementResolution([judged(a), judged(b)])).toBe('allSettledMixed')
   })
 
   it('FAILS CLOSED on a list that is not two obligations', () => {
     // A trade has exactly two by database construction, so any other length means the read did
-    // not land. Reporting 'none' keeps the screen from announcing a resolution it cannot see.
+    // not land. Reporting 'none' keeps the screen from announcing a settlement it cannot see.
     expect(agreementResolution([])).toBe('none')
-    expect(agreementResolution([F])).toBe('none')
-    expect(agreementResolution([F, F, F])).toBe('none')
-    expect(agreementResolution([undefined, undefined])).toBe('none')
+    expect(agreementResolution([judged(F)])).toBe('none')
+    expect(agreementResolution([judged(F), judged(F), judged(F)])).toBe('none')
   })
 
-  it('does not report an UNRECOGNISED outcome as fulfilled', () => {
+  it('treats a MISSING outcome field as no outcome, not as a settlement', () => {
+    expect(agreementResolution([{ status: 'delivered' }, { status: 'delivered' }])).toBe('none')
+  })
+
+  it('does not report an UNRECOGNISED outcome as a good ending', () => {
     // Same server-column boundary the outcome label and note defend: a widened CHECK constraint
-    // reaches installed clients before the matching build does. An unknown value must not be
-    // summarised as "both were fulfilled".
-    const unknown = 'partially_fulfilled' as unknown as typeof F
-    expect(agreementResolution([F, unknown])).toBe('allResolved')
-    expect(agreementResolution([unknown, unknown])).toBe('allResolved')
+    // reaches installed clients before the matching build does. An unknown value is settled —
+    // an operator decided something — but must never be summarised as nothing-adverse.
+    const unknown = 'partially_fulfilled' as unknown as TerminalOutcome
+    expect(agreementResolution([judged(F), judged(unknown)])).toBe('allSettledMixed')
+    expect(agreementResolution([judged(unknown), judged(unknown)])).toBe('allSettledMixed')
   })
 })
 
-describe('the confirmed-trade banner follows the resolution, not the clock', () => {
+describe('the confirmed-trade banner follows what is settled, not the clock', () => {
   const confirmed = (resolution: NegotiationFacts['resolution']) =>
     negotiationView(facts({ agreementId: 'a1', resolution }))
+  const ALL = ['none', 'partial', 'allSettled', 'allSettledMixed'] as const
 
-  it('still tells providers to arrange the details while nothing is resolved', () => {
+  it('still tells providers to arrange the details while nothing is settled', () => {
     expect(confirmed('none').detail).toContain('Arrange the details')
   })
 
-  // THE DEFECT THIS FIXES. A trade whose obligations were both resolved `unfulfilled` told two
-  // providers to go and arrange a trade an operator had just concluded did not happen.
-  it.each(['allFulfilled', 'allResolved'] as const)(
-    'never instructs anyone to arrange anything once both sides are resolved (%s)',
+  // THE DEFECT THIS FIXES, in both directions.
+  it.each(['allSettled', 'allSettledMixed'] as const)(
+    'never instructs anyone to arrange anything once both sides are settled (%s)',
     (r) => {
-      const d = confirmed(r).detail
-      expect(d).not.toContain('Arrange the details')
-      expect(d.toLowerCase()).not.toContain('arrange')
+      expect(confirmed(r).detail.toLowerCase()).not.toContain('arrange')
     },
   )
 
-  it('still points at what is outstanding when only ONE side is resolved', () => {
-    // The other obligation is genuinely still live, so the banner must not read as finished.
-    const d = confirmed('partial').detail
-    expect(d.toLowerCase()).toContain('outstanding')
-    expect(d.toLowerCase()).not.toContain('nothing further')
+  it('claims something is outstanding ONLY in partial', () => {
+    expect(confirmed('partial').detail.toLowerCase()).toContain('outstanding')
+    for (const r of ['none', 'allSettled', 'allSettledMixed'] as const) {
+      expect(confirmed(r).detail.toLowerCase()).not.toContain('outstanding')
+    }
   })
 
-  it('says nothing further is needed ONLY when both sides were fulfilled', () => {
-    expect(confirmed('allFulfilled').detail.toLowerCase()).toContain('nothing further is needed')
-    for (const r of ['none', 'partial', 'allResolved'] as const) {
+  it('says nothing further is needed ONLY when nothing adverse was found', () => {
+    expect(confirmed('allSettled').detail.toLowerCase()).toContain('nothing further is needed')
+    for (const r of ['none', 'partial', 'allSettledMixed'] as const) {
       expect(confirmed(r).detail.toLowerCase()).not.toContain('nothing further is needed')
     }
   })
 
-  // NO TRADE-LEVEL VERDICT, in any resolution state. These three words do not exist in the
-  // product (PD-065, PD-070) and the banner is the most likely place to invent one.
-  it.each(['none', 'partial', 'allFulfilled', 'allResolved'] as const)(
-    'invents no agreement-level verdict in %s',
-    (r) => {
-      const d = confirmed(r).detail.toLowerCase()
-      for (const word of ['completed', 'partially fulfilled', 'not completed', 'incomplete']) {
-        expect(d).not.toContain(word)
-      }
-    },
-  )
+  // NEVER SAYS "REVIEWED". `allSettled` covers the ordinary path where nobody reviewed anything,
+  // so claiming a review would be false on the commonest successful trade in the product.
+  it.each(ALL)('never claims a review happened in %s', (r) => {
+    expect(confirmed(r).detail.toLowerCase()).not.toContain('review')
+  })
 
-  // A *closed without resolution* pair reaches `allResolved`. That sentence must not read as a
-  // finding about anybody, or the honest third answer becomes a soft accusation.
-  it('never assigns fault or names an outcome for a mixed or closed pair', () => {
-    const d = confirmed('allResolved').detail.toLowerCase()
-    for (const word of ['unfulfilled', 'fault', 'failed', 'did not', 'blame', 'closed without']) {
+  // NO TRADE-LEVEL VERDICT, in any state. These words do not exist in the product (PD-065,
+  // PD-070) and the banner is the most likely place to invent one.
+  it.each(ALL)('invents no agreement-level verdict in %s', (r) => {
+    const d = confirmed(r).detail.toLowerCase()
+    for (const word of ['completed', 'partially fulfilled', 'not completed', 'incomplete']) {
       expect(d).not.toContain(word)
+    }
+  })
+
+  // A *closed without resolution* pair reaches `allSettledMixed`. That sentence must not read as
+  // a finding about anybody, or the honest third answer becomes a soft accusation.
+  it('never assigns fault or names an outcome for a mixed or closed pair', () => {
+    const d = confirmed('allSettledMixed').detail.toLowerCase()
+    for (const w of ['unfulfilled', 'fault', 'failed', 'did not', 'blame', 'closed without']) {
+      expect(d).not.toContain(w)
     }
   })
 
   // The state itself is unchanged: an agreement stays "Trade confirmed" for its whole life,
   // because renaming it would BE the agreement-level verdict PD-070 refuses to create.
-  it.each(['none', 'partial', 'allFulfilled', 'allResolved'] as const)(
-    'keeps the agreement state and headline stable in %s',
-    (r) => {
-      expect(confirmed(r).state).toBe('confirmed')
-      expect(confirmed(r).headline).toBe('Trade confirmed')
-    },
-  )
+  it.each(ALL)('keeps the agreement state and headline stable in %s', (r) => {
+    expect(confirmed(r).state).toBe('confirmed')
+    expect(confirmed(r).headline).toBe('Trade confirmed')
+  })
 
-  it('lets CANCELLATION outrank every resolution state', () => {
-    for (const r of ['none', 'partial', 'allFulfilled', 'allResolved'] as const) {
+  it('lets CANCELLATION outrank every settlement state', () => {
+    for (const r of ALL) {
       const v = negotiationView(facts({ agreementId: 'a1', tradeCancelled: true, resolution: r }))
       expect(v.state).toBe('cancelled')
       expect(v.detail).not.toContain('Arrange the details')
@@ -704,16 +746,11 @@ describe('the confirmed-trade banner follows the resolution, not the clock', () 
   })
 
   it('uses no state-machine vocabulary a provider should never read', () => {
-    for (const r of ['none', 'partial', 'allFulfilled', 'allResolved'] as const) {
+    for (const r of ALL) {
       const d = confirmed(r).detail.toLowerCase()
       for (const jargon of [
-        'proposal version',
-        'terminal',
-        'adjudicat',
-        'suppress',
-        'immutable',
-        'derived',
-        'read model',
+        'proposal version', 'terminal', 'adjudicat', 'suppress', 'immutable', 'derived',
+        'read model', 'obligation',
       ]) {
         expect(d).not.toContain(jargon)
       }

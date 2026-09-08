@@ -1,18 +1,19 @@
 # Barter — first Houston closed beta contract
 
 **Status:** Authoritative for the **first Houston closed beta**. Owner: Founder (Stephen).
-**Reconciled against:** `main` @ `c04e5bd` (2026-09-08, after PR #69), **plus the unmerged
-adjudication branch** whose clauses are marked where they appear.
-**Last edited by:** the manual-adjudication branch (PD-064 … PD-069). Previously PR #41, whose
-provenance line survived four months of edits and was corrected here — including edits dated
-2026-09-08, which the stale header dated 2026-09-04.
+**Reconciled against:** `main` @ `5c24e8f` (2026-09-08 — PR #68, manual adjudication), **plus the
+derived-agreement-presentation branch** (PD-070) whose clauses are marked where they appear.
+**Last edited by:** the derived-agreement-presentation branch. Before it, the
+manual-adjudication branch (PD-064 … PD-069). Previously PR #41, whose provenance line survived
+four months of edits and was corrected here.
 
-> **⚠️ READ THE PROVENANCE.** Sections describing **manual adjudication and the three terminal
-> OBLIGATION outcomes** (§ 7.5, and the PD-068 / PD-069 clauses in §§ 4, 5.1, 7.5, 12) describe
-> the **unmerged** adjudication branch, not `main`. Until it merges,
-> [CURRENT_STATE.md](CURRENT_STATE.md) is the authority for what `main` actually contains, and it
-> correctly still says no adjudication exists there. Reconciling it is a **merge-time
-> obligation** for the Project State Steward.
+> **⚠️ READ THE PROVENANCE.** Manual adjudication and the three terminal OBLIGATION outcomes are
+> **MERGED** (PR #68, `5c24e8f`) — an earlier version of this header called them unmerged and
+> told the reader to prefer [CURRENT_STATE.md](CURRENT_STATE.md), which by then said the
+> opposite. What is still **unmerged** at the time of writing is the **PD-070** material: the
+> derived agreement presentation (§ 7.5) and the removal of the barter estimated-value UX
+> (§ 5.1). CURRENT_STATE.md is anchored several merges back and carries its own staleness
+> warning; where the two disagree, **the source code wins over both**.
 
 > **Purpose.** This document makes already-approved barter decisions **durable**. It is not a
 > design session and introduces nothing new: every clause below was approved by the Founder,
@@ -326,10 +327,11 @@ asserts performance failed. Where a single word would overstate what was found, 
 **states the two obligation truths and stops**. `Under Review` and `Cancelled` remain DERIVED
 read states, not outcomes.
 
-**Individual obligation truth survives independently of the overall agreement state.** An
-obligation that was genuinely fulfilled stays Fulfilled even if the agreement as a whole ends
-Partially Fulfilled or Closed Without Resolution. Rolling the legs up into one verdict would
-destroy the only record of who actually did their part. **This is the clause the implemented half
+**Individual obligation truth survives independently.** An obligation that was genuinely
+fulfilled stays Fulfilled however the other side was resolved. Rolling the two legs up into one
+verdict would destroy the only record of who actually did their part. *(This clause previously
+read "…even if the agreement as a whole ends Partially Fulfilled or Closed Without Resolution",
+using the very agreement-level vocabulary the table above abolishes. Restated, not deleted.)* **This is the clause the implemented half
 follows literally** (PD-065): obligations are resolved independently, one may be Fulfilled while
 the other is still Under Review, and neither participant's screen computes a trade-level verdict
 from the pair.

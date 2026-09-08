@@ -110,25 +110,31 @@ export interface NegotiationFacts {
  * How far the trade's two obligations have been resolved, as far as AGREEMENT-level copy needs
  * to care. Derived, never stored (PD-070).
  *
- * THE TYPE LIVES HERE AND THE DERIVATION LIVES IN `lib/obligationState.ts`, and the split is
- * forced rather than stylistic: that module already imports this one, so the outcome vocabulary
- * cannot be imported back without a cycle. This module therefore knows how far along the trade
- * is and stays ignorant of what the outcomes were — which is also the right division, because
- * naming an outcome is the obligation card's job and never the banner's.
+ * THE TYPE LIVES HERE AND THE DERIVATION LIVES IN `lib/obligationState.ts`. **This is a
+ * deliberate layering choice, NOT a cycle constraint** — an earlier version of this comment
+ * claimed the split was "forced" because importing the outcome vocabulary back would cycle, and
+ * that is false: `AgreementResolution` is consumed only in type positions, and a
+ * `import type` is erased at compile time. This file already relies on exactly that, three lines
+ * from the top, for `TradeRole`.
+ *
+ * The real reason is the division of labour: this module knows HOW FAR ALONG a trade is and
+ * stays ignorant of WHAT the outcomes were, because naming an outcome is the obligation card's
+ * job and never the banner's. If that ever stops being true, move the type — nothing prevents
+ * it.
  *
  * DELIBERATELY FOUR VALUES, NOT AN OUTCOME PAIR. A banner that switched on all nine combinations
  * would be a second place stating verdicts, and PD-070 exists to stop the product inventing a
  * trade-level verdict at all.
  */
 export type AgreementResolution =
-  /** Nothing resolved — or not known to be, which is the same thing here. */
+  /** Nothing settled — or not known to be, which is the same thing here. */
   | 'none'
-  /** One obligation carries a terminal outcome; the other is still live. */
+  /** One obligation is settled and the other genuinely still has something owed on it. */
   | 'partial'
-  /** Both resolved, and BOTH fulfilled — the one combination a single sentence cannot distort. */
-  | 'allFulfilled'
-  /** Both resolved, in any other combination. States that, and names no verdict. */
-  | 'allResolved'
+  /** Both settled and nothing adverse: every side was confirmed received or found fulfilled. */
+  | 'allSettled'
+  /** Both settled, with at least one adverse or inconclusive finding. Names no verdict. */
+  | 'allSettledMixed'
 
 export type NegotiationState =
   | 'ended'
@@ -188,12 +194,7 @@ export const TERMS_EXPIRED_NOTE =
   'These trade terms have expired. Update the timing before continuing.'
 
 /**
- * TOTAL over the state vocabulary. A sixth state is a compile error rather than a silent
- * fallthrough to whatever the last branch said — the defect class that produced every copy
- * finding on the Trade Activity surface.
- */
-/**
- * The confirmed-trade sentence, chosen by how far the obligations have been resolved.
+ * The confirmed-trade sentence, chosen by how far the obligations have been settled.
  *
  * TOTAL over `AgreementResolution`, so a fifth value is a compile error rather than a silent
  * fallthrough — the same discipline `STATE_COPY` uses.
@@ -202,6 +203,13 @@ export const TERMS_EXPIRED_NOTE =
  *   * INSTRUCTING WHEN NOTHING REMAINS. "Arrange the details in your conversation." over a trade
  *     whose obligations were both resolved `unfulfilled` told two providers to go and arrange a
  *     trade an operator had just concluded did not happen. That is the defect this table fixes.
+ *     **A first cut fixed it only for ADJUDICATED trades**, which are the rare ones, and left the
+ *     ordinary happy path — both delivered, both confirmed received, no operator involved —
+ *     still instructing. `AgreementResolution` now reads obligation STATE as well as outcome for
+ *     exactly that reason.
+ *   * PROMISING OUTSTANDING WORK THAT IS NOT THERE. The mirror of the same defect: `partial`
+ *     used to fire whenever one side was unadjudicated, including when that side was already
+ *     confirmed received, and then pointed at outstanding work the card below did not show.
  *   * INVENTING A VERDICT. No line says Completed, Partially Fulfilled or Not Completed. Those
  *     do not exist (PD-065, PD-070), and `allResolved` deliberately reports THAT both were
  *     reviewed rather than WHAT was found — the outcome belongs to the obligation card, once.
@@ -212,24 +220,35 @@ export const TERMS_EXPIRED_NOTE =
  *     which asserts neither.
  *   * BLAMING. No sentence has a provider as its subject.
  *
- * `allFulfilled` is the ONE case given its own sentence, because it is the only combination
- * where a summary cannot distort what was found.
+ * No line names an outcome. `allSettled` and `allSettledMixed` differ only in whether anything
+ * adverse was found, and neither says WHAT — that belongs to the obligation card, stated once.
  */
 const CONFIRMED_DETAIL: Record<AgreementResolution, string> = {
   none:
     'These terms are now the agreed trade and can no longer be changed. Arrange the details'
     + ' in your conversation.',
+  // "Still outstanding" is only ever said when something GENUINELY is: `partial` now means one
+  // side settled and the other still owing something, not merely one side unadjudicated.
   partial:
-    'These terms are now the agreed trade and can no longer be changed. One side has been'
-    + ' reviewed. What is still outstanding is shown below.',
-  allFulfilled:
-    'These terms are now the agreed trade and can no longer be changed. Both sides were'
-    + ' reviewed and fulfilled. Nothing further is needed.',
-  allResolved:
-    'These terms are now the agreed trade and can no longer be changed. Both sides have been'
-    + ' reviewed. The outcome for each is shown below.',
+    'These terms are now the agreed trade and can no longer be changed. One side is settled.'
+    + ' What is still outstanding is shown below.',
+  // COVERS BOTH ENDINGS DELIBERATELY — two confirmed receipts, two `fulfilled` findings, or one
+  // of each. At this altitude they are the same fact: nothing is owed and nothing adverse was
+  // found. Saying "reviewed" here would be FALSE of the ordinary path, where nobody reviewed
+  // anything; saying "completed" would be the agreement-level verdict PD-070 refuses to create.
+  allSettled:
+    'These terms are now the agreed trade and can no longer be changed. Both sides are settled.'
+    + ' Nothing further is needed.',
+  allSettledMixed:
+    'These terms are now the agreed trade and can no longer be changed. Both sides are settled.'
+    + ' What happened on each is shown below.',
 }
 
+/**
+ * TOTAL over the state vocabulary. A sixth state is a compile error rather than a silent
+ * fallthrough to whatever the last branch said — the defect class that produced every copy
+ * finding on the Trade Activity surface.
+ */
 const STATE_COPY: Record<
   NegotiationState,
   { headline: string; detail: string; termsTitle: string }
