@@ -60,6 +60,18 @@ keep changes safe and reviewable. Read [README.md](README.md) and
 ## What "authoritative" means
 
 Documentation is categorized (authoritative / awaiting verification / planned /
-historical) in [docs/README.md](docs/README.md). When a document conflicts with
-the current source code, **the source code wins.** Keep authoritative docs in
-sync when you change the behavior they describe.
+historical / exploratory / living asset) in [docs/README.md](docs/README.md). When
+a document conflicts with the current source code, **the source code wins.** Keep
+authoritative docs in sync when you change the behavior they describe.
+
+**Exploratory documents are not requirements.** Nothing in
+[docs/product/FUTURE_PRODUCT_IDEAS.md](docs/product/FUTURE_PRODUCT_IDEAS.md) may be
+cited to justify a code change; an idea graduates only through a Founder ruling
+recorded in `PRODUCT_DECISIONS.md`.
+
+**Marketing copy is not a product decision.** When work turns up something worth
+saying publicly, the product implication goes in the appropriate product document and
+the marketing implication goes in
+[docs/marketing/MARKETING_MESSAGE_BANK.md](docs/marketing/MARKETING_MESSAGE_BANK.md)
+with a status flag. Marketing copy must never present an unbuilt capability as live,
+and a Product Decision is never created from it.

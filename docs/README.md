@@ -25,6 +25,12 @@ Distinguish three things whenever you read or write docs:
   source of truth (for schema, that means the live database).
 - **Planned** - approved to be written, not yet created.
 - **Historical** - a dated snapshot, not current-state documentation.
+- **Exploratory** - concepts being thought through. **Not authoritative, not built,
+  not promised.** Nothing in an exploratory document may be cited as a requirement,
+  an acceptance criterion, or a justification for a code change. An idea graduates by
+  a Founder ruling recorded in `PRODUCT_DECISIONS.md`, never by being written down well.
+- **Living asset** - a working file expected to grow indefinitely, whose entries carry
+  their own per-entry status. Accurate at the entry level, never at the file level.
 
 ## Index
 
@@ -39,6 +45,8 @@ Distinguish three things whenever you read or write docs:
 | [product/USER_JOURNEYS.md](product/USER_JOURNEYS.md) | Product | **Authoritative (acceptance intent)** - canonical journeys, expected end states, and current status. |
 | [product/REVIEWS_MODEL.md](product/REVIEWS_MODEL.md) | Product | **Authoritative** - the review model: eligibility, the 7-day window, blind reveal, `no_show`, and what is deferred to Phase 2. |
 | [product/BARTER_BETA_CONTRACT.md](product/BARTER_BETA_CONTRACT.md) | Product | **Authoritative** - the locked barter contract for the **first Houston closed beta**: eligibility, post model, agreements and directed obligations, confirmation, adjudication, beta limits, and what is deferred. |
+| [product/FUTURE_PRODUCT_IDEAS.md](product/FUTURE_PRODUCT_IDEAS.md) | Product / exploration | **Exploratory - NOT authoritative** - concepts being explored and the reasoning behind them, currently the transaction-protection exploration. Nothing in it is decided, built, or promised; it is the deliberate opposite of `PRODUCT_DECISIONS.md`. |
+| [marketing/MARKETING_MESSAGE_BANK.md](marketing/MARKETING_MESSAGE_BANK.md) | Marketing | **Living asset - NOT authoritative for product truth** - hooks, angles, series and campaign concepts. Every entry carries a status flag (**SHIPPED / SAFE TO MARKET**, **PLANNED / DO NOT PROMISE YET**, **EXPLORATORY / CONCEPT ONLY**) and no entry may imply an unbuilt capability is available today. Product truth comes from `BETA_SCOPE.md`. |
 | [architecture/NAVIGATION.md](architecture/NAVIGATION.md) | Architecture | **Authoritative** - the governing navigation model (one account, no modes, five shared tabs, RLS is the enforcement boundary). |
 | [../.agents/](../.agents/) | Agents | **Authoritative** - agent definitions. Agents 1-3 are read-only; the **Project State Steward** (`project-state-steward/`) is the only agent with writes, limited to the five PM documents above. |
 | [../supabase/tests/README.md](../supabase/tests/README.md) | Testing / Security | **Authoritative** - the B5B executable DB/security harness: scope, execution modes, production guard, CI wiring. |
@@ -50,6 +58,23 @@ Distinguish three things whenever you read or write docs:
 | [audits/](audits/) | Historical | **Historical** - dated audit/reconciliation snapshots (F-series, security batches). Point-in-time; never cite as current state. |
 | [history/SCREEN_STATUS_MAP.md](history/SCREEN_STATUS_MAP.md) | Historical | **Historical (~2026-06)** - pre-dates Community, Contracts, Reviews, and the `(tabs)/business` move. Stale; do not trust over code. |
 | [history/PASS1_BUTTON_INVENTORY.md](history/PASS1_BUTTON_INVENTORY.md) | Historical | **Historical (~2026-05)** - button/route punch list from a ~51-screen era. |
+
+## Where an unbuilt idea goes
+
+Three destinations, and they are not interchangeable:
+
+| The thing you have | Where it goes |
+|---|---|
+| A **locked** decision | [product/PRODUCT_DECISIONS.md](product/PRODUCT_DECISIONS.md) (PD-NNN) |
+| A decision being **deliberately deferred** | [product/OPEN_QUESTIONS.md](product/OPEN_QUESTIONS.md) (OQ-NNN) |
+| A concept still being **thought through** | [product/FUTURE_PRODUCT_IDEAS.md](product/FUTURE_PRODUCT_IDEAS.md) |
+| A way of **saying** any of the above | [marketing/MARKETING_MESSAGE_BANK.md](marketing/MARKETING_MESSAGE_BANK.md), with a status flag |
+
+Two rules bind the last two rows. **Marketing copy never presents an exploratory or unbuilt
+capability as live** - the status flag on an entry is what makes that checkable. And **a
+Product Decision is never created from marketing copy**: a line landing well is evidence an
+idea is communicable, not that it is approved. The decision ledger is fed by Founder rulings
+only.
 
 ## Planned documents (approved structure, not yet written)
 
@@ -67,6 +92,8 @@ written and authoritative.
 - `operations/` - `MIGRATION_LEDGER.md` is **authoritative** (indexed above); `RELEASE_PROCESS.md`, `ENVIRONMENTS.md` (planned)
 - `decisions/` - Architecture Decision Records (ADR-0001+)
 - `design/` - design/UX references
+- `marketing/` - `MARKETING_MESSAGE_BANK.md` is **written** (indexed above). Any further
+  marketing document carries the same per-entry status flags.
 
 ## Open items & pending investigations
 
