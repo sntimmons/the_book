@@ -555,11 +555,13 @@ export const ATTENTION_TONE: Record<AttentionLabel, AttentionTone> = {
 /**
  * The tone for a rendered attention label, or null when there is no label.
  *
- * Takes `string | null` because `attention` is typed that way on both view models, so this is
- * the one place the widening is narrowed. Falls back to `live` for an unrecognised label rather
- * than throwing: a screen must still render something, and the least-alarming tone is the safe
- * direction. That fallback is unreachable while `ATTENTION_TONE` stays total — which the type
- * now enforces and `obligationViewShape.test.ts` also asserts over every emitted label.
+ * Takes `string | null` rather than `AttentionLabel | null` as BELT AND BRACES, not because the
+ * callers need the widening — both view models now type `attention` as the union, so every real
+ * call is already narrow. The looser parameter plus the `?? 'live'` fallback means a label
+ * arriving from somewhere the type system does not cover (a persisted value, a future server
+ * field) still renders in the least-alarming tone instead of crashing a screen. That path is
+ * unreachable today, which the union-keyed `ATTENTION_TONE` enforces at compile time and
+ * `obligationViewShape.test.ts` re-checks over every label BOTH view models can emit.
  */
 export function attentionTone(label: string | null): AttentionTone | null {
   if (!label) return null

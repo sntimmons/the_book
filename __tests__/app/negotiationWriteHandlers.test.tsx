@@ -1134,6 +1134,49 @@ describe('under review, on the trade detail', () => {
       ...over,
     })
 
+  // THE DISCRIMINATING PAIR for the PD-063 screen gate.
+  //
+  // The `reviewed()` fixture below sets `deliveredAt`, so `anyDelivered` already closes the exit
+  // and that test passes whether or not the report gate exists — replacing the derivation with
+  // `false` would leave it green. These two cover the state the gate is actually FOR: a no-show
+  // may be reported on an UNDELIVERED obligation once its scheduled time has passed
+  // (`barter_can_report_no_show` excludes only received, cancelled, already-reported and
+  // not-yet-arrived), and there the report is the only thing standing between the provider and a
+  // Cancel button the server answers with PT423.
+  const undeliveredButReported = () =>
+    makeObligation('responder', {
+      status: 'pending',
+      deliveredAt: null,
+      scheduledAt: FUTURE_SCHEDULED,
+      noShowReportedAt: '2026-10-01T09:00:00.000Z',
+    })
+
+  it('withdraws the cancel controls on an UNDELIVERED but reported obligation', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [makeObligation('offer_owner'), undeliveredButReported()],
+    )
+    const utils = await renderScreen()
+    expect(utils.queryByText(CANCEL_TRADE_COPY.confirmLabel)).toBeNull()
+    expect(utils.queryByText(AGREE_TO_CANCEL_COPY.confirmLabel)).toBeNull()
+  })
+
+  // The inverse, so the pair fails if the gate is removed rather than merely if it is inverted:
+  // same undelivered state, no report, and the control IS offered.
+  it('still offers cancellation when nothing is delivered and nothing is reported', async () => {
+    loads(
+      makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),
+      [makeVersion({ acceptedBy: [ME, 'user-them'] })],
+      [
+        makeObligation('offer_owner'),
+        makeObligation('responder', { scheduledAt: FUTURE_SCHEDULED }),
+      ],
+    )
+    const utils = await renderScreen()
+    expect(utils.getByText(CANCEL_TRADE_COPY.confirmLabel)).toBeTruthy()
+  })
+
   it('withdraws the cancel controls once a report exists (PD-063)', async () => {
     loads(
       makeRow({ agreementId: 'agreement-1', bothAccepted: true, iAcceptedCurrent: true }),

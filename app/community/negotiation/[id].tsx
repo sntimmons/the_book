@@ -229,8 +229,7 @@ export default function NegotiationScreen() {
   // Derived by lib/obligationState.ts, not here: this is the PD-046 precondition that decides
   // whether an irreversible control is rendered, and a rule computed in JSX cannot be tested.
   const delivered = anyDelivered(obligations)
-  // PD-063: once a no-show is reported the ordinary exit is gone and does not come back. The
-  // THE SAME PREDICATE THE SERVER USES. PD-063's `PT423` fires on the existence of a no-show
+  // PD-063, AND THE SAME PREDICATE THE SERVER USES. `PT423` fires on the existence of a no-show
   // report, so this asks exactly that — not the broader `under_review`, which also counts
   // `not_received` and agreed with `PT423` only by a coincidence between two guards two
   // migrations apart. Agreement-level: the exit closes for the whole trade the moment ANY

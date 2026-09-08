@@ -106,7 +106,19 @@ export interface BarterObligation {
    * which exist. A cancelled trade is always false.
    */
   obligationUnderReview: boolean
-  /** When the no-show was reported, or null. Display only; the server owns the timestamp. */
+  /**
+   * When the no-show was reported, or null. The server owns the timestamp.
+   *
+   * **LOAD-BEARING, not decorative.** This is the fact the PD-063 client gate reads — the SAME
+   * predicate `PT423` evaluates server-side — so the trade detail derives "may this still be
+   * cancelled" from it. It is deliberately NOT the broader `obligationUnderReview`, which also
+   * counts `not_received`.
+   *
+   * Fail direction: absent reads as "no report", which OPENS the exit. That is safe only because
+   * the server refuses independently in both the RPC and the row trigger, and because a
+   * `not_received` obligation is necessarily delivered and is closed by `anyDelivered` instead.
+   * **Do not drop this column from the select** on the grounds that nothing renders it.
+   */
   noShowReportedAt: string | null
   /**
    * Whether the receiver may report a no-show right now — the SERVER's answer, decided against
