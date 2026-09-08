@@ -2,8 +2,9 @@
 
 **Status:** **Living asset — NOT authoritative for product truth.** Owner: Founder (Stephen).
 **Category:** Marketing.
-**Last substantive update:** 2026-09-08 — barter value/adjudication rulings (PD-068, PD-069),
-on top of the payment pressure-test reconciliation and two earlier Founder rulings.
+**Last substantive update:** 2026-09-08 — barter value/adjudication rulings (PD-068 … PD-070),
+including the REMOVAL of the estimated-value UX, on top of the payment pressure-test
+reconciliation and two earlier Founder rulings.
 
 This is a working bank of lines, hooks, angles, series concepts, and campaign ideas. It is
 meant to be added to constantly and never finished.
@@ -449,6 +450,12 @@ professionalism and network** — two working professionals who each have someth
 needs. It is **not** cheap, desperate, free stuff, or discount hunting, and a line that lands
 well while implying any of those is worse than no line.
 
+**These lines are now literally true of the product, which is why they are 🟢.** As of
+2026-09-08 The Book does not ask a provider for a price anywhere in barter: the estimated-value
+input is gone from the composer and the `~$N value` badge is gone from the board. *"The Book
+doesn't decide what your skill is worth to you"* is not a positioning claim any more — it is a
+description of a screen that no longer has a dollar field on it.
+
 **Never market barter as any of these:**
 
 | Line / framing | Flag |
@@ -456,6 +463,7 @@ well while implying any of those is worse than no line.
 | "Get it for free." / "Skip the invoice." | 🔴 **DO NOT USE** — this is the discount framing PD-031 forbids, wearing different clothes |
 | "Can't afford it? Trade for it." | 🔴 **DO NOT USE** — positions barter as what you do when you're broke |
 | "We'll make sure the trade is fair." / "Trade values matched." | 🔴 **DO NOT USE** — the platform does **not** appraise or equalize value (**PD-069**) |
+| "Set your trade's value." / "~$80 value" / any dollar figure on an offer | 🔴 **DO NOT USE, and note this CHANGED.** The estimated-value field and the `~$N value` board badge were **removed** on 2026-09-08 (**PD-069**). No barter offer carries a price. Any screenshot or mock showing one is out of date and must not ship |
 | "Earn credits." / "Barter points." / any stored-value or token framing | 🔴 **DO NOT USE** — no credits, points, tokens or currency exist, and none is planned for beta (**PD-069**) |
 | "Reviewed within 24/48 hours." / any resolution turnaround | 🔴 **DO NOT USE** — **no resolution SLA is promised** (**PD-068**). The only sanctioned wording is *"This trade is under review."* |
 | "We match you with the perfect trade partner." | 🔴 **EXPLORATORY** — reciprocal matching, a Wants list and matching suggestions are **future exploration only**, not built. See [FUTURE_PRODUCT_IDEAS.md § 3](../product/FUTURE_PRODUCT_IDEAS.md) |

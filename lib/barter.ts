@@ -24,7 +24,15 @@ export interface BarterOffer {
   userId: string
   offeringService: string
   seekingService: string
-  offeringValue: number | null
+  /**
+   * DELIBERATELY ABSENT: `offering_value`.
+   *
+   * PD-069 — The Book does not appraise, equalize or compare the value of a barter trade. The
+   * column still exists and legacy rows still carry whatever a provider entered before that
+   * ruling, but it is not selected, not mapped and not rendered: a type that cannot hold the
+   * figure is what stops a future surface from drawing it back onto a card. New offers record
+   * none at all — `enforce_barter_offer_write` nulls it on insert.
+   */
   notes: string | null
   isActive: boolean
   createdAt: string
@@ -67,14 +75,16 @@ interface RawOfferRow {
   user_id: string
   offering_service: string
   seeking_service: string
-  offering_value: number | null
   notes: string | null
   is_active: boolean
   created_at: string
 }
 
+// `offering_value` is NOT selected (PD-069). Not a filter and not an oversight: the column is
+// deprecated legacy data, and the surest way for it never to reach a screen is for the read
+// never to fetch it.
 const OFFER_COLUMNS =
-  'id, provider_id, user_id, offering_service, seeking_service, offering_value, notes, is_active, created_at'
+  'id, provider_id, user_id, offering_service, seeking_service, notes, is_active, created_at'
 
 // Active offers newest-first, each with provider display info and a count of
 // how many providers have expressed interest.
@@ -104,7 +114,6 @@ export async function fetchBarterFeed(): Promise<BarterOfferWithProvider[]> {
     userId: r.user_id,
     offeringService: r.offering_service,
     seekingService: r.seeking_service,
-    offeringValue: r.offering_value,
     notes: r.notes,
     isActive: r.is_active,
     createdAt: r.created_at,

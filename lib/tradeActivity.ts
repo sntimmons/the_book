@@ -167,9 +167,13 @@ export interface TradeRowFacts {
    * the two surfaces must agree about which is which.
    *
    * TWO PER-SIDE FACTS, NOT A ROLL-UP, because there IS no agreement-level outcome: no
-   * Completed, no Partially Fulfilled, no Not Completed exists in this product, and computing a
-   * single verdict for the trade here is exactly what the next slice is for. A row may
-   * truthfully report that one side is resolved while the other is not.
+   * Completed, no Partially Fulfilled, no Not Completed exists in this product **and none is
+   * coming** — PD-070 rules that agreement-level resolution is DERIVED and never stored, and
+   * that where a single label would overstate what was found the product states the two
+   * obligation truths instead. This comment used to say computing a trade-level verdict "is
+   * exactly what the next slice is for"; that slice ruled the opposite, and the sentence was an
+   * instruction to build the one thing now permanently forbidden. A row may truthfully report
+   * that one side is resolved while the other is not.
    *
    * Defaulted like the rest, in the withholding direction: absent means not resolved.
    */
@@ -511,9 +515,26 @@ function confirmedTradeNote(f: TradeRowFacts): string {
   // "Needs attention: say whether you received it" on a trade that was cancelled before anything
   // could be delivered would be the worst sentence this list could produce.
   if (cancelled !== 'none') return CONFIRMED_TRADE_NOTE[cancelled]
+  // ── WHY THIS DOES NOT CALL `agreementResolution`, WHICH IS A REAL DIVERGENCE ────────────
+  //
+  // The negotiation banner classifies the same trade with `agreementResolution` (PD-070) and a
+  // total Record. This row does not, and it is NOT an oversight: **the row does not have the
+  // data**. `agreementResolution` needs each obligation's STATUS, because "settled" includes a
+  // receiver having confirmed receipt with no operator involved. All this row gets is the
+  // WINDOW state, and `WINDOW_NOTE.none.none` fires both for "nothing delivered yet" and for
+  // "both confirmed received" — indistinguishable here. Routing this through the shared
+  // classifier would therefore require adding per-obligation `status` to `my_trade_activity`,
+  // which is a schema change and not something to bolt on beside a copy fix.
+  //
+  // WHAT THAT COSTS, STATED SO IT IS NOT REDISCOVERED AS A SURPRISE: a fifth
+  // `AgreementResolution` value is a compile error in the banner's Record and compiles silently
+  // here. The two agree today, and `__tests__/lib/terminalOutcome.test.ts` pins this side. If
+  // this row ever needs to distinguish a finished trade from a fresh one, thread `status`
+  // through the view and delete this comment along with the branches below.
+  //
   // BOTH OBLIGATIONS RESOLVED — and this is still NOT an agreement outcome. The row says what
   // happened to each obligation; it does not compute a verdict for the trade, because none
-  // exists. Each phrase names the OBLIGATION, never the provider: PD-065.
+  // exists. Each phrase names the OBLIGATION, never the provider: PD-065, PD-070.
   const received = f.receivedTerminalOutcome ?? null
   const delivered = f.deliveredTerminalOutcome ?? null
   if (received && delivered) {

@@ -462,3 +462,53 @@ describe('an unrecognised terminal outcome degrades instead of crashing', () => 
     assertNoBlame(s.note)
   })
 })
+
+// ── A RESOLVED OBLIGATION NEVER IMPLIES AN ACTION IS STILL AVAILABLE ───────
+//
+// `pending` + a terminal outcome is REACHABLE: a no-show can be reported on a scheduled
+// obligation that was never delivered, which puts it Under Review, which is what makes it
+// adjudicable. The `pending` copy is the only state sentence phrased as an action still awaited
+// — "You have not marked this delivered YET." — and once an operator has closed the obligation
+// that control is permanently gone (the server refuses with PT424). A caption promising an
+// action the card cannot offer is the defect this module exists to prevent.
+describe('a resolved obligation states no still-pending action', () => {
+  const OUTCOMES = ['fulfilled', 'unfulfilled', 'closed_without_resolution'] as const
+
+  it.each(OUTCOMES)('drops the "yet" from a never-delivered obligation resolved %s', (o) => {
+    for (const role of ['deliverer', 'receiver'] as const) {
+      const v = obligationView({ role, status: 'pending', terminalOutcome: o })
+      expect(v.state.toLowerCase()).not.toContain('yet')
+      // The FACT survives — it genuinely was never delivered, and that is the record.
+      expect(v.state.toLowerCase()).toContain('never marked delivered')
+      expect(v.canMarkDelivered).toBe(false)
+      expect(v.canRespond).toBe(false)
+      assertNoBlame(v.state)
+    }
+  })
+
+  it('does NOT name the outcome in the state sentence — the chip and note carry it once', () => {
+    for (const o of OUTCOMES) {
+      const v = obligationView({ role: 'deliverer', status: 'pending', terminalOutcome: o })
+      for (const w of ['fulfilled', 'unfulfilled', 'closed', 'resolution']) {
+        expect(v.state.toLowerCase()).not.toContain(w)
+      }
+    }
+  })
+
+  // UNCHANGED FOR CANCELLATION, deliberately: a cancelled trade ended without a finding, and
+  // "Not marked delivered yet." carries no verdict there.
+  it('leaves the cancelled wording alone', () => {
+    const v = obligationView({ role: 'receiver', status: 'pending', tradeCancelled: true })
+    expect(v.state.toLowerCase()).toContain('yet')
+  })
+
+  // No other status is touched — those sentences describe things that already happened.
+  it.each(['delivered', 'received', 'not_received'] as const)(
+    'leaves the %s state sentence unchanged when resolved',
+    (status) => {
+      const plain = obligationView({ role: 'receiver', status })
+      const done = obligationView({ role: 'receiver', status, terminalOutcome: 'fulfilled' })
+      expect(done.state).toBe(plain.state)
+    },
+  )
+})

@@ -201,7 +201,7 @@ begin
   -- still guards is what it always meant: this slice creates no AUTOMATIC outcome. The three
   -- objects the adjudication migration added are exempted by name — a fourth, or anything
   -- reputation- or penalty-shaped, still fails. The agreement-level roll-up vocabulary
-  -- (`closed_without`, `partially`, `not_completed`) remains banned outright: it is deferred.
+  -- (`closed_without`, `partially`, `not_completed`) remains banned outright: it is REFUSED PERMANENTLY by PD-070, not deferred.
   select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
      and (p.proname ~* 'adjudicat|fulfil|unfulfil|reputation|verdict|penalt|refund'

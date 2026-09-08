@@ -57,7 +57,9 @@ import { attentionTone, AttentionTone } from '@/lib/obligationState'
 // obligation CAN now reach a fulfilment outcome — operator adjudication exists (PD-064..PD-067)
 // and this screen reports it per side through `confirmedTradeNote`. What still does NOT exist is
 // any AGREEMENT-level completion model: no Completed, no Partially Fulfilled, no Not Completed,
-// and this row never rolls the two sides into one verdict (PD-065).
+// and this row never rolls the two sides into one verdict (PD-065, and PD-070 makes that
+// permanent: agreement-level resolution is derived, never stored, and no roll-up label may
+// overstate what was found).
 //
 // The feed is discovery: it filters `is_active = true` and shows the newest 50. An accepted
 // negotiation is durable workflow state. Hanging the End-negotiation control off a feed card

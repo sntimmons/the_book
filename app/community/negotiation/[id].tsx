@@ -54,6 +54,7 @@ import {
   anyDelivered,
   CONFIRM_RECEIVED_COPY,
   MARK_DELIVERED_COPY,
+  agreementResolution,
   attentionTone,
   AttentionTone,
   terminalOutcomeLabel,
@@ -289,6 +290,13 @@ export default function NegotiationScreen() {
         everBothAccepted: versions.some((v) => v.acceptedBy.length >= 2),
         agreementId: row.agreementId,
         tradeCancelled,
+        // DERIVED HERE, NOT IN JSX (PD-070). The banner must not instruct two providers to
+        // "arrange the details" of a trade whose obligations an operator has already resolved.
+        // `agreementResolution` owns the rule — including that a *closed without resolution*
+        // side never becomes a finding of fault — so it is testable and stated once.
+        resolution: agreementResolution(
+          obligations.map((o) => ({ status: o.status, terminalOutcome: o.terminalOutcome })),
+        ),
         currentTermsStillValid: current ? termsTimingStillValid(current.terms) : true,
       })
     : null

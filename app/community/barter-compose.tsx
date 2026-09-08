@@ -28,7 +28,6 @@ export default function BarterCompose() {
 
   const [offering, setOffering] = useState('')
   const [seeking, setSeeking] = useState('')
-  const [value, setValue] = useState('')
   const [notes, setNotes] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -43,12 +42,6 @@ export default function BarterCompose() {
     const offeringText = offering.trim()
     const seekingText = seeking.trim()
     if (!offeringText || !seekingText || !user || !providerId || submitting) return
-    // Estimated value is optional; parse to a whole number of dollars or null.
-    const parsedValue = value.trim() ? Math.round(Number(value.trim())) : null
-    const offeringValue =
-      parsedValue != null && Number.isFinite(parsedValue) && parsedValue >= 0
-        ? parsedValue
-        : null
     setSubmitting(true)
 
     // Server-side rate limit (max 5 new offers/day/provider). Not an error.
@@ -65,7 +58,8 @@ export default function BarterCompose() {
         user_id: user.id,
         offering_service: offeringText,
         seeking_service: seekingText,
-        offering_value: offeringValue,
+        // NO `offering_value` (PD-069). The Book does not ask a provider to price their own
+        // barter offer, and the server nulls the column on insert regardless.
         notes: notes.trim() || null,
       })
       if (error) throw error
@@ -130,20 +124,11 @@ export default function BarterCompose() {
           {seeking.length}/{OFFER_MAX}
         </Text>
 
-        <Text style={[styles.label, styles.labelSpacing]}>ESTIMATED VALUE (OPTIONAL)</Text>
-        <View style={styles.valueRow}>
-          <Text style={styles.dollarSign}>$</Text>
-          <TextInput
-            style={styles.valueInput}
-            placeholder="80"
-            placeholderTextColor="rgba(240,232,213,0.25)"
-            keyboardType="number-pad"
-            maxLength={7}
-            value={value}
-            onChangeText={(t) => setValue(t.replace(/[^0-9]/g, ''))}
-          />
-        </View>
-
+        {/* NO ESTIMATED VALUE FIELD (PD-069). The Book does not appraise, equalize or compare
+            the value of a trade — providers decide for themselves whether an exchange is worth
+            accepting. Asking for a dollar figure here, even optionally, teaches that parity is
+            the standard and makes a deliberately unequal-looking trade feel like a mistake. Do
+            not reintroduce this, or a "normal price", "market value" or equivalency field. */}
         <Text style={[styles.label, styles.labelSpacing]}>NOTES (OPTIONAL)</Text>
         <TextInput
           style={styles.notesInput}
@@ -209,26 +194,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(240,232,213,0.05)',
     borderWidth: 1,
     borderColor: 'rgba(240,232,213,0.08)',
-  },
-  valueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    backgroundColor: 'rgba(240,232,213,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.08)',
-  },
-  dollarSign: { fontSize: 16, color: 'rgba(240,232,213,0.5)', fontFamily: 'Manrope_600SemiBold' },
-  valueInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
-    paddingVertical: 12,
-    padding: 0,
-    paddingLeft: 2,
   },
   notesInput: {
     minHeight: 100,

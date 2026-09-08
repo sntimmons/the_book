@@ -359,13 +359,48 @@ approval.**
 
 ## Next
 
-### Session 7 — Barter beta readiness (continues)
+### Session 7 — Barter beta readiness — **ENGINE COMPLETE, 2026-09-08**
+
+> **⚠️ THIS SECTION IS PARTLY SUPERSEDED and is kept for the record.** It was written before the
+> adjudication slice. **Session 7's lifecycle engine is now complete**; what the paragraphs below
+> describe as "next" has shipped. The current position is stated first.
+
+**THE BARTER LIFECYCLE ENGINE IS COMPLETE.** The last two slices closed it:
+
+- **PR #68** (`5c24e8f`) — **manual adjudication and the three terminal OBLIGATION outcomes**
+  (PD-064 … PD-069). An authorized operator, and **only** an operator, may resolve an obligation
+  that is Under Review as **Fulfilled**, **Unfulfilled** or **Closed without resolution**. The
+  record is immutable, the rationale and the adjudicator are internal, and no participant path
+  exists at any layer.
+- **The derived-agreement-presentation slice** (PD-070) — agreement-level resolution is
+  **derived** from those immutable facts and **never persisted**, the last live barter
+  **dollar-value UX** is removed under PD-069, and the read-model duplication and misleading
+  `p_trade_cancelled` parameter deferred from PR #68's review are cleaned up.
+
+**What that leaves is NOT engine work, and must not be counted as unfinished Session 7:**
+
+| Remaining item | Where it belongs |
+|---|---|
+| The minimal internal **Review Queue** / operator surface | **Pre-beta requirement (PD-068)**, its own slice. The secure server path is complete; nothing calls it. |
+| **Block and report** | **Session 8** — safety & trust |
+| Provider trust / reliability consequences | Session 8+ |
+| Reciprocal matching, Wants list, three-way matching | Future exploration only — `FUTURE_PRODUCT_IDEAS.md` § 3 |
+| Barter negotiation **UX simplification** | A later UX slice; the model underneath is correct and stays |
+
+**One genuine engine question remains open and is deliberately unresolved:** how a plain **Needs
+Attention** might enter **Under Review**. No automatic escalation, second timer, participant
+escalation action or operator auto-escalation exists, and none may be created by implementation.
+
+---
+
+**Historical record, as written before the adjudication slice:**
+
 Agreement finalization is merged in PR #50, proposal timing / expiry enforcement in PR #52, the
 obligations foundation in PR #54, obligation delivery / receiver confirmation in PR #56,
 pre-delivery cancellation in PR #58, the receiver-response window and Needs Attention in PR #62,
 no-show reporting with the Under Review foundation in PR #64, and the five-item pre-adjudication
-cleanup gate in PR #66. **Next work remains within Session 7, and the next feature is
-adjudication.** The
+cleanup gate in PR #66. ~~**Next work remains within Session 7, and the next feature is
+adjudication.**~~ **That feature has now shipped — see above.** The
 remaining barter work stays within **Session 7** until explicitly resequenced; this
 reconciliation does **not** start Session 8, which **has not started**.
 

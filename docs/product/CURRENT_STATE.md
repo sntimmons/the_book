@@ -1,15 +1,27 @@
 # Current State — what is true on `main` today
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
+> **⚠️ THIS DOCUMENT IS THREE MERGES STALE, AND THE GAP IS NAMED RATHER THAN PAPERED OVER.**
+> It is anchored at `0f2b93c`. Since then `main` has taken **PR #69** (`c04e5bd`, docs only),
+> **PR #68** (`5c24e8f`, manual adjudication and the three terminal OBLIGATION outcomes,
+> PD-064 … PD-069) and the derived-agreement-presentation slice (PD-070). **The § Barter absence
+> claims below were true at `0f2b93c` and several are now FALSE**; the ones that matter are
+> corrected inline and marked, but **every line citation in § Barter is unverified at the current
+> tip** and this file has not been re-read against it. A full Project State Steward
+> reconciliation is owed and is the immediate next task after this slice merges. Until it runs,
+> treat [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) and
+> [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) as the authority for barter, and the source
+> code over both.
+
 **Reconciled against:** `main` @ `0f2b93c` (2026-09-07) — squash-merge of PR #66, "refactor: the
-five-item pre-adjudication cleanup gate". That PR added **no** migration and changed **no**
+five-item pre-adjudication cleanup gate". **STALE — see the warning above.** That PR added **no** migration and changed **no**
 database object, but it reshaped the client modules this document describes and moved nearly every
 line citation in § Barter, so the anchor moves and those citations were re-read at `0f2b93c`. The
 SHA, the PR number, the prior base `1c0fe54` (PR #65), the post-merge CI run and the
 migration-list state were **supplied to this reconciliation**, which had no shell; it confirmed
 independently only what a file can prove — `.git/HEAD` resolves to `refs/heads/main`, both
 `.git/refs/heads/main` and `.git/refs/remotes/origin/main` read `0f2b93c5839e970592dac747544eea862610cb3d`,
-and `supabase/migrations/*.sql` still holds **57** files, newest `20261018000000`.
+and `supabase/migrations/*.sql` held **57** files, newest `20261018000000`, at that anchor. **It now holds 68, newest `20261029000000`** — see the staleness warning above.
 **Last edited by:** PR #65 (previous edit: PR #64). PR #65 was the reconciliation that followed
 PR #64; **PR #66 did not touch this file**, which is why its § Barter line citations were stale on
 arrival. This reconciliation was **not given its own PR number**, so this field names the last
@@ -652,9 +664,27 @@ not copied here. Two gaps matter most to anyone reading this document cold:
   events into an outcome remains unbuilt, and is asserted absent rather than assumed: **no 7-day
   timeout TRANSITION (the window creates no status change — an elapsed window leaves the row
   `delivered` and the receiver may still answer), no automatic fulfilment, no automatic
-  completion, no adjudication, no operator decision path, no terminal obligation outcome
-  (Fulfilled / Unfulfilled / Closed Without Resolution), no terminal agreement outcome, no
-  reviews-on-barter, no reputation and no push notifications.**
+  completion, no reviews-on-barter, no reputation and no push notifications.**
+
+  > **⚠️ CORRECTED 2026-09-08.** This bullet used to also assert "no adjudication, no operator
+  > decision path, no terminal obligation outcome (Fulfilled / Unfulfilled / Closed Without
+  > Resolution), no terminal agreement outcome." **The first three are now FALSE** and were made
+  > so by PR #68 (`5c24e8f`, PD-064 … PD-067): an authorized operator — and nobody else, never a
+  > participant — can resolve an obligation that is **Under Review** as **Fulfilled**,
+  > **Unfulfilled** or **Closed without resolution**, through `adjudicate_barter_obligation`,
+  > whose `EXECUTE` is granted to `service_role` alone. The record is immutable.
+  > **NO OPERATOR SURFACE IS SHIPPED**, so nothing in the running product calls it — a minimal
+  > internal Review Queue is a **pre-beta requirement** (PD-068), and no resolution SLA is
+  > promised to anyone.
+  >
+  > **"No terminal agreement outcome" REMAINS TRUE and is now permanent** rather than pending:
+  > PD-070 rules that agreement-level resolution is **derived** from the immutable obligation
+  > facts and never stored. There is no `Completed`, `Partially Fulfilled` or `Not Completed`
+  > column, status or verdict, and none is coming.
+  >
+  > **Also changed since this anchor:** the barter **estimated-value** field is gone from the
+  > live product (PD-069) — no composer input, no `~$N value` board badge, no live read of
+  > `offering_value`, which is now deprecated legacy data the server refuses to write.
 
   **NO-SHOW AND UNDER REVIEW ARE THE EXCEPTIONS, AND THEY ARE NOT OUTCOMES EITHER.** A receiver
   may now report that a SCHEDULED service did not happen, and that report — or a plain
