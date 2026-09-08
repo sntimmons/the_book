@@ -419,7 +419,18 @@ no-show routing to Under Review.
 | "Both sides agree the terms before anybody does anything." | 🟢 |
 | "Barter as a discount." | 🔴 | **DO NOT USE.** Barter is **not** a discount mechanism (**PD-031**) |
 
-**Two hard limits.** Barter has **no effect on public reputation or ranking** in the first
+**A THIRD HARD LIMIT, added 2026-09-08 and the easiest one to get wrong.** Operator adjudication
+and the three terminal obligation outcomes exist in the database (**PD-064** … **PD-067**), but
+**no operator surface is shipped**, so **nothing in the running product can actually resolve a
+disputed trade** — a minimal internal Review Queue is a pre-beta requirement (**PD-068**).
+**Therefore no copy may promise resolution.** Not *"we sort it out"*, not *"disputes get
+resolved"*, not *"we've got your back if it goes wrong"*, and **never a turnaround time** — there
+is no SLA (**PD-068**). The only sanctioned participant-facing wording is *"This trade is under
+review."* What IS safe to say is what actually ships: the terms are agreed up front, both sides
+are recorded, and nothing is decided by a clock. **Re-check this flag once the Review Queue
+lands** — it is the one line in this bank most likely to go from unsafe to safe.
+
+**Two further hard limits.** Barter has **no effect on public reputation or ranking** in the first
 beta — do not imply trading builds a score. And barter is **not** a way to get a cheaper
 version of a paid service; framing it that way is the exact misuse the model was designed
 against.

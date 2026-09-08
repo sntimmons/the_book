@@ -54,7 +54,7 @@ create *trust*.
 | Analytics | **REAL (dev-data caveat)** | Client-side metrics; revenue = completed only (4A). |
 | Reels / content | **REAL** | Content feed + posts/reels. |
 | Follows | **REAL** | `provider_follows` / `saved_providers`. |
-| Community / barter | **REAL (beta)** | Posts, replies, bookmarks, barter offers/interests, proposal/version negotiation, PR #50 agreement finalization, PR #54's two directed obligations per agreement, PR #56's delivery mark and one-time receiver answer, and PR #58's **pre-delivery cancellation** — either participant may cancel before anything is delivered, and two independent acts classify as mutually cancelled (**PD-046**, **PD-060**, **PD-061**) — and PR #62's **7-day receiver-response window and Needs Attention** (**PD-057**, **PD-059**), derived server-side. Those answers are **events, not verdicts**: no fulfilment outcome, no-show or adjudication model exists yet, an elapsed response window creates no outcome either, and cancellation decides nothing about whether anyone fulfilled anything. See Community / barter. |
+| Community / barter | **REAL (beta) — the lifecycle engine is COMPLETE as of Session 7** | Posts, replies, bookmarks, barter offers/interests, proposal/version negotiation, agreement finalization, two directed obligations per agreement, delivery mark and one-time receiver answer, **pre-delivery cancellation** (either participant, before anything is delivered; two independent acts classify as mutually cancelled — **PD-046**, **PD-060**, **PD-061**), the **7-day receiver-response window and Needs Attention** (**PD-057**, **PD-059**), **no-show reporting and Under Review** (**PD-062**, **PD-063**), **operator-only adjudication and the three terminal OBLIGATION outcomes** — Fulfilled / Unfulfilled / Closed Without Resolution (**PD-064** … **PD-067**) — and a **DERIVED agreement presentation** (**PD-070**). Participant answers remain **events, not verdicts**; an elapsed window still creates no outcome; cancellation still decides nothing about fulfilment. **Two things this does NOT include, and both are deliberate:** no operator surface is shipped, so nothing in the running product can actually reach a terminal outcome (**PD-068** makes a minimal internal Review Queue a pre-beta requirement); and there is **no persisted agreement-level verdict and never will be** (**PD-070**). No barter reviews or reputation in beta. See Community / barter. |
 | Care / reminders | **REAL (beta)** | Care reminders. |
 | Payments revenue / platform fee | **UNDECIDED — BUSINESS MODEL RESEARCH** | See Revenue model. |
 | Discovery ranking | **UNDECIDED — RESEARCH** | Fair-opportunity direction; weights undefined. |
@@ -65,9 +65,23 @@ create *trust*.
 
 ## Community / barter — the pre-agreement negotiation lifecycle
 
-Bounded update, 2026-09-04, bringing this section level with what has shipped. Authoritative
-detail lives in [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) and PD-043 … PD-054 in
-[PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md); this records only the scope classification.
+Bounded update, **2026-09-08**, bringing this section level with what has shipped through
+Session 7. Authoritative detail lives in [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) and
+**PD-043 … PD-070** in [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md); this records only the scope
+classification.
+
+**Two principles govern the whole surface and are not merely aspirational — they are why several
+things below are absent rather than pending:**
+
+> **"The Book adjudicates performance, not value."**
+>
+> **"The Book does not appraise the trade. It makes the trade clear, mutual, and accountable."**
+
+**Beta barter is DIRECT and TWO-PROVIDER.** Provider ↔ provider only. **No cash hybrid, no
+credits, no tokens, no points, no stored value, no multi-party or three-way trade** — and **no
+dollar valuation or equivalency anywhere in the live product** (**PD-069**). Providers decide for
+themselves whether an exchange is worth accepting; quantity and description define what was
+promised, never economic parity.
 
 **What is REAL (beta):**
 

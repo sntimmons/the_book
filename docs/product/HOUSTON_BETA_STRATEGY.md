@@ -140,6 +140,14 @@ Do **not** invent a complicated barter economy for the beta: no trade credits, w
 multiparty swaps, or valuation engines (PD-032). Barter already exists in the codebase and
 is audited before redesign (PD-033, Session 4).
 
+**Reconciled 2026-09-08 — this strategic instinct is now LOCKED, not merely advised.**
+**PD-069** rules that The Book does not appraise, equalize or compare the value of a trade:
+*"The Book adjudicates performance, not value."* The estimated-value field and the `~$N value`
+board badge were **removed from the live product** in Session 7, so the no-valuation-engine
+principle above is enforced by absence rather than by restraint. **PD-070** adds that
+agreement-level resolution is **derived** from immutable facts and never stored. The paragraph
+above needs no change — the product caught up to it.
+
 ---
 
 ## Beta operations
