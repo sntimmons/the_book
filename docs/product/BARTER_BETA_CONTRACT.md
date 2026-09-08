@@ -105,6 +105,17 @@ pre-agreement path only: once an agreement is formed the post is consumed and cl
   standing in for terms.
 - An **official agreement is required before a trade is real**. Conversation alone — however
   clear — does not create a trade.
+- **Acceptance defines the bargain (PD-069).** Once both providers knowingly accept the same
+  current version, **the agreed exchange IS the deal**. The platform does not second-guess it,
+  and later regret about pricing or value is not a dispute the platform entertains.
+
+**Direct barter remains the beta model, and this is a decision rather than a stage.** Provider A
+↔ Provider B, two parties, no third leg. **No credits, no barter points, no tokens, no
+stored-value currency, no cash hybrid, no multi-party or three-way transaction** exists or may
+be added in beta (**PD-069**, and PD-032 for the two-party limit). Reciprocal matching, a
+provider Wants list, matching suggestions and three-way matching are **future exploration only**
+— see [FUTURE_PRODUCT_IDEAS.md](FUTURE_PRODUCT_IDEAS.md) — and the matching problem must be
+proven with real user data before any currency is invented to solve it.
 
 
 > **Built as of Slice 3a — the proposal machinery, not the agreement.** Inside an accepted
@@ -135,6 +146,26 @@ pre-agreement path only: once an agreement is formed the post is consumed and cl
   not tradeable consideration.
 - What is offered is either an **existing service** the provider already lists, or a **custom
   barter package** defined for that trade.
+
+### 5.1 Value belongs to the providers
+
+Locked 2026-09-08 — **PD-069**. **The Book does not appraise the trade. It makes the trade
+clear, mutual, and accountable.**
+
+- The platform does **not** appraise, equalize or compare the economic value of a trade.
+  Providers decide for themselves whether an exchange is worth accepting.
+- **Retail price does not determine subjective value.** A photographer who normally charges
+  $200 may genuinely value a $40 haircut more than the session they are giving up. That trade
+  is **valid**, and the product must **never** warn that a trade "appears unequal".
+- **Quantity and description define the commitment, not parity.** *1 headshot session with 10
+  edited photos*, *4 haircuts*, *6 training sessions*, *1 logo package*. The system may need
+  quantity for obligation clarity; it must not use quantity to decide economic equality. The
+  question is **"what did you promise?"**, never **"is it worth the same?"**.
+- **NOT BUILT and not to be built in beta:** forced dollar valuation, optional negotiation-time
+  market valuation, automated valuation, equivalency math, fairness warnings, a
+  platform-recommended exchange ratio, Book Credits, barter points, internal tokens,
+  stored-value currency. A proposal version carries **exactly two directed terms and no value
+  field** (§ 4), and that is the enforcement.
 
 ## 6. Delivery and confirmation
 
@@ -264,6 +295,28 @@ an ugly truth — and **history is retained**; a participant cannot destructivel
 counterparty's record of an interaction (**PD-043**), with legitimate account erasure a
 separate path that outranks retention.
 
+**What a review is about, and who runs it — PD-068 / PD-069.**
+
+- **The Book adjudicates performance, not value.** Valid performance issues: a promised service
+  not delivered, a no-show, a receiver reporting non-receipt, an agreed quantity not performed,
+  an agreed commitment materially not delivered. **Not** performance issues, and not grounds
+  for review: *"my normal rate is higher"*, *"their service is worth less"*, *"I could have
+  charged more"*, *"I changed my mind about the value"*, *"their retail price is $40 and mine is
+  $200"*. This narrows what an operator may consider; it does **not** narrow the three outcomes,
+  and *Closed without resolution* stays the honest answer where performance cannot be
+  established. It is also **not** a quality-dispute engine — quality is a different question
+  from delivery and is not decided here.
+- **Only an authorized internal operator adjudicates during beta.** Participants may never
+  adjudicate their own trade, and no participant-facing adjudication path exists.
+- **No operator surface is shipped, and a minimal internal Review Queue is REQUIRED before live
+  barter beta.** It must let an authorized operator view the agreement, view the obligation,
+  view the recorded participant facts and evidence, choose exactly one terminal outcome, enter
+  the required internal rationale, and submit through the already-secured adjudication path.
+  Until it exists, no obligation can actually reach a terminal outcome in the running product.
+- **No resolution SLA is promised.** Participant-facing language says **"This trade is under
+  review."** — not 24 hours, not 48 hours, not "X business days", and not a guaranteed
+  resolution. Do not add one to copy.
+
 ## 8. Reviews and reputation
 
 - **No barter reviews in the first Houston closed beta.**
@@ -330,3 +383,7 @@ Recorded so the gap is visible rather than assumed closed:
   or `barter_interests` implements them. Slice 3 is where they land.
 - The **3-post** and **5-offer/day** limits (§ 10) are not server-enforced.
 - **Blocking and reporting** (§ 9) do not exist.
+- The **internal Review Queue / operator surface** (§ 7.5, **PD-068**) does not exist. The
+  secure adjudication path does; nothing calls it. Required **before live barter beta**.
+- The **terminal AGREEMENT-level outcome** (§ 7.5 table) does not exist, and whether it should
+  be **persisted or derived** from the two obligation outcomes is undecided.

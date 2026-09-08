@@ -1,11 +1,13 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** the manual-adjudication branch, which records **PD-064** through **PD-067**
+**Last edited by:** the manual-adjudication branch, which records **PD-064** through **PD-069**
 and carries its own implementation notes in with its code, as PR #64 did for PD-062 / PD-063 and
 PR #62 did for PD-057 / PD-059. Its PR number is unknown while this is written; the previous
-known-numbered edits were PR #65 (the reconciliation that corrected PR #64's citations) and the
-unnumbered reconciliation that followed PR #66.
+known-numbered edits were PR #65 (the reconciliation that corrected PR #64's citations), the
+unnumbered reconciliation that followed PR #66, and **PR #69** (`c04e5bd`) — which added
+[FUTURE_PRODUCT_IDEAS.md](FUTURE_PRODUCT_IDEAS.md) and the marketing message bank and
+**decided nothing**, so it appears in no entry below.
 
 **Nothing here was decided, superseded or reopened by PR #66** (`0f2b93c`), the
 behaviour-preserving pre-adjudication cleanup: it added no migration and no database object, and
@@ -17,12 +19,20 @@ the decision itself is untouched.
 do **not** create an agreement-level outcome — that roll-up is deferred — and they do **not**
 resolve how a plain Needs Attention might enter Under Review, which remains open.
 
-**A question these four decisions raise and do not answer:** the adjudication path exists, but
-**no shipped surface calls it**, so no obligation can actually reach a terminal outcome in the
-running product. PD-064 defers the operator SCREEN deliberately and honestly; who performs a
-review, through what surface, and within what expectation is undecided, and a provider who
-reports a no-show is meanwhile told a review will happen. Raised for the Founder rather than
-answered here.
+**The question those four decisions raised is now ANSWERED by PD-068.** It read: the
+adjudication path exists, but **no shipped surface calls it**, so no obligation can actually
+reach a terminal outcome in the running product — who performs a review, through what surface,
+and within what expectation? The Founder answered on 2026-09-08: **an authorized operator and
+never a participant**; **a minimal internal Review Queue, required before live beta and
+deliberately not built in the adjudication slice**; and **no public resolution SLA at all** —
+participants are told only "This trade is under review." The gap PD-064 left is therefore still
+a gap in the running product, but it is now a **named pre-beta requirement** rather than an open
+question. **PD-069** settles the adjacent one the pressure test raised: the platform does not
+appraise the trade, and adjudication concerns **performance, not value**.
+
+**Still genuinely open after PD-068 / PD-069:** how a plain Needs Attention might enter Under
+Review, and whether a terminal AGREEMENT-level outcome should be **persisted or derived** from
+the obligation outcomes — the roll-up PD-065 deferred.
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -897,6 +907,112 @@ as locked decisions.
   sees neither the obligation nor the adjudication row; each participant is refused `42501` on
   `rationale` and on `adjudicator_user_id` while the outcome columns remain readable.
 - **Status:** Locked; **implemented**
+
+---
+
+### PD-068 — During beta only an operator adjudicates, a Review Queue is required before live beta, and no resolution SLA is promised
+- **Decided:** 2026-09-08
+- **Decision:** Three things are settled together, because they are the same question asked at
+  three depths. **(1) Authority.** During beta, **only an authorized internal The Book
+  operator/admin may adjudicate an Under Review barter obligation.** Participants may **never**
+  adjudicate their own trade — no participant adjudication RPC, no participant-reachable path,
+  no broadening of privileged write authority, and no broad `service_role` bypass beyond the
+  narrow trusted server/operator path that already exists. The contract fields stay immutable.
+  This restates PD-064's boundary as a **standing beta rule**, so that a future slice needing a
+  screen cannot reach it by loosening authorization. **(2) Operator surface.** The secure
+  adjudication backend **may ship without an operator UI** — PR #68 does not need one and must
+  not build one. But **before live barter beta, a minimal internal Review Queue MUST exist.**
+  Minimal means an authorized operator can, on one surface: view the agreement; view the
+  obligation; view the historical participant facts, evidence and context already recorded;
+  choose **exactly one** terminal obligation outcome (Fulfilled / Unfulfilled / Closed Without
+  Resolution); enter the required internal rationale; and submit through the **already-secured**
+  adjudication path — not a new one. **(3) Timing.** **No public resolution SLA is promised.**
+  Participant-facing language may say **"This trade is under review."** and nothing more. Not 24
+  hours, not 48 hours, not "X business days", not a guaranteed resolution.
+- **Why:** The adjudication path exists and no shipped surface calls it, so no obligation can
+  reach a terminal outcome in the running product while a provider who reports a no-show is told
+  a review will happen. That gap is real, and the honest answer is not to weaken authorization
+  until a screen becomes easy to build — it is to name the operator surface as a **pre-beta
+  requirement** with a defined minimum, and to keep the boundary that produced the security
+  posture in the first place. On timing: an SLA is a promise about staffing the product does not
+  yet have. Promising one and missing it damages trust more than saying nothing, and "under
+  review" is already the truthful statement.
+- **Consequences:** This is the **answer** to the question PD-064 … PD-067 raised and deferred —
+  *who performs a review, through what surface, and within what expectation.* Who: an authorized
+  operator, never a participant. Through what surface: a minimal internal Review Queue, required
+  before live beta and deliberately not built in the adjudication slice. Within what expectation:
+  none stated publicly. **What is still NOT resolved by this entry:** how a plain Needs Attention
+  might enter Under Review remains open, and the Review Queue does not change eligibility — an
+  obligation is still adjudicable only while Under Review (PD-064). The queue is a surface over
+  the existing RPC; building it must add no new privileged path, no new grant, and no
+  participant-reachable adjudication. `app/admin` remains `__DEV__`-only and gated on "is a
+  provider", so it is **not** that surface and must not be mistaken for it.
+- **Evidence:** Founder ruling, 2026-09-08. The authority half is already implemented and proven —
+  `public.adjudicate_barter_obligation` is granted to `service_role` alone, with the
+  privileged-caller check and the not-a-participant check made in both the RPC and the BEFORE
+  INSERT trigger (`supabase/migrations/20261019000000_barter_obligation_adjudication.sql`,
+  `20261023000000_adjudication_hardening.sql`), and `supabase/tests/adjudication.test.sql`
+  refuses participants, unrelated users and `anon` at each layer independently. The Review Queue
+  and the SLA silence are **requirements recorded here, not code**: nothing in this repository
+  implements either, and this entry is the reason the first is not an omission.
+- **Status:** Locked; **authority implemented**, operator surface **required pre-beta and not
+  built**, SLA **deliberately absent**
+
+---
+
+### PD-069 — Barter value is participant-defined; The Book adjudicates performance, not value
+- **Decided:** 2026-09-08
+- **Decision:** **The Book does not appraise, equalize, or compare the economic value of a
+  barter trade.** Two grown providers decide for themselves whether an exchange is worth
+  accepting, and **once both knowingly accept the same current trade terms, the agreed exchange
+  IS the bargain.** Quantity and description exist **only to define what was promised** — *1
+  headshot session with 10 edited photos*, *4 haircuts*, *6 training sessions*, *1 logo package*
+  — and the system must **never** use them to decide economic equality. The question the product
+  asks is **"what did you promise?"**, never **"is it worth the same?"**. Beta stays **direct
+  two-provider barter**. **NOT BUILT, and not to be built in beta:** forced dollar valuation,
+  optional negotiation-time market valuation, automated valuation, equivalency math, fairness or
+  "this trade appears unequal" warnings, a platform-recommended exchange ratio, Book Credits,
+  barter points, internal barter tokens, stored-value currency, cash hybrid, multi-party or
+  three-way transactions. **Adjudication concerns performance, not value.** These are **not**
+  performance disputes: *"my normal rate is higher"*, *"their service is worth less"*, *"I could
+  have charged more"*, *"I changed my mind about the value"*, *"their retail price is $40 and
+  mine is $200"*. These are: a promised service not delivered, a no-show, a receiver reporting
+  non-receipt, an agreed quantity not performed, an agreed commitment materially not delivered.
+- **Why:** The Book is a community marketplace between professionals, and retail price does not
+  determine subjective value. A photographer who normally charges $200 may genuinely value a
+  $40 haircut more than the session they are giving up — that trade is **valid**, and a platform
+  warning that it "appears unequal" would be the platform substituting its arithmetic for the
+  provider's own judgment about their own work. Every valuation mechanism, including a merely
+  optional one, quietly teaches that parity is the standard and makes the unequal-looking trade
+  feel like a mistake. And a value-regret channel into adjudication would turn an operator into
+  an appraiser of two businesses they do not run — a job the product cannot do correctly and
+  should not claim to.
+- **Consequences:** The two durable principles this locks are: **"The Book does not appraise the
+  trade. It makes the trade clear, mutual, and accountable."** and **"The Book adjudicates
+  performance, not value."** Later regret about pricing is **not** a dispute the platform
+  entertains — it is not a valid Under Review entry and not a valid adjudication input. This
+  **narrows** what an operator may consider without narrowing the three terminal outcomes
+  (PD-065): *Closed without resolution* remains the honest answer where performance genuinely
+  cannot be established, and is not a place to file a value complaint. This entry does **not**
+  reopen or expand PD-065's outcome vocabulary, and it does **not** authorize a quality-dispute
+  engine — quality is a different question from delivery and is not decided here.
+  Reciprocal matching, a provider Wants list, matching suggestions and three-way matching are
+  **future exploration only**, recorded in
+  [FUTURE_PRODUCT_IDEAS.md](FUTURE_PRODUCT_IDEAS.md) and **not** current scope; credits are
+  intentionally not a beta answer, and the matching/liquidity problem must be proven with real
+  user data before any currency is invented.
+- **Evidence:** Founder ruling, 2026-09-08, following the barter pressure test. The absence half
+  is already true in code and asserted, not merely intended: a proposal version carries **exactly
+  two directed terms and no value field** (`BARTER_BETA_CONTRACT.md` § 4, Slice 3a), § 5 has
+  required no dollar equivalence and banned cash hybrid since 2026-09-04, PD-032 holds the beta
+  to two parties, and no valuation, equivalency, credit or token object exists anywhere in
+  `supabase/migrations/`, `lib/` or `app/`. The scope-pin sweeps in
+  `supabase/tests/obligation.test.sql`, `cancellation.test.sql`, `no_show_under_review.test.sql`
+  and `receiver_window.test.sql` already fail on an unexempted adjudication-shaped or
+  completion-shaped function, which is the mechanism by which a future valuation slice would have
+  to be deliberate rather than accidental.
+- **Status:** Locked; **implemented as an absence** — nothing to build, and the entry exists so
+  that building any of it is a decision to reverse this one
 
 ---
 

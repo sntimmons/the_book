@@ -2,8 +2,8 @@
 
 **Status:** **Living asset — NOT authoritative for product truth.** Owner: Founder (Stephen).
 **Category:** Marketing.
-**Last substantive update:** 2026-09-08 — payment pressure-test reconciliation and two
-Founder rulings.
+**Last substantive update:** 2026-09-08 — barter value/adjudication rulings (PD-068, PD-069),
+on top of the payment pressure-test reconciliation and two earlier Founder rulings.
 
 This is a working bank of lines, hooks, angles, series concepts, and campaign ideas. It is
 meant to be added to constantly and never finished.
@@ -13,8 +13,10 @@ pressure-test findings ([§ 8.1](#81-positioning--what-this-would-actually-be-se
 [§ 8.5](#85-the-deposit-lines)) · the building-in-public payment arc
 ([§ 17.1](#171-the-payment-pressure-test-arc)) · the **Both Sides Have a Story** series
 ([§ 22.1](#221-both-sides-have-a-story)) · ten payment scenarios in full format
-([§ 25.1](#251-the-ten-payment-scenarios)) · and the Founder ruling on free listing
-([§ 3.1](#31-founder-ruling--free-listing-during-the-houston-beta)).
+([§ 25.1](#251-the-ten-payment-scenarios)) · the Founder ruling on free listing
+([§ 3.1](#31-founder-ruling--free-listing-during-the-houston-beta)) · and the barter
+value/positioning lines and DO-NOT-USE list from **PD-068 / PD-069**
+([§ 10.1](#101-your-trade-your-value--the-lines-that-follow-from-pd-069)).
 
 **Every payment-protection entry remains 🔴 EXPLORATORY / CONCEPT ONLY.** Payments are not
 live, **PD-042** is unchanged, and none of the pressure-test numbers is approved.
@@ -82,7 +84,8 @@ When product work turns up something worth saying out loud:
 **Feature-led:** [4. Discovery](#4-discovery) · [5. Available Right Now](#5-available-right-now--last-minute-openings) ·
 [6. Entertainment / Reels](#6-entertainment--reels) · [7. Trust & verification](#7-trust--verification) ·
 [8. Transaction & payment protection](#8-transaction--payment-protection) ·
-[9. Professionalism & accountability](#9-professionalism--accountability) · [10. Barter](#10-barter) ·
+[9. Professionalism & accountability](#9-professionalism--accountability) · [10. Barter](#10-barter)
+(incl. [10.1 Your trade, your value](#101-your-trade-your-value--the-lines-that-follow-from-pd-069)) ·
 [11. Provider-to-provider value](#11-provider-to-provider-value) ·
 [12. One account](#12-one-account--provider-and-client-identity) ·
 [13. Provider business growth](#13-provider-business-growth) · [14. Convenience](#14-convenience)
@@ -419,6 +422,44 @@ no-show routing to Under Review.
 beta — do not imply trading builds a score. And barter is **not** a way to get a cheaper
 version of a paid service; framing it that way is the exact misuse the model was designed
 against.
+
+## 10.1 Your trade, your value — the lines that follow from PD-069
+
+**Founder ruling, 2026-09-08 — PD-069.** The Book does **not** appraise, equalize or compare
+the economic value of a trade. Providers decide for themselves whether an exchange is worth
+accepting, and the platform never warns that a trade "appears unequal". These lines are 🟢
+because they describe what the product **already does not do**, which is the easiest kind of
+claim to keep.
+
+| Line | Flag |
+|---|---|
+| **"Your trade. Your value."** | 🟢 |
+| **"The Book doesn't decide what your skill is worth to you."** | 🟢 |
+| **"Two providers. One clear agreement."** | 🟢 |
+| **"Every provider needs another provider."** | 🟢 |
+| "Your skill is useful to someone who has something you need." | 🟢 |
+| "Professional trades. Clear agreements." | 🟢 |
+| "The barber needs photos. The photographer needs a cut. Done." | 🟢 |
+| "Your next collab could already be on The Book." | 🟢 |
+| "The Book doesn't appraise the trade. It makes the trade clear, mutual, and accountable." | 🟢 |
+| "You set the terms. We keep the record." | 🟢 |
+
+**The positioning rule these lines exist to protect.** Barter is **community, collaboration,
+professionalism and network** — two working professionals who each have something the other
+needs. It is **not** cheap, desperate, free stuff, or discount hunting, and a line that lands
+well while implying any of those is worse than no line.
+
+**Never market barter as any of these:**
+
+| Line / framing | Flag |
+|---|---|
+| "Get it for free." / "Skip the invoice." | 🔴 **DO NOT USE** — this is the discount framing PD-031 forbids, wearing different clothes |
+| "Can't afford it? Trade for it." | 🔴 **DO NOT USE** — positions barter as what you do when you're broke |
+| "We'll make sure the trade is fair." / "Trade values matched." | 🔴 **DO NOT USE** — the platform does **not** appraise or equalize value (**PD-069**) |
+| "Earn credits." / "Barter points." / any stored-value or token framing | 🔴 **DO NOT USE** — no credits, points, tokens or currency exist, and none is planned for beta (**PD-069**) |
+| "Reviewed within 24/48 hours." / any resolution turnaround | 🔴 **DO NOT USE** — **no resolution SLA is promised** (**PD-068**). The only sanctioned wording is *"This trade is under review."* |
+| "We match you with the perfect trade partner." | 🔴 **EXPLORATORY** — reciprocal matching, a Wants list and matching suggestions are **future exploration only**, not built. See [FUTURE_PRODUCT_IDEAS.md § 3](../product/FUTURE_PRODUCT_IDEAS.md) |
+| "Three-way trades." | 🔴 **EXPLORATORY** — beta barter is **two-party only** (PD-032). Vision only, never a feature, never with a date |
 
 ---
 
@@ -1012,6 +1053,10 @@ talking-head angle, a CTA, and a status flag.
 - **Talking head:** "Why barter is in a booking app, and why it's not a discount."
 - **CTA:** "Comment the trade you'd make."
 - **⚠️** Not a discount (**PD-031**). No reputation or ranking effect in the first beta.
+- **⚠️** The Book does **not** appraise, equalize or compare trade value (**PD-069**) — never
+  "we'll make sure it's fair", never credits or points, never matching claims. If a trade is
+  under review, the only sanctioned wording is *"This trade is under review."* with **no
+  turnaround time** (**PD-068**). See [§ 10.1](#101-your-trade-your-value--the-lines-that-follow-from-pd-069).
 
 ## 28.7 One account — 🟢 SHIPPED
 
