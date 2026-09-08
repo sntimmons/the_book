@@ -424,8 +424,16 @@ const OUTCOME_PHRASE = {
   received: 'What you were promised',
 } as const
 
-/** The outcome as it reads mid-sentence. One place, so the two branches cannot diverge. */
-const outcomeWord = (o: TerminalOutcome) => TERMINAL_OUTCOME_LABEL[o].toLowerCase()
+/**
+ * The outcome as it reads mid-sentence. One place, so the two branches cannot diverge.
+ *
+ * FALLS BACK rather than throwing, for the reason `terminalOutcomeNote` documents: this value
+ * arrives off a server column, the app ships on its own cadence, and an unguarded
+ * `TERMINAL_OUTCOME_LABEL[o]` on an outcome a build does not know would throw inside the Trade
+ * Activity list render. 'reviewed' names no outcome it cannot describe and assigns no fault.
+ */
+const outcomeWord = (o: TerminalOutcome) =>
+  (TERMINAL_OUTCOME_LABEL as Record<string, string>)[o]?.toLowerCase() ?? 'reviewed'
 
 const WINDOW_NOTE: Record<ReceiverWindowState, Record<ReceiverWindowState, string>> = {
   //                       theirs: none          awaiting_receiver     needs_attention

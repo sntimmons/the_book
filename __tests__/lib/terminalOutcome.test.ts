@@ -25,6 +25,7 @@ import {
   ReceiverWindowState,
   TERMINAL_OUTCOME_LABEL,
   TERMINAL_OUTCOME_NOTE,
+  terminalOutcomeLabel,
   TerminalOutcome,
   UNDER_REVIEW_LABEL,
 } from '@/lib/obligationState'
@@ -413,5 +414,51 @@ describe('Trade Activity reports each obligation, and never rolls them up', () =
         expect(s.note.toLowerCase()).not.toContain('was reviewed')
       }
     }
+  })
+})
+
+// ── AN OUTCOME THIS BUILD DOES NOT KNOW ───────────────────────────────────
+//
+// The type system makes a fourth outcome a COMPILE error, and that is the primary guard. It is
+// not the whole guard: `terminal_outcome` arrives off a server column, and a React Native app
+// ships on its own cadence while the database migrates on another. A migration that widens
+// `barter_obligation_adjudications_outcome_check` reaches installed clients BEFORE the matching
+// build does.
+//
+// Unguarded, `TERMINAL_OUTCOME_NOTE[x][role]` and `TERMINAL_OUTCOME_LABEL[x].toLowerCase()` both
+// throw on that value — inside a render, on the trade card and on the Trade Activity list. A
+// hard crash on both barter surfaces is strictly worse than degraded copy, and `attentionTone`
+// already defends this exact boundary and documents why. These casts are how the runtime edge is
+// reached at all; that is the point of the test, not a gap in it.
+describe('an unrecognised terminal outcome degrades instead of crashing', () => {
+  const UNKNOWN = 'partially_fulfilled' as unknown as TerminalOutcome
+
+  it('renders a non-blaming note rather than throwing, for both roles', () => {
+    for (const role of ['deliverer', 'receiver'] as const) {
+      const v = obligationView({ role, status: 'delivered', terminalOutcome: UNKNOWN })
+      expect(v.note).toBe('This was reviewed and resolved.')
+      expect(v.note?.toLowerCase()).not.toContain('fulfilled')
+      assertNoBlame(v.note ?? '')
+    }
+  })
+
+  it('still lets the unknown outcome DOMINATE, so no dead control is drawn', () => {
+    // The precedence must not depend on recognising the value. An outcome we cannot describe is
+    // still an outcome, and the server will refuse every participant write with PT424.
+    const v = obligationView({ role: 'receiver', status: 'delivered', terminalOutcome: UNKNOWN })
+    expect(v.canRespond).toBe(false)
+    expect(v.attention).toBeNull()
+  })
+
+  it('omits the chip rather than drawing one that reads "undefined"', () => {
+    expect(terminalOutcomeLabel('partially_fulfilled')).toBeNull()
+    expect(terminalOutcomeLabel('fulfilled')).toBe('Fulfilled')
+  })
+
+  it('words the row note without naming an outcome it cannot describe', () => {
+    const s = tradeRowState(row({ receivedTerminalOutcome: UNKNOWN }))
+    expect(s.note.toLowerCase()).toContain('reviewed')
+    expect(s.note.toLowerCase()).not.toContain('undefined')
+    assertNoBlame(s.note)
   })
 })

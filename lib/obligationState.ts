@@ -57,8 +57,10 @@ export type ObligationStatus = 'pending' | 'delivered' | 'received' | 'not_recei
  * decides it.
  *
  * `needs_attention` is an UNRESOLVED OPERATIONAL STATE: the window passed and nobody answered.
- * It is not Fulfilled, Unfulfilled, Completed, Disputed or an adjudication — none of which
- * exist — and no copy below may imply otherwise.
+ * It is not Fulfilled, Unfulfilled or an adjudication, and no copy below may imply otherwise.
+ * Terminal outcomes DO now exist (PD-064 … PD-067) and are carried separately by
+ * `terminalOutcome`, which outranks this — an elapsed window is silence, and silence is not a
+ * finding. `Completed` and `Disputed` still do not exist at any level.
  *
  * It is also NOT Under Review, which is a DIFFERENT state with a different cause: a window
  * elapses on its own, while a review begins only because someone explicitly reported something.
@@ -96,8 +98,9 @@ export interface ObligationView {
    * DELIBERATELY UNAFFECTED BY THE DEADLINE. An elapsed window means "this needs attention", not
    * "you lost your right to answer" — and the server agrees: neither receiver RPC consults a
    * deadline, so withdrawing the control here would hide an action that still works. Under
-   * Review does not close it either: a reported trade still accepts the receiver's answer, and
-   * only a later ADJUDICATION slice could close it — which does not exist.
+   * Review does not close it either: a reported trade still accepts the receiver's answer. What
+   * DOES close it is a terminal ADJUDICATION, which now exists — see `terminalOutcome` below and
+   * the `&& !resolved` conjunct this field is built with.
    */
   canRespond: boolean
   /**
@@ -180,12 +183,13 @@ const COPY: Record<ObligationRole, Record<ObligationStatus, StateCopy>> = {
     },
     not_received: {
       // Reports THEIR statement as theirs, and stops. It does not call the obligation failed,
-      // unfulfilled or disputed, and it does not say anything is being reviewed — none of
-      // that exists.
+      // unfulfilled or disputed.
       state: 'The other provider recorded that they did not receive this.',
-      // Stops at what is true. It does not promise a next step, because this slice has none:
-      // no review, no adjudication, no outcome. It also does not send the reader to a
-      // conversation, which this screen offers no way to open.
+      // A FAIL-CLOSED FALLBACK, not what a provider normally reads. `not_received` always puts
+      // the obligation Under Review server-side, so `obligationUnderReview` is true for every
+      // healthy row and `UNDER_REVIEW_NOTE` supersedes this string. It survives for the case
+      // where that column is absent from the read, where saying less is the right failure.
+      // Still accurate either way: nothing HAS been decided until an operator decides it.
       note: 'Nothing has been decided.',
       canMarkDelivered: false,
       canRespond: false,
@@ -348,8 +352,13 @@ export interface ObligationViewFacts {
    *
    * DOMINATES EVERYTHING BELOW CANCELLATION. Once set, this obligation is no longer Action
    * needed, Waiting for confirmation, Needs Attention or Under Review, and no participant
-   * control is offered — the server refuses those writes with `PT412`, and a control that can
+   * control is offered — the server refuses those writes with `PT424`, and a control that can
    * only fail must never be drawn.
+   *
+   * `PT424`, NOT `PT412`, and the distinction is the whole point of `20261022000000`. `PT412`
+   * means "you already recorded your receiver answer"; a resolved obligation's receiver may
+   * never have answered at all. This comment said `PT412` until the sweep that found it, in the
+   * one module whose job is keeping SQLSTATE meanings from drifting.
    *
    * Defaulted to null like every other optional fact: absent means "not resolved", which is the
    * withholding direction. Manufacturing an outcome from a missing field would tell two
@@ -413,7 +422,7 @@ export function obligationView(f: ObligationViewFacts): ObligationView {
     note: tradeCancelled
       ? null
       : resolved
-        ? TERMINAL_OUTCOME_NOTE[resolved][role]
+        ? terminalOutcomeNote(resolved, role)
         : review
           ? UNDER_REVIEW_NOTE[role]
           : (w.note ?? c.note),
@@ -586,8 +595,14 @@ export const TERMINAL_OUTCOME_LABEL: Record<TerminalOutcome, string> = {
  * The sentence beneath the label, per outcome and per role.
  *
  * TOTAL over outcome x role. Written so neither provider reads a verdict about a PERSON: the
- * subject of every sentence is the obligation, never the other provider. The deliverer's and
- * receiver's wording differ only in whose side it was, never in who is blamed.
+ * subject of every sentence is the obligation, never the other provider.
+ *
+ * THE TWO ROLES DELIBERATELY SHARE WORDING TODAY — all six strings collapse to three. The role
+ * axis is kept because the sentence is about the obligation rather than about either provider,
+ * so there is nothing to vary yet, and because a future divergence must then be DECIDED per
+ * outcome rather than defaulted into by whoever adds the first role-specific line. An earlier
+ * version of this comment claimed the two "differ only in whose side it was", which a reader
+ * could check and find false.
  */
 export const TERMINAL_OUTCOME_NOTE: Record<TerminalOutcome, Record<ObligationRole, string>> = {
   fulfilled: {
@@ -649,6 +664,36 @@ export const ATTENTION_TONE: Record<AttentionLabel, AttentionTone> = {
   [ACTION_NEEDED_LABEL]: 'live',
   [NEEDS_ATTENTION_LABEL]: 'elapsed',
   [UNDER_REVIEW_LABEL]: 'review',
+}
+
+/**
+ * The note for a resolved obligation, with a fallback for an outcome this build does not know.
+ *
+ * BELT AND BRACES for the same reason `attentionTone` below is, and against a strictly worse
+ * failure. `attention` is computed in this module; `terminalOutcome` arrives straight off a
+ * server column (`lib/negotiation.ts`, `terminal_outcome`), and the app ships on its own cadence
+ * while the database migrates on another. A migration widening
+ * `barter_obligation_adjudications_outcome_check` reaches installed clients before the matching
+ * build does, and an unguarded `TERMINAL_OUTCOME_NOTE[x][role]` would then throw INSIDE a render
+ * — a hard crash on the trade card and the Trade Activity list, not degraded copy.
+ *
+ * The fallback says only that it was reviewed and resolved. It names no outcome it cannot
+ * describe, assigns no fault, and is the withholding direction — the same rule every optional
+ * fact in this module follows. Unreachable today: `TERMINAL_OUTCOME_NOTE` is a total `Record`
+ * over the union, so a fourth outcome is a compile error first.
+ */
+export function terminalOutcomeNote(outcome: string, role: ObligationRole): string {
+  const byRole = (TERMINAL_OUTCOME_NOTE as Record<string, Record<ObligationRole, string>>)[outcome]
+  return byRole?.[role] ?? 'This was reviewed and resolved.'
+}
+
+/**
+ * The outcome as a label, with the same fallback and for the same reason as
+ * `terminalOutcomeNote`. Returns null for an unknown value so a caller can omit the chip rather
+ * than draw one reading `undefined`.
+ */
+export function terminalOutcomeLabel(outcome: string): string | null {
+  return (TERMINAL_OUTCOME_LABEL as Record<string, string>)[outcome] ?? null
 }
 
 /**

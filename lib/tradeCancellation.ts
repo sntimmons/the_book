@@ -5,8 +5,10 @@
 //
 // AGREEMENT-LEVEL, NOT OBLIGATION-LEVEL. Cancelling ends the trade; it says nothing about
 // whether either side fulfilled anything. No copy here may imply an outcome, a verdict, a
-// dispute, a review or an adjudication — none of which exist (PD-046 leaves them to later
-// slices).
+// dispute, a review or an adjudication. Obligation-level terminal outcomes now exist
+// (PD-064 … PD-067) and are the reason this rule TIGHTENS rather than relaxes: cancellation and
+// a resolution are different facts about different things, and no string here may borrow the
+// other's vocabulary. There is still no AGREEMENT-level outcome of any kind (PD-065).
 //
 // TWO EXPLICIT ACTS. Mutual cancellation is never inferred — not from silence, not from a
 // timeout, not from one participant acting. It is recorded only when BOTH participants have

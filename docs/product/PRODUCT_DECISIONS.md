@@ -753,11 +753,23 @@ as locked decisions.
   and silence is not a finding.
 - **Consequences:** `public.adjudicate_barter_obligation(uuid, text, uuid, text)` holds
   `EXECUTE` **granted to `service_role` alone** — revoked from `public`, `anon` and
-  `authenticated`. Three independent refusals enforce the boundary, each sufficient on its own:
-  the grant; a privileged-caller check inside the RPC; and a **the adjudicator may not be a
-  participant** check made in the RPC and **re-made in the BEFORE INSERT trigger**, so it holds
-  even for a privileged caller and a compromised operator process cannot record a provider as
-  the adjudicator of their own trade. Ineligibility is refused with
+  `authenticated`. Three independent refusals enforce the boundary: the grant; a
+  privileged-caller check inside the RPC; and a **the adjudicator may not be a participant**
+  check made in the RPC and **re-made in the BEFORE INSERT trigger**, so it holds even for a
+  privileged caller and a compromised operator process cannot record a provider as the
+  adjudicator of their own trade.
+
+  **A PRECISION CORRECTION, recorded rather than quietly fixed, because a future editor deciding
+  which guard is safe to change would rely on it.** This sentence read *"each sufficient on its
+  own."* That is true of the first two and **not** of the third, because they constrain different
+  things: the grant and the in-RPC predicate constrain **who may CALL**, while the
+  participant check constrains **who may be RECORDED as adjudicator**. With both outer layers
+  removed, a participant could adjudicate their own trade by naming an unrelated user as the
+  adjudicator, and both copies of the third check would pass. The redundancy that IS real is the
+  third layer's own — RPC and trigger, each proven independently by disabling the other inside
+  the harness transaction — which is what stops a compromised privileged process, not what stops
+  a participant. Nothing is exploitable: all three layers are present and asserted. The decision
+  is unchanged; only the claim about its structure is corrected. Ineligibility is refused with
   `object_not_in_prerequisite_state`; a cancelled agreement with **`PT409`**.
   **NO OPERATOR UI IS BUILT, and that is a decision rather than an omission.** `app/admin` is
   `__DEV__`-only and gated merely on "is a provider" (`app/admin/_layout.tsx`), so it is **not a
@@ -1001,18 +1013,38 @@ as locked decisions.
   [FUTURE_PRODUCT_IDEAS.md](FUTURE_PRODUCT_IDEAS.md) and **not** current scope; credits are
   intentionally not a beta answer, and the matching/liquidity problem must be proven with real
   user data before any currency is invented.
-- **Evidence:** Founder ruling, 2026-09-08, following the barter pressure test. The absence half
-  is already true in code and asserted, not merely intended: a proposal version carries **exactly
-  two directed terms and no value field** (`BARTER_BETA_CONTRACT.md` § 4, Slice 3a), § 5 has
-  required no dollar equivalence and banned cash hybrid since 2026-09-04, PD-032 holds the beta
-  to two parties, and no valuation, equivalency, credit or token object exists anywhere in
-  `supabase/migrations/`, `lib/` or `app/`. The scope-pin sweeps in
-  `supabase/tests/obligation.test.sql`, `cancellation.test.sql`, `no_show_under_review.test.sql`
-  and `receiver_window.test.sql` already fail on an unexempted adjudication-shaped or
-  completion-shaped function, which is the mechanism by which a future valuation slice would have
-  to be deliberate rather than accidental.
-- **Status:** Locked; **implemented as an absence** — nothing to build, and the entry exists so
-  that building any of it is a decision to reverse this one
+- **Evidence:** Founder ruling, 2026-09-08, following the barter pressure test. Most of the
+  absence is already true in code and asserted rather than merely intended: a **proposal version**
+  carries **exactly two directed terms and no value field** (`lib/negotiationState.ts:33-46`;
+  `20260925000000_negotiation_directed_terms.sql:5` REMOVED `estimated_value` from the proposal
+  for exactly this reason), § 5 has required no dollar equivalence and banned cash hybrid since
+  2026-09-04, PD-032 holds the beta to two parties, and no equivalency, fairness-warning, credit,
+  point or token object exists anywhere in `supabase/migrations/`, `lib/` or `app/`. The scope-pin
+  sweeps in `supabase/tests/obligation.test.sql`, `cancellation.test.sql`,
+  `no_show_under_review.test.sql` and `receiver_window.test.sql` fail on an unexempted
+  adjudication-shaped or completion-shaped function, which is the mechanism by which a future
+  valuation slice would have to be deliberate rather than accidental.
+
+  **ONE THING THIS DECISION DOES NOT YET MATCH, RECORDED RATHER THAN GLOSSED.** A first draft of
+  this entry claimed no valuation object existed anywhere. **That was false, and the false version
+  is the reason this paragraph exists.** `barter_offers.offering_value` is live: providers type a
+  dollar figure into **"ESTIMATED VALUE (OPTIONAL)"** in the post composer
+  (`app/community/barter-compose.tsx:133-145`), every browsing provider sees a **`~$N value`
+  badge** on the board card (`app/community/index.tsx:944-948`), and the figure is copied into
+  each proposal version's immutable post snapshot
+  (`20260917000000_barter_proposal_versions.sql:384`). It predates this ruling, it is
+  **poster-declared rather than platform-computed**, and nothing compares two of them, scores
+  equivalence or warns about parity — so it is **not** an appraisal by The Book. But it is a
+  monetary figure the product renders next to a barter offer, which is in tension with this
+  decision's *Why*, and **whether it survives PD-069 is a Founder question that this entry does
+  NOT answer.** It was deliberately **not** removed here: deleting a live, user-visible field is a
+  product decision and a behaviour change, and neither belongs in the adjudication slice. Recorded
+  as an open gap in `BARTER_BETA_CONTRACT.md` § 12 until ruled on. **Until then, no one may cite
+  this entry as proof that no monetary figure appears anywhere in barter.**
+- **Status:** Locked as a **rule**; **the prohibitions are implemented as an absence** — there is
+  nothing to build, and the entry exists so that building any of it is a decision to reverse this
+  one. **One pre-existing exception is unreconciled** and named above: the optional
+  provider-declared estimated value on a barter POST, pending a Founder ruling.
 
 ---
 

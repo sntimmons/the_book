@@ -56,7 +56,7 @@ import {
   MARK_DELIVERED_COPY,
   attentionTone,
   AttentionTone,
-  TERMINAL_OUTCOME_LABEL,
+  terminalOutcomeLabel,
   MAX_NO_SHOW_REASON,
   NO_SHOW_REASON_NOTE,
   NO_SHOW_REASON_PLACEHOLDER,
@@ -621,10 +621,10 @@ export default function NegotiationScreen() {
             exclusive by construction — `attention` is null whenever `terminalOutcome` is set —
             so a card never shows a conclusion beside a pending request. Its own tone, because
             it is neither: nothing is waiting on anyone. */}
-        {o.terminalOutcome ? (
+        {terminalOutcomeLabel(o.terminalOutcome ?? '') ? (
           <View style={[styles.attentionChip, styles.outcomeChip]}>
             <Text style={styles.attentionChipText}>
-              {TERMINAL_OUTCOME_LABEL[o.terminalOutcome]}
+              {terminalOutcomeLabel(o.terminalOutcome ?? '')}
             </Text>
           </View>
         ) : null}

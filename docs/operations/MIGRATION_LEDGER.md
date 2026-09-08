@@ -1038,13 +1038,71 @@ redefining anything.** "The migration that created it" and "the migration that d
 different files, and the more discoverable one — the one carrying all the design rationale — is
 usually the wrong one.
 
+## 2026-09-08 — `20261026000000` **APPLIED to non-production 2026-09-08** (security review follow-up)
+
+> **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`).** **65** versions,
+> local and remote agree, no drift. **B5B: 1209/1209 passed, 0 failed** — the seven new
+> assertions are the source-text pin described below plus two on the table comment. Production
+> (`kxregomuawwcqvisuhtr`) never targeted, never queried.
+
+**A correction made in one object and not carried to its sibling — caught by review, not by a
+test, which is the part worth recording.** `20261023000000` § 2 diagnosed
+`auth.role() = 'service_role' or auth.uid() is null` as an unsound privileged predicate and
+narrowed it inside `adjudicate_barter_obligation`, writing out exactly why: *"an `anon` PostgREST
+request carries no `sub`, so `auth.uid()` is null and the second disjunct ADMITTED it — the exact
+case the comment named."* **`20261024000000`, the very next migration in the same slice, then
+wrote that superseded predicate into `enforce_barter_adjudication_append_only`** — preserving it
+in the DELETE branch it inherited and putting it into the brand-new erasure-UPDATE branch — under
+a header asserting it was *"PRIVILEGED CALLERS ONLY, the same branch DELETE already uses."* True
+of the intent, false of the predicate.
+
+**Nothing was exploitable, and this must not be read as closing a breach.** `anon` and
+`authenticated` reach that trigger only by issuing UPDATE or DELETE on
+`barter_obligation_adjudications`, and both are refused two layers earlier: `20261019000000` § 4
+revokes ALL from `public, anon, authenticated`, and no write policy of any kind exists. What was
+wrong was the **failure direction of the innermost guard** — a future grant or policy widening
+would have inherited an append-only guard that fails OPEN for a no-`sub` request. A guard whose
+whole job is to be the last line must fail closed without depending on the two layers outside it.
+`20261026000000` gives both branches the narrowed form; the whole-row comparison, the
+one-directional non-null-to-null rule and both messages are unchanged and were diffed against
+`20261024000000` rather than rewritten.
+
+**The regression is now pinned by SOURCE TEXT, because behaviour cannot reach it.** The loose
+predicate is unreachable through any action the harness can perform — that is precisely why it
+survived a full review pass of the migration that introduced it. `adjudication.test.sql` now
+asserts against `prosrc` with comments stripped (the same mechanism `messaging.test.sql` uses for
+`enforce_prebooking_message_rules`): both privileged branches must require *no claims AND no
+subject*, the superseded disjunct must appear nowhere, and the erasure allowance must still be
+one-directional and whole-row compared. **A `create or replace` can revert a predicate silently,
+so an eye is not a control.**
+
+**Three live `comment on function` texts and one `comment on table` were also stale, and these
+are catalog objects rather than migration prose.** `barter_receiver_window` and
+`barter_obligation_under_review` still asserted that terminal outcomes *"do not exist"*, three
+migrations after they started existing; `barter_can_report_no_show` did not mention the `PT424`
+refusal. All three now also carry the warning that **`p_trade_cancelled` means SUPPRESSED** — the
+view has passed `cancelled OR has-a-terminal-outcome` since `20261020000000`, so these functions
+**cannot tell a cancelled trade from a resolved one**, and a future branch that assumes otherwise
+would apply cancellation copy to every adjudicated obligation. **The parameter is deliberately
+NOT renamed here:** `create or replace function` cannot change a parameter name, so it needs a
+drop-and-recreate of three functions `my_barter_obligations` depends on — a materially riskier
+change than a comment, in the exact view whose history includes `20261015000000`'s silent
+copy-forward revert. It belongs with the agreement-roll-up slice, which must restate that view
+anyway. The table comment claimed *"never edited, never withdrawn, never flipped"*; two of those
+three stopped being literally true inside this slice, and it now states the two permitted
+privileged operations instead.
+
+---
+
 ## 2026-09-07 — `20261019000000` … `20261025000000` **APPLIED to non-production 2026-09-07** (PD-064 … PD-067)
 
 > **APPLICATION STATUS: APPLIED to non-production (`wcoyjeklscuqsumpjpfo`).** **64** versions,
 > local and remote agree, no drift, verified by `supabase migration list --linked`. **B5B:
 > 1202/1202 passed, 0 failed** (105 of those in the new `adjudication.test.sql`). **Concurrency:
 > 181/181 passed, 0 failed**, zero residue, across seven new adjudication races. Production
-> (`kxregomuawwcqvisuhtr`) never targeted, never queried.
+> (`kxregomuawwcqvisuhtr`) never targeted, never queried. **Superseded in part by
+> `20261026000000`** — see the entry above; the append-only trigger's live definition is now that
+> migration, not `20261024000000`.
 >
 > **Seven migrations for one slice, and four of them are corrections.** `20261022000000` …
 > `20261025000000` each fix something the three review passes found in `20261019000000` /
@@ -1173,7 +1231,7 @@ NOT in the migration that created it.
 | `public.pair_conversation_notice` (new) | `20261009000000_pair_conversation_notice.sql` | **`20261009000000_pair_conversation_notice.sql`** | **The one writer for platform notices (`sender_id IS NULL`) into a provider pair's existing conversation.** Resolves the canonical thread by `provider_pair_key` with the stale-key fallback, re-checks that both `providers` rows still belong to the agreement's users, skips a thread that cannot take a message, addresses the notice via `system_recipient_id`, and wraps the write so it **can never veto the act it announces**. Creates no conversation. **EXECUTE revoked from `public`, `anon` and `authenticated`** — callers are other definer functions. A NEW signal writer must call this rather than hand-copy it; that hand-copying is exactly what produced the `20261008000000` correction. **`public.release_barter_interest` deliberately still carries its own body** (live definition `20260913000000`): replacing a shipped, authorization-adjacent function wholesale to remove a duplicate would risk a live path to tidy one. Migrate it onto this helper the next time it is opened for a reason of its own. |
 | `public.report_barter_obligation_no_show` | `20261012000000_barter_no_show_under_review.sql` | **`20261022000000_obligation_resolved_sqlstate.sql`** | **`20261012000000` § 6 CONTAINS A FALSE LOCK-ORDER CONTRACT AND MUST NOT BE COPIED FORWARD.** It states the function "takes the OBLIGATION row lock and nothing else … so the pair cannot deadlock" and instructs future writers to preserve that. Both halves are false: the INSERT's FK to `barter_agreements` takes `for key share` on the parent, so the real order was obligation-then-agreement — the reverse of `cancel_barter_agreement`. **The deadlock was REPRODUCED** (`scripts/negotiation-concurrency.mjs` race #20 reported `FAIL neither act deadlocked` on the pre-fix schema), not theorised. `20261014000000` takes the AGREEMENT lock FIRST, making the order across the barter graph total — **agreement before obligation, obligations in id order** — and adds a terminal `unique_violation` handler so "unreachable" is not load-bearing. **Rule: enumerate the IMPLICIT locks too.** An INSERT, or an UPDATE writing a foreign-key column, takes `for key share` on the parent; one touching only non-key columns does not. **`20261020000000` then added the PD-066 refusal** once an adjudication exists — written from `20261014000000` and diffed before commit, with the AGREEMENT-first lock order preserved exactly — and **`20261022000000` moved that refusal from `PT412` to its own `PT424`**, because `PT412` on this function means *"you already confirmed you received this"* and that would have been a false statement. **Two `PT412` raises remain in this body and are correct; do not sweep them.** |
 | `public.adjudicate_barter_obligation` (new) | `20261019000000_barter_obligation_adjudication.sql` | **`20261023000000_adjudication_hardening.sql`** | **The only writer of a terminal obligation outcome, and the only function in this repo whose `EXECUTE` is granted to `service_role` alone.** Three things a copy-forward would silently drop are not obvious from the body: the **adjudicator-may-not-be-a-participant** check (made here AND re-made in `enforce_barter_adjudication_consistent`, which is the copy that holds against a direct privileged INSERT — **`20261023000000` added the copy in this function; `20261019000000` only ever had the trigger's, while five documents said otherwise**), the narrowed privileged predicate (`20261019000000`'s admitted a no-`sub` `anon` request), and the **AGREEMENT-before-obligation lock order**. A new adjudication-adjacent write must extend THIS function rather than add a second path — there is deliberately no participant-facing one, and the RPC is also the only SUPPORTED writer: a direct INSERT takes its FK key-share locks in constraint-declaration order, obligation-then-agreement, which is the reverse of `cancel_barter_agreement`. |
-| `public.enforce_barter_adjudication_consistent` / `public.enforce_barter_adjudication_append_only` (new) | `20261019000000_barter_obligation_adjudication.sql` | **`20261023000000`** (consistent) and **`20261024000000`** (append-only) | Both were redefined by the review corrections and both carry a rule that is invisible from the body alone. **Consistent** now refuses a NULL `adjudicator_user_id` explicitly — load-bearing since `20261023000000` made the column nullable for erasure, because the participant test below it evaluates to NULL rather than true on a null and would let an insert naming nobody through. **Append-only** now permits exactly ONE update: a privileged caller setting `adjudicator_user_id` from non-null to null, with every other column proven identical by a whole-row comparison. That is the FK's own erasure write and nothing else; copying `20261019000000`'s body forward restores a state where an operator account cannot be deleted at all. Neither trigger is recreated by those migrations — `create or replace function` preserves the OID. |
+| `public.enforce_barter_adjudication_consistent` / `public.enforce_barter_adjudication_append_only` (new) | `20261019000000_barter_obligation_adjudication.sql` | **`20261023000000`** (consistent) and **`20261026000000`** (append-only — NOT `20261024000000`, which it supersedes) | Both were redefined by the review corrections and both carry a rule that is invisible from the body alone. **Append-only's live body is `20261026000000`**, which narrowed the privileged predicate in BOTH branches to *no claims AND no subject*; copying `20261024000000`'s body forward reintroduces the loose `auth.uid() is null` disjunct that `20261023000000` had already diagnosed as unsound — the `prosrc` pin in `adjudication.test.sql` now fails on exactly that. **Consistent** now refuses a NULL `adjudicator_user_id` explicitly — load-bearing since `20261023000000` made the column nullable for erasure, because the participant test below it evaluates to NULL rather than true on a null and would let an insert naming nobody through. **Append-only** now permits exactly ONE update: a privileged caller setting `adjudicator_user_id` from non-null to null, with every other column proven identical by a whole-row comparison. That is the FK's own erasure write and nothing else; copying `20261019000000`'s body forward restores a state where an operator account cannot be deleted at all. Neither trigger is recreated by those migrations — `create or replace function` preserves the OID. |
 | `public.mark_barter_obligation_delivered` / `public.record_barter_obligation_receipt` | `20261004000000_barter_obligation_delivery.sql` | **`20261022000000_obligation_resolved_sqlstate.sql`** | Both gained a cancellation check placed **after** the obligation row lock — the half of the delivery/cancel race contract that `cancel_barter_agreement` depends on. Every guard from `20261004000000` survives in order; the check precedes the idempotent no-op branch so a cancelled trade is never reported as a successful delivery. The two public receipt wrappers (`confirm_barter_obligation_received`, `report_barter_obligation_not_received`) are untouched and still resolve, because `create or replace` preserves the OID — and note `record_barter_obligation_receipt` itself holds **no grant to `authenticated`**; those two wrappers are its only callers. **`20261020000000` adds the PD-066 refusal** to both functions, placed after the row lock and before the idempotent branch, beside the cancellation check it mirrors. Both bodies were written from `20261005000000`, the live definition, and diffed before commit. **`20261022000000` then gave that refusal its own `PT424`** — `mark_barter_obligation_delivered` has no `PT412` client mapping at all, so the borrowed code fell through to "Please try again" on a permanently impossible action. |
 | `public.enforce_barter_cancellation_consistent` | `20261005000000_barter_pre_delivery_cancellation.sql` | **`20261017000000_restore_cancellation_actor_binding.sql`** | Redefined THREE times. `20261006000000` added the server-stamped `created_at` and the ACTOR-IS-THE-CALLER check. **`20261015000000` then silently reverted both by writing its new body from `20261005000000` instead of the live `20261006000000`** — the exact hazard this table exists to prevent; B5B caught it at `cancellation.test.sql:752-759` on the first run after apply. `20261017000000` restores `20261006000000` verbatim and re-adds the PD-063 `PT423` check on top. |
 | `public.my_barter_obligations` / `public.my_trade_activity` (VIEWS, not functions) | `20261011000000` / `20260929000000` | **`20261020000000`** (obligations) and **`20261021000000`** (trade activity) | Listed here although this table is named for functions, because both views are recreated IN FULL by `create or replace view` and the same copy-forward hazard applies. `20261012000000` is the more discoverable file — it carries the design rationale — and copying its `my_trade_activity` body forward would reinstate the inline eligibility predicate `20261013000000` removed, while copying its `my_barter_obligations` body would drop `can_report_no_show` and `no_show_reason`. **Both were redefined again for adjudication:** `20261020000000` feeds `cancelled OR adjudicated` into the three derived functions and appends `terminal_outcome` / `adjudicated_at` (written from `20261016000000`); `20261021000000` appends `my_terminal_outcome` / `their_terminal_outcome` (written from `20261013000000`). **Neither view exposes `rationale` or `adjudicator_user_id`, and neither may** — PD-067 makes those internal, and a view is exactly how that would be undone by accident. |

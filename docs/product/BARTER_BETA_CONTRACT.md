@@ -1,8 +1,18 @@
 # Barter — first Houston closed beta contract
 
 **Status:** Authoritative for the **first Houston closed beta**. Owner: Founder (Stephen).
-**Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** PR #41
+**Reconciled against:** `main` @ `c04e5bd` (2026-09-08, after PR #69), **plus the unmerged
+adjudication branch** whose clauses are marked where they appear.
+**Last edited by:** the manual-adjudication branch (PD-064 … PD-069). Previously PR #41, whose
+provenance line survived four months of edits and was corrected here — including edits dated
+2026-09-08, which the stale header dated 2026-09-04.
+
+> **⚠️ READ THE PROVENANCE.** Sections describing **manual adjudication and the three terminal
+> OBLIGATION outcomes** (§ 7.5, and the PD-068 / PD-069 clauses in §§ 4, 5.1, 7.5, 12) describe
+> the **unmerged** adjudication branch, not `main`. Until it merges,
+> [CURRENT_STATE.md](CURRENT_STATE.md) is the authority for what `main` actually contains, and it
+> correctly still says no adjudication exists there. Reconciling it is a **merge-time
+> obligation** for the Project State Steward.
 
 > **Purpose.** This document makes already-approved barter decisions **durable**. It is not a
 > design session and introduces nothing new: every clause below was approved by the Founder,
@@ -161,11 +171,20 @@ clear, mutual, and accountable.**
   edited photos*, *4 haircuts*, *6 training sessions*, *1 logo package*. The system may need
   quantity for obligation clarity; it must not use quantity to decide economic equality. The
   question is **"what did you promise?"**, never **"is it worth the same?"**.
-- **NOT BUILT and not to be built in beta:** forced dollar valuation, optional negotiation-time
-  market valuation, automated valuation, equivalency math, fairness warnings, a
-  platform-recommended exchange ratio, Book Credits, barter points, internal tokens,
-  stored-value currency. A proposal version carries **exactly two directed terms and no value
-  field** (§ 4), and that is the enforcement.
+- **NOT BUILT and not to be built in beta:** forced dollar valuation, negotiation-time market
+  valuation, automated valuation, equivalency math, fairness warnings, a platform-recommended
+  exchange ratio, Book Credits, barter points, internal tokens, stored-value currency. A
+  **proposal version** carries **exactly two directed terms and no value field** (§ 4) — the
+  negotiation itself is where the enforcement bites, and `20260925000000` removed
+  `estimated_value` from the proposal for exactly this reason.
+- **⚠️ ONE PRE-EXISTING EXCEPTION, unreconciled and not to be cited away.** A barter **POST**
+  still carries an optional provider-declared `offering_value`: an *"ESTIMATED VALUE (OPTIONAL)"*
+  dollar field in the composer, a `~$N value` badge on every board card, and a copy in each
+  proposal version's post snapshot. It is **poster-declared, never platform-computed**, and
+  nothing compares two figures or warns about parity — so The Book still does not appraise. But
+  it is a monetary figure shown beside a barter offer, it is in tension with this section, and
+  **whether it survives PD-069 is an open Founder question** (§ 12). It was deliberately not
+  removed by the adjudication slice.
 
 ## 6. Delivery and confirmation
 
@@ -379,11 +398,25 @@ Recorded so the gap is visible rather than assumed closed:
 - The **eligibility conjunct** (§ 2) is not implemented. `caller_provider_id()` provides the
   seam without the `is_approved` condition.
 - The **Open to Trades** opt-in control (§ 2) is not built.
-- **Agreements and obligations** (§§ 4, 6, 7) do not exist as schema. Nothing in `barter_offers`
-  or `barter_interests` implements them. Slice 3 is where they land.
+- ~~**Agreements and obligations** (§§ 4, 6, 7) do not exist as schema. Nothing in
+  `barter_offers` or `barter_interests` implements them. Slice 3 is where they land.~~
+  **CLOSED** — `barter_agreements` landed in `20260927000000_barter_agreement_finalization.sql`
+  and `barter_obligations` in `20261003000000_barter_obligations_foundation.sql`, with a dozen
+  further migrations on top through `20261025000000`. This line survived two months after the
+  thing it describes shipped; struck through rather than deleted, as § 11 already does.
 - The **3-post** and **5-offer/day** limits (§ 10) are not server-enforced.
 - **Blocking and reporting** (§ 9) do not exist.
 - The **internal Review Queue / operator surface** (§ 7.5, **PD-068**) does not exist. The
   secure adjudication path does; nothing calls it. Required **before live barter beta**.
 - The **terminal AGREEMENT-level outcome** (§ 7.5 table) does not exist, and whether it should
   be **persisted or derived** from the two obligation outcomes is undecided.
+- The **optional estimated value on a barter POST** (§ 5.1) is unreconciled with **PD-069**.
+  The composer field, the `~$N value` board badge and the proposal-version snapshot all ship;
+  PD-069 forbids platform valuation but this figure is provider-declared. **Needs a Founder
+  ruling:** keep it, stop displaying it, or remove it.
+- The **negotiation detail banner** still reads *"Arrange the details in your conversation"* on
+  a confirmed trade whose obligations have been terminally resolved — `negotiationView` takes no
+  terminal-outcome input, so the page headline cannot yet see what the obligation cards below it
+  say. The Trade Activity row already handles this correctly. Deferred to the agreement-level
+  read-model slice rather than patched here, because what the banner should say when only ONE
+  side is resolved *is* the deferred roll-up question.

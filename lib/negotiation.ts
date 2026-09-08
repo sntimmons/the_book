@@ -515,8 +515,10 @@ export async function confirmObligationReceived(
 /**
  * The receiver records that they did not receive the delivery.
  *
- * This records a STATEMENT and nothing else. It does not cancel, adjudicate, mark the
- * obligation unfulfilled or change the agreement — none of which exist yet.
+ * This records a STATEMENT and nothing else. It does not cancel the trade, adjudicate, mark the
+ * obligation unfulfilled or change the agreement. It DOES route the obligation into the derived
+ * Under Review state, which is where an operator — and only an operator (PD-064) — may later
+ * resolve it. The participant records what happened; they never decide it.
  */
 export async function reportObligationNotReceived(
   obligationId: string,

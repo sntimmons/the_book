@@ -53,9 +53,11 @@ import { attentionTone, AttentionTone } from '@/lib/obligationState'
 // answer puts a trade into (Founder ruling, 2026-09-07). Under Review outranks every window
 // state here and means only that a human has to look.
 //
-// What does NOT exist is any completion or adjudication model, so a confirmed trade still has no
-// fulfilment outcome to report. "Needs attention" and "Under review" are unresolved operational
-// states and nothing more.
+// "Needs attention" and "Under review" are unresolved operational states and nothing more. An
+// obligation CAN now reach a fulfilment outcome — operator adjudication exists (PD-064..PD-067)
+// and this screen reports it per side through `confirmedTradeNote`. What still does NOT exist is
+// any AGREEMENT-level completion model: no Completed, no Partially Fulfilled, no Not Completed,
+// and this row never rolls the two sides into one verdict (PD-065).
 //
 // The feed is discovery: it filters `is_active = true` and shows the newest 50. An accepted
 // negotiation is durable workflow state. Hanging the End-negotiation control off a feed card

@@ -1024,3 +1024,85 @@ begin
     'the report, its reason, the status and the timings are ALL still readable beside the outcome',
     '1', v_n::text);
 end $$;
+
+-- ── THE PRIVILEGED PREDICATE IS PINNED BY SOURCE TEXT ─────────────────────
+--
+-- WHY A prosrc PIN AND NOT A BEHAVIOURAL ONE. The loose predicate this guards against —
+-- `auth.role() = 'service_role' or auth.uid() is null` — is not reachable through any behaviour
+-- the harness can perform, because `anon` and `authenticated` hold no UPDATE or DELETE privilege
+-- on this table and no write policy exists. Two layers stop the caller before the trigger sees
+-- it. So the only way to assert the INNERMOST guard fails closed on its own is to read it.
+--
+-- This exists because the defect it pins actually happened: `20261023000000` § 2 diagnosed that
+-- predicate as unsound and narrowed it inside `adjudicate_barter_obligation`, and
+-- `20261024000000` — the very next migration, in the same slice — wrote the superseded form into
+-- BOTH branches of the append-only trigger, including a brand-new one, under a header asserting
+-- it was "the same branch DELETE already uses". A full review pass of that migration did not
+-- catch it; a reviewer reading two migrations side by side did. `20261026000000` corrects it.
+-- A `create or replace` can revert a predicate silently, so an eye is not a control.
+--
+-- Same shape as the `enforce_prebooking_message_rules` pin in messaging.test.sql: COMMENTS ARE
+-- STRIPPED FIRST, so the assertion cannot be satisfied by prose. This file's own header comments
+-- quote the loose form, which is exactly why that matters.
+do $$
+declare
+  v_body text;
+  v_n int;
+begin
+  select regexp_replace(prosrc, '--[^' || chr(10) || ']*', '', 'g') into v_body
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'enforce_barter_adjudication_append_only';
+
+  perform pg_temp.chk('adjudication',
+    'the append-only guard exists and its body was read',
+    'true', (v_body is not null and length(v_body) > 0)::text);
+
+  -- NO BARE `auth.uid() is null` DISJUNCT. The narrowed form always pairs it with a null
+  -- `auth.role()`, so every occurrence of the uid test must sit beside a role test. Counting the
+  -- two is what distinguishes "no claims AND no subject" from "no subject", which is the whole
+  -- difference: an anon PostgREST request carries no `sub` and satisfies the second.
+  select count(*) into v_n from regexp_matches(
+    lower(v_body), 'auth\.role\(\)\)? is null and \(select auth\.uid\(\)\) is null', 'g');
+  perform pg_temp.chk('adjudication',
+    'BOTH privileged branches require no claims AND no subject, not merely no subject',
+    '2', v_n::text);
+
+  -- And the superseded form is gone outright. `service_role or uid is null` in either branch is
+  -- the exact regression.
+  select count(*) into v_n from regexp_matches(
+    lower(v_body),
+    'service_role''\s*or\s*\(select auth\.uid\(\)\) is null', 'g');
+  perform pg_temp.chk('adjudication',
+    'and the superseded loose disjunct appears nowhere in the body',
+    '0', v_n::text);
+
+  -- The erasure allowance itself is unchanged: still one-directional, still whole-row compared.
+  perform pg_temp.chk('adjudication',
+    'the erasure UPDATE is still non-null to null only',
+    'true',
+    (position('old.adjudicator_user_id is not null' in lower(v_body)) > 0
+     and position('new.adjudicator_user_id is null' in lower(v_body)) > 0)::text);
+  perform pg_temp.chk('adjudication',
+    'and still proves equality across the WHOLE row, not a column list',
+    'true', (position('v_old = v_new' in lower(v_body)) > 0)::text);
+end $$;
+
+-- ── AND THE TABLE COMMENT NO LONGER OVERSTATES THE GUARANTEE ──────────────
+--
+-- `20261019000000` set it to "never edited, never withdrawn, never flipped". Two of those three
+-- stopped being literally true INSIDE the same slice: `20261024000000` permits one erasure
+-- UPDATE and PD-066 permits a privileged DELETE for cascade. A live comment that claims a
+-- stronger guarantee than the schema is how the next editor picks the wrong guard to change.
+do $$
+declare
+  v_c text;
+begin
+  select obj_description('public.barter_obligation_adjudications'::regclass, 'pg_class')
+    into v_c;
+  perform pg_temp.chk('adjudication',
+    'the table comment states the outcome is unchangeable by EVERY caller',
+    'true', (position('unchangeable by every caller' in lower(coalesce(v_c, ''))) > 0)::text);
+  perform pg_temp.chk('adjudication',
+    'and no longer claims it is never withdrawn, which DELETE contradicts (PD-066)',
+    'false', (position('never withdrawn' in lower(coalesce(v_c, ''))) > 0)::text);
+end $$;
