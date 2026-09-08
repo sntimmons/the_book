@@ -19,6 +19,7 @@ import type { CancellationState } from './tradeCancellation'
 import type { ReceiverWindowState } from './obligationState'
 import {
   ACTION_NEEDED_LABEL,
+  AttentionLabel,
   NEEDS_ATTENTION_LABEL,
   UNDER_REVIEW_LABEL,
 } from './obligationState'
@@ -160,8 +161,12 @@ export interface TradeRowState {
    * forbidden-vocabulary sweep has one string per state to check. Never set on a cancelled,
    * pending, released or declined row — only on a confirmed trade with a live or elapsed
    * response window.
+   *
+   * Typed as the LABEL UNION for the same reason `ObligationView.attention` is: this surface is
+   * the more likely source of a fourth attention state, and the union is what forces it to get a
+   * tone before it can reach either screen.
    */
-  attention: string | null
+  attention: AttentionLabel | null
   /**
    * The viewer's own response deadline and the words to introduce it, or null to show none.
    *
@@ -412,7 +417,7 @@ const WINDOW_NOTE: Record<ReceiverWindowState, Record<ReceiverWindowState, strin
 function windowAttention(
   mine: ReceiverWindowState,
   theirs: ReceiverWindowState,
-): string | null {
+): AttentionLabel | null {
   return mine === 'needs_attention' || theirs === 'needs_attention'
     ? NEEDS_ATTENTION_LABEL
     : mine === 'awaiting_receiver'

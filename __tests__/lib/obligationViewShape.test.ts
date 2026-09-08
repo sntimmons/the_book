@@ -1,8 +1,15 @@
-// The pre-adjudication cleanup: proof that the five refactors changed NOTHING.
+// The pre-adjudication cleanup: an INVARIANT sweep over the refactored view models.
 //
-// These are refactor-risk tests, not feature tests. Each one exists because a specific mistake
-// became possible — or became impossible — when a positional signature turned into a named one,
-// a duplicated mapping turned into a single source, or two predicates stopped sharing a name.
+// BE PRECISE ABOUT WHAT THIS FILE IS. It asserts structural invariants across every supported
+// combination — totality, precedence, gate independence, field-order irrelevance. It does NOT
+// assert copy: no expected sentence appears here, so a refactor that reworded a note would pass
+// it. The COPY equivalence evidence is that `obligationState.test.ts`, `receiverWindow.test.ts`
+// and `underReview.test.ts` — which do pin exact strings — were converted to the new call shape
+// and still assert the same strings unchanged.
+//
+// Each test exists because a specific mistake became possible, or became impossible, when a
+// positional signature turned into a named one, a duplicated mapping turned into a single
+// source, or two predicates stopped sharing a name.
 
 import {
   ACTION_NEEDED_LABEL,
@@ -17,6 +24,7 @@ import {
   UNDER_REVIEW_LABEL,
 } from '@/lib/obligationState'
 import { cancellationView, CancellationFacts } from '@/lib/tradeCancellation'
+import { tradeRowState } from '@/lib/tradeActivity'
 
 const ROLES: ObligationRole[] = ['deliverer', 'receiver']
 const STATUSES: ObligationStatus[] = ['pending', 'delivered', 'received', 'not_received']
@@ -155,13 +163,45 @@ describe('the attention tone mapping is single-sourced and total', () => {
     }
     expect(emitted.size).toBeGreaterThan(0)
     for (const label of emitted) {
-      expect(ATTENTION_TONE[label]).toBeDefined()
+      expect((ATTENTION_TONE as Record<string, AttentionTone>)[label]).toBeDefined()
     }
     expect(new Set(Object.values(ATTENTION_TONE)).size).toBe(Object.keys(ATTENTION_TONE).length)
   })
 
   it('falls back to the least alarming tone rather than throwing', () => {
     expect(attentionTone('Something nobody defined')).toBe<AttentionTone>('live')
+  })
+
+  // TRADE ACTIVITY is the more likely source of a fourth attention state — adjudication is
+  // agreement-level — so the sweep covers the labels IT emits, not only obligationView's.
+  it('covers every label tradeRowState can emit', () => {
+    const WINDOWS_ALL = ['none', 'awaiting_receiver', 'needs_attention'] as const
+    const emitted = new Set<string>()
+    for (const mine of WINDOWS_ALL) {
+      for (const theirs of WINDOWS_ALL) {
+        for (const agreementUnderReview of BOOLS) {
+          const a = tradeRowState({
+            status: 'accepted',
+            myRole: 'owner',
+            offerIsActive: true,
+            releasedAt: null,
+            releaseReason: null,
+            offerHasAcceptedResponse: false,
+            agreementId: 'agreement-1',
+            iCancelled: false,
+            theyCancelled: false,
+            myResponseState: mine,
+            theirResponseState: theirs,
+            agreementUnderReview,
+          }).attention
+          if (a) emitted.add(a)
+        }
+      }
+    }
+    expect(emitted.size).toBeGreaterThan(0)
+    for (const label of emitted) {
+      expect((ATTENTION_TONE as Record<string, AttentionTone>)[label]).toBeDefined()
+    }
   })
 })
 
@@ -176,8 +216,8 @@ describe('cancellationView — the eligibility matrix still answers identically'
   it('is total over acts x delivered x under review, and each gate stands alone', () => {
     for (const f of ACTS) {
       for (const anyDelivered of BOOLS) {
-        for (const agreementUnderReview of BOOLS) {
-          const v = cancellationView({ ...f, anyDelivered, agreementUnderReview })
+        for (const noShowReported of BOOLS) {
+          const v = cancellationView({ ...f, anyDelivered, noShowReported })
 
           // PD-046: a delivery removes the exit permanently.
           if (anyDelivered) {
@@ -185,43 +225,48 @@ describe('cancellationView — the eligibility matrix still answers identically'
             expect(v.canAgree).toBe(false)
           }
           // PD-063: so does a report, for the whole trade.
-          if (agreementUnderReview) {
+          if (noShowReported) {
             expect(v.canCancel).toBe(false)
             expect(v.canAgree).toBe(false)
           }
           // Cancel is offered only from a clean state; agree only from the counterparty's act.
-          if (!anyDelivered && !agreementUnderReview) {
+          if (!anyDelivered && !noShowReported) {
             expect(v.canCancel).toBe(!f.iCancelled && !f.theyCancelled)
             expect(v.canAgree).toBe(!f.iCancelled && f.theyCancelled)
           }
           // The classification never depends on the two gates.
-          expect(v.state).toBe(cancellationView({ ...f }).state)
+          expect(v.state).toBe(
+            cancellationView({ ...f, anyDelivered: false, noShowReported: false }).state,
+          )
         }
       }
     }
   })
 
+  // Written so the spread cannot mask the point: `f` carries NEITHER gate, so putting it last
+  // does not overwrite them, and the two orderings genuinely differ in source order only.
   it('does not depend on field order — the adjacent-boolean risk is gone', () => {
     const f = ACTS[0]
-    const a = cancellationView({ ...f, anyDelivered: true, agreementUnderReview: false })
-    const b = cancellationView({ agreementUnderReview: false, anyDelivered: true, ...f })
+    const a = cancellationView({ ...f, anyDelivered: true, noShowReported: false })
+    const b = cancellationView({
+      noShowReported: false,
+      anyDelivered: true,
+      cancelledAt: f.cancelledAt,
+      theyCancelled: f.theyCancelled,
+      iCancelled: f.iCancelled,
+    })
     expect(a).toEqual(b)
   })
 
   // The two formerly-adjacent booleans mean different things and are now named so.
   it('distinguishes delivered from under review', () => {
     const f = ACTS[0]
-    const delivered = cancellationView({ ...f, anyDelivered: true, agreementUnderReview: false })
-    const reviewed = cancellationView({ ...f, anyDelivered: false, agreementUnderReview: true })
+    const delivered = cancellationView({ ...f, anyDelivered: true, noShowReported: false })
+    const reviewed = cancellationView({ ...f, anyDelivered: false, noShowReported: true })
     // Both refuse — but for different reasons, and the copy is the state's, not the gate's.
     expect(delivered.canCancel).toBe(false)
     expect(reviewed.canCancel).toBe(false)
     expect(delivered.state).toBe('none')
     expect(reviewed.state).toBe('none')
-  })
-
-  it('withholds nothing extra when the gates are not supplied', () => {
-    expect(cancellationView({ ...ACTS[0] }).canCancel).toBe(true)
-    expect(cancellationView({ ...ACTS[2] }).canAgree).toBe(true)
   })
 })

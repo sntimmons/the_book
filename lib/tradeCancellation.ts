@@ -134,32 +134,51 @@ export interface CancellationView {
  * It EXTENDS `CancellationFacts` rather than nesting it, so call sites stay flat.
  * `cancellationState` still takes only the two acts — the classification depends on those and
  * nothing else, and widening its input would be the first step toward that stopping being true.
+ *
+ * BOTH GATES ARE REQUIRED. Neither has a safe default: `false` on either ASSERTS the permissive
+ * fact — nothing delivered, nothing reported — and draws an irreversible control the caller may
+ * have no basis for. The sibling `ObligationViewFacts` can default its optional fields because
+ * there every default WITHHOLDS; here none would, so there are none.
  */
 export interface CancellationViewFacts extends CancellationFacts {
   /**
    * Has EITHER obligation been marked delivered? Once one has, PD-046 removes the ordinary exit
    * permanently — and a later "didn't receive" does not bring it back, which is why this asks
    * about delivery rather than about the receiver's answer.
+   *
+   * **REQUIRED, unlike every other field here, and deliberately so.** For this one `false` is
+   * the ASSERTING value, not the withholding one: it says "nothing has been delivered" and
+   * therefore DRAWS an irreversible control. A caller that forgot it would offer "Cancel trade"
+   * on a trade the server refuses with `55000`. It was a required positional argument before the
+   * facts-object refactor and it stays required after — the point of that refactor was to make
+   * this gate harder to get wrong, not easier.
    */
-  anyDelivered?: boolean
+  anyDelivered: boolean
   /**
-   * Is EITHER obligation on this agreement under review? **AGREEMENT-LEVEL, and the name says
-   * so.** This is the roll-up, not the per-obligation predicate: PD-063 removes the exit for the
-   * whole trade the moment ANY report exists, so a viewer whose own obligation is clean still
-   * loses the control.
+   * Has a NO-SHOW REPORT been filed against either obligation on this agreement?
    *
-   * The obligation-level predicate is `ObligationViewFacts.obligationUnderReview`. The two were
-   * both called `underReview` until this cleanup, which is exactly the collision a future
-   * adjudication slice could have mutated one of while assuming the other.
+   * **NAMED FOR THE RULE IT ENFORCES, not for a display state.** PD-063's server refusal
+   * (`PT423`) fires on the existence of a `barter_obligation_no_show_reports` row and on nothing
+   * else, so this gate asks exactly that question — the client and server predicates are now the
+   * SAME predicate rather than two that happen to agree.
    *
-   * Defaulted to `false` so a caller that has not been given it withholds nothing; the SERVER
-   * remains the authority either way, and this only stops a button that could only fail.
+   * IT IS DELIBERATELY NOT the server's `under_review` column, which is
+   * `(a report exists) OR (status = 'not_received')` and is therefore BROADER than PD-063.
+   * Gating on that gave the same answer only because `not_received` implies `delivered_at is not
+   * null` (`20261004000000`'s CHECK plus the receipt RPC's own guard) and a delivered trade has
+   * already lost the exit via `anyDelivered`. That was a coincidence between two guards two
+   * migrations apart, not a derivation, and it is exactly the kind that goes silently false when
+   * someone later changes one of them. Callers derive this from
+   * `BarterObligation.noShowReportedAt` — the report itself.
+   *
+   * REQUIRED, for the same reason as `anyDelivered`: `false` here ASSERTS "no report" and draws
+   * an irreversible control. There is no safe default.
    */
-  agreementUnderReview?: boolean
+  noShowReported: boolean
 }
 
 export function cancellationView(f: CancellationViewFacts): CancellationView {
-  const { anyDelivered = false, agreementUnderReview = false } = f
+  const { anyDelivered, noShowReported } = f
   const state = cancellationState(f)
   const copy = CANCELLED_COPY[state]
   return {
@@ -171,14 +190,14 @@ export function cancellationView(f: CancellationViewFacts): CancellationView {
     // it, which is how the label ended up authored in JSX.
     cancelledAt: state === 'none' ? null : f.cancelledAt,
     timeLabel: copy.timeLabel,
-    canCancel: !anyDelivered && !agreementUnderReview && state === 'none',
+    canCancel: !anyDelivered && !noShowReported && state === 'none',
     // Still gated on `anyDelivered`, even though the counterparty's act already proves nothing
     // had been delivered when they took it: this function must not depend on that inference
     // staying true, and a control the server would refuse must never be rendered.
-    // `agreementUnderReview` is gated for the same reason — PD-063 removes the exit once a
-    // report exists, and a trade under review can never simultaneously be one the counterparty
-    // has already cancelled, so `canAgree` is covered by the same conjunct.
-    canAgree: !anyDelivered && !agreementUnderReview && state === 'byThem',
+    // `noShowReported` is gated for the same reason — PD-063 removes the exit once a report
+    // exists, and a reported trade can never simultaneously be one the counterparty has already
+    // cancelled, so `canAgree` is covered by the same conjunct.
+    canAgree: !anyDelivered && !noShowReported && state === 'byThem',
   }
 }
 

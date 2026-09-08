@@ -230,11 +230,12 @@ export default function NegotiationScreen() {
   // whether an irreversible control is rendered, and a rule computed in JSX cannot be tested.
   const delivered = anyDelivered(obligations)
   // PD-063: once a no-show is reported the ordinary exit is gone and does not come back. The
-  // AGREEMENT-LEVEL, derived here from the OBLIGATION-level facts the server sent — and the two
-  // names now say which is which. PD-063 removes the ordinary exit for the whole trade the
-  // moment ANY obligation is reported, so a viewer whose own side is clean still loses the
-  // control. The screen only stops drawing something the server would now refuse.
-  const agreementUnderReview = obligations.some((o) => o.obligationUnderReview)
+  // THE SAME PREDICATE THE SERVER USES. PD-063's `PT423` fires on the existence of a no-show
+  // report, so this asks exactly that — not the broader `under_review`, which also counts
+  // `not_received` and agreed with `PT423` only by a coincidence between two guards two
+  // migrations apart. Agreement-level: the exit closes for the whole trade the moment ANY
+  // obligation is reported, so a viewer whose own side is clean still loses the control.
+  const noShowReported = obligations.some((o) => o.noShowReportedAt !== null)
   const cancellationFacts = {
     iCancelled: row?.iCancelled ?? false,
     theyCancelled: row?.theyCancelled ?? false,
@@ -243,7 +244,7 @@ export default function NegotiationScreen() {
   const cancel = cancellationView({
     ...cancellationFacts,
     anyDelivered: delivered,
-    agreementUnderReview,
+    noShowReported,
   })
   // Participant-visible context, per the ruling on PR #58. Attribution is derived by
   // lib/tradeCancellation.ts rather than by a ternary here: putting the wrong label on a
@@ -848,9 +849,9 @@ export default function NegotiationScreen() {
                   either obligation is delivered the control disappears for good — PD-046
                   removes it permanently, and a later "didn't receive" does not bring it back,
                   so this must never reappear on that state.
-                  Gated on `obligationsLoaded` as well: `anyDelivered` AND `agreementUnderReview`
-                  are both derived from the obligation rows, and an EMPTY list reads as "nothing
-                  delivered, nothing under review" — which is indistinguishable from the truth. Offering an irreversible action off a
+                  Gated on `obligationsLoaded` as well: `anyDelivered` AND `noShowReported` are
+                  both derived from the obligation rows, and an EMPTY list reads as "nothing
+                  delivered, nothing reported" — which is indistinguishable from the truth. Offering an irreversible action off a
                   precondition computed from data the screen has just said it could not load is
                   exactly the case the message above warns about. */}
               {obligationsLoaded && (cancel.canCancel || cancel.canAgree) ? (
@@ -1086,8 +1087,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(214,124,79,0.18)',
     borderColor: 'rgba(214,124,79,0.5)',
   },
-  // Same third state, same tone, same meaning as the list — one product state must not change
-  // colour when the viewer moves between the two surfaces.
+  // Same values as Trade Activity's, and DELIBERATELY DUPLICATED: there is no theme module and
+  // per-screen palettes are the repo-wide convention. What is single-sourced is the MAPPING
+  // (label -> tone, in lib/obligationState.ts); these six literals are hand-kept in step, so a
+  // palette edit here must be made there too. Stated plainly rather than claimed as an invariant
+  // two independent copies cannot enforce.
   attentionChipReview: {
     backgroundColor: 'rgba(120,150,190,0.18)',
     borderColor: 'rgba(120,150,190,0.5)',

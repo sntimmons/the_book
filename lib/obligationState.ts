@@ -110,8 +110,11 @@ export interface ObligationView {
    *
    * A separate field rather than words spliced into `state`, so a screen can render it as a
    * badge and so the forbidden-vocabulary sweep has one string to check.
+   *
+   * Typed as the LABEL UNION, not `string`: that is what makes `ATTENTION_TONE` total, so a
+   * fourth attention state cannot reach a screen without a tone.
    */
-  attention: string | null
+  attention: AttentionLabel | null
   /**
    * Whether the receiver may report a no-show right now.
    *
@@ -211,17 +214,6 @@ const TITLE: Record<ObligationRole, string> = {
   receiver: 'You will receive',
 }
 
-/**
- * @param tradeCancelled has the AGREEMENT been cancelled by either participant? A cancelled
- * trade freezes both controls: the server refuses a delivery or an answer on one (`PT409`),
- * and rendering a button that can only fail is the capability-contradicts-caption defect this
- * module exists to prevent. The rule lives here, not in the screen, so it is covered by the
- * same exhaustive role × status sweep as the copy.
- *
- * The state sentence is unchanged when cancelled — "You have not marked this delivered yet."
- * stays true — because the cancellation itself is said once, by `lib/tradeCancellation.ts`,
- * above both obligations rather than repeated inside each.
- */
 /** The one short label for an elapsed, unanswered response window. */
 export const NEEDS_ATTENTION_LABEL = 'Needs attention'
 
@@ -239,7 +231,7 @@ export const ACTION_NEEDED_LABEL = 'Action needed'
 interface WindowCopy {
   /** Replaces the status note when there is something truer to say about the window. */
   note: string | null
-  attention: string | null
+  attention: AttentionLabel | null
   deadlineLabel: string | null
 }
 
@@ -300,13 +292,6 @@ const WINDOW: Record<ObligationRole, Record<ReceiverWindowState, WindowCopy>> = 
   },
 }
 
-/**
- * @param window the SERVER's `receiver_window_state`. Defaulted to `none` so a caller that has
- * not been given one cannot accidentally assert an attention state — the safe direction is to
- * say nothing about a window, never to invent one.
- * @param confirmationDeadline the server's `confirmation_deadline` for this obligation. Only
- * rendered; never compared against a local clock here.
- */
 /**
  * Everything `obligationView` needs to describe ONE obligation, as named fields.
  *
@@ -536,9 +521,11 @@ export const UNDER_REVIEW_LABEL = 'Under review'
  * copies structurally cannot enforce — that one product state does not change meaning when the
  * viewer moves between surfaces. This slice's own third state was added to both by hand.
  *
- * TOTAL over the labels, so a FOURTH attention state is a compile error here rather than a
- * silent fallthrough to the base tone on whichever screen was not updated — the defect class
- * this module documents itself as existing to prevent.
+ * GENUINELY TOTAL over the labels, and the typing is the point rather than decoration. Keyed by
+ * `AttentionLabel` — a union of the three exported constants — so adding a fourth label without
+ * a tone is a COMPILE error here. A `Record<string, …>` would have accepted any key and required
+ * none, which is the silent fallthrough this table exists to prevent; the first draft of this
+ * comment claimed the guarantee while the type did not provide it.
  *
  * TONE, NOT COLOUR. This names the MEANING; each screen owns its own palette and maps the tone
  * to its own StyleSheet. That keeps one authoritative mapping without dragging a theme system
@@ -553,7 +540,13 @@ export const UNDER_REVIEW_LABEL = 'Under review'
  */
 export type AttentionTone = 'live' | 'elapsed' | 'review'
 
-export const ATTENTION_TONE: Record<string, AttentionTone> = {
+/** Every label `obligationView` or `tradeRowState` can put in an `attention` field. */
+export type AttentionLabel =
+  | typeof ACTION_NEEDED_LABEL
+  | typeof NEEDS_ATTENTION_LABEL
+  | typeof UNDER_REVIEW_LABEL
+
+export const ATTENTION_TONE: Record<AttentionLabel, AttentionTone> = {
   [ACTION_NEEDED_LABEL]: 'live',
   [NEEDS_ATTENTION_LABEL]: 'elapsed',
   [UNDER_REVIEW_LABEL]: 'review',
@@ -562,14 +555,15 @@ export const ATTENTION_TONE: Record<string, AttentionTone> = {
 /**
  * The tone for a rendered attention label, or null when there is no label.
  *
- * Falls back to `live` for an unrecognised label rather than throwing: a screen must still
- * render something, and the least-alarming tone is the safe direction. An unrecognised label
- * should be impossible — `ATTENTION_TONE` is keyed by the three exported constants — and the
- * totality test asserts that.
+ * Takes `string | null` because `attention` is typed that way on both view models, so this is
+ * the one place the widening is narrowed. Falls back to `live` for an unrecognised label rather
+ * than throwing: a screen must still render something, and the least-alarming tone is the safe
+ * direction. That fallback is unreachable while `ATTENTION_TONE` stays total — which the type
+ * now enforces and `obligationViewShape.test.ts` also asserts over every emitted label.
  */
 export function attentionTone(label: string | null): AttentionTone | null {
   if (!label) return null
-  return ATTENTION_TONE[label] ?? 'live'
+  return (ATTENTION_TONE as Record<string, AttentionTone>)[label] ?? 'live'
 }
 
 /**

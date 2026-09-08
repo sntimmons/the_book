@@ -242,25 +242,25 @@ describe('PD-063 — the ordinary exit is gone once a report exists', () => {
   const facts = { iCancelled: false, theyCancelled: false, cancelledAt: null }
 
   it('offers cancellation on a live, unreported, undelivered trade', () => {
-    const v = cancellationView({ ...facts, anyDelivered: false, agreementUnderReview: false })
+    const v = cancellationView({ ...facts, anyDelivered: false, noShowReported: false })
     expect(v.canCancel).toBe(true)
   })
 
   it('withdraws it once the trade is under review', () => {
-    const v = cancellationView({ ...facts, anyDelivered: false, agreementUnderReview: true })
+    const v = cancellationView({ ...facts, anyDelivered: false, noShowReported: true })
     expect(v.canCancel).toBe(false)
     expect(v.canAgree).toBe(false)
   })
 
   it('withdraws "agree to cancel" too, whoever started it', () => {
     const started = { iCancelled: false, theyCancelled: true, cancelledAt: '2026-10-01T00:00Z' }
-    expect(cancellationView({ ...started, anyDelivered: false, agreementUnderReview: false }).canAgree).toBe(true)
-    expect(cancellationView({ ...started, anyDelivered: false, agreementUnderReview: true }).canAgree).toBe(false)
+    expect(cancellationView({ ...started, anyDelivered: false, noShowReported: false }).canAgree).toBe(true)
+    expect(cancellationView({ ...started, anyDelivered: false, noShowReported: true }).canAgree).toBe(false)
   })
 
   it('is still withdrawn by a delivery, independently of review', () => {
-    expect(cancellationView({ ...facts, anyDelivered: true, agreementUnderReview: false }).canCancel).toBe(false)
-    expect(cancellationView({ ...facts, anyDelivered: true, agreementUnderReview: true }).canCancel).toBe(false)
+    expect(cancellationView({ ...facts, anyDelivered: true, noShowReported: false }).canCancel).toBe(false)
+    expect(cancellationView({ ...facts, anyDelivered: true, noShowReported: true }).canCancel).toBe(false)
   })
 })
 
