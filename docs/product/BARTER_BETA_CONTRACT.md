@@ -1,19 +1,18 @@
 # Barter — first Houston closed beta contract
 
 **Status:** Authoritative for the **first Houston closed beta**. Owner: Founder (Stephen).
-**Reconciled against:** `main` @ `5c24e8f` (2026-09-08 — PR #68, manual adjudication), **plus the
-derived-agreement-presentation branch** (PD-070) whose clauses are marked where they appear.
-**Last edited by:** the derived-agreement-presentation branch. Before it, the
-manual-adjudication branch (PD-064 … PD-069). Previously PR #41, whose provenance line survived
-four months of edits and was corrected here.
+**Reconciled against:** `main` @ `f5fd197` (2026-09-08 — PR #70, the Session 7 closeout).
+**Last edited by:** the post-Session-7 state reconciliation, which changed no clause and only
+corrected this header. Before it: the derived-agreement-presentation branch (PR #70, PD-070),
+the manual-adjudication branch (PR #68, PD-064 … PD-069), and originally PR #41.
 
-> **⚠️ READ THE PROVENANCE.** Manual adjudication and the three terminal OBLIGATION outcomes are
-> **MERGED** (PR #68, `5c24e8f`) — an earlier version of this header called them unmerged and
-> told the reader to prefer [CURRENT_STATE.md](CURRENT_STATE.md), which by then said the
-> opposite. What is still **unmerged** at the time of writing is the **PD-070** material: the
-> derived agreement presentation (§ 7.5) and the removal of the barter estimated-value UX
-> (§ 5.1). CURRENT_STATE.md is anchored several merges back and carries its own staleness
-> warning; where the two disagree, **the source code wins over both**.
+> **EVERY CLAUSE IN THIS DOCUMENT NOW DESCRIBES MERGED `main`.** Two earlier versions of this
+> header were wrong in opposite directions — one called merged adjudication unmerged, the next
+> called the merged PD-070 material unmerged — so it is worth stating plainly: manual
+> adjudication and the three terminal OBLIGATION outcomes merged as **PR #68** (`5c24e8f`), and
+> the derived agreement presentation plus the removal of the barter estimated-value UX merged as
+> **PR #70** (`f5fd197`). **Nothing here is pending.** Where this document and the source code
+> ever disagree, **the code wins** ([AGENTS.md](../../AGENTS.md)).
 
 > **Purpose.** This document makes already-approved barter decisions **durable**. It is not a
 > design session and introduces nothing new: every clause below was approved by the Founder,

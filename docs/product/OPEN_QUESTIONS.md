@@ -1,17 +1,17 @@
 # Open Questions
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `0e11cde33a9df39102fba734de99697d2f4072d0` (2026-09-04)
-**Last edited by:** PR #65 (previous edit: PR #64). The reconciliation that made the corrections
-after PR #64 merged as **PR #65**, a number it did not have when it wrote them. The reconciliation
-that follows PR #66 — which made this edit — was again **not given its own PR number**, so this
-field names the last mutation whose number is known.
+**Reconciled against:** `main` @ `f5fd1973b70b6163e0a1a56874d61673bdc00ee7` (2026-09-08) — for
+the **Barter** entries only; see the scope note below.
+**Last edited by:** the post-Session-7 state reconciliation.
 
-> **Why the anchor did not move to `76f5632`.** The reconciliation that last edited this file
-> inspected `main` @ `76f5632` and re-verified the **barter** entries there (OQ-006, OQ-007,
-> OQ-008), but did **not** re-verify the repository claims carried by OQ-011, OQ-036 or OQ-070.
-> An anchor asserts that *this document's* facts were verified at that commit, so it stays
-> where the last full verification happened.
+> **WHAT THIS ANCHOR COVERS, AND WHAT IT DOES NOT.** An anchor asserts that *this document's*
+> facts were verified at that commit. The 2026-09-08 reconciliation re-verified the **Barter**
+> entries (OQ-001 … OQ-008, and the new OQ-071) against `f5fd197`, because Session 7 completed
+> there and those were the entries at risk of having gone stale. It did **NOT** re-verify the
+> repository claims carried by **OQ-011**, **OQ-036** or **OQ-070**, which were last checked at
+> `0e11cde` (2026-09-04) and should be re-read at the **Whole-App Audit Round 2**. Nothing
+> outside Barter was changed.
 >
 > **It did not move for PR #56 (`46c0bef`) either, and for the same reason.** That
 > reconciliation (merged as PR #57) edited only the closed index below — to record that PD-057,
@@ -105,7 +105,16 @@ an entry is self-describing when quoted alone.
   cancellation differs from a no-show on each leg. Session 5 recorded this as answered only
   *partially*, and the Founder ruling of 2026-09-04 listed "cancellation rules" without
   supplying them. Closing it would mean inventing the rules.
-- **Status:** Closed by **PD-046** on 2026-09-04 — see [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7. Pre-agreement exit is not a cancellation; after agreement and before any delivery either participant may cancel **unilaterally**; after any delivery ordinary cancellation is unavailable and disagreement is adjudicated. No-show is distinct from cancellation and yields an **Unfulfilled** obligation. No review, reputation or ranking effect in the first beta; actor and timing retained for a future reliability model.
+- **Status:** Closed by **PD-046** on 2026-09-04 — see [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7. Pre-agreement exit is not a cancellation; after agreement and before any delivery either participant may cancel **unilaterally**; after any delivery ordinary cancellation is unavailable and disagreement is adjudicated. ~~No-show is distinct from cancellation and yields an **Unfulfilled** obligation.~~ No review, reputation or ranking effect in the first beta; actor and timing retained for a future reliability model.
+- **Reconciliation note (2026-09-08) — one clause of the closure above became FALSE and is struck
+  through rather than quietly rewritten.** A no-show does **not** yield an Unfulfilled obligation
+  and never did once it was built. Under **PD-062** / **PD-063** a valid report routes the
+  obligation to **Under Review**, which means only that a human must look; it is not a finding of
+  fault and produces no outcome by itself. Under **PD-064** an obligation reaches a terminal
+  outcome in exactly one way — a decision by an authorized **operator**, never a participant and
+  never a clock — and that operator may find it **Fulfilled**, **Unfulfilled** *or* **Closed
+  without resolution** (**PD-065**). The rest of PD-046's closure stands unchanged, and
+  **OQ-004's own question is not reopened.**
 - **Follow-on rulings (2026-09-06), recorded because they were previously undocumented:** PD-046
   asked for "an optional reason" and named the classification, but said nothing about **who reads
   the reason**, **what it means**, or **what the durable copy for two cancellations may claim**.
@@ -141,6 +150,43 @@ an entry is self-describing when quoted alone.
   `supabase/migrations/20260906000000_barter_integrity_slice1.sql:9`, and Slice 1 acted on its
   findings — but it committed no document to this repository, so its answer is not on `main`.
   An audit would not close this question in any case; only a cited `PD-NNN` does.
+- **Reconciliation note (2026-09-08):** still **Open** on its own terms, and deliberately so —
+  no `PD-NNN` answers "what of the original implementation was salvageable". But the question has
+  been overtaken by events: the barter surface has since been rebuilt in place across Session 7
+  (negotiation, agreement, obligations, delivery, cancellation, no-show, Under Review,
+  adjudication), each slice audited by the read-only reviewers and pinned by
+  `supabase/tests/*.sql`. Whatever remains of the original implementation is `barter_offers`,
+  `barter_interests` and the community screens, all of which were hardened by Slice 1 and are
+  covered by `supabase/tests/barter.test.sql`. **Recommend the Founder close this as overtaken at
+  the Whole-App Audit Round 2**, rather than it lingering as a Session 5 question after the work
+  it was blocking has shipped. Not closed here: closing it is the Founder's call, not the
+  Steward's.
+- **Status:** Open
+
+### OQ-071 — How may a plain Needs Attention enter Under Review?
+- **Area:** Barter
+- **Why it matters:** This is the **one genuinely open question left in the barter lifecycle
+  engine**, and it is a real dead end rather than a theoretical gap. An obligation that was
+  marked delivered and never answered passes its 7-day window into **Needs Attention** and can
+  sit there permanently: the receiver may still answer at any time (**PD-057** — the RPCs never
+  consult the deadline), but if they simply never do, **the deliverer has no route at all**.
+  Adjudication cannot help, because **PD-064** makes an obligation eligible only while it is
+  **Under Review**, and the only two acts that produce Under Review are an explicit **no-show
+  report** and an explicit **`not_received`** answer (**PD-062**). A passed deadline is silence,
+  and the ruling is explicit that silence is not a finding.
+- **Blocks:** nothing that is currently scheduled. It does **not** block the pre-beta Review
+  Queue (**PD-068**), which operates on obligations that are already Under Review. It should be
+  settled before live barter beta, because the dead end is reachable by two providers doing
+  nothing wrong.
+- **Not to be resolved by implementation.** Adding a second timer, an automatic escalation, a
+  participant escalation action or an operator auto-escalation would each be answering this
+  question in code. None exists today, and **PD-064** asserts that absence rather than assuming
+  it.
+- **Recorded here 2026-09-08 by the post-Session-7 reconciliation.** This is **not a new
+  question**: it has been carried as UNRESOLVED inside **PD-062**, **PD-063**, **PD-064**,
+  **PD-068** and `BARTER_BETA_CONTRACT.md` § 7.4 / § 7.5 since 2026-09-07. It is given a number
+  so the one open engine question lives in the document whose job that is, instead of only in
+  the prose of five locked decisions. **No decision is made or implied by recording it.**
 - **Status:** Open
 
 ### OQ-008 — May an offer's terms still be edited once providers have responded to them?
