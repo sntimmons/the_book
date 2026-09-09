@@ -28,7 +28,6 @@ export interface Provider {
   is_trending: boolean
   is_featured: boolean
   is_demo: boolean
-  identity_verified: boolean
   years_experience: number | null
   specialties: string[] | null
   created_at: string | null
@@ -53,11 +52,23 @@ export interface Category {
   slug: string
 }
 
-// Public-safe provider columns. Never select('*') on providers in public-facing
-// queries: the table also holds stripe_* payment fields, verification_notes /
-// verification_status, business_verified, no_show_count / late_count, and
-// payment/deposit config — none of which should reach another user's device.
-// (The provider's OWN dashboard queries its own row and can read more.)
+// Public-safe provider columns.
+//
+// THIS LIST IS NO LONGER THE BOUNDARY, and that is the point. It used to carry a
+// warning never to `select('*')` here, because the table also holds stripe_*
+// fields, verification_notes, verification_status, business_verified,
+// no_show_count / late_count and payment/deposit config. That warning described a
+// real exposure and asked our own client not to trigger it — but the anon key is
+// public by design, so anyone could issue the query it forbade. Reproduced
+// against non-production: anon read all 49 columns.
+//
+// `20261030000000_providers_public_column_surface.sql` moved the boundary into
+// the database as a column-level SELECT grant. The sensitive columns are now
+// readable by `service_role` alone. This list is what the app needs, and asking
+// for anything outside it now fails loudly instead of succeeding quietly.
+//
+// `identity_verified` was removed from the list: Pre-Beta Correction 1 deleted
+// every render of it, and it is no longer granted to client roles.
 const PUBLIC_PROVIDER_FIELDS = [
   'id',
   'user_id',
@@ -81,7 +92,6 @@ const PUBLIC_PROVIDER_FIELDS = [
   'is_trending',
   'is_featured',
   'is_demo',
-  'identity_verified',
   'years_experience',
   'specialties',
   'created_at',

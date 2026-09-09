@@ -67,7 +67,6 @@ interface RawReelRow {
     category_id: number | null
     neighborhood: string | null
     profile_photo_url: string | null
-    identity_verified: boolean | null
   } | null
 }
 
@@ -82,7 +81,7 @@ async function fetchReels(): Promise<Reel[]> {
   const { data, error } = await supabase
     .from('posts')
     .select(
-      'id, media_url, caption, like_count, comment_count, provider:providers(id, display_name, category_id, neighborhood, profile_photo_url, identity_verified)',
+      'id, media_url, caption, like_count, comment_count, provider:providers(id, display_name, category_id, neighborhood, profile_photo_url)',
     )
     .eq('media_type', 'video')
     .eq('is_active', true)

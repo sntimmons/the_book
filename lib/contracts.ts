@@ -17,7 +17,6 @@ export type ContractType = 'text' | 'pdf'
 export interface Contract {
   id: string
   providerId: string
-  userId: string
   title: string
   body: string
   contractType: ContractType
@@ -57,7 +56,6 @@ export interface SignedContractDetail {
 interface RawContractRow {
   id: string
   provider_id: string
-  user_id: string
   title: string
   body: string
   contract_type: ContractType | null
@@ -79,7 +77,7 @@ interface RawSignatureRow {
 }
 
 const CONTRACT_COLUMNS =
-  'id, provider_id, user_id, title, body, contract_type, pdf_url, pdf_filename, is_active, created_at, updated_at'
+  'id, provider_id, title, body, contract_type, pdf_url, pdf_filename, is_active, created_at, updated_at'
 const SIGNATURE_COLUMNS =
   'id, contract_id, booking_id, client_user_id, signature_url, signed_at, status'
 
@@ -87,7 +85,6 @@ function mapContract(r: RawContractRow): Contract {
   return {
     id: r.id,
     providerId: r.provider_id,
-    userId: r.user_id,
     title: r.title,
     body: r.body,
     contractType: r.contract_type === 'pdf' ? 'pdf' : 'text',
@@ -131,22 +128,44 @@ export async function fetchProviderContract(providerId: string): Promise<Contrac
   return mapContract(data as RawContractRow)
 }
 
-// The signature row for a booking, or null if not yet signed.
-export async function fetchContractSignature(
-  bookingId: string,
-): Promise<ContractSignature | null> {
-  if (!bookingId) return null
-  const { data, error } = await supabase
-    .from('contract_signatures')
-    .select(SIGNATURE_COLUMNS)
-    .eq('booking_id', bookingId)
-    .maybeSingle()
-  if (error || !data) {
-    if (error) console.log('Fetch contract signature error:', error)
-    return null
+// The contract a client is about to be asked to sign, for ONE provider.
+//
+// WHY THIS IS NOT `fetchProviderContract`. That function reads `contracts`
+// directly, and the table's RLS is `auth.uid() = user_id OR is_contract_signer(id)`
+// — owner, or someone who has ALREADY signed. A first-time client is neither, so
+// the read returned ZERO ROWS AND NO ERROR (reproduced against non-production),
+// this module correctly reported "no contract exists", and the booking flow
+// skipped the signing gate entirely for every client, every provider, always.
+//
+// The fix is a `SECURITY DEFINER` read function rather than a widened policy, so
+// the table's own boundary is untouched and there is exactly one place to narrow
+// this later. It returns the ACTIVE contract of an APPROVED provider, one at a
+// time, to authenticated callers only.
+//
+// A technical failure still THROWS rather than reporting absence — the Batch 4A
+// rule — because a failed lookup must never be mistaken for "no contract
+// required" and skip the gate a second way.
+export async function fetchContractToSign(providerId: string): Promise<Contract | null> {
+  if (!providerId) return null
+  const { data, error } = await supabase.rpc('provider_contract_for_booking', {
+    p_provider_id: providerId,
+  })
+  if (error) {
+    console.log('Fetch contract to sign error:', error)
+    throw error
   }
-  return mapSignature(data as RawSignatureRow)
+  const rows = (data as RawContractRow[] | null) ?? []
+  if (rows.length === 0) return null
+  return mapContract(rows[0])
 }
+
+// NOTE: `fetchContractSignature(bookingId)` used to sit here. It had zero callers
+// anywhere in the repo, and it was the one function in this module that swallowed
+// a technical error and returned null for an existence question — the fail-open
+// shape Batch 4A hardened `fetchProviderContract` against. A helper with exactly
+// the right name that answers "not signed" when the network is down is a trap for
+// whoever next wires "has this booking been signed?", so it is removed rather than
+// left. Reinstate it with the throw-on-error contract its siblings have.
 
 // Recent signed contracts for a provider (client name + booking date), newest
 // first. Empty if the provider has no contract.

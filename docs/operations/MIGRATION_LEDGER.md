@@ -1414,6 +1414,172 @@ B5B covers the carve-out from both directions (`supabase/tests/barter.test.sql`)
 edit fails the suite rather than shipping, so this table is a discovery aid, not the
 enforcement.
 
+## 2026-09-08 — `20261030000000` … `20261034000000` **APPLIED to non-production 2026-09-08** (Pre-Beta Correction 2, security & authorization)
+
+Five forward migrations, applied with `supabase db push --linked --include-all` against
+`wcoyjeklscuqsumpjpfo`. Afterwards `supabase migration list --linked` reports **73 versions,
+local == remote, no drift and no orphan in either direction**. Production
+(`kxregomuawwcqvisuhtr`) was never linked, queried, migrated or credentialed by this work.
+
+**Every defect below was REPRODUCED at runtime before it was fixed, and re-verified after.**
+That distinction matters here more than usual: three of the five looked correct in the
+application code, and one of them — the contract-signing gate — had already survived a static
+audit that could only call it "likely". The reproduction script created ephemeral auth
+identities, exercised the real PostgREST boundary as those users, and deleted everything it made.
+
+| Migration | What was reproduced | What it does |
+|---|---|---|
+| `20261030000000_providers_public_column_surface.sql` | An **anonymous** caller holding only the public anon key ran `select *` on `providers` and received **all 49 columns**, including `verification_notes` (its own column comment reads "Private admin moderation notes"), `stripe_account_id` and the four `stripe_*` flags, `no_show_count`, `late_count`, `payment_mode`, `deposit_*`, `is_approved`, `verification_status`, `business_verified`. | Column-level `SELECT` grants. `revoke all` from `anon` and `authenticated` (which also removed DELETE, TRUNCATE, REFERENCES and TRIGGER, none of which either role has ever needed), then `grant select` on **28** public columns. **21 columns are now readable by `service_role` alone.** Security Batch 3a's INSERT/UPDATE column grants are restated verbatim in the same file, because the table-level revoke wipes the role's ACL and a partial edit would have narrowed the go-live upsert by accident. |
+| `20261031000000_contract_ownership_binding.sql` | Provider B inserted a `contracts` row whose `provider_id` was **provider A's** row, and it succeeded. Because `contracts_provider_id_key` is UNIQUE, provider A was then **denied their own contract slot** — an integrity defect that is also a denial of service against another provider. | INSERT and UPDATE now require the `provider_id` to name a `providers` row the caller owns. UPDATE gains an explicit `WITH CHECK` (it had none, so only `user_id` was pinned and `provider_id` was free). All three write policies narrowed from `public` to `authenticated`; `anon` revoked on `contracts` and `contract_signatures`. |
+| `20261032000000_contract_prospective_client_read.sql` | A first-time client's read of the contract they are about to sign returned **zero rows and no error**. `lib/contracts.ts` correctly reported "no contract exists" and `app/book/contract.tsx` skipped to `/book/payment`, so **the signing gate never fired for any client, for any provider, ever**, and `contract_signatures` stayed empty. Controls in the same run: the owner read it, an unrelated provider did not. | A `SECURITY DEFINER` read function, `provider_contract_for_booking(uuid)`, **not** a widened table policy — the table's owner-or-signer RLS is untouched. Bounded to `authenticated` (no `anon` EXECUTE), one named provider per call, `is_active` contracts, and `is_approved` providers. Returns no `user_id`. |
+| `20261033000000_posts_media_owner_binding.sql` | Provider B uploaded a file into **provider A's folder** in the public `posts-media` bucket. Separately, the bucket had **no UPDATE and no DELETE policy at all**, so a delete returned success and removed nothing — a remove that reports success and does not remove is the shape that makes a retention promise impossible to keep. | Owner-bound INSERT/UPDATE/DELETE on the first path segment, matching the `provider-media` posture Security Batch 2a established and which explicitly excluded this bucket. Public read preserved: the discovery feed and the reels player render these objects by public URL. |
+| `20261034000000_least_privilege_defaults.sql` | `pg_default_acl` granted `anon` and `authenticated` **`arwdDxtm`** — every privilege — on every FUTURE table created by a migration, and `EXECUTE` on every future function. The backlog it had already produced: `anon` held INSERT/UPDATE on **32** tables, DELETE and TRUNCATE on **33**. | Default privileges for role `postgres` in `public` revoked from both client roles on tables and functions, and from `anon` on sequences; `service_role` untouched. Plus a loop revoking every write privilege from `anon` on all 48 tables, and `TRUNCATE` from `authenticated`. |
+
+**Why TRUNCATE was the sharp end of the default-privileges finding.** RLS is enabled on all 48
+tables and no permissive write policy exists for `anon`, so INSERT/UPDATE/DELETE were denied.
+**TRUNCATE is not filtered by row-level security.** The privilege was unreachable only because
+PostgREST offers no way to issue one — which is a property of the API gateway, not of the
+database, and the wrong thing to be relying on. The affected tables included `bookings`,
+`messages`, `conversation`, `contracts`, `provider_reviews`, `client_reviews` and `reports`.
+
+**What the default change cannot reach, recorded as a limit rather than left implicit.**
+`pg_default_acl` also holds a row for grantor `supabase_admin` on `public` tables carrying the
+same `arwdDxtm`. It is platform-managed, not ours to alter, and it governs objects created BY
+`supabase_admin` — which our migrations are not. Objects created outside this migration chain can
+therefore still arrive over-granted.
+
+**The failure direction is deliberate.** After `20261034000000`, a migration that creates a table
+or an RPC and forgets to grant produces a loud permission error in development rather than a
+silent over-exposure nobody sees until an audit. Every migration since `20260906000000` already
+granted explicitly, so this codifies existing practice rather than introducing it.
+
+**Post-apply verification.** B5B **1277/1277 passed, 0 failed** (up from 1229; the new suite is
+`supabase/tests/authorization_boundaries.test.sql`, registered at `scripts/db-security-test.mjs`),
+zero residue, one transaction always rolled back. A separate 31-assertion runtime script exercised
+the real PostgREST boundary as anon and as three distinct authenticated identities and passed
+31/31 after the fix, having reproduced four of five defects before it.
+
+**Nothing in this batch redefines a function whose live definition lives elsewhere**, so the
+§ "Functions redefined across migrations" table below is unchanged by it.
+`provider_contract_for_booking` is new. The `contracts` and `storage.objects` policies are
+dropped and recreated in full within their own files, which is the only definition each has.
+
+## 2026-09-08 — `20261035000000` … `20261036000000` **APPLIED to non-production 2026-09-08** (reviewer findings on Correction 2 itself)
+
+Both files exist because the **mandatory read-only Security Reviewer and Codebase Auditor passes
+over `20261030000000` … `20261034000000` found defects in the slice's own neighbourhood**, and
+both reviewers arrived at the same HIGH independently. `supabase migration list --linked` now
+reports **75 versions, local == remote, no drift**.
+
+**`20261035000000` — the table `20261031000000` hardened next to, and did not look at.**
+`contracts` was bound to its owning provider; `contract_signatures` carried the *identical* pair
+of defects — `WITH CHECK (auth.uid() = client_user_id)` and nothing more on INSERT, and an UPDATE
+policy with no role clause and **no `WITH CHECK`**, leaving `contract_id` and `booking_id` free.
+Reproduced with three real sessions: **a stranger inserted a signature against another client's
+booking**, and because `contract_signatures_booking_id_key` is UNIQUE the real client was then
+refused with `23505` and **could never sign their own booking**. The security review traced the
+chain further than the reproduction did: becoming a signer satisfies `is_contract_signer()`, which
+unlocks `contracts_provider_read` (the provider's auth uid) **and** `can_read_contract_pdf`, i.e.
+a document in the PRIVATE `contract-pdfs` bucket. **This slice is what made it reachable** —
+before `20261032000000`, a non-participant could not obtain a `contracts.id` at all. Writes are
+now bound to the caller's own booking *and* to a contract that governs it, through a
+`SECURITY DEFINER` helper (`contract_governs_booking`) for the same recursion reason
+`20260829050000` established.
+
+**`20261036000000` — three review corrections plus one the previous file's own rule missed.**
+(a) B5B then caught what the binding did *not* close: a signer could still re-point their
+signature at another of their **own** bookings with the same provider, which the ownership
+predicate legitimately allows — so `contract_id`, `booking_id` and `client_user_id` are now
+immutable after insert by trigger, `service_role` exempt. Zero app risk: nothing updates that
+table. (b) `can_read_contract_pdf` was extended to the prospective signer, because
+`20261032000000` unblocked the gate **only for `contract_type = 'text'`** — for a PDF the client
+could tick *"I have read and agree to the terms in this PDF contract"* over a document storage
+would refuse them, and **a recorded agreement to an unreadable document is worse than the skipped
+gate it replaced**. The new disjunct carries the same bound as the RPC, so the two contract types
+are exactly as wide as each other. (c) `anon` still held `USAGE, SELECT, UPDATE` on
+`public.categories_id_seq` — `20261034000000` applied its own "gateway-unreachability is not a
+boundary" rule to tables and not to sequences. (d) A comment correction: `20261032000000` claims
+it "returns no `user_id`", which is true of the *column* and false of the payload — for a PDF
+contract the returned `pdf_url` begins with the provider's auth uid. Not a leak (that uid already
+prefixes their objects in the public media buckets) but a stated boundary that was not enforced.
+
+### The pre-existing defect this work surfaced: provider go-live has been broken since 2026-08-30
+
+**Not caused by Correction 2, and the most consequential thing it found.** A B5B assertion written
+to prove the revoke-and-regrant had not narrowed the go-live write instead proved the write does
+not work at all — then the literal client call was run against non-production and failed the same
+way.
+
+`.upsert(row, { onConflict: 'user_id' })` makes PostgREST emit `ON CONFLICT (user_id) DO UPDATE
+SET <every payload column>`, **including `user_id = excluded.user_id`**. Security Batch 3a granted
+`user_id` INSERT but deliberately **not** UPDATE, because reassigning it transfers ownership of
+the entire provider row. PostgreSQL therefore refuses the statement with
+`42501 permission denied for table providers` **whether or not a conflict occurs**, so the first
+go-live fails too. Isolated to the single clause by running the two SET lists side by side:
+`DO UPDATE SET display_name` succeeds, `DO UPDATE SET user_id` is refused.
+
+**Batch 3a's own compatibility gate (test G) recorded this path as SUCCESS**
+(`docs/audits/SECURITY_BATCH_3A_PROVIDER_FIELD_INTEGRITY_FINAL.md`) and concluded "all sent
+columns are UPDATE-granted". That was true of the hand-written `DO UPDATE SET display_name` the
+test executed and false of the statement the client sends. **A compatibility test that simulates
+the client rather than invoking it can bless a path that never worked.**
+
+**Fixed on the client, deliberately.** `app/onboarding/provider/golive.tsx` now INSERTs and, on
+`23505`, UPDATEs every column except `user_id`. Granting UPDATE on `user_id` would have made
+go-live work by letting any provider hand their row to another user, which is the boundary Batch
+3a exists to hold. Verified against non-production: first run OK, re-run OK, profile actually
+updated, and `update providers set user_id = …` still refused with `42501`. B5B pins all four.
+
+**Post-apply verification for both files.** B5B **1305/1305 passed, 0 failed**, zero residue;
+concurrency **181/181 passed, 0 failed**; the 31-assertion runtime script 31/31. A `has_column_privilege`
+correction was needed in the suite itself — an ACL pattern of `attacl like '%anon=%a%'` reported 28
+false offenders, because the `a` it matched was inside the word "authenticated" later in the same
+ACL string.
+
+### Corrections to statements made by `20261030000000` … `20261034000000`
+
+Applied migrations are never edited, so the corrections live here.
+
+- **`20261030000000` § 1 states that "table-level REVOKE does not remove column-level grants".
+  That is inverted.** PostgreSQL's `REVOKE` reference says the opposite: revoking privileges on a
+  table automatically revokes the corresponding column privileges on each column. **The SQL is
+  correct either way** — the file revokes and then re-grants the complete intended set, so the end
+  state is identical on a fresh apply and on an existing database — but the stated *reason* is
+  wrong, and a future author who believes column grants survive a table-level revoke will reason
+  wrongly about whether a later `revoke all on table public.providers` is sufficient. It is not.
+- **`20261030000000`'s derivation rule understates itself.** It says the 28-column list is "the
+  union of `PUBLIC_PROVIDER_FIELDS` and every column used in a filter/order". That rule does not
+  produce `completed_count` or `is_mobile`, which are granted because *inline* selects at
+  individual call sites need them — only 3 of ~40 `from('providers')` sites use the shared
+  constant. The real rule is **every column any call site selects, filters, orders or returns**,
+  and it is now enforced by `__tests__/guards/providerColumnGrant.test.ts` rather than by prose.
+- **`20261031000000` § 3 says the DELETE policy's "role narrowed".** The predicate is indeed
+  unchanged, but the baseline already declared that policy `TO authenticated`, so nothing was
+  narrowed. The role-narrowing rationale is correct for UPDATE, which genuinely had no role clause.
+- **The live definition of the `providers` INSERT/UPDATE column grants has MOVED.** Created in
+  `20260830000000_security_batch_3a_provider_field_integrity.sql`; current definition
+  `20261030000000` § 3, which restates them verbatim because § 1 wipes the role's ACL first. They
+  are byte-identical today, so there is no drift — but § "Functions redefined across migrations"
+  below is named for functions and does not cover grants, and this is the same copy-forward hazard
+  that table exists to prevent. **Read `20261030000000` before changing the provider write grants,
+  not the file whose name says field integrity.**
+
+### Accepted, with the reasoning, rather than changed
+
+- **`providers.user_id` stays granted to `anon`.** The security review raised narrowing it to
+  `authenticated`. Declined: that same uid is already the first path segment of every provider's
+  objects in the PUBLIC `posts-media` and `provider-media` buckets, so the grant discloses nothing
+  new, while `PUBLIC_PROVIDER_FIELDS` includes it and a signed-out feed read would break outright.
+  Real regression risk, no security gain.
+- **`is_approved` bounds nothing today.** It is used as the RPC's limiting conjunct, but its column
+  default is `true`, only `service_role` may write it, and **no application path ever sets it
+  false**. It is an honest future hook, not a live bound, and should not be counted as one when
+  weighing the contract-read widening. Recorded for the Founder alongside PD-044's deferred
+  eligibility conjunct.
+- **`authenticated` keeps default privileges on future SEQUENCES.** Revoking would break a future
+  serial column's insert; this schema uses `gen_random_uuid()` throughout, and `anon` — the role
+  that actually matters — is revoked on both existing and future sequences.
+
 ## Production application policy
 
 Locked by Founder ruling, 2026-09-04. **No production reconciliation or migration work is
