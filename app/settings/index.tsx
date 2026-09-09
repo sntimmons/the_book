@@ -187,18 +187,18 @@ export default function SettingsScreen() {
           </>
         )}
 
-        {/* PAYMENTS */}
+        {/* PAYMENTS. PRODUCT TRUTH: a "Booking Protection" row used to sit
+            here. The Book operates no payment protection, escrow or custody of
+            any kind, and no protection product has been decided on, so the row
+            named a capability that does not exist and is not promised. Removed.
+            "Payment Methods" stays: it is an honest Coming-soon stub for a
+            capability the roadmap does own (PD-042). */}
         <GroupLabel>Payments</GroupLabel>
         <View style={s.group}>
           <NavRow
             icon="card-outline"
             label="Payment Methods"
             onPress={() => stub('Payment Methods')}
-          />
-          <NavRow
-            icon="shield-checkmark-outline"
-            label="Booking Protection"
-            onPress={() => stub('Booking Protection')}
             isLast
           />
         </View>

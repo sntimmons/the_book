@@ -46,7 +46,7 @@ create *trust*.
 | Reviews | **REAL (Phases 0 + 1)** | Only from completed Book transactions; blind; two-sided; 7-day submission/reveal window; DB/server-authoritative eligibility and reveal (Phase 0) with the UX consuming that contract (Phase 1) — star-only reviews, truthful terminal states, persistent provider entry. Structured signals remain **Phase 2, not started**. See Reviews. |
 | Contracts (provider create/load) | **PARTIAL** | Provider can create/load; client load errors block rather than silently skip (4A). Provider-side save symptom still to verify. |
 | Contract signature capture | **PLACEHOLDER** | "Sign" sets local state, honestly labeled "requires development build"; persisted `signature_url=null`. No artifact captured. |
-| Payments (card / Stripe) | **PLACEHOLDER / FUTURE** | No real authorization or charge anywhere. Copy truthfully says no payment is taken. |
+| Payments (card / Stripe) | **PLACEHOLDER / FUTURE** | No real authorization or charge anywhere. Copy **now** truthfully says no payment is taken — it did not before Pre-Beta Correction 1 (2026-09-08), which removed a client-onboarding payment step asserting that payment info was "encrypted and secure" and that "Deposits are held safely", plus card-charge, deposit-protection and Apple Pay claims on eight further live surfaces. The absence is pinned by `__tests__/guards/betaClaimsAbsent.test.ts`; **a claim removed with no guard is a claim that comes back.** |
 | Deposits | **PLACEHOLDER** | Fields exist; nothing is charged or held. |
 | Identity verification (client & provider) | **PARTIAL — CORE SAFETY REQUIREMENT** | State exists; production verification process not built. See section. |
 | Provider onboarding / go-live | **REAL** | Onboarding writes provider+services+availability+policy+media; provider goes live immediately (no manual approval step planned for beta). |
@@ -190,13 +190,19 @@ See [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 12 for the authoritati
 - UI claims must never imply a stronger verification process than has actually occurred.
 - If the process behind a "Verified" claim is undocumented/unclear → **QUESTION → UNKNOWN — PRODUCT DECISION / TRUST-SAFETY DEFINITION REQUIRED.**
 
-### The "14-day to verify" copy — UNDECIDED / PLACEHOLDER
-The app currently shows placeholder copy implying a user has 14 days to verify. This is **not an approved product policy.** Do not encode a 14-day grace period as expected behavior. QA should **flag any UI presenting the 14-day requirement as established policy** while this remains undecided.
+### The "14-day to verify" copy — REMOVED FROM THE PRODUCT; still UNDECIDED as policy
+**No live surface shows this copy any more.** It shipped at `app/onboarding/provider/golive.tsx` ("Complete verification within 14 days of going live.") until Pre-Beta Correction 1 (2026-09-08) removed it. It was worse than an unapproved policy: it named a deadline for a task **no user can perform**, because no user-completable verification flow exists at all. The go-live screen now describes verification as a future capability and states no timeframe.
+
+**The product question is NOT closed by that removal** (OQ-036 stays Open): whether a verification grace period should exist, and of what length, is still undecided. Do not encode a 14-day grace period as expected behavior, and do not reintroduce any timeframe — `__tests__/guards/betaClaimsAbsent.test.ts` fails on one.
 
 ---
 
 ## Provider go-live — immediate (beta)
 After completing the required onboarding, a provider may **go live immediately**. There is **no planned mandatory manual business-profile approval** step before publishing for beta (may change post-beta based on safety/quality/feedback). Identity-verification transaction rules are **separate** from provider-profile publishing rules. Do not invent a manual approval requirement.
+
+> **MARKETPLACE APPROVAL IS NOT IDENTITY VERIFICATION, and no UI may let one borrow the other's vocabulary.** `providers.is_approved` is a discovery/curation gate — it decides whether a provider appears in the feed, and it defaults to true. `providers.identity_verified` is a claim that a real person was matched to a government-issued document through an approved process. **That process does not exist**, so the flag cannot be true of anyone by any route a user can take, and Pre-Beta Correction 1 stopped the profile rendering an "ID Verified" shield (and a verified check-mark) from it. The flag is still plumbed because the column is real; it renders nothing.
+>
+> **No replacement trust label was invented.** Whether an approved beta provider should carry a visible trust label, and what it may say, is a Founder decision and remains open (OQ-035). Curation is not a credential, and a label that implies otherwise is the same defect wearing a softer word.
 
 ## Two-sided reputation
 The Book is a two-sided trust marketplace: providers **and** clients both have reputation. Approved model: **one account, one verified person, two distinct reputation contexts.** Client reputation and provider reputation stay logically distinguishable even for the same identity.

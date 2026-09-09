@@ -153,8 +153,10 @@ export default function NotificationsScreen() {
             style={{ marginBottom: 16 }}
           />
           <Text style={styles.emptyTitle}>No notifications yet</Text>
+          {/* PRODUCT TRUTH: "You will be notified" reads as a push promise.
+              This list is in-app only; nothing reaches a device (PD-059). */}
           <Text style={styles.emptySub}>
-            You will be notified when your bookings are confirmed, completed, or
+            Updates appear here when your bookings are confirmed, completed, or
             cancelled.
           </Text>
         </View>

@@ -106,7 +106,7 @@ listed explicitly so they are not mistaken for defects (cross-check
 - **Actor:** provider.
 - **Entry (intended):** verification initiation from Business/onboarding, **or** the transaction gate (J11).
 - **Steps / definition:** same government-ID-match definition as J9; result → verified provider.
-- **Current status:** `identity_verified` exists and is owner-immutable (admin/service-role only); **no provider-facing initiation flow, no approved process wired.** The profile can render an "ID Verified" badge purely from the flag.
+- **Current status:** `identity_verified` exists and is owner-immutable (admin/service-role only); **no provider-facing initiation flow, no approved process wired.** The profile **no longer renders any trust claim from the flag** — Pre-Beta Correction 1 (2026-09-08) removed the "ID Verified" badge and the verified check-mark, because a badge sourced from a flag no user can earn asserts a completed check that never happened. The flag stays plumbed (the column is real) and renders nothing. **No replacement label was invented**: whether an approved beta provider gets a visible trust label is a Founder decision, open under OQ-035.
 - **QA rule:** lack of a self-service flow alone is **not** proof the badge is fraudulent; an admin/approved-process-managed state may be legitimate; an admin-set flag is **not automatically sufficient** evidence either. Undocumented process → **QUESTION / UNKNOWN — PRODUCT DECISION / TRUST-SAFETY DEFINITION REQUIRED**; flag any UI claim implying more than the actual process supports.
 - **Open decisions:** same as J9.
 
@@ -117,7 +117,7 @@ listed explicitly so they are not mistaken for defects (cross-check
 - **Steps — INTENDED (future `required` mode):** attempt transaction → if not verified, a **hard** verification gate → verify (J9/J10, both sides) → continue. `resolveVerificationGate(..., 'required')` already models `unverified_hard_block` without reshaping the journey.
 - **Expected end state (intended):** transactions require an identity-verified **client AND provider**; unverified identities are materially prevented from transacting.
 - **Current status:** the **beta education gate is live**; **real verification and hard enforcement are not built**; bookings can still be created without verification (intentional beta bypass). Provider-side gate is deferred.
-- **Open decisions:** the verification vendor/process, per-side sequencing, and any grace period. The placeholder "**14-day to verify**" copy is **UNDECIDED / PLACEHOLDER** and is **not** used by this gate — QA must flag any UI presenting it as established policy.
+- **Open decisions:** the verification vendor/process, per-side sequencing, and any grace period. The placeholder "**14-day to verify**" copy was **removed from the product** by Pre-Beta Correction 1 (2026-09-08) — it shipped in *provider go-live*, never in this gate. Whether a grace period should exist at all remains **UNDECIDED** (OQ-036); QA must flag any UI that reintroduces a verification timeframe, and `__tests__/guards/betaClaimsAbsent.test.ts` fails on one.
 
 ## J12 — Verified client → home-based / mobile (house-call) service booking  ·  **RESEARCH / PRODUCT DESIGN REQUIRED**
 - **Actor:** verified client + home-based/mobile provider.

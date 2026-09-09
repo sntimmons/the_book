@@ -166,6 +166,20 @@ export default function BookPolicy() {
             <PolicyLine tone="clock" text={policy.grace} />
           </View>
 
+          {/* PRODUCT TRUTH: these are the PROVIDER's terms, and a client is about
+              to tick a box agreeing to them — including percentages ("100% charge
+              for no-shows" is the platform DEFAULT when a provider has written no
+              policy of their own, `lib/policy.ts` DEFAULT_POLICY). The Book takes
+              no payment in this beta (PD-042), so it can neither charge nor
+              enforce any of it. The terms are shown unchanged — they are the
+              provider's to set and a client's to know — but the screen no longer
+              lets a percentage imply the platform will collect it. The wording of
+              the terms themselves is a legal/product question and is untouched. */}
+          <Text style={styles.feeNote}>
+            The Book does not take payment or collect these fees. Anything owed is
+            settled directly with your provider.
+          </Text>
+
           {/* Agree checkbox */}
           <TouchableOpacity
             style={[styles.checkboxRow, styles.checkboxRowTop]}
@@ -360,6 +374,13 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 18,
+  },
+  feeNote: {
+    marginTop: 14,
+    fontSize: 12,
+    lineHeight: 17,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
   },
   checkboxRow: {
     flexDirection: 'row',

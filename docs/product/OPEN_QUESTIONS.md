@@ -415,7 +415,8 @@ schema; the product rules around them do not. Each question below is separately 
 
 ### OQ-036 — Is the "14-day to verify" copy an approved policy?
 - **Area:** Houston Beta
-- **Why it matters:** `BETA_SCOPE.md` explicitly flags this copy as a **placeholder, not an approved product policy**, yet it is user-visible wording that reads as a commitment. It ships today at `app/onboarding/provider/golive.tsx:507` ("Complete verification within 14 days of going live.") — in **provider go-live onboarding**, which is why `USER_JOURNEYS.md` can correctly say the copy is not used by the booking gate without that meaning it is unshipped. *(Previously filed under `## Payments`; relocated to its declared area on 2026-09-03.)*
+- **Why it matters:** `BETA_SCOPE.md` explicitly flags this copy as a **placeholder, not an approved product policy**, yet it was user-visible wording that read as a commitment. **It no longer ships.** It ran at `app/onboarding/provider/golive.tsx` ("Complete verification within 14 days of going live.") — in **provider go-live onboarding**, which is why `USER_JOURNEYS.md` could correctly say the copy was not used by the booking gate without that meaning it was unshipped — until **Pre-Beta Correction 1 (2026-09-08)** removed it. The audit that found it recorded the sharper problem: it named a deadline for a task **no user can perform**, since no user-completable verification flow exists. *(Previously filed under `## Payments`; relocated to its declared area on 2026-09-03.)*
+- **Why it is still Open:** removing copy is not a ruling. Whether a verification grace period should exist, and of what length, is untouched by the removal — **a question is closed by a cited decision, never by a deletion.** The go-live screen now describes verification as a future capability with no timeframe, and `__tests__/guards/betaClaimsAbsent.test.ts` fails if any timeframe returns.
 - **Blocks:** nothing yet.
 - **Status:** Open
 

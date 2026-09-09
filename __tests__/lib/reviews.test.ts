@@ -39,21 +39,32 @@ describe('isRevealed', () => {
 describe('aggregateClientDimensions', () => {
   it('counts only answered boolean dimensions', () => {
     const stats = aggregateClientDimensions([
-      { showedUp: true, onTime: true, followedPolicy: null, paymentCompleted: undefined },
-      { showedUp: true, onTime: false, followedPolicy: true, paymentCompleted: null },
-      { showedUp: false, onTime: null, followedPolicy: true, paymentCompleted: undefined },
+      { showedUp: true, onTime: true, followedPolicy: null },
+      { showedUp: true, onTime: false, followedPolicy: true },
+      { showedUp: false, onTime: null, followedPolicy: true },
     ])
     expect(stats.showedUp).toEqual({ yes: 2, total: 3 })
     expect(stats.onTime).toEqual({ yes: 1, total: 2 }) // one null ignored
     expect(stats.followedPolicy).toEqual({ yes: 2, total: 2 })
-    expect(stats.paymentCompleted).toEqual({ yes: 0, total: 0 }) // all unanswered
     expect(stats.hasAny).toBe(true)
   })
 
   it('reports hasAny=false when nothing is answered', () => {
     const stats = aggregateClientDimensions([
-      { showedUp: null, onTime: null, followedPolicy: null, paymentCompleted: null },
+      { showedUp: null, onTime: null, followedPolicy: null },
     ])
+    expect(stats.hasAny).toBe(false)
+  })
+
+  // PRODUCT TRUTH: the payment dimension is gone from the aggregate, not merely
+  // hidden. A legacy `payment_completed` answer on an old row must not revive
+  // the accountability card on its own — the provider would open a "client
+  // history" panel that renders no rows. Pinned so a re-add is a test failure.
+  it('does not expose a payment dimension, and a legacy payment answer alone is not history', () => {
+    const stats = aggregateClientDimensions([
+      { showedUp: null, onTime: null, followedPolicy: null },
+    ])
+    expect(stats).not.toHaveProperty('paymentCompleted')
     expect(stats.hasAny).toBe(false)
   })
 })

@@ -31,7 +31,14 @@ const SLIDES = [
   {
     pill: false,
     headline: 'Book with confidence. Every time.',
-    subtext: 'Protected payments. Verified providers.\nReal reviews from real clients.',
+    // PRODUCT TRUTH: this line previously read "Protected payments. Verified
+    // providers." Neither exists in the closed beta — there is no payment
+    // processing (PD-042) and no user-completable identity verification
+    // (PD-004). It now names the one trust mechanism that IS live and
+    // server-enforced: reviews come only from completed bookings, in both
+    // directions. Do not reintroduce a payment or verification claim here
+    // without the capability behind it (__tests__/guards/betaClaimsAbsent.test.ts).
+    subtext: 'Reviews only from completed bookings.\nBoth sides rate each other.',
   },
   {
     pill: false,

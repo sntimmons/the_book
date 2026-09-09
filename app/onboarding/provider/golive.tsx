@@ -66,7 +66,6 @@ export default function ProviderGoLive() {
     bookingCount: 0,
     followerCount: 0,
     followingCount: 0,
-    isVerified: false,
     isLive: false,
   }
 
@@ -501,10 +500,17 @@ export default function ProviderGoLive() {
 
       {/* Fixed bottom */}
       <View style={[styles.bottom, { paddingBottom: insets.bottom + 16 }]}>
+        {/* PRODUCT TRUTH (OQ-036): this previously read "Complete verification
+            within 14 days of going live." There is no user-completable identity
+            verification flow and no approved 14-day policy, so that sentence
+            named a deadline for a task nobody can perform. It describes a FUTURE
+            capability now, not a current obligation, and carries no date. The
+            clock icon went with the deadline. Do not reintroduce a timeframe
+            here (__tests__/guards/betaClaimsAbsent.test.ts). */}
         <View style={styles.verifyNote}>
-          <Feather name="clock" size={13} color="#C8922A" />
+          <Feather name="shield" size={13} color="#C8922A" />
           <Text style={styles.verifyText}>
-            Complete verification within 14 days of going live.
+            Identity verification is coming soon. You can go live now.
           </Text>
         </View>
 

@@ -243,11 +243,15 @@ export default function BookingDetailScreen() {
 
   function handleCancel() {
     const byProvider = isProvider
+    // PRODUCT TRUTH: the client branch read "Your deposit protection terms
+    // apply." No deposit is ever taken and no protection exists (PD-042). The
+    // provider branch promised the client "will be notified"; there is no push
+    // channel (PD-059), only an in-app update.
     Alert.alert(
       'Cancel Booking',
       byProvider
-        ? 'Cancel this appointment? The client will be notified.'
-        : 'Cancel this appointment? Your deposit protection terms apply.',
+        ? 'Cancel this appointment? The client will see this in The Book.'
+        : 'Cancel this appointment? This cannot be undone.',
       [
         { text: 'Keep', style: 'cancel' },
         {
@@ -490,25 +494,20 @@ function PaymentBadge({ status }: { status: string | null }) {
   if (!status) return null
   if (status === 'unpaid') {
     return (
+      // PRODUCT TRUTH: "Not charged yet" implied a charge was still to come.
       <View style={[styles.payBadge, styles.payBadgeNeutral]}>
-        <Text style={styles.payBadgeTextNeutral}>Not charged yet</Text>
+        <Text style={styles.payBadgeTextNeutral}>No in-app payment</Text>
       </View>
     )
   }
-  if (status === 'captured') {
-    return (
-      <View style={[styles.payBadge, styles.payBadgePaid]}>
-        <Text style={styles.payBadgeTextPaid}>Paid</Text>
-      </View>
-    )
-  }
-  if (status === 'authorized') {
-    return (
-      <View style={[styles.payBadge, styles.payBadgeAuthorized]}>
-        <Text style={styles.payBadgeTextAuthorized}>Authorized</Text>
-      </View>
-    )
-  }
+  // PRODUCT TRUTH: two further branches rendered "Paid" (`captured`) and
+  // "Authorized" (`authorized`) — badges asserting that The Book observed a
+  // payment being captured or authorized. It observes neither (PD-042). They
+  // were unreachable for any row this app creates (the only writer is
+  // `payment_status: 'unpaid'` in app/book/payment.tsx), but a seeded, migrated
+  // or hand-edited row would have flipped them on, and the badge would have been
+  // the strongest payment claim in the product. Removed rather than left as
+  // dormant scaffolding. Any status other than 'unpaid' now renders nothing.
   return null
 }
 
@@ -812,22 +811,6 @@ const styles = StyleSheet.create({
   payBadgeTextNeutral: {
     fontSize: 10,
     color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-  },
-  payBadgePaid: {
-    backgroundColor: 'rgba(76,175,80,0.1)',
-  },
-  payBadgeTextPaid: {
-    fontSize: 10,
-    color: '#4CAF50',
-    fontFamily: 'Manrope_500Medium',
-  },
-  payBadgeAuthorized: {
-    backgroundColor: 'rgba(200,146,42,0.1)',
-  },
-  payBadgeTextAuthorized: {
-    fontSize: 10,
-    color: '#C8922A',
     fontFamily: 'Manrope_500Medium',
   },
 

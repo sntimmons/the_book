@@ -27,6 +27,12 @@ import {
   rowsToPolicy,
 } from '@/lib/policy'
 
+// PRODUCT TRUTH: policy fees are the PROVIDER's terms, not a platform charge.
+// The Book processes no payment in the closed beta (PD-042), so no helper beside
+// a fee field may say the fee is "charged" without saying by whom and how.
+const POLICY_FEE_COLLECTION_NOTE =
+  'The Book does not collect this — you settle it with your client.'
+
 export type PolicyMode = 'onboarding' | 'dashboard'
 
 type DropdownKey = keyof typeof POLICY_OPTIONS
@@ -362,7 +368,15 @@ export default function PolicyEditor({
             />
             <Text style={styles.inputSuffix}>%</Text>
           </View>
-          <Text style={styles.helper}>Percentage of service price charged if cancelled after the window.</Text>
+          {/* PRODUCT TRUTH: "charged" reads as though The Book collects the
+              fee. It does not — the platform takes no payment in this beta
+              (PD-042). These are the provider's own terms, stated to the client
+              and settled between them. The terms themselves are unchanged; only
+              the implication that the platform enforces them is removed. */}
+          <Text style={styles.helper}>
+            Percentage of service price you charge if cancelled after the window.
+            {' '}{POLICY_FEE_COLLECTION_NOTE}
+          </Text>
 
           <View style={styles.fieldGap} />
 
@@ -378,7 +392,10 @@ export default function PolicyEditor({
             />
             <Text style={styles.inputSuffix}>%</Text>
           </View>
-          <Text style={styles.helper}>Percentage of service price charged if client does not show up.</Text>
+          <Text style={styles.helper}>
+            Percentage of service price you charge if the client does not show up.
+            {' '}{POLICY_FEE_COLLECTION_NOTE}
+          </Text>
         </View>
 
         {/* ── RESCHEDULE ── */}
@@ -419,7 +436,10 @@ export default function PolicyEditor({
                   placeholderTextColor="rgba(240,232,213,0.2)"
                 />
               </View>
-              <Text style={styles.helper}>Charged when rescheduled within the window.</Text>
+              <Text style={styles.helper}>
+                What you charge when rescheduled within the window.
+                {' '}{POLICY_FEE_COLLECTION_NOTE}
+              </Text>
             </View>
           )}
 

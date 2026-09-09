@@ -223,10 +223,40 @@ reputation (incl. no-show and cancellation signals), safety/report system, moder
 reputation ranking, review editing, free-text policy change.
 
 *Already SHIPPED, and therefore NOT in the list above (pre-dates Phase 1 — do not read these as
-unapproved scope):* the provider review form's four typed accountability booleans on
-`client_reviews` (`showed_up` / `on_time` / `followed_policy` / `payment_completed`) and the
+unapproved scope):* the provider review form's typed accountability booleans on
+`client_reviews` (`showed_up` / `on_time` / `followed_policy`) and the
 client reputation summary a provider sees on a booking request, aggregated by
 `aggregateClientDimensions()`. What Phase 2 would add is the shared signal *vocabulary*, not
 these existing typed columns.
+
+**There were FOUR, and the fourth is gone.** `payment_completed` — asked as *"Was payment
+completed?"* and shown back to providers as a "Payment" statistic on a client — was removed by
+**Pre-Beta Correction 1 (2026-09-08), on a direct Founder instruction** naming these three files
+and this concept. **That instruction is the authority for the change, not PD-042.** PD-042 is why
+the claim is unsupportable; only a ruling can decide that a review dimension goes. Recorded
+explicitly because a QA review of the slice raised exactly this: citing a payments decision as
+authority for a reviews-model change would be closing a question by deletion, which
+[OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) forbids.
+
+**Why this dimension and not the other three**, since the reasoning has to distinguish them or it
+proves too much. `showed_up`, `on_time` and `followed_policy` are provider self-reports too — but
+each is anchored to something the booking record actually holds: a scheduled time, a completion
+event, and a policy the client agreed to. Payment is the only one with **no counterpart record
+anywhere in the system**, on a platform whose own copy now tells both parties it takes no payment.
+It is the one question the product cannot situate at all.
+
+**The question, the write, the aggregate AND the read are all removed; the column is NOT dropped.**
+`payment_completed` is no longer selected, typed or mapped — the PD-069 treatment of
+`barter_offers.offering_value`, whose guard states the principle: the surest way for a value never
+to reach a screen is for the read never to ask for it. No migration is involved and pre-existing
+answers are untouched in the database. The dimension is excluded from `hasAny`, so a legacy
+payment answer alone cannot make the accountability card render with nothing in it.
+
+**Eligibility, the 7-day window, blind reveal and the reveal gates are untouched.**
+
+> **OPEN, and not closed by this removal.** Whether client accountability should include a
+> payment-completion signal once payments exist is **undecided**. This slice removed an
+> unsupportable claim; it did not rule on the shape of the dimension set. Reviews Phase 2 owns
+> that question.
 
 *(The persistent provider→client CTA moved OUT of this list — it shipped in Phase 1 above.)*

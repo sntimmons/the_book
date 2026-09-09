@@ -78,13 +78,17 @@ export default function BookService() {
         </View>
       </View>
 
-      {/* Trust badge */}
+      {/* PRODUCT TRUTH: this badge read "Only charged when your provider says
+          yes" beside a padlock and "Secure booking". Both claimed a payment
+          system that does not exist — nothing is ever charged, and "secure"
+          there meant payment protection, not account security. Replaced with
+          what is actually true of a beta booking (PD-042). */}
       <View style={styles.trustBadge}>
         <Feather name="shield" size={12} color="#4CAF50" />
-        <Text style={styles.trustBadgeMain}>Only charged when your provider says yes</Text>
+        <Text style={styles.trustBadgeMain}>No in-app payment in this beta</Text>
         <View style={styles.trustDot} />
-        <Feather name="lock" size={12} color="rgba(240,232,213,0.3)" />
-        <Text style={styles.trustBadgeSub}>Secure booking</Text>
+        <Feather name="user" size={12} color="rgba(240,232,213,0.3)" />
+        <Text style={styles.trustBadgeSub}>Pay your provider directly</Text>
       </View>
 
       {/* Services list */}

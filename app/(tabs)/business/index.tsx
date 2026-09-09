@@ -329,7 +329,9 @@ export default function ProviderDashboard() {
   function handleDecline(booking: BookingRequest) {
     Alert.alert(
       'Decline Booking',
-      'Are you sure? The client will be notified and no charge will be made.',
+      // PRODUCT TRUTH: promised a notification (no push channel exists, PD-059)
+      // and implied a charge would otherwise have been made (none ever is).
+      'Are you sure? The client will see this in The Book.',
       [
         { text: 'Keep', style: 'cancel' },
         {

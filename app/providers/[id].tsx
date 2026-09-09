@@ -262,7 +262,6 @@ export default function ProviderProfilePage() {
     bookingCount: provider.total_bookings ?? 0,
     followerCount: followerCount,
     followingCount: 0,
-    isVerified: provider.identity_verified,
     isLive: false,
   }
 

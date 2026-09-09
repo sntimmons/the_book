@@ -38,7 +38,6 @@ interface Reel {
   providerCategory: string
   providerNeighborhood: string
   providerAvatarUrl?: string
-  providerVerified: boolean
   providerAvailable: boolean
   caption: string
   likes: number
@@ -115,7 +114,6 @@ async function fetchReels(): Promise<Reel[]> {
           p.category_id != null ? categoryNames.get(p.category_id) ?? '' : '',
         providerNeighborhood: p.neighborhood ?? '',
         providerAvatarUrl: p.profile_photo_url ?? undefined,
-        providerVerified: !!p.identity_verified,
         // No real-time availability signal on the posts feed yet; do not
         // fabricate one.
         providerAvailable: false,

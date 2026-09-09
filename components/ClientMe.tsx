@@ -688,7 +688,7 @@ function CareHubCard() {
       <View style={styles.flex1}>
         <Text style={styles.hubTitle}>Care Hub</Text>
         <Text style={styles.hubSub}>
-          Your appointments, saved providers, spending, and rebook reminders.
+          Your appointments, saved providers, booking history, and rebook reminders.
         </Text>
       </View>
       <Feather name="chevron-right" size={20} color="rgba(240,232,213,0.3)" />

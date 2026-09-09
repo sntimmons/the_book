@@ -24,7 +24,6 @@ export default function BookConfirmed() {
   const displayProviderName = providerName || 'Your provider'
   const firstName = displayProviderName.split(' ')[0]
 
-  const responseWindow = '24 hours'
   const bookingSummary = [
     selectedService?.name ?? 'Service',
     selectedDate || '',
@@ -63,16 +62,31 @@ export default function BookConfirmed() {
         <Text style={styles.headline}>You're almost in.</Text>
 
         {/* Subtext */}
+        {/* PRODUCT TRUTH: "You'll be notified as soon as they respond" promised
+            a push notification. There is no push channel in this beta (PD-059);
+            a response appears in the app. */}
         <Text style={styles.subtext}>
           Your booking request has been sent. {firstName} will review it and
-          accept or decline. You'll be notified as soon as they respond.
+          accept or decline. You&apos;ll see their response in The Book.
         </Text>
 
-        {/* Response timer */}
-        <View style={styles.responseTimer}>
-          <Feather name="clock" size={13} color="#C8922A" />
-          <Text style={styles.responseTimerText}>{firstName} has {responseWindow} to respond</Text>
-        </View>
+        {/* PRODUCT TRUTH: a "has 24 hours to respond" timer used to sit here,
+            driven by a hardcoded string, and told the CLIENT that a response was
+            guaranteed within a window.
+
+            BE PRECISE ABOUT WHAT IS AND IS NOT ENFORCED, because an earlier
+            version of this comment said "nothing expires a pending booking" and
+            that is wrong. There is no server-side expiry — no trigger, no job,
+            no column, and a pending booking sits pending forever in the
+            database. But the PROVIDER's controls do expire client-side at 24h
+            from `created_at`: app/(tabs)/business/index.tsx disables Accept and
+            Decline, and app/bookings/request/[id].tsx says the request "has
+            expired". So the window is real UI behaviour on one side and no
+            guarantee on the other, which is exactly why a promise to the client
+            was the wrong thing to make. Removed rather than restated with a
+            different number. Whether the client should be told about a window
+            the provider is held to is a Founder question, recorded, not decided
+            here. */}
 
         {/* Booking summary pill */}
         {bookingSummary.length > 0 && (
@@ -84,10 +98,11 @@ export default function BookConfirmed() {
           </View>
         )}
 
-        {/* No-payment reassurance */}
-        <View style={styles.depositConfirm}>
+        {/* No-payment reassurance. PRODUCT TRUTH: previously "No payment taken
+            until the provider accepts", which implied a charge on acceptance. */}
+        <View style={styles.noPaymentBox}>
           <Feather name="shield" size={13} color="#4CAF50" />
-          <Text style={styles.depositConfirmText}>No payment taken until the provider accepts</Text>
+          <Text style={styles.noPaymentText}>No in-app payment in this beta</Text>
         </View>
 
         {/* What happens next */}
@@ -98,19 +113,24 @@ export default function BookConfirmed() {
             {
               n: '1',
               title: 'Provider reviews your request',
-              desc: `${firstName} will review your profile and confirm or suggest an alternative time. They have 24 hours to respond.`,
+              // No response deadline is stated: none is enforced anywhere.
+              desc: `${firstName} will review your profile and confirm or suggest an alternative time.`,
               green: false,
             },
             {
               n: '2',
-              title: 'You get notified instantly',
-              desc: `The moment ${firstName} responds you get a notification — whether they accept, decline, or suggest another time.`,
+              // PRODUCT TRUTH: was "You get notified instantly" / "you get a
+              // notification". No push, device or email notification exists.
+              title: 'You see their answer in The Book',
+              desc: `When ${firstName} responds you will see it in your bookings — whether they accept, decline, or suggest another time.`,
               green: false,
             },
             {
               n: '3',
-              title: 'No payment upfront',
-              desc: `No payment is taken until ${firstName} accepts and your service is completed.`,
+              // PRODUCT TRUTH: was "No payment upfront" / "No payment is taken
+              // until ... accepts", both of which implied a later in-app charge.
+              title: 'No in-app payment',
+              desc: `The Book does not take payment in this beta. You arrange payment directly with ${firstName}.`,
               green: true,
             },
           ].map((step) => (
@@ -223,26 +243,14 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
   },
-  responseTimer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 16,
-  },
-  responseTimerText: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  depositConfirm: {
+  noPaymentBox: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     justifyContent: 'center',
     marginTop: 16,
   },
-  depositConfirmText: {
+  noPaymentText: {
     fontSize: 12,
     color: 'rgba(240,232,213,0.5)',
     fontFamily: 'Manrope_400Regular',

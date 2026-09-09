@@ -168,7 +168,9 @@ export default function BookingRequestScreen() {
   }
 
   function handleDecline() {
-    Alert.alert('Decline Request', 'Decline this booking request? The client will be notified.', [
+    // PRODUCT TRUTH: "The client will be notified" promised a notification
+    // channel that does not exist (PD-059 — no push, device or email path).
+    Alert.alert('Decline Request', 'Decline this booking request? The client will see this in The Book.', [
       { text: 'Keep', style: 'cancel' },
       {
         text: 'Decline',
@@ -318,8 +320,12 @@ export default function BookingRequestScreen() {
           <View style={s.card}>
             <DimStatRow label="Showed up" stat={dimStats.showedUp} />
             <DimStatRow label="On time" stat={dimStats.onTime} />
+            {/* PRODUCT TRUTH: a "Payment" row used to sit here, aggregated
+                from the provider review question "Was payment completed?".
+                The Book neither processes nor records payment (PD-042), so
+                presenting it as platform-held client accountability data was
+                unsupported. Both the question and this row are gone. */}
             <DimStatRow label="Followed policy" stat={dimStats.followedPolicy} />
-            <DimStatRow label="Payment" stat={dimStats.paymentCompleted} />
           </View>
         )}
 

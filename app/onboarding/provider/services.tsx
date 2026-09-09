@@ -16,6 +16,7 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useProviderStore } from '@/store/providerStore'
+import { DEPOSIT_NOT_CHARGED_NOTE } from '@/lib/policy'
 
 const DURATION_PILLS = ['30 min', '45 min', '1 hr', '1.5 hr', '2 hr', '3 hr', '4 hr+', 'Custom']
 
@@ -397,7 +398,12 @@ export default function ProviderServices() {
                 <View style={styles.depositToggleRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.depositToggleTitle}>Deposit required</Text>
-                    <Text style={styles.depositToggleSub}>Charged at booking confirmation</Text>
+                    {/* PRODUCT TRUTH: read "Charged at booking confirmation".
+                        Nothing is charged in this beta (PD-042); the value is
+                        stored configuration only. */}
+                    <Text style={styles.depositToggleSub}>
+                      Not charged in this beta — you arrange payment with your client
+                    </Text>
                   </View>
                   <Switch
                     value={draftDepositRequired}
@@ -424,7 +430,12 @@ export default function ProviderServices() {
                         placeholderTextColor="rgba(240,232,213,0.25)"
                       />
                     </View>
-                    <Text style={styles.helper}>Deducted from total at appointment.</Text>
+                    {/* PRODUCT TRUTH: "Deducted from total at appointment"
+                        describes a two-stage payment schedule the product does
+                        not have — the same construct removed from
+                        app/post-booking/accepted.tsx. Nothing is collected, so
+                        nothing is deducted (PD-042). */}
+                    <Text style={styles.helper}>{DEPOSIT_NOT_CHARGED_NOTE}</Text>
                   </View>
                 )}
               </View>

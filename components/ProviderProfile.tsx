@@ -42,7 +42,6 @@ export interface ProviderData {
   bookingCount?: number
   followerCount?: number
   followingCount?: number
-  isVerified?: boolean
   isLive?: boolean
 }
 
@@ -73,7 +72,6 @@ const MOCK_PROVIDER: ProviderData = {
   bookingCount: 0,
   followerCount: 0,
   followingCount: 0,
-  isVerified: false,
   isLive: true,
 }
 
@@ -178,11 +176,15 @@ export default function ProviderProfile({
                 )}
               </View>
             )}
-            {provider.isVerified && (
-              <View style={styles.verifiedBadge}>
-                <Feather name="check" size={10} color="#080808" />
-              </View>
-            )}
+            {/* PRODUCT TRUTH: the verified check-mark overlay was drawn from
+                `isVerified` (providers.identity_verified). No user-completable
+                identity-verification process exists (PD-004), so nothing has
+                been verified and the mark asserted a completed check that never
+                happened. Marketplace approval / founder curation is NOT identity
+                verification and must not borrow its iconography. The flag is
+                still plumbed because the column is real; it renders nothing
+                until a real process stands behind it. See the badge strip below
+                and __tests__/guards/betaClaimsAbsent.test.ts. */}
             {provider.isLive && (
               <View style={styles.liveBadge}>
                 <Text style={styles.liveBadgeText}>LIVE</Text>
@@ -273,16 +275,21 @@ export default function ProviderProfile({
           contentContainerStyle={styles.badgesRow}
           style={styles.badgesScroll}
         >
+          {/* PRODUCT TRUTH: an "ID Verified" badge used to render here whenever
+              `isVerified` was true, directly beside "Verification coming soon" —
+              two contradictory claims in one strip, and the affirmative one was
+              unsupported. There is no government-ID, selfie, liveness or
+              third-party verification flow in this beta, so no provider can have
+              completed one. Removed rather than reworded: a weaker word for the
+              same unproven claim is still the claim.
+
+              NO REPLACEMENT TRUST LABEL IS INVENTED HERE. Whether approved beta
+              providers should carry a visible trust label, and what it may say,
+              is a Founder decision (OQ-035) and is deliberately left open. */}
           <View style={[styles.badge, styles.badgeMuted]}>
             <Feather name="clock" size={12} color="rgba(240,232,213,0.4)" />
             <Text style={styles.badgeText}>Verification coming soon</Text>
           </View>
-          {provider.isVerified && (
-            <View style={[styles.badge, styles.badgeGreen]}>
-              <Feather name="shield" size={12} color="#4CAF50" />
-              <Text style={styles.badgeText}>ID Verified</Text>
-            </View>
-          )}
           <View style={[styles.badge, styles.badgeMuted]}>
             <Feather name="scissors" size={12} color="rgba(240,232,213,0.4)" />
             <Text style={styles.badgeText}>{provider.category}</Text>
@@ -329,9 +336,16 @@ export default function ProviderProfile({
                         {s.duration ? (
                           <Text style={styles.serviceDuration}>{s.duration}</Text>
                         ) : null}
+                        {/* PRODUCT TRUTH: a shield icon used to sit beside this
+                            deposit amount — protection iconography on a deposit
+                            that is never taken (PD-042). Both provider-facing
+                            deposit surfaces carry a not-charged qualifier; the
+                            client-facing one carried a protection symbol
+                            instead. Icon changed, amount kept: the provider's
+                            stated terms are real, the protection is not. */}
                         {s.depositRequired && s.depositAmount ? (
                           <View style={styles.depositRow}>
-                            <Feather name="shield" size={10} color="#C8922A" />
+                            <Feather name="tag" size={10} color="#C8922A" />
                             <Text style={styles.depositText}>Deposit: ${s.depositAmount}</Text>
                           </View>
                         ) : null}
@@ -590,19 +604,6 @@ const styles = StyleSheet.create({
     color: '#080808',
     fontFamily: 'Manrope_700Bold',
   },
-  verifiedBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#C8922A',
-    borderWidth: 2,
-    borderColor: '#080808',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   liveBadge: {
     position: 'absolute',
     top: 0,
@@ -743,10 +744,6 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
     borderRadius: 20,
     borderWidth: 1,
-  },
-  badgeGreen: {
-    backgroundColor: 'rgba(76,175,80,0.08)',
-    borderColor: 'rgba(76,175,80,0.2)',
   },
   badgeMuted: {
     backgroundColor: 'rgba(240,232,213,0.05)',

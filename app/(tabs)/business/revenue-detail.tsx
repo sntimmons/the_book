@@ -332,7 +332,10 @@ export default function RevenueDetail() {
                   <Text style={s.clientName}>{c.name}</Text>
                   <Text style={s.clientMeta}>{c.visitCount} visits</Text>
                 </View>
-                <Text style={s.ltv}>{money(c.totalSpent)} LTV</Text>
+                {/* PRODUCT TRUTH: was "{'{'}amount{'}'} LTV", which reads as money the
+                    client has paid. It is the agreed price of their completed
+                    bookings; The Book never sees a payment (PD-042). */}
+                <Text style={s.ltv}>{money(c.totalSpent)} booked</Text>
               </View>
             ))}
             {data.clients.length > 0 && (

@@ -39,7 +39,6 @@ export interface RevealedReview {
   showedUp?: boolean | null
   onTime?: boolean | null
   followedPolicy?: boolean | null
-  paymentCompleted?: boolean | null
 }
 
 export interface ReviewAggregate {
@@ -126,7 +125,7 @@ export async function fetchRevealedClientReviews(
   const { data: rows, error } = await supabase
     .from('client_reviews')
     .select(
-      'id, booking_id, reviewer_provider_id, rating, review_text, tags, created_at, showed_up, on_time, followed_policy, payment_completed',
+      'id, booking_id, reviewer_provider_id, rating, review_text, tags, created_at, showed_up, on_time, followed_policy',
     )
     .eq('client_user_id', clientUserId)
 
@@ -151,7 +150,6 @@ export async function fetchRevealedClientReviews(
     showed_up: boolean | null
     on_time: boolean | null
     followed_policy: boolean | null
-    payment_completed: boolean | null
   }>
   if (reviews.length === 0) return { reviews: [], rlsBlocked: false }
 
@@ -202,7 +200,6 @@ export async function fetchRevealedClientReviews(
       showedUp: r.showed_up,
       onTime: r.on_time,
       followedPolicy: r.followed_policy,
-      paymentCompleted: r.payment_completed,
     })),
     rlsBlocked: false,
   }
@@ -219,17 +216,38 @@ export interface ClientDimensionStats {
   showedUp: ClientDimensionStat
   onTime: ClientDimensionStat
   followedPolicy: ClientDimensionStat
-  paymentCompleted: ClientDimensionStat
   hasAny: boolean
 }
 
-// Aggregate the four boolean dimensions across a client's revealed reviews.
-// `total` counts only answered (true/false) entries, so a client with no
-// structured data yet yields hasAny=false rather than fake zeros.
+// Aggregate the boolean accountability dimensions across a client's revealed
+// reviews. `total` counts only answered (true/false) entries, so a client with
+// no structured data yet yields hasAny=false rather than fake zeros.
+//
+// PRODUCT TRUTH: this used to aggregate a FOURTH dimension, `paymentCompleted`,
+// asked as "Was payment completed?" and fed to a "Payment" statistic on the
+// provider's view of a client. The Book processes no payment and holds no
+// payment record (PD-042), so a platform-presented payment-completion statistic
+// asserted an accountability fact the product cannot establish. Removed on
+// Founder instruction (Pre-Beta Correction 1, 2026-09-08).
+//
+// WHY THIS ONE AND NOT THE OTHER THREE, stated because the distinction is the
+// whole justification: `showed_up`, `on_time` and `followed_policy` are also
+// provider self-reports, but each is anchored to something the booking record
+// actually holds — a scheduled time, a completion event, and a policy the client
+// agreed to. Payment is the only one with no counterpart record anywhere in the
+// system, on a platform whose own copy now tells both parties it takes no
+// payment. It is the one question the product cannot situate at all.
+//
+// THE READ PATH IS GONE TOO, not just the write. `payment_completed` is no
+// longer selected, no longer typed on the row shape and no longer mapped onto
+// `RevealedReview` — the PD-069 treatment of `barter_offers.offering_value`,
+// whose guard puts it plainly: the surest way for a value never to reach a
+// screen is for the read never to ask for it. THE COLUMN IS NOT DROPPED; no
+// migration is involved and pre-existing answers are untouched in the database.
+// An earlier revision of this comment claimed PD-069 parity while still
+// selecting the column, which was the opposite of that precedent.
 export function aggregateClientDimensions(
-  reviews: Array<
-    Pick<RevealedReview, 'showedUp' | 'onTime' | 'followedPolicy' | 'paymentCompleted'>
-  >,
+  reviews: Array<Pick<RevealedReview, 'showedUp' | 'onTime' | 'followedPolicy'>>,
 ): ClientDimensionStats {
   const tally = (
     pick: (r: (typeof reviews)[number]) => boolean | null | undefined,
@@ -249,11 +267,9 @@ export function aggregateClientDimensions(
   const showedUp = tally((r) => r.showedUp)
   const onTime = tally((r) => r.onTime)
   const followedPolicy = tally((r) => r.followedPolicy)
-  const paymentCompleted = tally((r) => r.paymentCompleted)
-  const hasAny =
-    showedUp.total + onTime.total + followedPolicy.total + paymentCompleted.total > 0
+  const hasAny = showedUp.total + onTime.total + followedPolicy.total > 0
 
-  return { showedUp, onTime, followedPolicy, paymentCompleted, hasAny }
+  return { showedUp, onTime, followedPolicy, hasAny }
 }
 
 export function aggregateFromRevealed(reviews: { rating: number }[]): ReviewAggregate {

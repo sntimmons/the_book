@@ -53,8 +53,14 @@ interface AcceptedData {
   dateLabel: string | null
   timeLabel: string | null
   requestedDateIso: string | null
-  depositAmount: number
-  balanceAmount: number | null
+  // PRODUCT TRUTH: this screen used to describe `bookings.payment_amount` as a
+  // "deposit" with a remaining "balance at appointment". Neither concept is
+  // real — `payment_amount` is the agreed SERVICE PRICE recorded on the
+  // booking, no deposit is ever taken, and The Book collects nothing at any
+  // point (PD-042). The field is named for what it actually holds, and the
+  // balance was removed rather than relabelled: it encoded a two-stage payment
+  // schedule that does not exist.
+  agreedAmount: number
 }
 
 function formatDate(iso: string | null): string | null {
@@ -166,9 +172,7 @@ export default function BookingAccepted() {
         serviceDurationMinutes = service?.duration_minutes ?? null
       }
 
-      const deposit = Number(booking.payment_amount ?? 0)
-      const balance =
-        servicePrice != null && servicePrice > deposit ? servicePrice - deposit : null
+      const agreedAmount = Number(booking.payment_amount ?? 0)
 
       setData({
         providerName: provider.display_name ?? 'Provider',
@@ -181,8 +185,7 @@ export default function BookingAccepted() {
         dateLabel: formatDate(booking.requested_date),
         timeLabel: booking.requested_time,
         requestedDateIso: booking.requested_date,
-        depositAmount: deposit,
-        balanceAmount: balance,
+        agreedAmount,
       })
     } catch (err) {
       console.log('Accepted load error:', err)
@@ -257,8 +260,8 @@ export default function BookingAccepted() {
         location: data.providerLocation ?? undefined,
         notes:
           'Booked on The Book.' +
-          (data.depositAmount > 0
-            ? ' Deposit due: ' + money(data.depositAmount) + '.'
+          (data.agreedAmount > 0
+            ? ' Agreed price: ' + money(data.agreedAmount) + '. Pay your provider directly.'
             : ''),
       })
 
@@ -370,7 +373,7 @@ export default function BookingAccepted() {
 
           <Text style={styles.subtext}>
             {data.providerName.split(' ')[0]} confirmed your booking.{'\n'}
-            Your {money(data.depositAmount)} deposit is not charged yet.
+            The Book does not take payment — settle up with them directly.
           </Text>
 
           <View style={styles.card}>
@@ -425,16 +428,14 @@ export default function BookingAccepted() {
 
             <View style={styles.depositRow}>
               <View style={styles.depositLeft}>
-                <Feather name="clock" size={13} color="#B9A88F" />
+                <Feather name="tag" size={13} color="#B9A88F" />
                 <Text style={styles.depositText}>
-                  {money(data.depositAmount)} deposit — not charged yet
+                  {money(data.agreedAmount)} agreed price
                 </Text>
               </View>
-              {data.balanceAmount != null && (
-                <Text style={styles.balanceText}>
-                  Balance: {money(data.balanceAmount)} at appointment
-                </Text>
-              )}
+              {/* Instruction, not a record: "Paid directly to your provider"
+                  beside an amount read as a statement that payment happened. */}
+              <Text style={styles.balanceText}>Pay your provider directly</Text>
             </View>
           </View>
 
