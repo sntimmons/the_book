@@ -139,10 +139,12 @@ Migrations: `20260902000000` (Phase 0 foundation), `20260903000000` (opportunity
 
 Docs: **[supabase/tests/README.md](../../supabase/tests/README.md)**.
 
-**Migration ledger.** The repository holds **68 migration files** — counted from
+**Migration ledger.** The repository holds **75 migration files** — counted from
 `supabase/migrations/*.sql`, newest
-`20261029000000_offering_value_comment_precision.sql` — and
-that part is repository-provable. Ten files, `20260917000000` … `20260926000000`, are Slice 3a
+`20261036000000_signature_immutability_and_review_corrections.sql` — and
+that part is repository-provable. **The last seven, `20261030000000` … `20261036000000`, are
+Pre-Beta Correction 2** (security and authorization) and are described in § Security posture
+below; the paragraph that follows describes the 68 that preceded them and is unchanged. Ten files, `20260917000000` … `20260926000000`, are Slice 3a
 (PR #49); four files, `20260927000000` … `20260930000000`, are Agreement Finalization (PR #50);
 two files, `20261001000000` … `20261002000000`, are Proposal Timing Extension (PR #52);
 `20261003000000` is the Barter Obligations Foundation (PR #54); `20261004000000` is
@@ -222,6 +224,79 @@ edited historical file. Process and the dated record:
 > `public.enforce_barter_obligations_immutable`'s at `20261011000000`
 > ([MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) § "Functions redefined across
 > migrations").
+
+
+### Security posture — Pre-Beta Correction 2 (2026-09-08)
+
+**Bounded update by the correction slice itself, not by a Steward reconciliation.** It records
+only the security facts that changed; the `Reconciled against:` anchor at the head of this
+document is deliberately NOT moved, because moving it would assert that every other claim below
+was re-verified at this commit, and it was not.
+
+Five authorization defects were **reproduced at runtime** against the non-production project
+before being fixed, and re-verified after. Three of them looked correct in the application code,
+which is why they had survived:
+
+- **`providers` was world-readable, every column.** An anonymous caller holding only the public
+  anon key — which ships inside the mobile bundle by design — read all 49 columns, including
+  `verification_notes` ("Private admin moderation notes"), `stripe_account_id`, `no_show_count`
+  and `late_count`. `hooks/useProviders.ts` carried a comment forbidding `select('*')` here and
+  naming those very columns; **a comment in the client is not a boundary**, and anyone could issue
+  the query it asked our own code not to issue. The surface is now a **column-level SELECT grant**:
+  28 public columns to `anon` and `authenticated`, **21 to `service_role` alone**. Row-level
+  security decides which rows a caller may read and cannot hide a column — the same reasoning
+  `20261019000000` already applied to the adjudication table.
+- **A contract could be created for someone else's provider row.** The INSERT policy asserted only
+  that the caller was *some* provider, and UPDATE had no `WITH CHECK` at all. Reproduced: provider
+  B created a contract owned by provider A and, because `provider_id` is UNIQUE, **denied A their
+  own contract slot**. Both write paths are now bound to a `providers` row the caller owns.
+- **The client contract-signing gate was unreachable, and silently so.** A first-time client's read
+  returned **zero rows and no error**, so the flow treated it as "this provider has no contract"
+  and skipped signing — for every client, every provider, always. `contract_signatures` has
+  therefore never held a row. Fixed with a `SECURITY DEFINER` read function bounded to
+  `authenticated`, one provider, active contracts, approved providers; the table's own RLS is
+  untouched. **The audit that first raised this could only call it likely; a runtime reproduction
+  settled it.**
+- **`posts-media` uploads were bucket-scoped, not owner-bound**, so one provider could write into
+  another's folder; and the bucket had no UPDATE or DELETE policy at all, so **a delete returned
+  success and removed nothing**. Now owner-bound on all three, matching `provider-media`.
+- **Default privileges granted `anon` and `authenticated` every privilege on every future table**
+  and EXECUTE on every future function. The backlog: `anon` held INSERT/UPDATE on 32 tables,
+  DELETE and TRUNCATE on 33. **TRUNCATE is not filtered by RLS** — it was unreachable only because
+  PostgREST offers no way to issue one, which is a property of the gateway, not the database.
+
+Two more defects were then found by the **mandatory reviewer passes over the slice itself**, and
+both reviewers reached the first one independently:
+
+- **A stranger could sign another client's booking.** `contract_signatures` carried the same
+  unbound-write pair that `contracts` had just been fixed for, and the UNIQUE constraint on
+  `booking_id` meant the forgery also **permanently denied the real client the ability to sign**.
+  Worse, this slice is what made it reachable: before the contract RPC, a non-participant could
+  not obtain a `contracts.id` at all. Becoming a signer would then have unlocked the provider's
+  auth id **and their PDF in the private `contract-pdfs` bucket**.
+- **The unblocked gate only worked for text contracts.** For a PDF the client could agree to a
+  document storage would refuse to show them — a recorded agreement to an unreadable document,
+  which is worse than the skipped gate it replaced.
+
+### The pre-existing defect this work surfaced: provider go-live was broken
+
+**Not caused by Correction 2, and the most consequential finding of it.** `.upsert(…, {
+onConflict: 'user_id' })` makes PostgREST emit `DO UPDATE SET user_id = excluded.user_id`.
+Security Batch 3a granted `user_id` INSERT but deliberately not UPDATE — reassigning it transfers
+ownership of the provider row — so PostgreSQL refused the whole statement with `42501`, **whether
+or not a conflict occurred**. Provider go-live (J7) has therefore been failing for every real
+provider since **2026-08-30**. Batch 3a's own compatibility gate recorded this path as passing
+because it exercised a hand-written `DO UPDATE SET display_name`, not the statement the client
+sends — **a compatibility test that simulates the client rather than invoking it can bless a path
+that never worked.** Fixed on the client (insert, then update everything except `user_id`) rather
+than by granting the privilege, and verified end to end against non-production.
+
+**What did NOT change:** signed-out discovery still works (`anon` keeps SELECT where a deliberate
+public-read policy exists); no Session 7 barter object was altered; no navigation, copy, or UX
+decision was taken. The only product behaviour that moved is the contract gate, which now fires
+where it previously skipped, and provider go-live, which now succeeds where it previously failed.
+Regression coverage is `supabase/tests/authorization_boundaries.test.sql` plus
+`__tests__/guards/providerColumnGrant.test.ts`; **B5B is 1305/1305 and concurrency 181/181**.
 
 **Applied where.** All six PR #58 migrations were applied to the **linked non-production project
 only** (`wcoyjeklscuqsumpjpfo`), confirmed with `supabase migration list`: local and remote match

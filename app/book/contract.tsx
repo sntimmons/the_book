@@ -13,7 +13,7 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Sentry from '@sentry/react-native'
 import { useBookingStore } from '@/store/bookingStore'
-import { fetchProviderContract, Contract } from '@/lib/contracts'
+import { fetchContractToSign, Contract } from '@/lib/contracts'
 
 export default function BookContract() {
   const insets = useSafeAreaInsets()
@@ -30,7 +30,7 @@ export default function BookContract() {
     let cancelled = false
     ;(async () => {
       try {
-        const c = providerId ? await fetchProviderContract(providerId) : null
+        const c = providerId ? await fetchContractToSign(providerId) : null
         if (cancelled) return
         // A genuine "no contract exists" (null, no error) skips the step.
         if (!c) {
@@ -94,11 +94,21 @@ export default function BookContract() {
             We could not load this service agreement. Please check your connection
             and try again before continuing.
           </Text>
-          <TouchableOpacity style={styles.iconBtn} onPress={retryLoad} activeOpacity={0.8}>
-            <Text style={styles.headerTitle}>Try again</Text>
+          {/* These two are the ONLY way out of a gate that now deliberately
+              refuses to advance, so they have to be real buttons. They were built
+              from `iconBtn` (a 36x36 circle) and `headerTitle` (a 17pt centred
+              label) — a tap target smaller than the words inside it. The gate was
+              unreachable before this correction, so the state had never rendered
+              for anyone. */}
+          <TouchableOpacity style={styles.recoveryBtn} onPress={retryLoad} activeOpacity={0.85}>
+            <Text style={styles.recoveryBtnText}>Try again</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()} activeOpacity={0.8}>
-            <Text style={styles.headerTitle}>Go back</Text>
+          <TouchableOpacity
+            style={[styles.recoveryBtn, styles.recoveryBtnQuiet]}
+            onPress={() => router.back()}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.recoveryBtnText, styles.recoveryBtnTextQuiet]}>Go back</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -206,6 +216,30 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(240,232,213,0.06)',
+  },
+  recoveryBtn: {
+    marginTop: 16,
+    alignSelf: 'stretch',
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: '#F0E8D5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  recoveryBtnQuiet: {
+    marginTop: 10,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.2)',
+  },
+  recoveryBtnText: {
+    fontSize: 15,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
+  },
+  recoveryBtnTextQuiet: {
+    color: '#F0E8D5',
   },
   iconBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   headerTitle: {

@@ -209,10 +209,27 @@ export default function ProviderGoLive() {
       // `is_approved` is intentionally omitted: the DB default is true, and the
       // Discover feed filters on is_approved = true. Sending false here would
       // hide every newly live provider, so we let the default make them visible.
-      const { data: providerData, error: providerError } = await supabase
-        .from('providers')
-        .upsert(
-          {
+      //
+      // THIS IS AN INSERT, THEN AN UPDATE ON CONFLICT — NOT AN UPSERT, and the
+      // reason is a real breakage rather than a style preference.
+      //
+      // `.upsert(..., { onConflict: 'user_id' })` makes PostgREST emit
+      // `ON CONFLICT (user_id) DO UPDATE SET <every payload column>`, INCLUDING
+      // `user_id = excluded.user_id`. Security Batch 3a deliberately granted
+      // `user_id` INSERT but **not** UPDATE — reassigning it would be an
+      // ownership transfer of the whole provider row — so PostgreSQL refused the
+      // statement with `42501 permission denied for table providers`, whether or
+      // not a conflict actually occurred. **Go-live has therefore failed for
+      // every real provider since 2026-08-30.** Batch 3a's own compatibility test
+      // passed because it exercised a hand-written `DO UPDATE SET display_name`,
+      // not the statement PostgREST sends; the difference was invisible until
+      // Pre-Beta Correction 2 ran the literal client call against non-production.
+      //
+      // The fix is on this side ON PURPOSE. Granting UPDATE on `user_id` would
+      // make go-live work by letting any provider hand their row to another user,
+      // which is the boundary Batch 3a exists to hold. So the insert path carries
+      // `user_id` (it must) and the conflict path never mentions it.
+      const providerRow = {
             user_id: user.id,
             display_name: displayNameValue,
             username: generatedUsername,
@@ -237,11 +254,44 @@ export default function ProviderGoLive() {
             // (falls back to the legacy store field if the step was skipped).
             is_mobile: availability?.isMobile ?? isMobile,
             updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'user_id' },
-        )
+      }
+
+      let { data: providerData, error: providerError } = await supabase
+        .from('providers')
+        .insert(providerRow)
         .select('id')
-        .single()
+        .maybeSingle()
+
+      // 23505 alone is NOT enough to conclude "go-live is being re-run", and
+      // assuming it was is a defect QA caught in the first version of this fix.
+      // `providers` carries TWO unique constraints — `providers_user_id_key` and
+      // `providers_username_key` — and the generated handle is
+      // `<display_name>_<last 4 digits of Date.now()>` over a display name that
+      // falls back to the literal 'Provider', so a FIRST-TIME provider really can
+      // collide on username. Treating that as a re-run ran an UPDATE against a
+      // user with no provider row: zero rows matched, `maybeSingle()` returned
+      // `{ data: null, error: null }`, and the flow sailed into the success path
+      // with an undefined provider id — wiping the wizard and landing them in the
+      // tabs with no provider row and no explanation. So the constraint is named
+      // explicitly, and § below refuses to call the run successful without an id.
+      const conflictOnOwner =
+        providerError?.code === '23505' &&
+        `${providerError.message ?? ''} ${providerError.details ?? ''}`.includes(
+          'providers_user_id_key',
+        )
+
+      if (conflictOnOwner) {
+        const { user_id: _ownerId, ...editable } = providerRow
+        void _ownerId
+        const retry = await supabase
+          .from('providers')
+          .update(editable)
+          .eq('user_id', user.id)
+          .select('id')
+          .maybeSingle()
+        providerData = retry.data
+        providerError = retry.error
+      }
 
       if (providerError) {
         console.log('Provider save error:', providerError)
@@ -262,6 +312,24 @@ export default function ProviderGoLive() {
       }
 
       const providerDbId = providerData?.id
+
+      // NO ID MEANS NO PROVIDER, AND NO PROVIDER MEANS THIS RUN FAILED.
+      // Every stage below is guarded by `&& providerDbId`, so without this the
+      // whole of go-live would silently do nothing while reporting success, then
+      // `reset()` would destroy the answers needed to try again. A run that
+      // cannot name the row it created is a failed run, whatever the error
+      // objects said.
+      if (!providerDbId) {
+        console.log('Provider save returned no id')
+        setIsGoingLive(false)
+        setUploadStage('')
+        Alert.alert(
+          'Something went wrong',
+          'We could not finish setting up your business. Your details are still here — please try again.',
+          [{ text: 'OK' }],
+        )
+        return
+      }
 
       // The providers row now exists. Re-resolve the session role so isProvider
       // flips to true in THIS session — AuthContext otherwise only resolves role

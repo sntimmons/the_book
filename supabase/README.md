@@ -102,7 +102,30 @@ closed by a migration you can read above.
 
 Be precise about what is *regression-tested*, though: the B5B harness in `tests/` asserts the
 **review and pre-booking-messaging** boundaries against a real database, including
-`enforce_booking_write_integrity`. It does **not** cover storage policies, contract
-PDF/signature access, provider field-integrity, payments, or `reports` — see
-[tests/README.md](tests/README.md) § "Out of scope". Closed-by-migration and
-asserted-by-harness are different guarantees; only the second catches a regression.
+`enforce_booking_write_integrity`. Since Pre-Beta Correction 2 it **also** asserts the provider
+public column surface, contract ownership binding, the prospective-client contract read,
+`posts-media` object ownership and the default-privilege posture
+(`tests/authorization_boundaries.test.sql`). It still does **not** cover contract PDF/signature
+storage access or payments — see [tests/README.md](tests/README.md) § "Out of scope".
+Closed-by-migration and asserted-by-harness are different guarantees; only the second catches a
+regression.
+
+### The privilege layer, after Pre-Beta Correction 2
+
+Four things are now true of `public` that were not, each reproduced at runtime before being fixed
+and pinned by the harness afterwards:
+
+| | Before | After |
+|---|---|---|
+| `providers` columns readable by `anon` | all 49, incl. `verification_notes`, `stripe_account_id`, `no_show_count` | 28 public columns; **21 to `service_role` alone** |
+| `anon` write privileges in `public` | INSERT/UPDATE on 32 tables, DELETE and TRUNCATE on 33 | **none, on any table** |
+| `authenticated` TRUNCATE | held on 33 tables | **none** — no policy can constrain TRUNCATE |
+| default privileges for new objects | `anon` + `authenticated` got `arwdDxtm` on every future table and EXECUTE on every future function | neither role gets anything; grants must be explicit |
+
+**Two consequences for anyone writing the next migration.** A new table or RPC now grants nothing
+by default, so it must carry its own `grant` — which every migration since `20260906000000`
+already does; forgetting produces a loud permission error rather than a silent over-exposure. And
+**`anon` keeps SELECT** where a deliberate public-read policy exists (`categories`,
+`provider_availability`, `provider_blocked_dates`, `provider_policies`, revealed
+`provider_reviews`), because signed-out discovery is a beta posture, not an oversight — the
+harness pins that as a floor so a later sweep cannot quietly take it away.
