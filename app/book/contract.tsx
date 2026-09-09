@@ -20,6 +20,7 @@ import {
   toIsoDate,
   buildAppointmentTime,
   ProviderUnavailableError,
+  BookingWriteBlockedError,
 } from '@/lib/bookingDraft'
 
 export default function BookContract() {
@@ -40,6 +41,7 @@ export default function BookContract() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [unavailable, setUnavailable] = useState(false)
+  const [blocked, setBlocked] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [agreed, setAgreed] = useState(false)
   const [signed, setSigned] = useState(false)
@@ -72,7 +74,7 @@ export default function BookContract() {
           }
           return
         }
-        const bookingId = await ensureBookingDraft(user.id, {
+        const resolved = await ensureBookingDraft(user.id, {
           providerId,
           serviceId: selectedService.id || null,
           serviceName: selectedService.name,
@@ -83,9 +85,18 @@ export default function BookContract() {
           paymentAmount: servicePrice,
         })
         if (cancelled) return
-        setDraftBookingId(bookingId)
+        setDraftBookingId(resolved.id)
 
-        const c = await fetchContractForBooking(bookingId)
+        // ALREADY SENT. Reached by backing out of the confirmation screen and
+        // pressing forward again: this request exists, the provider can see it,
+        // and re-signing and re-sending would produce a second one. Go to the
+        // request rather than walking the client through the flow again.
+        if (resolved.alreadySubmitted) {
+          router.replace({ pathname: '/book/confirmed', params: { bookingId: resolved.id } })
+          return
+        }
+
+        const c = await fetchContractForBooking(resolved.id)
         if (cancelled) return
         // A genuine "no contract exists" (empty, no error) skips the step.
         if (!c) {
@@ -100,6 +111,14 @@ export default function BookContract() {
         // availability, not a technical failure and not a judgement of them.
         if (e instanceof ProviderUnavailableError) {
           setUnavailable(true)
+          setLoading(false)
+          return
+        }
+        // A write the database FILTERED to zero rows is permanent, not a
+        // connection problem — offering "check your connection and try again"
+        // would loop the client forever on a gate that cannot open.
+        if (e instanceof BookingWriteBlockedError) {
+          setBlocked(true)
           setLoading(false)
           return
         }
@@ -120,6 +139,7 @@ export default function BookContract() {
   function retryLoad() {
     setLoadError(false)
     setUnavailable(false)
+    setBlocked(false)
     setLoading(true)
     setReloadKey((k) => k + 1)
   }
@@ -151,6 +171,28 @@ export default function BookContract() {
       <View style={styles.root}>
         <View style={styles.centerBody}>
           <ActivityIndicator color="rgba(240,232,213,0.4)" />
+        </View>
+      </View>
+    )
+  }
+
+  if (blocked) {
+    // Permanent, and says so. No "try again": the write was refused, not lost.
+    return (
+      <View style={styles.root}>
+        <View style={styles.centerBody}>
+          <Text style={styles.title}>We could not start this request</Text>
+          <Text style={styles.bodyText}>
+            Something about this booking could not be saved. Go back and start a new
+            request with this provider.
+          </Text>
+          <TouchableOpacity
+            style={[styles.recoveryBtn, styles.recoveryBtnQuiet]}
+            onPress={() => router.back()}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.recoveryBtnText, styles.recoveryBtnTextQuiet]}>Go back</Text>
+          </TouchableOpacity>
         </View>
       </View>
     )

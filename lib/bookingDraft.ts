@@ -64,6 +64,21 @@ export function buildAppointmentTime(
 // decoration — two devices, or a double tap that outruns the first insert, land
 // there, and the correct response is to adopt the row that won.
 
+/**
+ * What `ensureBookingDraft` resolved to.
+ *
+ * `alreadySubmitted` is the load-bearing half. Idempotency cannot live in a
+ * screen's React state: that state dies when the component unmounts, and both
+ * ways a second request got sent survived it — a retry after the server committed
+ * but the response was lost, and backing out past the send step and coming
+ * forward again into a FRESH instance. The only thing that outlives both is the
+ * server, so the question "have I already sent this?" is asked there.
+ */
+export interface BookingDraftResolution {
+  id: string
+  alreadySubmitted: boolean
+}
+
 export interface BookingDraftDetails {
   providerId: string
   serviceId: string | null
@@ -145,10 +160,46 @@ async function findDraft(userId: string, providerId: string): Promise<string | n
 // is what lets the client move backwards through the steps and change their mind
 // without stranding a half-finished request. `status`, `submitted_at` and
 // `expires_at` are all server-controlled and are deliberately not sent.
+// A request for THIS SAME INTENT that has already been sent.
+//
+// Matched on (client, provider, requested date, requested time) among rows that
+// are still `pending` — a client re-booking the same provider for a DIFFERENT
+// slot is a different intent and must be allowed, which is why the date and time
+// are part of the key rather than just the provider.
+//
+// This is what makes "one intent = one request" survive a lost response and a
+// back-out. Both left the flow with no way to find what it had already done:
+// `findDraft` looks for `submitted_at IS NULL` and so cannot see the request it
+// just sent, and the partial unique index no longer covers it either — so the
+// next attempt inserted and submitted a SECOND one. In the lost-response case
+// that second request also carried no contract signature, because the signature
+// had already been written against the first.
+async function findSubmittedRequest(
+  userId: string,
+  details: BookingDraftDetails,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('id, submitted_at')
+    .eq('user_id', userId)
+    .eq('provider_id', details.providerId)
+    .eq('requested_date', details.requestedDate)
+    .eq('requested_time', details.requestedTime)
+    .eq('status', 'pending')
+    .not('submitted_at', 'is', null)
+    .order('submitted_at', { ascending: false })
+    .limit(1)
+  // A failed lookup must NOT be read as "nothing sent yet" — that is the
+  // fail-open that creates the duplicate. Rethrow and let the caller say so.
+  if (error) throw error
+  const rows = (data as { id: string }[] | null) ?? []
+  return rows.length > 0 ? rows[0].id : null
+}
+
 export async function ensureBookingDraft(
   userId: string,
   details: BookingDraftDetails,
-): Promise<string> {
+): Promise<BookingDraftResolution> {
   const row = {
     service_id: details.serviceId,
     service_name: details.serviceName,
@@ -158,6 +209,12 @@ export async function ensureBookingDraft(
     message: details.message,
     payment_amount: details.paymentAmount,
   }
+
+  // ALREADY SENT? Asked FIRST, before anything is created. A live draft is the
+  // ordinary case and is checked next; this one catches the two paths where the
+  // flow lost track of a request it had already submitted.
+  const alreadySent = await findSubmittedRequest(userId, details)
+  if (alreadySent) return { id: alreadySent, alreadySubmitted: true }
 
   const existing = await findDraft(userId, details.providerId)
   if (existing) {
@@ -170,7 +227,7 @@ export async function ensureBookingDraft(
     if (((data as { id: string }[] | null) ?? []).length === 0) {
       throw new BookingWriteBlockedError('booking')
     }
-    return existing
+    return { id: existing, alreadySubmitted: false }
   }
 
   const { data, error } = await supabase
@@ -200,14 +257,14 @@ export async function ensureBookingDraft(
         if (((wonRows as { id: string }[] | null) ?? []).length === 0) {
           throw new BookingWriteBlockedError('booking')
         }
-        return won
+        return { id: won, alreadySubmitted: false }
       }
     }
     console.log('Insert booking draft error:', error)
     throw error
   }
 
-  return (data as { id: string }).id
+  return { id: (data as { id: string }).id, alreadySubmitted: false }
 }
 
 // Turn the draft into a real request. This is the ONLY moment the provider can

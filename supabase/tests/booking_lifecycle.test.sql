@@ -396,6 +396,95 @@ begin
   perform pg_temp.act_service();
 end $$;
 
+-- THE THIRD REFUSAL, which had no assertion until re-review asked for one.
+--
+-- `enforce_prebooking_message_rules` treats a booking-linked conversation as OPEN.
+-- `20261045000000` narrowed that to a SUBMITTED booking, and this is the refusal
+-- that still holds for a conversation whose booking was attached BEFORE the
+-- correction — the only defence for those legacy rows, and the one the other two
+-- gates cannot cover because they only guard the attach.
+do $$
+declare
+  cu uuid := current_setting('b5b.cu2')::uuid;
+  pid uuid := current_setting('b5b.pid')::uuid;
+  v_draft uuid; v_conv uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  delete from public.conversation where client_id = cu and provider_id = pid;
+  delete from public.bookings where user_id = cu and provider_id = pid;
+
+  perform pg_temp.act(cu);
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (cu, pid, 'legacy draft link', current_date) returning id into v_draft;
+
+  -- Attached PRIVILEGED, simulating a row that predates the correction — the
+  -- gates now refuse this from a client, which is what §10 asserts.
+  perform pg_temp.act_service();
+  insert into public.conversation(client_id, provider_id, booking_id, request_status,
+                                  request_opened_at)
+  values (cu, pid, v_draft, 'pending', now() - interval '1 hour')
+  returning id into v_conv;
+
+  -- The client's ONE initial message while pending is allowed.
+  perform pg_temp.act(cu);
+  begin
+    insert into public.messages(conversation_id, sender_id, content)
+    values (v_conv, cu, 'first');
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookinglifecycle',
+    'the one initial message is still allowed on a pending request', 'OK', v_code);
+
+  -- A SECOND is not. Before the narrowing, the draft `booking_id` made this
+  -- conversation read as open and the message limit did not apply at all.
+  begin
+    insert into public.messages(conversation_id, sender_id, content)
+    values (v_conv, cu, 'second');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookinglifecycle',
+    'a DRAFT booking_id does not unlock unlimited messaging', '23514', v_code);
+
+  -- And submitting it DOES open the thread, so the narrowing is a rule about
+  -- drafts rather than a blanket refusal.
+  perform pg_temp.act(cu);
+  update public.bookings set submitted_at = now() where id = v_draft;
+  begin
+    insert into public.messages(conversation_id, sender_id, content)
+    values (v_conv, cu, 'after submit');
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookinglifecycle',
+    'submitting the booking DOES open the thread', 'OK', v_code);
+  perform pg_temp.act_service();
+end $$;
+
+-- THE SOURCE PIN. A behavioural assertion proves today's boundary; this is what
+-- survives a future `create or replace` written from a superseded body — the
+-- exact mistake that has now cost this repo four forward corrections.
+select pg_temp.chk('bookinglifecycle',
+  'all three conversation gates still test submitted_at', '3',
+  (select count(*)::text from pg_proc
+    where pronamespace = 'public'::regnamespace
+      and proname in ('enforce_conversation_insert', 'enforce_conversation_update',
+                      'enforce_prebooking_message_rules')
+      and regexp_replace(prosrc, '--[^\n]*', '', 'g') like '%submitted_at%'));
+-- And the two rules a copy-forward has already deleted once each, re-pinned here
+-- because `20261045000000` rebuilt both functions that carry them.
+select pg_temp.chk('bookinglifecycle',
+  'the message gate still locks the conversation row before reading it', 'true',
+  (select (regexp_replace(prosrc, '--[^\n]*', '', 'g') like '%for update%')::text
+     from pg_proc where proname = 'enforce_prebooking_message_rules'
+       and pronamespace = 'public'::regnamespace));
+select pg_temp.chk('bookinglifecycle',
+  'the update gate still accepts BOTH orientations of a provider pair', 'true',
+  (select (regexp_replace(prosrc, '--[^\n]*', '', 'g') like '%pb.user_id = b.user_id%')::text
+     from pg_proc where proname = 'enforce_conversation_update'
+       and pronamespace = 'public'::regnamespace));
+
 -- ══ § 11. A CANCELLED DRAFT MUST NOT LOCK THE CLIENT OUT ═════════════════
 --
 -- The worst defect review found. `bookings_one_draft_per_pair` had no status

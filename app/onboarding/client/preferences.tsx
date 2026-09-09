@@ -12,6 +12,7 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import NeighborhoodPicker from '@/components/NeighborhoodPicker'
+import { useClientStore } from '@/store/clientStore'
 
 const INTERESTS = [
   { id: 'lashes', icon: '✦', title: 'Lashes', subtitle: 'Extensions & lifts' },
@@ -61,7 +62,21 @@ function InterestCard({
 export default function ClientPreferences() {
   const insets = useSafeAreaInsets()
   const [selected, setSelected] = useState<Set<InterestId>>(new Set(DEFAULT_SELECTED))
-  const [location, setLocation] = useState('Midtown, Houston')
+  // THE SAME VALUE STEP 1 COLLECTED, not a second local copy.
+  //
+  // This picker held plain local state defaulted to 'Midtown, Houston' and wrote
+  // nowhere, while step 1's picker wrote to the store and the preview step
+  // persisted THAT. So a client who corrected their area here had the correction
+  // silently discarded and the earlier value saved instead — and that value is
+  // what the Near You lane reads. Reading and writing the store makes the control
+  // do what it appears to do.
+  //
+  // Whether this step should carry a picker at all when step 1 already asked is a
+  // product question (USER_JOURNEYS J1b), and is deliberately not answered here.
+  const storeNeighborhood = useClientStore((st) => st.neighborhood)
+  const setStoreNeighborhood = useClientStore((st) => st.setNeighborhood)
+  const location = storeNeighborhood || 'Midtown, Houston'
+  const setLocation = setStoreNeighborhood
   const [mobileProv, setMobileProv] = useState(true)
 
   function toggleInterest(id: InterestId) {

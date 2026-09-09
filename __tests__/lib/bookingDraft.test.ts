@@ -16,6 +16,9 @@ jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn() } }))
 // proved this half, and these are the two paths that matter most and are hardest
 // to reach by hand:
 //
+//   * the ALREADY-SENT path, which is what makes "one intent = one request"
+//     survive a lost response and a back-out — the two ways a second, and in one
+//     case UNSIGNED, request reached a provider;
 //   * the RACE-ADOPTION path, which the module's own header calls "not defensive
 //     decoration — two devices, or a double tap that outruns the first insert,
 //     land there"; and
@@ -58,17 +61,53 @@ beforeEach(() => {
 })
 
 describe('ensureBookingDraft', () => {
+  it('returns the request ALREADY SENT for this intent instead of sending a second', async () => {
+    // THE ASSERTION THIS SUITE EXISTS FOR. Two paths reach it and neither can be
+    // caught by a screen's own state: a retry after the server committed but the
+    // response was lost, and backing out past the send step into a fresh screen
+    // instance. Before this, both inserted and submitted a SECOND request — and
+    // the lost-response one carried no contract signature, because the signature
+    // had already been written against the first.
+    mockFrom({ data: [{ id: 'sent-1' }], error: null })
+    await expect(ensureBookingDraft('user-1', DETAILS)).resolves.toEqual({
+      id: 'sent-1',
+      alreadySubmitted: true,
+    })
+    // It asks the server FIRST and creates nothing.
+    expect((supabase.from as jest.Mock).mock.calls).toHaveLength(1)
+  })
+
+  it('rethrows a failed already-sent lookup rather than sending again', async () => {
+    // The fail-open that would recreate the duplicate: reading a broken lookup as
+    // "nothing sent yet".
+    mockFrom({ data: null, error: { code: '08006' } })
+    await expect(ensureBookingDraft('user-1', DETAILS)).rejects.toBeTruthy()
+    expect((supabase.from as jest.Mock).mock.calls).toHaveLength(1)
+  })
+
   it('resumes an existing draft instead of inserting a second one', async () => {
-    // find → {id}, then the update returns that row.
-    mockFrom({ data: { id: 'draft-1' }, error: null }, { data: [{ id: 'draft-1' }], error: null })
-    await expect(ensureBookingDraft('user-1', DETAILS)).resolves.toBe('draft-1')
-    // Two round trips: the lookup and the revision. Never an insert.
-    expect((supabase.from as jest.Mock).mock.calls).toHaveLength(2)
+    mockFrom(
+      { data: [], error: null }, // nothing sent for this intent
+      { data: { id: 'draft-1' }, error: null }, // a live draft
+      { data: [{ id: 'draft-1' }], error: null }, // the revision
+    )
+    await expect(ensureBookingDraft('user-1', DETAILS)).resolves.toEqual({
+      id: 'draft-1',
+      alreadySubmitted: false,
+    })
+    expect((supabase.from as jest.Mock).mock.calls).toHaveLength(3)
   })
 
   it('inserts when the client has no draft with this provider', async () => {
-    mockFrom({ data: null, error: null }, { data: { id: 'new-1' }, error: null })
-    await expect(ensureBookingDraft('user-1', DETAILS)).resolves.toBe('new-1')
+    mockFrom(
+      { data: [], error: null },
+      { data: null, error: null },
+      { data: { id: 'new-1' }, error: null },
+    )
+    await expect(ensureBookingDraft('user-1', DETAILS)).resolves.toEqual({
+      id: 'new-1',
+      alreadySubmitted: false,
+    })
   })
 
   it('adopts the row that won a race rather than reporting a failure', async () => {
@@ -77,16 +116,24 @@ describe('ensureBookingDraft', () => {
     // the correct response is to adopt the draft that landed — the client did
     // nothing wrong and there is exactly one request either way.
     mockFrom(
+      { data: [], error: null }, // nothing sent for this intent
       { data: null, error: null }, // no draft found
       { data: null, error: { code: '23505' } }, // insert lost the race
       { data: { id: 'winner' }, error: null }, // re-find
       { data: [{ id: 'winner' }], error: null }, // revise the adopted row
     )
-    await expect(ensureBookingDraft('user-1', DETAILS)).resolves.toBe('winner')
+    await expect(ensureBookingDraft('user-1', DETAILS)).resolves.toEqual({
+      id: 'winner',
+      alreadySubmitted: false,
+    })
   })
 
   it('reports a de-approved provider as unavailable, not as a generic failure', async () => {
-    mockFrom({ data: null, error: null }, { data: null, error: { code: 'PT426' } })
+    mockFrom(
+      { data: [], error: null },
+      { data: null, error: null },
+      { data: null, error: { code: 'PT426' } },
+    )
     await expect(ensureBookingDraft('user-1', DETAILS)).rejects.toBeInstanceOf(
       ProviderUnavailableError,
     )
@@ -95,15 +142,22 @@ describe('ensureBookingDraft', () => {
   it('rethrows a failed LOOKUP rather than treating it as "no draft"', async () => {
     // The most dangerous fail-open in this module: reporting a broken lookup as
     // absence would insert a SECOND request for the same intent.
-    mockFrom({ data: null, error: { code: '08006', message: 'connection failure' } })
+    mockFrom(
+      { data: [], error: null },
+      { data: null, error: { code: '08006', message: 'connection failure' } },
+    )
     await expect(ensureBookingDraft('user-1', DETAILS)).rejects.toBeTruthy()
-    expect((supabase.from as jest.Mock).mock.calls).toHaveLength(1)
+    expect((supabase.from as jest.Mock).mock.calls).toHaveLength(2)
   })
 
   it('treats a zero-row revision as a failure, not a silent success', async () => {
     // RLS filtered the update. No error, no rows. Before this check the flow
     // carried on and eventually showed a confirmation screen.
-    mockFrom({ data: { id: 'draft-1' }, error: null }, { data: [], error: null })
+    mockFrom(
+      { data: [], error: null },
+      { data: { id: 'draft-1' }, error: null },
+      { data: [], error: null },
+    )
     await expect(ensureBookingDraft('user-1', DETAILS)).rejects.toBeInstanceOf(
       BookingWriteBlockedError,
     )

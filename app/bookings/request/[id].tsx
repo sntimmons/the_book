@@ -146,6 +146,17 @@ export default function BookingRequestScreen() {
       setBooking({ ...booking, status: prevStatus })
       setActionLoading(false)
       console.log('Booking request transition error:', error.message)
+      // PT425 is the server's expiry boundary, and it is PERMANENT for accepting.
+      // "Please try again" invites a tap that can never succeed and hides the one
+      // action that still works — declining, which the server allows forever.
+      if ((error as { code?: string }).code === 'PT425') {
+        Alert.alert(
+          'This request has expired',
+          'It can no longer be accepted. You can still decline it to clear it from your queue.',
+          [{ text: 'OK', onPress: () => load() }],
+        )
+        return
+      }
       Alert.alert('Something went wrong', 'Could not update this request. Please try again.')
       return
     }

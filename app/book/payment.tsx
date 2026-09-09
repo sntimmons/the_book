@@ -115,17 +115,20 @@ export default function BookPayment() {
       const dateForRow = rawDate || toIsoDate(selectedDate)
       const appointmentTime = buildAppointmentTime(rawDate, selectedTime)
 
-      // The rate limit guards SENDING a request, so it is checked once, before
-      // the first submit — not on a retry of a request already in flight, and
-      // not on the draft write, which no provider can see. Expected behavior,
-      // not an error: no Sentry capture.
-      if (!submitted) {
-        const rl = await checkRateLimit(user.id, 'booking_create')
-        if (!rl.allowed) {
-          setIsProcessing(false)
-          Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')
-          return
-        }
+      // The rate limit guards SENDING a request, and it is checked here, after
+      // the already-sent question above. `if (!submitted)` used to wrap this and
+      // was dead code — the handler returns earlier when `submitted` is true — so
+      // the only thing it did was hide that a RETRY after a failed send is
+      // charged again. It still is, deliberately: a retry that reaches this line
+      // is one where nothing was sent, so it is a genuine send attempt. What must
+      // not happen is charging a client for a request that DID land, and the
+      // already-sent branch above is what prevents that. Expected behavior, not
+      // an error: no Sentry capture.
+      const rl = await checkRateLimit(user.id, 'booking_create')
+      if (!rl.allowed) {
+        setIsProcessing(false)
+        Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')
+        return
       }
 
       Sentry.addBreadcrumb({
@@ -134,7 +137,7 @@ export default function BookPayment() {
         data: { providerId, serviceId: selectedService.id ?? null },
       })
 
-      const bookingId = await ensureBookingDraft(user.id, {
+      const resolved = await ensureBookingDraft(user.id, {
         providerId,
         serviceId: selectedService.id || null,
         serviceName: selectedService.name,
@@ -144,7 +147,19 @@ export default function BookPayment() {
         message: bookingMessage || null,
         paymentAmount: servicePrice,
       })
+      const bookingId = resolved.id
       setDraftBookingId(bookingId)
+
+      // THE SERVER SAYS THIS INTENT IS ALREADY SENT. This is what makes "one
+      // intent = one request" hold across a lost response and a re-entry into a
+      // fresh screen instance — neither of which the local `submitted` flag can
+      // survive. Going forward is the only thing left to do.
+      if (resolved.alreadySubmitted) {
+        setSubmitted(true)
+        setIsProcessing(false)
+        router.push({ pathname: '/book/confirmed', params: { bookingId } })
+        return
+      }
 
       // The signature is recorded against the booking BEFORE it is submitted, so
       // a request the provider can see is never one whose signature failed to

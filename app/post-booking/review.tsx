@@ -260,7 +260,15 @@ export default function WriteReview() {
   // submittable via Post Review, so Skip is a real choice rather than the only
   // enabled control.
   function handleSkip() {
-    router.push('/(tabs)/' as never)
+    // `replace`, not `push`. Pushing the tab shell mounts it ON TOP of this
+    // stack, so the review the client just chose to leave sits underneath a shell
+    // that has no visible back control — reachable again by an edge swipe. Every
+    // other exit in this file already uses replace for exactly this reason
+    // (NAVIGATION.md: a terminal screen must not leave the completed step behind
+    // it). Scope note: the same `push('/(tabs)/')` pattern appears on several
+    // other post-booking screens and is NOT changed here — it is pre-existing and
+    // outside this correction; these two were named by review.
+    router.replace('/(tabs)/' as never)
   }
 
   // Terminal (non-retryable) state → truthful screen with a safe exit, never the form.

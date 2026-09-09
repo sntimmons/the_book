@@ -204,18 +204,37 @@ export async function fetchProviderSignatures(
   const bookingIds = Array.from(new Set(sigs.map((s) => s.bookingId).filter(Boolean)))
   const clientIds = Array.from(new Set(sigs.map((s) => s.clientUserId).filter(Boolean)))
 
+  // ── ONLY SIGNATURES ON A SENT REQUEST ───────────────────────────────────
+  //
+  // The signature is written against the booking BEFORE it is submitted, and
+  // deliberately so: a request the provider can see is never one whose signature
+  // failed to save. The cost is that an abandoned flow can leave a signature
+  // pointing at a DRAFT — and the provider cannot read that booking at all
+  // (their SELECT policy requires `submitted_at is not null`), so it rendered
+  // here as "someone signed my contract" with a blank date and no service name.
+  //
+  // The booking lookup already runs as the provider, so RLS has ALREADY answered
+  // the question: a signature whose booking is absent from this map is one the
+  // provider has no sent request for. `bookingsReadFailed` keeps that inference
+  // honest — a failed query also produces an empty map, and dropping every
+  // signature on a connection error would tell a provider nobody had ever signed
+  // anything.
   const bookingMap = new Map<string, { date: string | null; service: string | null }>()
+  let bookingsReadFailed = false
   if (bookingIds.length > 0) {
-    const { data: bookings } = await supabase
+    const { data: bookings, error: bookingsError } = await supabase
       .from('bookings')
       .select('id, requested_date, service_name')
       .in('id', bookingIds)
+    if (bookingsError) bookingsReadFailed = true
     for (const b of (bookings as
       | { id: string; requested_date: string | null; service_name: string | null }[]
       | null) ?? []) {
       bookingMap.set(b.id, { date: b.requested_date, service: b.service_name })
     }
   }
+  const visible = bookingsReadFailed ? sigs : sigs.filter((s) => bookingMap.has(s.bookingId))
+  if (visible.length === 0) return []
 
   const clientMap = new Map<string, string>()
   if (clientIds.length > 0) {
@@ -228,7 +247,7 @@ export async function fetchProviderSignatures(
     }
   }
 
-  return sigs.map((s) => ({
+  return visible.map((s) => ({
     signature: s,
     clientName: clientMap.get(s.clientUserId) ?? 'Client',
     bookingDate: bookingMap.get(s.bookingId)?.date ?? null,

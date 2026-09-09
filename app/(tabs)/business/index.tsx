@@ -318,7 +318,18 @@ export default function ProviderDashboard() {
               })
               .eq('id', booking.id)
             if (error) {
-              Alert.alert('Error', 'Could not accept booking. Please try again.')
+              // PT425 is the server's expiry boundary and it is PERMANENT for
+              // accepting. A generic retry prompt loops the provider on an action
+              // the database has already closed, and says nothing about declining
+              // — which the server allows forever, and which is the way out.
+              if ((error as { code?: string }).code === 'PT425') {
+                Alert.alert(
+                  'This request has expired',
+                  'It can no longer be accepted. You can still decline it to clear it from your queue.',
+                )
+              } else {
+                Alert.alert('Error', 'Could not accept booking. Please try again.')
+              }
               return
             }
             setPendingRequests((prev) => prev.filter((r) => r.id !== booking.id))
