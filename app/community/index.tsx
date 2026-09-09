@@ -41,6 +41,12 @@ import {
   BarterOfferWithProvider,
 } from '@/lib/barter'
 import { barterWriteFailure, interpretWrite } from '@/lib/barterErrors'
+import {
+  submitReport,
+  REPORT_SUBMITTED_COPY,
+  REPORT_FAILED_COPY,
+  ReportReason,
+} from '@/lib/safety'
 import { confirmCopy, responderFeedState } from '@/lib/tradeActivity'
 
 type FeedPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
@@ -91,11 +97,19 @@ function matchesServiceType(category: string, selected: string): boolean {
   return cat.includes(selected.toLowerCase())
 }
 
-const REPORT_REASONS: { label: string; value: string }[] = [
-  { label: 'Inappropriate content', value: 'inappropriate' },
-  { label: 'Spam', value: 'spam' },
-  { label: 'Misinformation', value: 'misinformation' },
-  { label: 'Other', value: 'other' },
+// SESSION 8: reporting a post goes to the SAME place every other report goes.
+//
+// This screen used to write to `community_reports` — a table with a reporter, a
+// post id, a reason and a timestamp, and no status, no operator path and nothing
+// reading it. A second reporting system is a second place to forget to look, so
+// the four local reasons below are mapped onto the product-wide vocabulary in
+// lib/safety.ts and the write goes to `reports`, which opens an operator case.
+const POST_REPORT_REASONS: { label: string; value: ReportReason }[] = [
+  { label: 'Inappropriate content', value: 'profile_or_content' },
+  { label: 'Harassment', value: 'harassment' },
+  { label: 'Scam or fraud', value: 'scam_or_fraud' },
+  { label: 'Safety concern', value: 'safety_concern' },
+  { label: 'Something else', value: 'other' },
 ]
 
 export default function CommunityFeed() {
@@ -315,20 +329,25 @@ export default function CommunityFeed() {
     }
   }
 
-  async function reportPost(postId: string, reason: string) {
+  async function reportPost(post: CommunityPostView, reason: ReportReason) {
     if (!user) return
-    const { error } = await supabase
-      .from('community_reports')
-      .insert({ reporter_user_id: user.id, post_id: postId, reason })
-    if (error) {
-      console.log('Report error:', error)
-      Alert.alert('Could not report', 'Please try again.', [{ text: 'OK' }])
-      return
-    }
-    // PRODUCT TRUTH: this said "We'll review it." No operator review surface
-    // exists yet (a minimal internal queue is pre-beta work), so the promise was
-    // not one the product could keep. It says what actually happened instead.
-    Alert.alert('Reported', 'Thanks — this report has been recorded.', [{ text: 'OK' }])
+    // The post's AUTHOR is the target, and the post id goes in the notes so the
+    // operator can find the content. `reports` has no post column; adding one
+    // would be a schema change for a beta whose content surface is small, and the
+    // note carries the reference without it.
+    const ok = await submitReport({
+      reporterUserId: user.id,
+      type: 'content',
+      reason,
+      reportedUserId: post.userId,
+      notes: `community post ${post.id}`,
+    })
+    const copy = ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+    // PRODUCT TRUTH: this once said "We'll review it", then — correctly, while no
+    // operator surface existed — "this report has been recorded". A queue exists
+    // now, so the copy can say it will be reviewed. It still names NO timeframe:
+    // PD-068 is explicit that there is no SLA.
+    Alert.alert(copy.title, copy.body, [{ text: 'OK' }])
   }
 
   function openMenu(post: FeedPost) {
@@ -339,9 +358,9 @@ export default function CommunityFeed() {
       ])
     } else {
       Alert.alert('Report post', 'Why are you reporting this?', [
-        ...REPORT_REASONS.map((r) => ({
+        ...POST_REPORT_REASONS.map((r) => ({
           text: r.label,
-          onPress: () => reportPost(post.id, r.value),
+          onPress: () => reportPost(post, r.value),
         })),
         { text: 'Cancel', style: 'cancel' as const },
       ])

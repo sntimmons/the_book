@@ -11,6 +11,17 @@ import { useLocalSearchParams, router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile, { ProviderData, ProviderService } from '@/components/ProviderProfile'
 import { startBooking } from '@/lib/startBooking'
+import {
+  BLOCK_COPY,
+  UNBLOCK_COPY,
+  REPORT_REASONS,
+  REPORT_SUBMITTED_COPY,
+  REPORT_FAILED_COPY,
+  blockUser,
+  unblockUser,
+  iBlocked,
+  submitReport,
+} from '@/lib/safety'
 import { useProvider, useCategories } from '../../hooks/useProviders'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -285,6 +296,97 @@ export default function ProviderProfilePage() {
   // controls from being shown only to fail.
   const isOwnProfile = !!user && provider.user_id === user.id
 
+  // ── SESSION 8: BLOCK / REPORT ────────────────────────────────────────────
+  //
+  // Two acts behind one control, because a person who needs either needs it
+  // quickly and should not have to work out which submenu it lives in.
+  //
+  // `blocked` is null until known, and the sheet is not offered until it is: a
+  // control that says "Block" to someone who has already blocked, or "Unblock"
+  // to someone who has not, is worse than a moment's wait.
+  async function openSafetyMenu() {
+    if (!user || !provider) return
+    const mine = await iBlocked(user.id, provider.user_id)
+    if (mine === null) {
+      Alert.alert('Not available right now', 'Please check your connection and try again.')
+      return
+    }
+    Alert.alert(
+      provider.display_name,
+      undefined,
+      [
+        {
+          text: mine ? UNBLOCK_COPY.confirmLabel : BLOCK_COPY.confirmLabel,
+          style: mine ? 'default' : 'destructive',
+          onPress: () => (mine ? confirmUnblock() : confirmBlock()),
+        },
+        { text: 'Report', style: 'destructive', onPress: openReportMenu },
+        { text: 'Cancel', style: 'cancel' },
+      ],
+    )
+  }
+
+  function confirmBlock() {
+    if (!user || !provider) return
+    Alert.alert(BLOCK_COPY.title, BLOCK_COPY.body, [
+      { text: BLOCK_COPY.cancelLabel, style: 'cancel' },
+      {
+        text: BLOCK_COPY.confirmLabel,
+        style: 'destructive',
+        onPress: async () => {
+          const ok = await blockUser(user.id, provider.user_id)
+          Alert.alert(
+            ok ? 'Blocked' : 'Could not block',
+            ok
+              ? 'They can no longer message you or send you booking requests.'
+              : 'Please check your connection and try again.',
+          )
+        },
+      },
+    ])
+  }
+
+  function confirmUnblock() {
+    if (!user || !provider) return
+    Alert.alert(UNBLOCK_COPY.title, UNBLOCK_COPY.body, [
+      { text: UNBLOCK_COPY.cancelLabel, style: 'cancel' },
+      {
+        text: UNBLOCK_COPY.confirmLabel,
+        onPress: async () => {
+          const ok = await unblockUser(user.id, provider.user_id)
+          if (!ok) {
+            Alert.alert('Could not unblock', 'Please check your connection and try again.')
+          }
+        },
+      },
+    ])
+  }
+
+  function openReportMenu() {
+    if (!user || !provider) return
+    Alert.alert(
+      'Report this provider',
+      'What is the problem?',
+      [
+        ...REPORT_REASONS.map((r) => ({
+          text: r.label,
+          onPress: async () => {
+            const ok = await submitReport({
+              reporterUserId: user.id,
+              type: 'provider',
+              reason: r.value,
+              reportedProviderId: provider.id,
+              reportedUserId: provider.user_id,
+            })
+            const copy = ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+            Alert.alert(copy.title, copy.body)
+          },
+        })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ],
+    )
+  }
+
   return (
     <ProviderProfile
       previewMode={false}
@@ -299,6 +401,7 @@ export default function ProviderProfilePage() {
       // would be offered Book Now and only discover the refusal at the end of
       // the flow, as a database error.
       acceptingBookings={provider.is_approved !== false}
+      onSafetyMenu={isOwnProfile ? undefined : openSafetyMenu}
       onBookNow={handleBookNow}
       onFollow={handleToggleFollow}
       onSave={handleToggleSave}

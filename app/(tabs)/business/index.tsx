@@ -18,6 +18,13 @@ import { supabase } from '@/lib/supabase'
 import { useNotifications } from '@/hooks/useNotifications'
 import { getOrCreateConversation } from '@/hooks/useMessaging'
 import {
+  REQUEST_REVIEW_COPY,
+  requestProviderReview,
+  myProviderReviewStatus,
+  providerReviewCopy,
+  ReviewCaseStatus,
+} from '@/lib/safety'
+import {
   bookingStatusLabel,
   bookingRequestUrgency,
   canAcceptRequest,
@@ -139,6 +146,12 @@ export default function ProviderDashboard() {
   // anywhere saying why — the client side of item H was built and the provider
   // side was not. Null while unknown, so nothing is asserted before the read.
   const [acceptingBookings, setAcceptingBookings] = useState<boolean | null>(null)
+  // PD-081, delivered. Correction 3 shipped the truthful de-approval message with
+  // NO control, because the only support path in the product was a stub reading
+  // "Coming soon" and a dead button there would have been worse than silence.
+  // Session 8 built the operator queue, so the action now has somewhere to land.
+  const [reviewStatus, setReviewStatus] = useState<ReviewCaseStatus | null>(null)
+  const [reviewBusy, setReviewBusy] = useState(false)
 
   const channelIdRef = useRef<number | null>(null)
   if (channelIdRef.current === null) channelIdRef.current = ++channelInstanceSeq
@@ -162,6 +175,10 @@ export default function ProviderDashboard() {
       setProviderDbId(provider.id)
       if (provider.display_name) setProviderName(provider.display_name)
       setAcceptingBookings(provider.is_approved !== false)
+      if (provider.is_approved === false) {
+        const st = await myProviderReviewStatus()
+        setReviewStatus(st?.status ?? null)
+      }
 
       // Whether the provider has set any availability — drives the dashboard
       // nudge below. A provider with no hours can't be booked.
@@ -384,6 +401,29 @@ export default function ProviderDashboard() {
   const hour = new Date().getHours()
   const greeting =
     hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
+  function askForReview() {
+    Alert.alert(REQUEST_REVIEW_COPY.title, REQUEST_REVIEW_COPY.body, [
+      { text: REQUEST_REVIEW_COPY.cancelLabel, style: 'cancel' },
+      {
+        text: REQUEST_REVIEW_COPY.confirmLabel,
+        onPress: async () => {
+          setReviewBusy(true)
+          const caseId = await requestProviderReview()
+          setReviewBusy(false)
+          if (!caseId) {
+            Alert.alert('Could not send', 'Please check your connection and try again.')
+            return
+          }
+          // Read the status back rather than assuming it: the server is the one
+          // that decides whether this opened a case or resolved to one that
+          // already existed.
+          const st = await myProviderReviewStatus()
+          setReviewStatus(st?.status ?? 'open')
+        },
+      },
+    ])
+  }
+
   const greetingName = providerName || 'there'
   // Accurate total (the displayed list is capped at 20; "See all" has the rest).
   const pendingCount = earnings.pendingCount || pendingRequests.length
@@ -474,6 +514,28 @@ export default function ProviderDashboard() {
               <Text style={styles.notAcceptingSub}>
                 Your existing bookings, messages, and history are still available.
               </Text>
+              {/* THE CONTROL PD-081 DEFERRED, now that it leads somewhere real.
+
+                  Shown only when no review is under way. Once one is, the state
+                  replaces it — a provider who has already asked should see that
+                  they asked, not a button inviting them to ask again (the server
+                  is idempotent, but offering the action would imply the first one
+                  did not take). NO TIMEFRAME appears in any state, because there
+                  is no SLA and no channel to deliver an answer through. */}
+              {reviewStatus ? (
+                <Text style={styles.notAcceptingStatus}>
+                  {providerReviewCopy(reviewStatus)}
+                </Text>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.reviewBtn, reviewBusy && styles.reviewBtnBusy]}
+                  disabled={reviewBusy}
+                  activeOpacity={0.85}
+                  onPress={askForReview}
+                >
+                  <Text style={styles.reviewBtnText}>Request Review</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -824,6 +886,32 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
     lineHeight: 19,
+  },
+  notAcceptingStatus: {
+    marginTop: 10,
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.75)',
+    fontFamily: 'Manrope_500Medium',
+    lineHeight: 17,
+  },
+  reviewBtn: {
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    minHeight: 38,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(200,146,42,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewBtnBusy: { opacity: 0.6 },
+  reviewBtnText: {
+    fontSize: 13,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
   },
   notAcceptingSub: {
     marginTop: 4,

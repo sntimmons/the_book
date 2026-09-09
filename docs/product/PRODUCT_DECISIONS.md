@@ -1485,6 +1485,135 @@ as locked decisions.
 
 ---
 
+### PD-082 — Blocking stops new contact and never deletes history
+
+- **Decision.** A person may block another. While the block exists neither may start a new
+  conversation, booking or barter interaction with the other. **A block never deletes or hides
+  anything**, and it never closes a conversation attached to a LIVE booking or barter agreement.
+- **Context.** Session 8. No blocking existed at all before it.
+- **Consequences.**
+  - **Directional row, symmetric effect.** Only the blocker may create or remove it and only they
+    can see it — the blocked party is never told, because announcing a block to the person it was
+    taken against is itself a safety event. But the EFFECT runs both ways: a one-way block would
+    stop only the person who asked for it.
+  - **THE ACTIVE-TRANSACTION EXCEPTION.** A blocked pair with a submitted, non-terminal booking or
+    a confirmed, uncancelled agreement holding an unresolved obligation keeps that conversation
+    open until the transaction is terminal. Two providers in a confirmed trade owe each other
+    delivery, confirmation and — when it goes wrong — a no-show report or a review request; a
+    client with an accepted booking has someone coming to their address. Severing those threads
+    would trap both people inside an obligation while removing the only means of completing,
+    cancelling or resolving it. **The exception is what makes blocking safe to offer at all.**
+  - It is bounded three ways: only a conversation that ALREADY exists (opening a new one is
+    refused outright, with no exception), only while the transaction is live, and it grants
+    nothing else. **A DRAFT booking is not a live transaction** — otherwise a blocked party could
+    manufacture their own exception by opening a booking flow.
+  - `PT427` is the block refusal and is deliberately distinct from `PT426` (de-approved provider).
+    Similar copy, different facts; conflating them would tell a blocked user that a provider had
+    been removed from the marketplace.
+- **Evidence.** `20261046000000`, `20261047000000`, `20261051000000`; `lib/safety.ts`. Proven by
+  `supabase/tests/safety_operator.test.sql` and three concurrency races.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-083 — One report system, one operator queue, and operator notes are private
+
+- **Decision.** Reporting writes to `public.reports`, which opens a case in the operator queue.
+  The community feed's separate `community_reports` path is retired. **Operator notes are never
+  readable by any ordinary user.**
+- **Context.** Two report systems existed and neither reached an operator. Worse, `reports`'
+  only SELECT policy is `auth.uid() = reporter_user_id` with no column restriction — so **a
+  reporter could read the operator's private notes on their own report.**
+- **Consequences.**
+  - Categories are grounded in what the product does, and there is **no billing or payment
+    category**: The Book processes no payment (PD-042), and Correction 3 removed exactly that
+    option for the same reason. Nine entries including `other`, because a taxonomy a reporter must
+    study is one that gets the wrong answer.
+  - `admin_notes` and `resolved_by` are withheld by **column grant**, and `my_reports` is the
+    supported read. A column-level REVOKE against a table-level grant does not work — see PD-084.
+  - Fixing the grants also closed an unrelated hole: the baseline handed `authenticated`
+    table-level UPDATE and DELETE on `reports` with **no policy constraining them**, unreachable
+    only because RLS denies by default when no policy matches. One added policy away from a
+    reporter editing or deleting a report an operator was working.
+- **Evidence.** `20261050000000`, `20261052000000`; `lib/safety.ts`, `app/community/index.tsx`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-084 — A column-level REVOKE cannot narrow a table-level GRANT
+
+- **Decision.** To withhold a column, revoke the TABLE-level privilege and re-grant the columns
+  you intend to expose. A column-level `REVOKE` against a table-level grant is a **no-op**.
+- **Context.** **This repo has now shipped that mistake twice.** Correction 3's `20261037000000`
+  § 7 shipped `revoke update (expires_at) … from authenticated` believing it did something; the
+  security review found it inert. Session 8's `20261050000000` § 5 then did the same thing to
+  close the `admin_notes` leak, and B5B caught it within minutes.
+- **Consequences.** Recorded as a decision rather than a comment because it has cost two
+  migrations and will cost a third otherwise. The working pattern is Correction 2's
+  `20261030000000`: no table-level SELECT, 28 named columns. **A migration that adds a
+  column-level REVOKE without removing the table-level grant has not done what it says.**
+- **Evidence.** `20261052000000` and its header; `20261030000000`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-085 — Operator authority is the service key, and every case action is auditable
+
+- **Decision.** Operator power is `service_role` (or a no-claims/no-subject privileged session),
+  exposed through RPCs granted to `service_role` alone. **There is no operator role table and no
+  `is_admin` column.** Every case state change writes an append-only event.
+- **Context.** PD-068 makes a minimal Review Queue a pre-beta requirement, and three things wait
+  on it: PD-072's barter review requests, PD-081's provider appeals, and user reports.
+- **Consequences.**
+  - `is_operator()` is the single definition, extracted from the predicate
+    `adjudicate_barter_obligation` already used — `20261023000000` narrowed that exact predicate
+    because a looser form admitted a no-`sub` `anon` request, and **both conjuncts are
+    load-bearing**.
+  - **No role table, deliberately.** A row granting operator power is a client-reachable path to
+    operator power. The authority here is "holds the service key", which is an infrastructure fact
+    rather than a row a compromised session could flip.
+  - `authenticated` holds **no grant at all** on `operator_cases` or `operator_case_events`, and
+    RLS is on with no policy for that role — two independent refusals.
+  - The actor id is a PARAMETER because a `service_role` session has no `auth.uid()`. It RECORDS
+    who acted and is **never trusted as authority**; `is_operator()` decides that.
+  - **One live case per subject**, so a duplicate appeal or duplicate barter review cannot fill
+    the queue with the same question.
+  - **Resolving a barter case does not adjudicate it.** Terminal outcomes remain reachable only
+    through `adjudicate_barter_obligation` (PD-064, PD-068). No second adjudication path exists,
+    and **no case field asks what a trade was worth** — asserted in B5B.
+  - No SLA field, no priority, no assignment. PD-068 says there is no SLA; a field inviting one
+    would be the first step to promising it.
+- **Evidence.** `20261049000000`, `20261050000000`. Proven by `supabase/tests/safety_operator.test.sql`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-086 — A de-approved provider can ask for review, and eligibility gates writes only
+
+- **Decision.** A provider whose business is not currently available for new bookings sees
+  **Request Review**, which opens a real case in the operator queue. Eligibility gates what a
+  provider may **start**; it never gates what they may finish, cancel, read or clean up.
+- **Context.** PD-081 recorded this as owed and deliberately shipped no button, because the only
+  support path was a stub reading "Coming soon". The queue exists now, so the control ships with
+  the path behind it.
+- **Consequences.**
+  - **The lockout that was designed against.** `20260906000000` warned that gating
+    `caller_provider_id()` on `is_approved` would also stop a de-approved provider closing their
+    own live offers, and that gating the interest READ policy would be *actively wrong* — they
+    would lose sight of responses already sent to them. So a **separate**
+    `caller_eligible_provider_id()` gates the two INSERT policies and nothing else. B5B asserts
+    both halves: they cannot post a new offer, and they CAN still close an existing one.
+  - Idempotent per unresolved eligibility state — no duplicate appeals.
+  - The provider sees **that** a review is under way and nothing more: never operator notes, never
+    the event log, never a timeframe. `resolved` and `dismissed` read identically to them, because
+    "dismissed" is a word chosen for an operator's filing system and what a provider needs to know
+    — whether their business is available again — is shown by the availability state itself.
+  - Appealing grants nothing: **no participant path can restore eligibility.**
+- **Evidence.** `20261048000000`, `20261050000000`; `lib/safety.ts`, `app/(tabs)/business/index.tsx`.
+- **Status:** Locked; **implemented**
+
+---
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

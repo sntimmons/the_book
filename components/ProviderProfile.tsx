@@ -75,6 +75,14 @@ export interface ProviderProfileProps {
   onFollow?: () => void
   onSave?: () => void
   onMessage?: () => void
+  /**
+   * Session 8. Opens the safety sheet (Block / Report) for this provider.
+   *
+   * Optional and absent on the go-live preview and on your own profile — you
+   * cannot block or report yourself, and a provider previewing their own listing
+   * is not looking at a person they might need to act against.
+   */
+  onSafetyMenu?: () => void
 }
 
 const MOCK_PROVIDER: ProviderData = {
@@ -102,6 +110,7 @@ export default function ProviderProfile({
   onFollow,
   onSave,
   onMessage,
+  onSafetyMenu,
 }: ProviderProfileProps) {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
@@ -243,6 +252,23 @@ export default function ProviderProfile({
               >
                 <Feather name="message-circle" size={16} color="#F0E8D5" />
               </TouchableOpacity>
+              {/* SESSION 8: the safety control.
+
+                  Quiet and last, deliberately. Block and Report are the two most
+                  consequential things a person can do from this screen and the
+                  two they will need fastest if something goes wrong — so they are
+                  always in the same place, never buried in a submenu of a submenu,
+                  and never styled to invite a curious tap. */}
+              {onSafetyMenu ? (
+                <TouchableOpacity
+                  style={styles.messageBtn}
+                  onPress={onSafetyMenu}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Block or report this provider"
+                >
+                  <Feather name="more-horizontal" size={16} color="rgba(240,232,213,0.7)" />
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
         </View>
