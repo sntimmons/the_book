@@ -1,6 +1,14 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
+
+> **Edited after PR #74 by the post-Correction-3 state reconciliation (`main` @ `0781f49`,
+> 2026-09-09), which was NOT given a PR number.** It **added, superseded and reopened no
+> decision.** Its only changes are three **corrections of fact** where this preamble and PD-064
+> still described the Needs Attention → Under Review escalation question as open, which **PD-072
+> closed on 2026-09-09**. Each correction is marked in place with a strike-through rather than a
+> rewrite, and PD-064 is explicitly **not** superseded by it.
+
 **Last edited by:** **PR #74** (Pre-Session-8 Correction 3), which recorded **PD-071 … PD-081** —
 the booking-request lifecycle and its 72-hour server expiry, the deliverer's review request
 (closing OQ-071), the beta discovery lanes and their content-neutrality rule, the "Houston Beta
@@ -28,7 +36,10 @@ the decision itself is untouched.
 **PD-064 … PD-067 record manual adjudication and the three terminal OBLIGATION outcomes.** They
 do **not** create an agreement-level outcome — ~~that roll-up is deferred~~ **and PD-070 has
 since ruled that it never will be persisted at all** — and they do **not** resolve how a plain
-Needs Attention might enter Under Review, which remains open.
+Needs Attention might enter Under Review, ~~which remains open~~ **which PD-072 has since closed
+(OQ-071, 2026-09-09)**. What that leaves standing from these four is narrower and still true: they
+create no agreement-level outcome, and none of them may be read as answering the escalation
+question, which took a separate Founder ruling.
 
 **The question those four decisions raised is now ANSWERED by PD-068.** It read: the
 adjudication path exists, but **no shipped surface calls it**, so no obligation can actually
@@ -46,8 +57,15 @@ recorded as open: agreement-level resolution is **derived** from the immutable o
 adjudication and cancellation facts, never stored, and no roll-up label may overstate what was
 found. **No open question was ever minted for it, and none should be.**
 
-**Still genuinely open after PD-068 … PD-070:** how a plain Needs Attention might enter Under
-Review. That is the last undecided question in the barter lifecycle engine.
+~~**Still genuinely open after PD-068 … PD-070:** how a plain Needs Attention might enter Under
+Review. That is the last undecided question in the barter lifecycle engine.~~
+**CLOSED 2026-09-09 by PD-072**, and this preamble is corrected rather than left standing: the
+question was given a number as **OQ-071** by the post-Session-7 reconciliation and answered by the
+Founder in Correction 3 with a **deliverer-initiated explicit act**. **None of the four
+resolutions OQ-071 forbade was used** — no second timer, no automatic escalation, no operator
+auto-escalation, and the participant action that exists is a *request*, not an escalation.
+**The barter lifecycle engine now carries no open question.** The newest open question in this
+product is **OQ-072**, and it belongs to the **booking** lifecycle, not the barter one.
 
 This ledger holds **only decisions that are locked**. If something is a working idea, a
 proposal, a recommendation, or "we're leaning towards it", it belongs in
@@ -791,9 +809,19 @@ as locked decisions.
   trusted operator surface**; building the first real one is a larger question than this slice.
   Per the Founder ruling, the secure server path lands first and the screen is deferred rather
   than authorization being weakened to make a screen easy to build.
-  **How a plain Needs Attention might enter Under Review is still UNRESOLVED** — this decision
+  ~~**How a plain Needs Attention might enter Under Review is still UNRESOLVED**~~ — this decision
   does not resolve it, and no automatic escalation, second timer, participant escalation action
   or operator auto-escalation was created.
+  **CORRECTION OF FACT, 2026-09-09, by the Project State Steward: it is no longer unresolved.**
+  **PD-072** closed it (OQ-071) with a deliverer-initiated explicit act. **PD-064 itself is
+  unchanged and is NOT superseded** — an obligation is still eligible for adjudication only while
+  it is Under Review; what changed is only that there are now **three** ways to arrive at Under
+  Review rather than two. The eligibility disjunct was added to
+  `public.adjudicate_barter_obligation` by
+  `supabase/migrations/20261039000000_barter_review_request.sql` § 7 — **now the RPC's live
+  definition** — and to `public.enforce_barter_adjudication_consistent` by
+  `20261042000000_adjudication_consistency_review_request.sql`, which exists because the first
+  migration updated only one of the two places this rule is deliberately enforced.
 - **Evidence:** Founder ruling, 2026-09-07.
   `supabase/migrations/20261019000000_barter_obligation_adjudication.sql`, hardened by
   `20261023000000_adjudication_hardening.sql` — **which is where the RPC's half of the

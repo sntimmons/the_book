@@ -1,17 +1,28 @@
 # Open Questions
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `f5fd1973b70b6163e0a1a56874d61673bdc00ee7` (2026-09-08) — for
-the **Barter** entries only; see the scope note below.
-**Last edited by:** the post-Session-7 state reconciliation.
+**Reconciled against:** `main` @ `0781f4986036633a59126b5fce5758b4611f545d` (2026-09-09) — for
+the **Barter** entries and the new **Schema / data** entry (OQ-072) only; see the scope note below.
+**Last edited by:** **PR #74** (Pre-Session-8 Correction 3), which **closed OQ-071** with PD-072,
+**partly closed OQ-035** with PD-074, and **opened OQ-072**. The previous edit was the
+post-Session-7 state reconciliation, PR #71 per its commit subject (`224d609`).
 
 > **WHAT THIS ANCHOR COVERS, AND WHAT IT DOES NOT.** An anchor asserts that *this document's*
-> facts were verified at that commit. The 2026-09-08 reconciliation re-verified the **Barter**
-> entries (OQ-001 … OQ-008, and the new OQ-071) against `f5fd197`, because Session 7 completed
-> there and those were the entries at risk of having gone stale. It did **NOT** re-verify the
+> facts were verified at that commit. The 2026-09-09 reconciliation re-verified **OQ-071**'s
+> closure and **OQ-072**'s premise against `0781f49` — that
+> `supabase/migrations/20261039000000_barter_review_request.sql` exists and creates a
+> deliverer-only, idempotent, append-only request with no timer and no automatic escalation; and
+> that `bookings.appointment_time` is nullable while `requested_date` is a bare `date` and
+> `requested_time` is free `text`. It re-verified the **Barter** entries' continuing accuracy only
+> to the extent PR #74 touched them. It did **NOT** re-verify the
 > repository claims carried by **OQ-011**, **OQ-036** or **OQ-070**, which were last checked at
-> `0e11cde` (2026-09-04) and should be re-read at the **Whole-App Audit Round 2**. Nothing
-> outside Barter was changed.
+> `0e11cde` (2026-09-04) and should be re-read at the **Whole-App Audit Round 2** — and note that
+> **OQ-036's subject matter was touched by Pre-Beta Correction 1** (`6a3fb69`), which removed the
+> copy; the entry already records that a deletion does not close a question, and it stays **Open**.
+>
+> **The previous anchor covered less than this one.** The 2026-09-08 reconciliation re-verified
+> the **Barter** entries (OQ-001 … OQ-008, and the then-new OQ-071) against `f5fd197`, because
+> Session 7 completed there, and changed nothing outside Barter.
 >
 > **It did not move for PR #56 (`46c0bef`) either, and for the same reason.** That
 > reconciliation (merged as PR #57) edited only the closed index below — to record that PD-057,
@@ -218,35 +229,6 @@ an entry is self-describing when quoted alone.
 - **Status:** Closed by **PD-047** on 2026-09-04 — see [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1. The post stays editable; **every proposal snapshots the post terms at creation**, so an edit reaches future responders only and can never rewrite an existing proposal, negotiation or accepted agreement.
 
 ---
-
-## Booking lifecycle
-
-### OQ-072 — A booking carries a service DATE but not always an authoritative appointment TIME
-- **Area:** Booking lifecycle
-- **Why it matters:** PD-071 expires a request at `LEAST(submitted_at + 72 hours,
-  appointment_time)`, so the clamp that stops a request outliving its own service time depends on
-  `appointment_time` — which is **nullable**. When it is null the 72-hour deadline stands alone,
-  and a request can remain answerable after the date the client asked for.
-- **What the model actually holds.** `bookings.requested_date` is a `date` and is NOT NULL;
-  `bookings.requested_time` is free `text` (a display string, "11:00 AM"); `appointment_time` is
-  `timestamptz` and nullable. A deadline derived from the first two requires assuming **a
-  time-of-day and a timezone** — neither of which the row carries.
-- **How narrow the gap is.** The date/time step will not advance without both a date and a time,
-  and its slot labels are exactly the format the parser accepts, so a request made through the
-  normal flow **does** carry an `appointment_time`. What remains is rows predating the column and
-  any path that reaches the send step without passing that one.
-- **One further limitation, recorded with it:** `appointment_time` is assembled on the CLIENT from
-  the device's local timezone. For a single-city beta where both parties are in Houston that is
-  unremarkable, but it means the "authoritative" timestamp is only as authoritative as the device
-  clock. It cannot be abused to LENGTHEN a window — `LEAST` caps at 72 hours regardless — only to
-  shorten the client's own.
-- **Not to be resolved by implementation.** **PM ruling, 2026-09-09:** do not manufacture a rule
-  from the service date. Deriving "end of the requested day" or any other boundary means inventing
-  a time-of-day and picking a timezone on the client's behalf, and a rule invented from assumptions
-  is worse than a bounded one that is honest about its limit. Options a decision could take —
-  making `appointment_time` NOT NULL going forward, storing a booking timezone, or accepting the
-  72-hour bound as final — are all genuinely open.
-- **Status:** Open
 
 ## Messaging
 
@@ -494,6 +476,39 @@ schema; the product rules around them do not. Each question below is separately 
 
 ---
 
+### OQ-072 — A booking carries a service DATE but not always an authoritative appointment TIME
+- **Area:** Schema / data
+- **Filed under Schema / data, not "Booking lifecycle".** The first version of this entry
+  declared an area that is not in the permitted set, which the Steward correctly refused to
+  recharacterise on the Founder's behalf. The question IS about the booking data model — a `date`
+  column, a free-text display string, and a nullable timestamp — so `Schema / data` is the
+  permitted value that fits, and re-filing was preferable to editing an agent specification to
+  admit a ninth area.
+- **Why it matters:** PD-071 expires a request at `LEAST(submitted_at + 72 hours,
+  appointment_time)`, so the clamp that stops a request outliving its own service time depends on
+  `appointment_time` — which is **nullable**. When it is null the 72-hour deadline stands alone,
+  and a request can remain answerable after the date the client asked for.
+- **What the model actually holds.** `bookings.requested_date` is a `date` and is NOT NULL;
+  `bookings.requested_time` is free `text` (a display string, "11:00 AM"); `appointment_time` is
+  `timestamptz` and nullable. A deadline derived from the first two requires assuming **a
+  time-of-day and a timezone** — neither of which the row carries.
+- **How narrow the gap is.** The date/time step will not advance without both a date and a time,
+  and its slot labels are exactly the format the parser accepts, so a request made through the
+  normal flow **does** carry an `appointment_time`. What remains is rows predating the column and
+  any path that reaches the send step without passing that one.
+- **One further limitation, recorded with it:** `appointment_time` is assembled on the CLIENT from
+  the device's local timezone. For a single-city beta where both parties are in Houston that is
+  unremarkable, but it means the "authoritative" timestamp is only as authoritative as the device
+  clock. It cannot be abused to LENGTHEN a window — `LEAST` caps at 72 hours regardless — only to
+  shorten the client's own.
+- **Not to be resolved by implementation.** **PM ruling, 2026-09-09:** do not manufacture a rule
+  from the service date. Deriving "end of the requested day" or any other boundary means inventing
+  a time-of-day and picking a timezone on the client's behalf, and a rule invented from assumptions
+  is worse than a bounded one that is honest about its limit. Options a decision could take —
+  making `appointment_time` NOT NULL going forward, storing a booking timezone, or accepting the
+  72-hour bound as final — are all genuinely open.
+- **Status:** Open
+
 ## Closed — index
 
 **Closed questions are not moved.** An earlier version of this section said they would be, and
@@ -512,6 +527,26 @@ say that was false.
 | **OQ-004** — How should cancellation and no-show work for trades? | 2026-09-04 | **PD-046** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7) |
 | **OQ-005** — How should barter interact with reviews and reputation? | 2026-09-04 | [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 8 — not at all, in the first beta |
 | **OQ-008** — May an offer's terms still be edited once providers have responded? | 2026-09-04 | **PD-047** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1) |
+| **OQ-071** — How may a plain Needs Attention enter Under Review? | 2026-09-09 | **PD-072** — a deliverer-initiated explicit act; none of the four forbidden resolutions was used |
+
+**One entry is PARTLY closed and is deliberately not in the table above**, because a table of
+closed questions is the wrong place for a question that is still open:
+**OQ-035** — identity-verification vendor and permitted trust claims — had its **trust-claim half
+answered by PD-074** on 2026-09-09 ("Houston Beta Provider", and nothing else). **The vendor half
+remains Open**, so the entry's `Status` carries the split and the entry stays in
+§ Houston beta.
+
+> **THE WHOLE BLOCK BELOW IS SUPERSEDED, 2026-09-09.** It records how a plain **Needs Attention**
+> entering **Under Review** was carried as deliberately undecided from 2026-09-07 until it was
+> given a number as **OQ-071** on 2026-09-08. **PD-072 closed it on 2026-09-09** — a
+> deliverer-initiated explicit act (`supabase/migrations/20261039000000_barter_review_request.sql`),
+> and **none of the four forbidden resolutions was used**: no second timer, no automatic
+> escalation, no operator auto-escalation, and the participant action that now exists is a
+> **request** rather than an escalation. The block is kept verbatim, not rewritten, because it is
+> the record of how a deliberate non-decision was held open for two days rather than settled by
+> whoever was implementing at the time. Read **OQ-071** above for the current status; the
+> paragraph-level facts below (the migration count, the four negotiation-screen ops, the `0f2b93c`
+> anchor) describe the tree as it was and are **no longer current**.
 
 **RECORDED AS DELIBERATELY UNDECIDED, 2026-09-07 (Founder).** How a plain **Needs Attention**
 later enters **Under Review** is NOT decided and was NOT implemented. No second timer, no
@@ -584,3 +619,50 @@ above**. **OQ-004** stays Closed by PD-046 on 2026-09-04 — PD-062 supersedes t
 does not disturb the question's closure or the decision that closed it. **OQ-006** and **OQ-007**
 remain **Open**, for the reasons recorded on each. What PR #64 leaves undecided is recorded
 immediately above rather than as a new numbered entry, because no one has filed it as a question.
+
+**PR #66 (`0f2b93c`), PR #68 (`5c24e8f`), PR #70 (`f5fd197`) and PR #71 (`224d609`) closed no
+question here.** PR #66 added no migration and no product behaviour. PR #68 built adjudication and
+the three terminal OBLIGATION outcomes and **did not** answer the escalation question. PR #70
+recorded PD-069 and PD-070 and closed nothing here — PD-070 answered a persist-vs-derive question
+**no one had filed**, and none should be minted for it retrospectively. PR #71 was the
+documentation-only post-Session-7 reconciliation; it **opened OQ-071** by giving a number to a gap
+that five locked decisions were already carrying in prose, and recorded explicitly that **no
+decision was made or implied by recording it**.
+
+**Pre-Beta Correction 1 (`6a3fb69`) closed no question either, and this is the case that matters
+most.** It **removed** the "14-day to verify" copy from `app/onboarding/provider/golive.tsx` and
+the "ID Verified" badge — the exact subject matter of **OQ-036** and half of **OQ-035**. Neither
+closed. **A question is closed by a cited decision, never by a deletion**, and the removal did not
+rule on whether a verification grace period should exist or of what length. OQ-036's own entry
+says so, and `__tests__/guards/betaClaimsAbsent.test.ts` now fails if a timeframe returns.
+**Pre-Beta Correction 2 (`a125cd7`, PR #73) closed none either**: it is authorization hardening
+with no product decision in it, and it neither reopened nor narrowed any entry above.
+
+**PR #74 (`0781f49`) is the first merge since 2026-09-04 to change an entry's STATUS, and it
+changed three.** (PR #71 moved the ledger too, but by *adding* OQ-071, not by resolving anything.)
+All three changes are recorded by the merge itself, and this reconciliation verified the
+repository facts behind them rather than the rulings:
+
+- **OQ-071 CLOSED by PD-072** (Founder ruling, Correction 3 item X, 2026-09-09) — the deliverer's
+  review request. What is **not** closed by it, and is tracked in PD-072 instead: nothing
+  processes these requests until the PD-068 Review Queue exists, and there is still **no SLA**.
+- **OQ-035 PARTLY CLOSED by PD-074** — the trust-claim half only. **The vendor half is Open**, and
+  the entry is deliberately absent from the closed-index table above for that reason.
+- **OQ-072 OPENED**, under **Schema / data**. PD-071's expiry clamp
+  depends on `bookings.appointment_time`, which is nullable; `requested_date` is a bare `date` and
+  `requested_time` is free `text`, so a deadline derived from them would require inventing a
+  time-of-day and a timezone. **PM ruling, 2026-09-09: do not manufacture a rule from the service
+  date.** The options a decision could take are stated in the entry and none is implied.
+
+**A note on the `Area` value, and how it was settled.** OQ-072 was first filed under a
+`Booking lifecycle` heading — a value **not** in the enum that
+`.agents/project-state-steward/OUTPUT_FORMAT.md` defines and this document's preamble delegates to.
+The Steward flagged it and correctly refused to act: re-filing could have recharacterised a
+question, and changing the enum would mean editing an agent specification it may not touch.
+
+It was **re-filed under `Schema / data` by the author of the entry**, which is the resolution that
+needed neither. The question is about the booking data model — a `date` column, a free-text display
+string and a nullable timestamp — so `Schema / data` is the permitted value that genuinely fits,
+and admitting a ninth area to the enum for one entry would have been the larger change. The
+governance point stands and is worth keeping: an entry's `Area` must come from that enum, and a
+value outside it is a defect in the entry, not a gap in the enum.

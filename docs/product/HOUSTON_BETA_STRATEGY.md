@@ -3,6 +3,17 @@
 **Status:** Authoritative for beta intent and success definition. Owner: Founder.
 Maintained by the Project State Steward.
 
+**Reconciled against:** `main` @ `0781f49` (2026-09-09) — for the two reconciled notes below
+(§ What the beta must prove → Trust, and § The barter principle) and nothing else. **Every other
+statement in this document is beta INTENT rather than a repository fact**, so it has no anchor to
+move; the Founder owns it, and the Steward records only where a locked decision has since
+constrained how the intent may be expressed.
+**Last edited by:** this reconciliation, which was **not given a PR number**. The previous edit
+added the § The barter principle note and dated it 2026-09-08; **which merge carried it is not
+determinable from this file** — PR #70 (`f5fd197`) and the post-Session-7 reconciliation
+(`224d609`, PR #71) both landed that day — and no number is guessed here.
+`git log --oneline -- docs/product/HOUSTON_BETA_STRATEGY.md` settles it.
+
 ## Thesis
 
 > In 21–30 days, The Book should prove that small providers and supportive clients can use
@@ -35,6 +46,19 @@ a scattered cohort produces browsing, not matches.
 ### 3. Trust
 Profiles, work examples, platform records, messaging, booking and reputation make dealing
 with a stranger feel safer and more credible than a DM to an Instagram account.
+
+**Reconciled 2026-09-09 — what the beta may CLAIM about trust is now locked.** **PD-074** rules
+that an approved provider carries **"Houston Beta Provider"** and **no other badge**. Permitted
+alongside it: real profile and business information, portfolio and service info, location and
+service mode, reviews from completed bookings and their count, completed-booking information, and
+the provider's own policy or contract. **Not permitted:** "Verified", "ID Verified", trust scores,
+any badge implying government identity verification, and barter reputation. The label is a
+**fact** — this provider was approved into the Houston beta — and asserts no identity check,
+because none exists. It **partly closes OQ-035**; the identity-verification **vendor** question
+stays open. This does not change the thesis above; it constrains how the product may say it.
+**PD-078** adds the other side: a provider who is no longer approved is described in
+**availability** terms, never as judged, and marketplace approval is never to be presented as
+identity verification.
 
 ### 4. Transaction intent
 People book and complete **real services** even though they cannot pay in-app. This is the
