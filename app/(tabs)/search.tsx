@@ -654,11 +654,12 @@ function ProviderCard({ provider: p }: { provider: Provider }) {
             <Feather name="user" size={22} color="rgba(240,232,213,0.2)" />
           </View>
         )}
-        {p.identity_verified && (
-          <View style={styles.verifiedBadge}>
-            <Feather name="check" size={8} color="#080808" />
-          </View>
-        )}
+        {/* PRODUCT TRUTH: a verification check-mark used to render here from
+            `identity_verified`. No user-completable identity-verification
+            process exists (PD-004), so nothing has been verified and the mark
+            asserted a completed check that never happened. Removed for the same
+            reason it was removed from components/ProviderProfile.tsx — this is
+            the higher-traffic surface of the two. */}
       </View>
 
       <View style={styles.cardCenter}>
@@ -1089,19 +1090,6 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  verifiedBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: '#C8922A',
-    borderWidth: 1.5,
-    borderColor: '#080808',
     alignItems: 'center',
     justifyContent: 'center',
   },

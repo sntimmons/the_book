@@ -152,7 +152,7 @@ export default function IssueReport() {
         {/* Headline */}
         <Text style={styles.headline}>What went wrong?</Text>
         <Text style={styles.subtext}>
-          Your experience matters. Tell us what happened and we will make it right.
+          Your experience matters. Tell us what happened.
         </Text>
 
         {/* Issue categories */}
@@ -185,7 +185,7 @@ export default function IssueReport() {
               style={styles.input}
               multiline
               maxLength={500}
-              placeholder="Describe what happened so we can help resolve this..."
+              placeholder="Describe what happened..."
               placeholderTextColor="rgba(240,232,213,0.25)"
               textAlignVertical="top"
               value={description}
@@ -197,15 +197,17 @@ export default function IssueReport() {
           </View>
         </View>
 
-        {/* Refund note */}
-        <View style={styles.refundNote}>
-          <Feather name="info" size={14} color="#C8922A" style={styles.refundIcon} />
-          <Text style={styles.refundText}>
-            If your issue involves a charge our team will review and process any eligible refunds within 48 hours.
-          </Text>
-        </View>
+        {/* PRODUCT TRUTH: a refund note used to sit here promising that "our
+            team will review and process any eligible refunds within 48 hours".
+            The Book takes no payment, so there is nothing to refund, and no
+            48-hour operational commitment exists. Removed outright rather than
+            restated with a different window. */}
 
-        {/* Safety note */}
+        {/* Safety note. PRODUCT TRUTH: previously "our team responds within 2
+            hours. All reports are reviewed by a real person." Neither an
+            SLA nor a staffed review process exists. What IS true is that the
+            report is recorded and reaches The Book — and that emergencies do
+            not belong in an in-app form. */}
         <View style={styles.safetyNote}>
           <Feather
             name="shield"
@@ -214,7 +216,7 @@ export default function IssueReport() {
             style={styles.safetyIcon}
           />
           <Text style={styles.safetyText}>
-            For safety concerns our team responds within 2 hours. All reports are reviewed by a real person.
+            Your report is recorded and sent to The Book. If you are in immediate danger, contact local emergency services.
           </Text>
         </View>
       </ScrollView>
@@ -224,8 +226,10 @@ export default function IssueReport() {
         {submitted ? (
           <View style={styles.successState}>
             <Feather name="check-circle" size={20} color="#4CAF50" />
+            {/* PRODUCT TRUTH: promised follow-up "within 24 hours". No such
+                commitment exists and no operator queue is staffed. */}
             <Text style={styles.successText}>
-              Report submitted. We will follow up within 24 hours.
+              Report submitted. Thank you for telling us.
             </Text>
           </View>
         ) : (
@@ -374,28 +378,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
-  },
-  refundNote: {
-    marginHorizontal: 24,
-    marginTop: 20,
-    padding: 14,
-    backgroundColor: 'rgba(200,146,42,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.15)',
-    borderRadius: 12,
-    flexDirection: 'row',
-    gap: 10,
-    alignItems: 'flex-start',
-  },
-  refundIcon: {
-    marginTop: 2,
-  },
-  refundText: {
-    flex: 1,
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 17,
   },
   safetyNote: {
     paddingHorizontal: 24,

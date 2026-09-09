@@ -119,14 +119,17 @@ export default function BookingDeclined() {
           Not available{'\n'}for this one.
         </Text>
 
+        {/* PRODUCT TRUTH: both of these said "No charge was made to your
+            account", which frames The Book as holding a payment method it could
+            have charged. It holds none and charges nothing (PD-042). Said once
+            now, and said accurately. */}
         <Text style={styles.subtext}>
-          No charge was made to your account.{'\n'}
-          Let's find you someone just as good.
+          Let&apos;s find you someone just as good.
         </Text>
 
-        <View style={styles.refundBox}>
+        <View style={styles.noPaymentBox}>
           <Feather name="check-circle" size={14} color="#4CAF50" />
-          <Text style={styles.refundText}>No charge made to your account</Text>
+          <Text style={styles.noPaymentText}>No in-app payment in this beta</Text>
         </View>
 
         {showAlternatives && (
@@ -246,7 +249,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  refundBox: {
+  noPaymentBox: {
     marginTop: 20,
     marginHorizontal: 24,
     flexDirection: 'row',
@@ -259,7 +262,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(76,175,80,0.15)',
     borderRadius: 12,
   },
-  refundText: {
+  noPaymentText: {
     fontSize: 13,
     color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',

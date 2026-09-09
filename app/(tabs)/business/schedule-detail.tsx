@@ -347,9 +347,13 @@ export default function ScheduleDetail() {
                       {pct(p.rate)} {p.kind}
                     </Text>
                   </View>
+                  {/* PRODUCT TRUTH: advised a deposit "to protect it". Deposits
+                      are stored configuration and are never collected in this
+                      beta (PD-042), so the advice pointed at a mechanism that
+                      cannot protect anything. */}
                   <Text style={s.problemNote}>
-                    This slot has a high {p.kind} rate. Consider a deposit requirement to
-                    protect it.
+                    This slot has a high {p.kind} rate. Worth reviewing how you
+                    offer it.
                   </Text>
                 </View>
               ))}

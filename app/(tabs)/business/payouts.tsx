@@ -26,9 +26,14 @@ export default function ProviderPayouts() {
         <Text style={styles.title}>Payout setup coming soon</Text>
         <Text style={styles.subtitle}>Payouts are not available during beta.</Text>
 
+        {/* PRODUCT TRUTH: this said "The value of your completed services is
+            tracked HERE in the meantime" — on a screen that displays nothing at
+            all, so the sentence was contradicted by the screen making it. The
+            completed-service total does exist, on the Business dashboard, so
+            the pointer is kept and made accurate rather than deleted. */}
         <View style={styles.note}>
           <Text style={styles.noteText}>
-            The value of your completed services is tracked here in the meantime.
+            Your completed service value is shown on your Business dashboard.
           </Text>
         </View>
       </View>

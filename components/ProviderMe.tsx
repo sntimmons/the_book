@@ -26,11 +26,15 @@ function CommunityHubCard() {
         <Feather name="users" size={20} color="#F0E8D5" />
       </View>
       <View style={styles.flex1}>
+        {/* PRODUCT TRUTH: this card carried a "Coming soon" tag while routing to
+            /community, which is LIVE for providers in this beta — the board, the
+            responses, the negotiation, the agreement and Trade Activity all
+            work. Labelling a shipped surface as unavailable is the same class of
+            defect as the reverse, and this is the surface the beta most needs
+            exercised. Tag removed; the card's placement and destination are
+            unchanged (navigation is out of scope for this slice). */}
         <View style={styles.hubTitleRow}>
           <Text style={styles.hubTitle}>Community</Text>
-          <View style={styles.comingSoonTag}>
-            <Text style={styles.comingSoonTagText}>Coming soon</Text>
-          </View>
         </View>
         <Text style={styles.hubSub}>
           Connect with other providers. Trade services, swap advice, and share

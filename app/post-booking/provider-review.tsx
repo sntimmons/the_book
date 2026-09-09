@@ -57,7 +57,13 @@ export default function ProviderReview() {
   const [showedUp, setShowedUp] = useState<boolean | null>(null)
   const [onTime, setOnTime] = useState<boolean | null>(null)
   const [followedPolicy, setFollowedPolicy] = useState<boolean | null>(null)
-  const [paymentCompleted, setPaymentCompleted] = useState<boolean | null>(null)
+  // PRODUCT TRUTH: a fourth dimension, "Was payment completed?", used to be
+  // collected here. The Book processes no payment and holds no record of one
+  // (PD-042), so asking a provider to answer it — and then showing the answer
+  // back as an accountability statistic — implied the platform tracks and
+  // adjudicates payment completion. It does not. The question is removed and
+  // `client_reviews.payment_completed` is no longer written; the column is left
+  // in place as legacy data rather than dropped.
   const [booking, setBooking] = useState<BookingForReview | null>(null)
   const [providerDbId, setProviderDbId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -168,7 +174,6 @@ export default function ProviderReview() {
         showed_up: showedUp,
         on_time: onTime,
         followed_policy: followedPolicy,
-        payment_completed: paymentCompleted,
         // Private, provider-only context. Never written to review_text (which
         // was displayed publicly) and never surfaced to clients/other providers.
         private_note: note.trim() || null,
@@ -302,11 +307,6 @@ export default function ProviderReview() {
               label="Did they follow your policy?"
               value={followedPolicy}
               onChange={setFollowedPolicy}
-            />
-            <DimensionRow
-              label="Was payment completed?"
-              value={paymentCompleted}
-              onChange={setPaymentCompleted}
             />
           </View>
         )}

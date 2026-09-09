@@ -87,6 +87,17 @@ export const POLICY_OPTIONS = {
 // Defaults are real, meaningful terms (not empty) — a provider who taps "Use
 // default policies" is agreeing to these, and a client booking a provider with
 // no policy row sees exactly these. Matches the onboarding form's initial state.
+// Deposit configuration is STORED, never collected: The Book takes no payment in
+// the closed beta (PD-042). Lives here, beside the other provider-terms
+// vocabulary, because the SAME "deposit required" toggle writing the SAME
+// `deposit_required` config is implemented on two screens — onboarding
+// (app/onboarding/provider/services.tsx) and the dashboard
+// (app/(tabs)/business/services.tsx). When deposits become real this sentence
+// must change once, not twice, or a provider is told different things before and
+// after going live.
+export const DEPOSIT_NOT_CHARGED_NOTE =
+  'Not charged in this beta — you arrange payment with your client'
+
 export const DEFAULT_POLICY: PolicyValue = {
   cancelWindow: '24 hours before',
   cancellationFeePercent: '0',

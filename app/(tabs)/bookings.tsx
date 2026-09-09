@@ -204,8 +204,11 @@ export default function BookingsScreen() {
             {activeStatus === 'pending' && (
               <View style={styles.pendingBanner}>
                 <Feather name="clock" size={14} color="#C8922A" style={styles.pendingBannerIcon} />
+                {/* PRODUCT TRUTH: "Your card will only be charged when
+                    confirmed" asserted a stored card and a charge on
+                    confirmation. Neither exists (PD-042). */}
                 <Text style={styles.pendingBannerText}>
-                  Pending requests are waiting for provider confirmation. Your card will only be charged when confirmed.
+                  Pending requests are waiting for provider confirmation. The Book does not take payment in this beta.
                 </Text>
               </View>
             )}

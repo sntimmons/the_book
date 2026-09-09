@@ -297,8 +297,13 @@ export default function ClientIntelligence() {
               <Text style={s.statLabel}>Returning</Text>
               <Text style={s.statValue}>{Math.round(data.returningPct)}%</Text>
             </View>
+            {/* PRODUCT TRUTH: "Avg LTV" and the per-client figure below it are
+                summed from the agreed price on COMPLETED bookings. The Book
+                processes no payment and observes none (PD-042), so it cannot
+                say a client has spent anything — only what they booked. The
+                numbers are unchanged; the words no longer assert a payment. */}
             <View style={s.statBox}>
-              <Text style={s.statLabel}>Avg LTV</Text>
+              <Text style={s.statLabel}>Avg booked</Text>
               <Text style={s.statValue}>{money(data.avgLtv)}</Text>
             </View>
           </View>

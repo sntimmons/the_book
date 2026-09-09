@@ -407,7 +407,14 @@ export default function CareHub() {
 
           {/* SECTION 4 — Spending history */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Spending History</Text>
+            {/* PRODUCT TRUTH: this section was "Spending History" with a
+                "Total spent" figure summed from bookings.payment_amount. That
+                column is the AGREED PRICE recorded on a booking, not a payment
+                record — The Book takes no payment and observes none (PD-042).
+                Same correction already made on app/post-booking/accepted.tsx,
+                which renamed the identical field from "deposit" to "agreed
+                price". The figure is unchanged; it no longer claims it was paid. */}
+            <Text style={styles.sectionTitle}>Booking History</Text>
             {completed.length === 0 ? (
               <View style={styles.emptyCard}>
                 <Feather name="dollar-sign" size={24} color="rgba(240,232,213,0.15)" />
@@ -416,7 +423,7 @@ export default function CareHub() {
             ) : (
               <>
                 <View style={styles.totalCard}>
-                  <Text style={styles.totalLabel}>Total spent</Text>
+                  <Text style={styles.totalLabel}>Total booked</Text>
                   <Text style={styles.totalValue}>${totalSpent.toFixed(2)}</Text>
                 </View>
                 {completed.map((b) => (

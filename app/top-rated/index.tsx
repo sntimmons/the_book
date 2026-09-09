@@ -185,11 +185,9 @@ function RankRow({
             <Text style={s.rowInitials}>{getInitials(provider.display_name)}</Text>
           )}
         </View>
-        {provider.identity_verified && (
-          <View style={s.verifiedBadge}>
-            <Ionicons name="checkmark" size={10} color="#080808" />
-          </View>
-        )}
+        {/* PRODUCT TRUTH: verification check-mark removed — no identity
+            verification process exists to have produced it (PD-004). Same
+            removal as components/ProviderProfile.tsx and app/(tabs)/search.tsx. */}
       </View>
 
       <View style={s.rowBody}>
@@ -539,19 +537,6 @@ const s = StyleSheet.create({
     fontSize: 16,
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
-  },
-  verifiedBadge: {
-    position: 'absolute',
-    right: -2,
-    bottom: -2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#C8922A',
-    borderWidth: 2,
-    borderColor: '#080808',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   rowBody: {
     flex: 1,

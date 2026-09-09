@@ -38,9 +38,12 @@ export default function ProviderPayout() {
 
         <Text style={styles.heading}>Payout setup coming soon</Text>
 
+        {/* PRODUCT TRUTH: promised to a brand-new provider that completed
+            service value "will be tracked", pointing at a screen that tracks
+            nothing. The Business dashboard does show it, so say that. */}
         <Text style={styles.bodyText}>
-          Payouts are not available during beta. The value of your completed
-          services will be tracked in the meantime.
+          Payouts are not available during beta. Your completed service value is
+          shown on your Business dashboard.
         </Text>
       </View>
 

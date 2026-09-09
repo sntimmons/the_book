@@ -11,7 +11,7 @@ export default function ClientUploads() {
 
   return (
     <View style={styles.root}>
-      {/* Progress bar 75% */}
+      {/* Progress bar 100% — final step of three */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>

@@ -325,7 +325,10 @@ export default function CommunityFeed() {
       Alert.alert('Could not report', 'Please try again.', [{ text: 'OK' }])
       return
     }
-    Alert.alert('Reported', "Thanks for reporting. We'll review it.", [{ text: 'OK' }])
+    // PRODUCT TRUTH: this said "We'll review it." No operator review surface
+    // exists yet (a minimal internal queue is pre-beta work), so the promise was
+    // not one the product could keep. It says what actually happened instead.
+    Alert.alert('Reported', 'Thanks — this report has been recorded.', [{ text: 'OK' }])
   }
 
   function openMenu(post: FeedPost) {

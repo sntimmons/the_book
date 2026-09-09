@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../context/AuthContext'
 import { DoneAccessory, DONE_ACCESSORY_ID } from '../../../components/DoneAccessory'
+import { DEPOSIT_NOT_CHARGED_NOTE } from '../../../lib/policy'
 
 interface Service {
   id: string
@@ -510,8 +511,14 @@ export default function ProviderServicesScreen() {
                 <View style={styles.activeRow}>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.activeLabel}>Require deposit?</Text>
+                    {/* PRODUCT TRUTH: read "Charged at booking confirmation".
+                        The Book charges nothing (PD-042); this field is stored
+                        configuration only, so telling a provider it is charged
+                        set up their business on a false premise. The field
+                        itself is kept — whether to keep collecting it at all is
+                        a Founder/product call, not a truth correction. */}
                     <Text style={styles.activeSub}>
-                      Charged at booking confirmation
+                      {DEPOSIT_NOT_CHARGED_NOTE}
                     </Text>
                   </View>
                   <Toggle

@@ -81,8 +81,11 @@ export default function BookPayment() {
   // While set, submitting retries only the signature (no duplicate booking).
   const [pendingBookingId, setPendingBookingId] = useState<string | null>(null)
 
-  // Service price — shown for information only. At request time nothing is
-  // charged or held; payment happens later, after the provider accepts.
+  // Service price — shown for information only. The Book charges nothing and
+  // holds nothing, at request time or ever (PD-042). An earlier version of this
+  // comment ended "payment happens later, after the provider accepts", which is
+  // the exact proposition this file's user-visible copy was corrected to stop
+  // making; the guard strips comments, so it could only be caught by reading.
   const servicePrice = parseFloat(selectedService?.price ?? '0') || 0
 
   async function handleConfirm() {
@@ -245,8 +248,13 @@ export default function BookPayment() {
         bounces={true}
         scrollEventThrottle={16}
       >
+        {/* PRODUCT TRUTH: this read "No payment now. You'll be asked to pay
+            after the provider accepts your request." The first half was true;
+            the second promised an in-app payment step that does not exist and
+            is not coming in this beta (PD-042). */}
         <Text style={styles.headerSubtext}>
-          No payment now. You'll be asked to pay after the provider accepts your request.
+          No in-app payment in this beta. Payment is handled directly between you
+          and the provider.
         </Text>
 
         {/* Order summary */}
@@ -297,13 +305,15 @@ export default function BookPayment() {
 
           <View style={styles.separator} />
 
-          {/* Service price — information only; nothing is charged at request time. */}
+          {/* Service price — information only; The Book never charges it. */}
           <View style={styles.priceRow}>
             <Text style={styles.priceLabel}>Service price</Text>
             <Text style={styles.priceValue}>{money(servicePrice)}</Text>
           </View>
+          {/* PRODUCT TRUTH: "You won't be charged now" implied a later charge.
+              The Book does not charge at any point in this beta. */}
           <Text style={styles.holdHelperText}>
-            Shown so you know the cost. You won't be charged now.
+            Shown so you know the cost. The Book does not take payment.
           </Text>
         </View>
 
@@ -312,8 +322,11 @@ export default function BookPayment() {
           <Feather name="send" size={13} color="#4CAF50" style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
             <Text style={styles.authInfoTitle}>This is a request, not a confirmed booking</Text>
+            {/* PRODUCT TRUTH: the closing clause promised "you'll be asked to
+                pay only after they accept", which describes an in-app payment
+                step that does not exist. */}
             <Text style={styles.authInfoSub}>
-              The provider reviews your request and accepts or declines. No card, no payment, and no hold are taken now — you'll be asked to pay only after they accept.
+              The provider reviews your request and accepts or declines. No card, no payment, and no hold are taken — payment is arranged directly with your provider.
             </Text>
           </View>
         </View>
@@ -489,36 +502,6 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_400Regular',
   },
-  priceSub: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  priceSeparator: {
-    height: 1,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    marginVertical: 8,
-  },
-  depositLabel: {
-    fontSize: 15,
-    color: '#C8922A',
-    fontFamily: 'Manrope_700Bold',
-  },
-  depositValue: {
-    fontSize: 15,
-    color: '#C8922A',
-    fontFamily: 'Manrope_700Bold',
-  },
-  remainingLabel: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  remainingValue: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
   holdHelperText: {
     fontSize: 11,
     color: 'rgba(240,232,213,0.35)',
@@ -549,58 +532,6 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.5)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 15,
-  },
-  paymentCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.07)',
-    borderRadius: 12,
-    borderCurve: 'continuous',
-    padding: 14,
-  },
-  paymentCardSelected: {
-    borderColor: 'rgba(240,232,213,0.2)',
-    backgroundColor: 'rgba(240,232,213,0.06)',
-  },
-  applePayCard: {
-    marginTop: 8,
-  },
-  paymentCardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  cardName: {
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
-  cardExpiry: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  changeText: {
-    fontSize: 13,
-    color: '#C8922A',
-    fontFamily: 'Manrope_500Medium',
-  },
-  securityNote: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-    marginTop: 16,
-  },
-  securityText: {
-    flex: 1,
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.35)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 16,
   },
   cta: {
     position: 'absolute',

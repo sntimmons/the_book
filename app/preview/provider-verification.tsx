@@ -1,10 +1,17 @@
 import { PreviewScreen, PreviewPiece } from '../../components/PreviewScreen'
 
+// PRODUCT TRUTH: this told clients to "Look for the badge that means their
+// identity is confirmed" — an instruction to act NOW on a badge that no longer
+// renders anywhere, because no identity-verification process exists to produce
+// it (PD-004). A client following that instruction and finding no badge would
+// read its absence as a specific provider failing a check, which is a worse
+// trust outcome than the badge was.
+
 const PIECES: PreviewPiece[] = [
   {
     icon: 'card',
     title: 'ID verified providers',
-    body: 'Look for the badge that means their identity is confirmed.',
+    body: 'A badge would show when a provider\'s identity has been confirmed.',
   },
   {
     icon: 'star',

@@ -156,7 +156,12 @@ export function useNotifications() {
             bookingId: b.id,
             type: 'booking_declined',
             title: 'Booking Unavailable',
-            body: `${serviceLabel} could not be confirmed. No charge was made.`,
+            // PRODUCT TRUTH: said "No charge was made.", which frames The Book
+            // as holding a payment method it could have charged. It holds none
+            // and charges nothing (PD-042). This is the same sentence removed
+            // from app/post-booking/declined.tsx — and it survived here because
+            // the beta-claims guard was not scanning hooks/. It scans it now.
+            body: `${serviceLabel} could not be confirmed.`,
             isRead: false,
             createdAt: b.cancelled_at,
             providerId: b.provider_id,
