@@ -106,12 +106,25 @@ export default function BookConfirmed() {
             as a Founder question. That question is now answered: tell them.
 
             The number is the real one — PD-071's server-authoritative 72 hours —
-            and the second sentence is what makes the first safe to say. There is
-            no push, email or SMS channel in this product, so the client is told
-            where to LOOK rather than promised something will arrive. */}
+            and the clause after it is the REST of the real one: the server rule is
+            `expires_at = LEAST(submitted_at + 72 hours, appointment_time)`, and
+            the calendar sells same-day and next-day slots, so the appointment is
+            very often the binding term. A flat "72 hours" would overstate the
+            window in the ordinary case, not an edge one.
+
+            The last sentence is what makes the rest safe to say. There is no
+            push, email or SMS channel in this product, so the client is told
+            where to LOOK rather than promised something will arrive.
+
+            THIS SCREEN IS ONLY EVER REACHED FOR A REQUEST JUST SENT, which is the
+            premise the copy rests on — so it does not need to derive an expiry
+            state the way the request detail does. The resume path used to land
+            here too, which would have shown "BOOKING REQUEST SENT" and a live
+            window for a request days old; it now goes to `/bookings/[id]`
+            instead. Keep it that way, or this copy needs the derivation. */}
         <Text style={styles.responseWindowText}>
-          Your provider has up to 72 hours to respond. You can check this request
-          anytime.
+          Your provider has up to 72 hours to respond, or until your requested
+          time — whichever comes first. You can check this request anytime.
         </Text>
 
         {/* Booking summary pill */}
@@ -139,7 +152,10 @@ export default function BookConfirmed() {
             {
               n: '1',
               title: 'Provider reviews your request',
-              // No response deadline is stated: none is enforced anywhere.
+              // Was "No response deadline is stated: none is enforced anywhere."
+              // Both halves are now false — PD-071 enforces one (PT425) and
+              // PD-077 states it above. Left as the step's plain description;
+              // the deadline is stated once, at the top, not repeated per step.
               desc: `${firstName} will review your profile and confirm or suggest an alternative time.`,
               green: false,
             },

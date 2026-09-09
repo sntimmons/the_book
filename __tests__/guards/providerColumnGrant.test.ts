@@ -104,7 +104,10 @@ interface Ref {
 // Collect every provider column the app READS: select lists, embedded
 // `providers(...)` joins, and filter/order arguments — PostgreSQL requires SELECT
 // privilege on a column used in WHERE or ORDER BY, not only in the output list,
-// which is why `is_approved` has to be granted despite never being displayed.
+// which is why `is_approved` had to be granted even when nothing displayed it. It is displayed now,
+// on two surfaces: the client's provider profile withholds Book Now for a de-approved provider
+// (PD-075), and the provider's own dashboard tells them they are not taking new bookings
+// (PD-078). Narrowing this grant would break both, not just a filter.
 function providerColumnReads(): Ref[] {
   const refs: Ref[] = []
   for (const rel of sourceFiles()) {

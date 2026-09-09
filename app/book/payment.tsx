@@ -157,7 +157,10 @@ export default function BookPayment() {
       if (resolved.alreadySubmitted) {
         setSubmitted(true)
         setIsProcessing(false)
-        router.push({ pathname: '/book/confirmed', params: { bookingId } })
+        // The REQUEST, not the confirmation screen — see the note on the same
+        // branch in book/contract.tsx. Nothing was sent just now, so nothing here
+        // may say it was.
+        router.replace({ pathname: '/bookings/[id]', params: { id: bookingId } })
         return
       }
 

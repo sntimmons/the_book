@@ -34,7 +34,7 @@ listed explicitly so they are not mistaken for defects (cross-check
 - **Entry:** `app/path-selection.tsx` → "I'm here to book" → `app/onboarding/client/`.
 - **Steps (current, four screens):**
   1. **Who you are** (`index.tsx`) — first name, last name, neighborhood (via `NeighborhoodPicker`), short bio. Held in `useClientStore`; nothing is written yet.
-  2. **Preferences** (`preferences.tsx`) — interests, neighborhood, and a "show mobile providers" switch.
+  2. **Your area** (`preferences.tsx`) — the neighborhood picker, and nothing else. It carried an interests grid and a "show mobile providers" switch until PD-079 removed both as data nothing read.
   3. **Photo** (`uploads.tsx`) — optional avatar; skippable.
   4. **Preview** (`preview.tsx`) — shows the profile as assembled, then **one write on continue**: the avatar is uploaded (when one was picked) and a single `clients` upsert on `id` persists `name`, `notes`, `neighborhood` and `avatar_url`. The session role is then re-resolved so it settles as `client`, and the user lands on Discover.
 - **Expected end state:** exactly one `clients` row for the user; the session resolves as a client; the user is on Discover (per NAVIGATION.md, everyone lands on Discover).

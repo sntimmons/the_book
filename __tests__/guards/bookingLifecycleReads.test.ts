@@ -140,3 +140,79 @@ describe('a booking deadline is never computed from created_at', () => {
     expect(status).not.toMatch(/created_at/)
   })
 })
+
+// ── A CLIENT-FACING WINDOW CLAIM MUST BE DERIVED, NOT ASSERTED ────────────
+//
+// PD-077 tells the client "your provider has up to 72 hours to respond". The
+// first version of that copy was a bare string with no predicate behind it, so
+// it rendered on every submitted pending request FOREVER — including ones whose
+// deadline had passed and which no provider could accept any more. Silence had
+// been converted into a claim that never stops being made, which is precisely
+// the defect ("has 24 hours to respond") PD-077 exists to end.
+//
+// The rule: a file that states the window must also read the column that bounds
+// it. This is the same "absence of an update" shape as the guards above, and it
+// is the check that would have caught it.
+describe('a stated response window is bounded by the server column', () => {
+  // The RESPONSE-window claim specifically. "72 hours before" is a provider
+  // CANCELLATION POLICY option (lib/policy.ts, components/PolicyEditor.tsx) — a
+  // different concept with no server deadline behind it — and flagging it would
+  // teach the next author to widen an exemption list instead of reading the
+  // finding.
+  const WINDOW_CLAIM = /72 hours[\s\S]{0,80}?respond/
+
+  it('finds the surfaces that state a window (a guard over nothing passes vacuously)', () => {
+    const stating = sourceFiles().filter((rel) => WINDOW_CLAIM.test(code(rel)))
+    expect(stating.length).toBeGreaterThan(0)
+  })
+
+  it('every surface that states the window also reads expires_at or the derived state', () => {
+    const offenders: string[] = []
+    for (const rel of sourceFiles()) {
+      const src = code(rel)
+      if (!WINDOW_CLAIM.test(src)) continue
+      // Either it reads the server's deadline directly, or it consumes the
+      // canonical derivation of it. `lib/bookingStatus.ts` is the derivation and
+      // is exempt from needing to consume itself.
+      // `app/book/confirmed.tsx` is the one legitimate exception and it is
+      // EARNED, not assumed: the resume path was changed to route to
+      // `/bookings/[id]`, so this screen is reachable only for a request just
+      // sent. The exemption is spelled as a check on that fact — if the screen
+      // ever regains a route that can carry an old request, the string here must
+      // become derived like every other one.
+      const freshOnly = rel === join('app', 'book', 'confirmed.tsx')
+      const bounded =
+        freshOnly
+        || /expires_at/.test(src)
+        || /bookingRequestUrgency|canAcceptRequest|requestTimeRemaining|requestUrgency/.test(src)
+      if (!bounded) {
+        offenders.push(
+          `${rel} states a 72-hour response window without reading expires_at or the `
+            + `derived request state — the claim would outlive the window it describes`,
+        )
+      }
+    }
+    expect(offenders).toEqual([])
+  })
+
+  it('the client detail screen can withhold the claim once the window has closed', () => {
+    // The specific regression: the copy sat inside a status-only branch, and an
+    // expired request keeps `status = 'pending'` by design (PD-071 — expired
+    // requests are "not deleted and not hidden").
+    const src = code(join('app', 'bookings', '[id].tsx'))
+    expect(src).toMatch(/requestUrgency/)
+    expect(src).toMatch(/expired/)
+  })
+
+  it('no booking-flow screen routes a RESUMED request to the just-sent confirmation', () => {
+    // What earns confirmed.tsx its exemption above. `alreadySubmitted` means the
+    // server found a request this client already sent — possibly days ago — so it
+    // must not land on a screen that says it was just sent.
+    for (const rel of [join('app', 'book', 'contract.tsx'), join('app', 'book', 'payment.tsx')]) {
+      const src = code(rel)
+      const branch = src.slice(src.indexOf('alreadySubmitted'))
+      const upToReturn = branch.slice(0, branch.indexOf('return'))
+      expect([rel, /book\/confirmed/.test(upToReturn)]).toEqual([rel, false])
+    }
+  })
+})

@@ -1,8 +1,15 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** the post-Session-7 state reconciliation, which changed **no decision** — only
-this preamble's indexing. Before it, the derived-agreement-presentation branch (**PR #70**,
+**Last edited by:** **PR #74** (Pre-Session-8 Correction 3), which recorded **PD-071 … PD-080** —
+the booking-request lifecycle and its 72-hour server expiry, the deliverer's review request
+(closing OQ-071), the beta discovery lanes and their content-neutrality rule, the "Houston Beta
+Provider" trust signal (closing the claims half of OQ-035), provider-owned no-show policy and
+de-approval wording, provider media deletion and the required onboarding review page, the client's
+72-hour expectation, telling a de-approved provider, no placebo preference data, and the barter
+happy-path shape as a future requirement. **PD-080 is the only one of the ten not implemented, and
+deliberately so.** Before it, the post-Session-7 state reconciliation changed **no decision** — only
+this preamble's indexing — and before that, the derived-agreement-presentation branch (**PR #70**,
 `f5fd197`) recorded **PD-070** and removed the last live barter dollar-value UX under PD-069, and
 before that the manual-adjudication branch (**PR #68**, `5c24e8f`) recorded **PD-064** through
 **PD-069**. Each carries its own
@@ -1403,6 +1410,36 @@ as locked decisions.
   REAL mobile filter exists on Search (`providers.is_mobile`, item M) and is unaffected.
 - **Evidence.** PM decision on PR #74, 2026-09-09. `app/onboarding/client/preferences.tsx`.
 - **Status:** Locked; **implemented**
+
+---
+
+### PD-080 — The barter happy path is Find → Talk → Propose → Agree → Do it → Confirm (future design requirement)
+
+- **Decision.** The barter surface should read as six plain steps — **Find → Talk → Propose →
+  Agree → Do it → Confirm** — and a future UI/UX design pass owes that shape. It is **not** a
+  PR #74 merge blocker and was deliberately not attempted in Correction 3.
+- **Context.** The engine is finished and the surface is not. Correction 3's brief asked for the
+  happy path to *feel* like that sequence; reshaping how a flow feels is a subjective design
+  judgement, and the brief reserves those for the Founder. The implementation engine declined to
+  invent one rather than ship a redesign nobody had approved.
+- **Consequences.**
+  - **The engine does not move.** Session 7 stands exactly as it is: the proposal/version model,
+    the two directed obligations, the cancellation model, the adjudication model, PT424, derived
+    agreement presentation and agreement immutability (PD-057 … PD-070, PD-072) are all locked and
+    none is reopened by this.
+  - **The vocabulary does not move either.** **Needs Attention** and **Under Review** are the
+    approved participant-facing terms and stay; no internal engine terminology may surface
+    (PD-062, PD-068).
+  - **The mapping is the work, not the words.** A design pass owes a mapping from each of the six
+    steps to states that ALREADY EXIST. If a step has no state behind it, the step is wrong — the
+    engine is not to grow one to make the story tidier.
+  - The one genuinely new participant act of Correction 3, the deliverer's *"Ask The Book to
+    review"* (PD-072), belongs inside **Confirm** rather than as a seventh step.
+  - **Recorded as a decision rather than as an idea**, because `FUTURE_PRODUCT_IDEAS.md` carries no
+    authority by its own preamble and forbids anything in it being cited as a requirement. An
+    approved requirement filed there would have been uncitable.
+- **Evidence.** PM decision on PR #74, 2026-09-09.
+- **Status:** Locked as a **requirement**; **not implemented**, and deliberately so.
 
 ---
 

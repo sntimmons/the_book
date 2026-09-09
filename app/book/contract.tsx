@@ -92,7 +92,12 @@ export default function BookContract() {
         // and re-signing and re-sending would produce a second one. Go to the
         // request rather than walking the client through the flow again.
         if (resolved.alreadySubmitted) {
-          router.replace({ pathname: '/book/confirmed', params: { bookingId: resolved.id } })
+          // Straight to the REQUEST, not to the confirmation screen. That screen
+          // says "BOOKING REQUEST SENT" and states a live response window — both
+          // true of a request just sent, and neither necessarily true of one this
+          // client sent days ago and is now re-entering the flow for. The request
+          // detail derives its own state, so it is honest whatever the age.
+          router.replace({ pathname: '/bookings/[id]', params: { id: resolved.id } })
           return
         }
 

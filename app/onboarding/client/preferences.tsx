@@ -27,12 +27,21 @@ export default function ClientPreferences() {
   // product question (USER_JOURNEYS J1b), and is deliberately not answered here.
   const storeNeighborhood = useClientStore((st) => st.neighborhood)
   const setStoreNeighborhood = useClientStore((st) => st.setNeighborhood)
-  const location = storeNeighborhood || 'Midtown, Houston'
+  // NO DISPLAY-ONLY FALLBACK. This read `storeNeighborhood || 'Midtown, Houston'`,
+  // which showed a specific neighborhood the client had never chosen — and
+  // `NeighborhoodPicker` only fires `onChange` on an explicit selection, so a
+  // client who accepted what they saw and pressed Continue finished onboarding
+  // with `clients.neighborhood` NULL. The screen said "Midtown, Houston" and the
+  // database said nothing, which left the Near You lane with no viewer
+  // neighborhood to match on. Passing the store value straight through means the
+  // picker shows its own placeholder when nothing is set: **what is displayed and
+  // what is stored can no longer disagree.**
+  const location = storeNeighborhood
   const setLocation = setStoreNeighborhood
 
   return (
     <View style={styles.root}>
-      {/* Progress bar: 100% */}
+      {/* Progress bar: 67% — step 2 of 3. (This comment said 100%.) */}
       <View style={styles.progressTrack}>
         <View style={styles.progressFill} />
       </View>
@@ -47,7 +56,15 @@ export default function ClientPreferences() {
         >
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
-        <Text style={styles.topBarLabel}>Set your preferences</Text>
+        {/* Was "Set your preferences", for a step that no longer collects a
+            preference — PD-079 removed the two it had that nothing read. The
+            heading now describes what the screen actually asks.
+
+            OPEN FOR PM: this step now asks the SAME question step 1 asks, with
+            the same component, prefilled from the same store. Whether it should
+            be merged into step 1 or dropped is a product decision
+            (USER_JOURNEYS J1b) and is deliberately not taken here. */}
+        <Text style={styles.topBarLabel}>Your area</Text>
         <Text style={styles.topBarStep}>Step 2 of 3</Text>
       </View>
 
@@ -125,12 +142,13 @@ export default function ClientPreferences() {
           <Text style={styles.startBtnText}>Continue</Text>
         </Pressable>
         {/* PRODUCT TRUTH: this read "You can update these anytime in settings."
-            There is no settings surface for interests, area or the mobile-provider
-            toggle — Settings has Account, Provider, Payments, Privacy, Support and
-            Legal, and none of them holds these. The claim promised a screen that
-            does not exist. Whether these preferences should persist at all is an
-            open product question (USER_JOURNEYS J1b); until it is answered, this
-            says only what is true. */}
+            Settings has Account, Provider, Payments, Privacy, Support and Legal,
+            and none of them holds an area — so the claim promised a screen that
+            does not exist. The line now points where the value genuinely IS
+            editable: `app/me/edit.tsx` reads and upserts `clients.neighborhood`.
+            (The earlier version of this note also reasoned about interests and a
+            mobile-provider toggle; PD-079 removed both, so only the area is left
+            to be true about.) */}
         <Text style={styles.ctaNote}>You can change your area anytime from your profile.</Text>
       </View>
     </View>
@@ -204,13 +222,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 28,
   },
-  locationSubtext: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  // Named for the notification rows that item A removed; it now styles the
-  // "Show mobile providers" row, which is the only one left using it.
   cta: {
     position: 'absolute',
     bottom: 0,

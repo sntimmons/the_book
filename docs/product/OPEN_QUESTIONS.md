@@ -199,6 +199,28 @@ an entry is self-describing when quoted alone.
   requests until Session 8 builds the operator Review Queue, and there is still no SLA.
 - **Status:** CLOSED — resolved by PD-072, 2026-09-09
 
+### OQ-008 — May an offer's terms still be edited once providers have responded to them?
+- **Area:** Barter
+- **Why it matters:** Slice 1 made a response permanently immutable — including its `message`
+  — on the grounds that it records what was offered at a point in time, but did **not** freeze
+  the offer. Its author may still rewrite `offering_service`, `seeking_service`,
+  `offering_value` and `notes` after providers have responded, leaving immutable responses
+  attached to terms nobody agreed to. The migration records this rather than closing it,
+  because freezing offer terms is "a product decision about the negotiation model, not an
+  integrity fix" (`supabase/migrations/20260906000000_barter_integrity_slice1.sql:58-66`).
+  No edit affordance exists in the app today, so it is reachable only by a direct API call —
+  which limits exposure, not the decision. Three shapes are open and none is implied here:
+  freeze terms once any response exists; allow edits but withdraw or re-pend the responses;
+  or leave it as it is and rely on the absence of an edit affordance.
+- **Blocks:** nothing yet — but a slice that adds an offer-edit affordance, or a column a
+  counterparty depends on, must settle it first. The migration's § 6 note is explicit that the
+  deny-list on `barter_offers` becomes unacceptable at that point.
+- **Status:** Closed by **PD-047** on 2026-09-04 — see [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1. The post stays editable; **every proposal snapshots the post terms at creation**, so an edit reaches future responders only and can never rewrite an existing proposal, negotiation or accepted agreement.
+
+---
+
+## Booking lifecycle
+
 ### OQ-072 — A booking carries a service DATE but not always an authoritative appointment TIME
 - **Area:** Booking lifecycle
 - **Why it matters:** PD-071 expires a request at `LEAST(submitted_at + 72 hours,
@@ -225,26 +247,6 @@ an entry is self-describing when quoted alone.
   making `appointment_time` NOT NULL going forward, storing a booking timezone, or accepting the
   72-hour bound as final — are all genuinely open.
 - **Status:** Open
-
-### OQ-008 — May an offer's terms still be edited once providers have responded to them?
-- **Area:** Barter
-- **Why it matters:** Slice 1 made a response permanently immutable — including its `message`
-  — on the grounds that it records what was offered at a point in time, but did **not** freeze
-  the offer. Its author may still rewrite `offering_service`, `seeking_service`,
-  `offering_value` and `notes` after providers have responded, leaving immutable responses
-  attached to terms nobody agreed to. The migration records this rather than closing it,
-  because freezing offer terms is "a product decision about the negotiation model, not an
-  integrity fix" (`supabase/migrations/20260906000000_barter_integrity_slice1.sql:58-66`).
-  No edit affordance exists in the app today, so it is reachable only by a direct API call —
-  which limits exposure, not the decision. Three shapes are open and none is implied here:
-  freeze terms once any response exists; allow edits but withdraw or re-pend the responses;
-  or leave it as it is and rely on the absence of an edit affordance.
-- **Blocks:** nothing yet — but a slice that adds an offer-edit affordance, or a column a
-  counterparty depends on, must settle it first. The migration's § 6 note is explicit that the
-  deny-list on `barter_offers` becomes unacceptable at that point.
-- **Status:** Closed by **PD-047** on 2026-09-04 — see [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1. The post stays editable; **every proposal snapshots the post terms at creation**, so an edit reaches future responders only and can never rewrite an existing proposal, negotiation or accepted agreement.
-
----
 
 ## Messaging
 
