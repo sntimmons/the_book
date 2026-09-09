@@ -16,6 +16,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 
+// ITEM E (Correction 3): 'Billing issue' is gone. The Book takes no payment in
+// this beta (PD-042) — there is no charge, no hold and no refund path — so
+// offering the category invited a report about a transaction the product never
+// made and had no way to resolve. Payment is arranged directly with the provider,
+// and a dispute about it is between those two people. 'Other' still accepts
+// anything this list does not name.
 const ISSUES = [
   'Provider was late',
   'Provider cancelled last minute',
@@ -23,7 +29,6 @@ const ISSUES = [
   'Provider was unprofessional',
   'Location issues',
   'Safety concern',
-  'Billing issue',
   'Other',
 ]
 
@@ -36,6 +41,9 @@ const REASON_SLUG: Record<string, string> = {
   'Provider was unprofessional': 'unprofessional_conduct',
   'Location issues': 'location_issue',
   'Safety concern': 'safety_concern',
+  // Retained deliberately although the category is no longer offered: reports
+  // filed before item E already carry this slug, and removing the mapping would
+  // leave those rows unlabelled.
   'Billing issue': 'billing_dispute',
   Other: 'other',
 }

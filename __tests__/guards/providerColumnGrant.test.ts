@@ -44,6 +44,28 @@ const GRANTED = new Set([
   'years_experience', 'specialties', 'created_at',
 ])
 
+// COMPUTED COLUMNS ARE NOT USABLE ON THIS TABLE, and the empty set is the
+// finding rather than an oversight.
+//
+// `20261040000000` added `available_today(p public.providers)` as a PostgREST
+// computed column and this guard was widened to admit it. Both were wrong.
+// PostgREST renders a computed column as a WHOLE-ROW reference, and PostgreSQL
+// requires SELECT on EVERY column for a whole-row reference — while
+// `20261030000000` deliberately left `anon` and `authenticated` with 28 NAMED
+// columns and no table-level grant. Every such read is refused with 42501,
+// reproduced against non-production, and because the name had been added to
+// `PUBLIC_PROVIDER_FIELDS` it took the discovery feed, the provider profile and
+// search down with it. `20261044000000` replaced it with
+// `providers_open_today()`, which returns ids and touches no provider column.
+//
+// **A computed column added here in future will be unreachable for the same
+// reason.** Widening this set is not the fix; the fix is a function that does not
+// take the row type. Kept as an empty set, with this note, so the next author
+// meets the reason before the exception.
+const COMPUTED = new Set<string>([])
+
+const READABLE = new Set([...GRANTED, ...COMPUTED])
+
 // Columns the app writes but never reads. Security Batch 3a grants INSERT/UPDATE
 // on these; a write privilege is not a read privilege, so they are legal in an
 // `.insert()`/`.update()`/`.upsert()` payload and illegal in a select list.
@@ -82,7 +104,10 @@ interface Ref {
 // Collect every provider column the app READS: select lists, embedded
 // `providers(...)` joins, and filter/order arguments — PostgreSQL requires SELECT
 // privilege on a column used in WHERE or ORDER BY, not only in the output list,
-// which is why `is_approved` has to be granted despite never being displayed.
+// which is why `is_approved` had to be granted even when nothing displayed it. It is displayed now,
+// on two surfaces: the client's provider profile withholds Book Now for a de-approved provider
+// (PD-075), and the provider's own dashboard tells them they are not taking new bookings
+// (PD-078). Narrowing this grant would break both, not just a filter.
 function providerColumnReads(): Ref[] {
   const refs: Ref[] = []
   for (const rel of sourceFiles()) {
@@ -127,7 +152,12 @@ function providerColumnReads(): Ref[] {
     // is a joined table whose privileges are its own. An earlier version of this
     // guard reported `providers.categories` as an ungranted column, which is the
     // right instinct applied to the wrong token.
-    for (const e of src.matchAll(/providers\s*!?\w*\s*\(([^)]*)\)/g)) {
+    // `(?:!\w+)?` and NOT `\w*`: the looser form matched a FUNCTION whose name
+    // merely starts with the word — `providersWithNoLane(providers, lanes)` in
+    // lib/discovery.ts was reported as reading `providers.providers` and
+    // `providers.lanes`. An embed is `providers(`, `provider:providers(` or
+    // `providers!fkey(`, never `providersSomething(`.
+    for (const e of src.matchAll(/providers(?:!\w+)?\s*\(([^)]*)\)/g)) {
       for (const raw of e[1].split(',')) {
         const term = raw.trim()
         if (term.includes('(')) continue
@@ -151,7 +181,7 @@ describe('every provider column the app reads is one the database grants', () =>
 
   it('reads no column outside the granted set', () => {
     const offenders = refs
-      .filter((r) => !GRANTED.has(r.column))
+      .filter((r) => !READABLE.has(r.column))
       .map(
         (r) =>
           `${r.file} reads providers.${r.column} (${r.how}) — not granted to anon/authenticated` +
@@ -171,7 +201,7 @@ describe('every provider column the app reads is one the database grants', () =>
     expect(block).not.toBeNull()
     const cols = [...(block as RegExpMatchArray)[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
     expect(cols.length).toBeGreaterThan(20)
-    expect(cols.filter((c) => !GRANTED.has(c))).toEqual([])
+    expect(cols.filter((c) => !READABLE.has(c))).toEqual([])
   })
 
   // The point of the migration, asserted from this side as well: naming one of

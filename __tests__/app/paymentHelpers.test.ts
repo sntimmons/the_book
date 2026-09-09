@@ -3,7 +3,7 @@
 // AuthContext are mocked globally in jest.setup.js.
 jest.mock('@/lib/supabase', () => ({ supabase: {} }))
 
-import { buildAppointmentTime, toIsoDate } from '@/app/book/payment'
+import { buildAppointmentTime, toIsoDate } from '@/lib/bookingDraft'
 
 // Locks the booking-row integrity helpers: numeric assembly (Hermes cannot parse
 // locale date strings) that must return null rather than corrupt a booking.

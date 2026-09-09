@@ -15,7 +15,11 @@ import { Ionicons } from '@expo/vector-icons'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { getOrCreateConversation } from '../../hooks/useMessaging'
-import { bookingStatusLabel } from '../../lib/bookingStatus'
+import {
+  bookingStatusLabel,
+  bookingRequestUrgency,
+  RequestUrgency,
+} from '../../lib/bookingStatus'
 import { reviewEntryFor, ReviewOpportunity } from '../../lib/reviews'
 import { useReviewOpportunity } from '../../hooks/useReviewOpportunity'
 
@@ -33,6 +37,11 @@ interface BookingDetail {
   payment_status: string | null
   payment_amount: number | null
   created_at: string
+  // NULL means this row is still an unsent DRAFT inside the booking flow. It is
+  // invisible to the provider, and nothing here may describe it as a request
+  // anyone has been asked to answer.
+  submitted_at: string | null
+  expires_at: string | null
   provider_first_response_at: string | null
   provider_confirmed_at: string | null
   client_checked_in_at: string | null
@@ -472,6 +481,8 @@ export default function BookingDetailScreen() {
           bucket={bucket}
           isProvider={isProvider}
           bookingId={booking.id}
+          isDraft={booking.submitted_at === null}
+          requestUrgency={bookingRequestUrgency(booking)}
           actionLoading={actionLoading}
           reviewOpp={reviewOpp}
           reviewOppLoading={reviewOppLoading}
@@ -515,6 +526,19 @@ interface ActionButtonsProps {
   bucket: StatusBucket
   isProvider: boolean
   bookingId: string
+  /** True when this row is still an unsent draft (`submitted_at IS NULL`). */
+  isDraft: boolean
+  /**
+   * The SERVER's derived state for this request: draft | none | nudge | urgent |
+   * expired (`lib/bookingStatus.ts`, mirroring `booking_request_urgency`).
+   *
+   * The client-facing response-window copy is built from this rather than
+   * asserted as a constant. PD-077 tells the client the provider has a window;
+   * a window statement that never stops being made becomes false the moment the
+   * window closes, which is the same defect class ("has 24 hours to respond")
+   * PD-077 exists to end.
+   */
+  requestUrgency: RequestUrgency
   actionLoading: boolean
   reviewOpp: ReviewOpportunity
   reviewOppLoading: boolean
@@ -528,7 +552,7 @@ interface ActionButtonsProps {
 }
 
 function ActionButtons(props: ActionButtonsProps) {
-  const { bucket, isProvider, bookingId, actionLoading, reviewOpp, reviewOppLoading, canMarkNoShow, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onReviewClient, onBack } = props
+  const { bucket, isProvider, bookingId, isDraft, requestUrgency, actionLoading, reviewOpp, reviewOppLoading, canMarkNoShow, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onReviewClient, onBack } = props
 
   // Persistent provider→client review entry, keyed by booking_id so each booking is
   // independently reviewable. Driven ONLY by the server's answer — never by `bucket`
@@ -579,18 +603,72 @@ function ActionButtons(props: ActionButtonsProps) {
         </Pressable>
       )
     }
+    // AN UNSENT DRAFT IS NOT A REQUEST. It is excluded from every list, so this
+    // is reached only by direct navigation — but if someone gets here, the screen
+    // must not offer to cancel a request nobody received or to message a provider
+    // about it. The server refuses to attach a draft to a conversation
+    // (`20261045000000`), so the message control could only fail.
+    if (isDraft) {
+      return (
+        <View>
+          <Text style={styles.draftNote}>
+            You haven&apos;t sent this request yet. Start again from the provider&apos;s
+            profile when you&apos;re ready.
+          </Text>
+          <Pressable
+            style={[styles.secondaryBtnFull, actionLoading && styles.btnDisabled]}
+            onPress={onCancel}
+            disabled={actionLoading}
+          >
+            <Text style={styles.secondaryBtnText}>Discard</Text>
+          </Pressable>
+        </View>
+      )
+    }
     return (
-      <View style={styles.row}>
-        <Pressable
-          style={[styles.secondaryBtnHalf, actionLoading && styles.btnDisabled]}
-          onPress={onCancel}
-          disabled={actionLoading}
-        >
-          <Text style={styles.secondaryBtnText}>Cancel Request</Text>
-        </Pressable>
-        <Pressable style={styles.primaryBtnHalf} onPress={onMessage}>
-          <Text style={styles.primaryBtnText}>Message Provider</Text>
-        </Pressable>
+      <View>
+        {/* ITEM 2 (PM decision, PR #74). The confirmation screen tells the client
+            "you can check this request anytime" — this is where they check, so
+            the window is restated here rather than left on a screen they have
+            already navigated away from.
+
+            DERIVED, NOT ASSERTED. The first version of this line rendered for
+            every submitted pending request forever, so a client opening a request
+            on day 30 was told the provider still had "up to 72 hours" — beside
+            live-looking controls, for a request no provider can accept any more
+            (the server refuses a late accept with PT425, permanently). Converting
+            silence into a claim that never stops being made is exactly the defect
+            "has 24 hours to respond" was removed for.
+
+            "or until your requested time, whichever comes first" is not hedging:
+            it is the server's rule stated exactly — `expires_at = LEAST(
+            submitted_at + 72 hours, appointment_time)`. The calendar sells
+            same-day and next-day slots, so the appointment is very often the
+            binding term, and a flat "72 hours" would overstate the window in the
+            ordinary case rather than an edge one. */}
+        {requestUrgency === 'expired' ? (
+          <Text style={styles.responseWindowNote}>
+            This request expired without an answer, so it can no longer be
+            accepted. You can send a new one whenever you&apos;re ready.
+          </Text>
+        ) : (
+          <Text style={styles.responseWindowNote}>
+            Your provider has up to 72 hours to respond, or until your requested
+            time — whichever comes first.
+          </Text>
+        )}
+        <View style={styles.row}>
+          <Pressable
+            style={[styles.secondaryBtnHalf, actionLoading && styles.btnDisabled]}
+            onPress={onCancel}
+            disabled={actionLoading}
+          >
+            <Text style={styles.secondaryBtnText}>Cancel Request</Text>
+          </Pressable>
+          <Pressable style={styles.primaryBtnHalf} onPress={onMessage}>
+            <Text style={styles.primaryBtnText}>Message Provider</Text>
+          </Pressable>
+        </View>
       </View>
     )
   }
@@ -875,6 +953,20 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
+  },
+  responseWindowNote: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 19,
+    marginBottom: 12,
+  },
+  draftNote: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 19,
+    marginBottom: 12,
   },
   secondaryBtnFull: {
     borderRadius: 14,

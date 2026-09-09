@@ -138,6 +138,13 @@ begin
   -- `rw_expired` is the receiver-window suite's own elapsed fixture — an UNSCHEDULED obligation,
   -- delivered and aged past its deadline — reused rather than reproduced, so "Needs Attention"
   -- here means exactly what it means there.
+  --
+  -- AGED by Correction 3 item X (20261039000000). OQ-071 — how a plain Needs Attention might
+  -- enter Under Review — is now CLOSED, and this assertion is what proves the answer was the
+  -- narrow one: a third route exists, but it is a DELIVERER'S EXPLICIT REQUEST and nothing else.
+  -- An elapsed window on its own still qualifies for nothing, because no timer, no automatic
+  -- escalation and no second deadline was created. The new route's own coverage — including that
+  -- the same call SUCCEEDS once a request exists — is barter_review_request.test.sql § 10.
   select o_ag, o_ob into v_ag, v_ob from pg_temp.rw_expired(ou, ru, 'adj4b');
   perform pg_temp.act_service();
   select public.barter_receiver_window(
@@ -151,7 +158,7 @@ begin
   exception when others then v_code := sqlstate;
   end;
   perform pg_temp.chk('adjudication',
-    'NEEDS ATTENTION alone does NOT qualify — the escalation question is still open',
+    'NEEDS ATTENTION alone still does NOT qualify — nothing escalates on its own',
     '55000', v_code);
 
   -- 8. A CANCELLED agreement cannot be adjudicated. Reported first, then cancelled is refused
@@ -621,7 +628,15 @@ begin
      and c.relname like 'barter%'
      and (c.relname ilike '%reputation%' or c.relname ilike '%rating%'
           or c.relname ilike '%score%' or c.relname ilike '%review%'
-          or c.relname ilike '%penalt%' or c.relname ilike '%refund%');
+          or c.relname ilike '%penalt%' or c.relname ilike '%refund%')
+     -- EXEMPTED BY NAME, so a seventh object still fails this sweep.
+     -- `barter_obligation_review_requests` (Correction 3, item X) matches the
+     -- `%review%` pattern and is a RULED object: it records that a deliverer ASKED
+     -- The Book to look at an obligation whose receiver never answered. It is not
+     -- reputation, not a rating, not a score and not an outcome — the three
+     -- terminal outcomes remain reachable only through adjudicate_barter_obligation,
+     -- which is still service_role-only (PD-068).
+     and c.relname <> 'barter_obligation_review_requests';
   perform pg_temp.chk('adjudication',
     'no barter reputation, rating, score, review, penalty or refund object exists',
     '0', v_n::text);

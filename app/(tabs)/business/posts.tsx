@@ -3,9 +3,11 @@ import {
   View,
   Text,
   Image,
+  Pressable,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
   StyleSheet,
   useWindowDimensions,
 } from 'react-native'
@@ -19,6 +21,11 @@ import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { uploadMedia } from '@/lib/storage'
 import { cacheBustedPhoto } from '@/lib/image'
+import {
+  deleteProviderMedia,
+  DELETE_MEDIA_COPY,
+  DELETE_MEDIA_FAILED,
+} from '@/lib/providerMedia'
 
 interface PostItem {
   id: string
@@ -39,6 +46,7 @@ export default function ProviderPosts() {
   const [posts, setPosts] = useState<PostItem[]>([])
   const [loading, setLoading] = useState(true)
   const [uploadingKind, setUploadingKind] = useState<UploadKind | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const uploading = uploadingKind !== null
@@ -153,6 +161,37 @@ export default function ProviderPosts() {
     }
   }
 
+  // ITEM L: posts and reels are deletable by the provider who published them.
+  //
+  // The same gap the portfolio screen had, and it mattered more here: this list
+  // is where a provider's VIDEO content lives, which is what Reels plays to
+  // everyone. There was no way to take a reel down.
+  function confirmDelete(post: PostItem) {
+    if (uploading || deletingId) return
+    Alert.alert(DELETE_MEDIA_COPY.title, DELETE_MEDIA_COPY.body, [
+      { text: DELETE_MEDIA_COPY.cancelLabel, style: 'cancel' },
+      {
+        text: DELETE_MEDIA_COPY.confirmLabel,
+        style: 'destructive',
+        onPress: () => removePost(post),
+      },
+    ])
+  }
+
+  async function removePost(post: PostItem) {
+    if (!providerId) return
+    setDeletingId(post.id)
+    setError(null)
+    // The list is re-read from the server either way rather than patched locally:
+    // RLS FILTERS a refused delete instead of raising, so "no error" is not proof
+    // the row is gone, and a provider must never be shown an empty tile for
+    // something still on their public profile and still in Reels.
+    const result = await deleteProviderMedia(post.id, post.media_url)
+    if (!result.ok) setError(DELETE_MEDIA_FAILED)
+    await loadPosts(providerId)
+    setDeletingId(null)
+  }
+
   const canAdd = !!providerId && !uploading
 
   return (
@@ -259,6 +298,21 @@ export default function ProviderPosts() {
                         <Feather name="play" size={20} color="#F0E8D5" />
                       </View>
                     ) : null}
+                    {deletingId === post.id ? (
+                      <View style={styles.cellBusy}>
+                        <ActivityIndicator color="#F0E8D5" size="small" />
+                      </View>
+                    ) : (
+                      <Pressable
+                        style={styles.deleteBadge}
+                        onPress={() => confirmDelete(post)}
+                        disabled={!!deletingId || uploading}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityLabel={isVideo ? 'Delete this video' : 'Delete this photo'}
+                      >
+                        <Feather name="trash-2" size={13} color="#F0E8D5" />
+                      </Pressable>
+                    )}
                   </View>
                 )
               })}
@@ -277,6 +331,27 @@ export default function ProviderPosts() {
 }
 
 const styles = StyleSheet.create({
+  // Deliberately the same badge as the portfolio grid: one delete affordance,
+  // in the same corner, whichever kind of media a provider is looking at.
+  deleteBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(8,8,8,0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cellBusy: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,8,8,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   root: { flex: 1, backgroundColor: '#080808' },
   header: {
     paddingHorizontal: 20,

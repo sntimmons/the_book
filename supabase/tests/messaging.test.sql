@@ -434,11 +434,19 @@ begin
   insert into public.conversation(client_id, provider_id, created_at)
     values (au, bpid, now()) returning id into c1;
   -- B books A -- the OPPOSITE direction to the thread's orientation.
-  insert into public.bookings(user_id, provider_id, service_name, requested_date, status)
-    values (bu, apid, 'Attach svc', current_date, 'accepted') returning id into bk;
+  -- `submitted_at` is explicit because these are inserted as service_role, which
+  -- the write-integrity trigger early-returns for — so nothing would stamp it.
+  -- A real accepted booking always carries it, and since Correction 3 the
+  -- conversation gates require it: an UNSENT draft may not attach to a thread.
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, expires_at)
+    values (bu, apid, 'Attach svc', current_date, 'accepted',
+            now() - interval '1 hour', now() + interval '71 hours') returning id into bk;
   -- And a booking belonging to a DIFFERENT pair, which must still be refused.
-  insert into public.bookings(user_id, provider_id, service_name, requested_date, status)
-    values (xu, apid, 'Other svc', current_date, 'accepted') returning id into bk_other;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, expires_at)
+    values (xu, apid, 'Other svc', current_date, 'accepted',
+            now() - interval '1 hour', now() + interval '71 hours') returning id into bk_other;
 
   perform pg_temp.act(bu);
   select public.resolve_conversation(bu, apid, bk) into v_res;

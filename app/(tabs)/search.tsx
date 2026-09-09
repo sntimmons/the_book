@@ -90,7 +90,7 @@ export default function SearchScreen() {
     }, []),
   )
 
-  const { results, loading: searching } = useProviderSearch(
+  const { results, loading: searching, filterFailed } = useProviderSearch(
     debouncedQuery,
     activeCategoryId ?? undefined,
     {
@@ -231,6 +231,7 @@ export default function SearchScreen() {
           loading={searching}
           posts={contentPosts}
           contentLoading={contentLoading}
+          filterFailed={filterFailed}
           onRemoveFilter={toggleFilter}
           onBrowse={() => {
             setQuery('')
@@ -488,6 +489,7 @@ function ResultsState({
   loading,
   posts,
   contentLoading,
+  filterFailed,
   onRemoveFilter,
   onBrowse,
 }: {
@@ -498,6 +500,15 @@ function ResultsState({
   loading: boolean
   posts: ContentSearchPost[]
   contentLoading: boolean
+  /**
+   * True when a FILTER could not be evaluated — distinct from "no matches".
+   *
+   * A filter that failed and an empty result set look identical on screen unless
+   * the product distinguishes them, and the wrong reading is the harmful one:
+   * "no providers are open today" is a claim about the market, made on the
+   * strength of a request that never got an answer.
+   */
+  filterFailed: boolean
   onRemoveFilter: (filter: string) => void
   onBrowse: () => void
 }) {
@@ -509,7 +520,9 @@ function ResultsState({
 
   const activeLoading = tab === 'providers' ? loading : contentLoading
   const activeCount = tab === 'providers' ? results.length : posts.length
-  const showNoResults = !activeLoading && activeCount === 0 && query.length >= 2
+  const showFilterFailed = !activeLoading && tab === 'providers' && filterFailed
+  const showNoResults =
+    !activeLoading && !showFilterFailed && activeCount === 0 && query.length >= 2
 
   return (
     <ScrollView
@@ -562,6 +575,19 @@ function ResultsState({
       {activeLoading ? (
         <View style={styles.loadingWrap}>
           <ActivityIndicator color="rgba(240,232,213,0.4)" />
+        </View>
+      ) : showFilterFailed ? (
+        <View style={styles.noResults}>
+          <Feather name="wifi-off" size={40} color="rgba(240,232,213,0.1)" />
+          <Text style={styles.noResultsTitle}>Could not apply your filters</Text>
+          {/* Says what happened rather than asserting an empty market. The old
+              behaviour left the previous, unfiltered list on screen beneath an
+              active filter chip — the product making a claim the server never
+              made. */}
+          <Text style={styles.noResultsSub}>
+            This is a connection problem, not an empty result. Check your
+            connection and try again.
+          </Text>
         </View>
       ) : showNoResults ? (
         <View style={styles.noResults}>

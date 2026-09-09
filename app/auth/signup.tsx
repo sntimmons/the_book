@@ -1,4 +1,4 @@
-import { View, Text, Pressable, StyleSheet, ImageSourcePropType, Alert } from 'react-native'
+import { View, Text, Pressable, StyleSheet, ImageSourcePropType } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -38,24 +38,17 @@ export default function SignupScreen() {
           Discover and book the talent Houston is talking about.
         </Text>
 
+        {/* ITEM V (Correction 3): the "Continue with Apple" button is removed.
+            It was never wired to Sign in with Apple — tapping it opened an alert
+            saying the feature was coming soon — and it sat in the PRIMARY
+            position, so the most prominent way into the product was the one that
+            did not work. A control that cannot do what it says should not be
+            shown; when Apple Sign In is actually implemented it comes back. */}
         <Pressable
           style={({ pressed }) => [styles.btnPrimary, { marginBottom: 10, opacity: pressed ? 0.86 : 1 }]}
-          onPress={() =>
-            Alert.alert(
-              'Apple Sign In',
-              'Apple Sign In is coming soon. Please use your phone number to sign in.',
-              [{ text: 'OK' }],
-            )
-          }
-        >
-          <Text style={styles.btnPrimaryText}>Continue with Apple</Text>
-        </Pressable>
-
-        <Pressable
-          style={({ pressed }) => [styles.btnSecondary, { marginBottom: 10, opacity: pressed ? 0.78 : 1 }]}
           onPress={() => router.push('/auth/email')}
         >
-          <Text style={styles.btnSecondaryText}>Continue with Email</Text>
+          <Text style={styles.btnPrimaryText}>Continue with Email</Text>
         </Pressable>
 
         <Pressable

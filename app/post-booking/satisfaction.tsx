@@ -200,7 +200,9 @@ export default function SatisfactionCheck() {
           <TouchableOpacity
             style={styles.skipBtn}
             activeOpacity={0.7}
-            onPress={() => router.push('/(tabs)/')}
+            // `replace`, not `push`: see the note on handleSkip in review.tsx — pushing
+          // the tab shell strands this screen beneath it with no way back out.
+          onPress={() => router.replace('/(tabs)/')}
           >
             <Text style={styles.skipText}>Skip for now</Text>
           </TouchableOpacity>

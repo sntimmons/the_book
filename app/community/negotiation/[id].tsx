@@ -31,6 +31,7 @@ import {
   ProposalVersion,
   reportObligationNotReceived,
   reportObligationNoShow,
+  requestObligationReview,
   submitCounter,
 } from '@/lib/negotiation'
 import { BarterWriteRequest, runBarterWrite } from '@/lib/negotiationWrite'
@@ -64,6 +65,7 @@ import {
   noShowReasonPayload,
   noShowStatement,
   NOT_RECEIVED_COPY,
+  REQUEST_REVIEW_COPY,
   REPORT_NO_SHOW_COPY,
   validateNoShowReason,
   ObligationActionCopy,
@@ -389,7 +391,12 @@ export default function NegotiationScreen() {
   // timestamp. This function cannot express "mark their obligation delivered" — there is no
   // parameter for it here and no RPC for it there.
   async function runObligationWrite(
-    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived' | 'reportNoShow',
+    op:
+      | 'markDelivered'
+      | 'confirmReceived'
+      | 'reportNotReceived'
+      | 'reportNoShow'
+      | 'requestReview',
     obligationId: string,
   ) {
     if (busy) return
@@ -411,16 +418,23 @@ export default function NegotiationScreen() {
             ? confirmObligationReceived(obligationId)
             : op === 'reportNotReceived'
               ? reportObligationNotReceived(obligationId)
-              : reportObligationNoShow(
-                  obligationId,
-                  noShowReasonPayload(noShowReason[obligationId] ?? ''),
-                ),
+              : op === 'requestReview'
+                ? requestObligationReview(obligationId)
+                : reportObligationNoShow(
+                    obligationId,
+                    noShowReasonPayload(noShowReason[obligationId] ?? ''),
+                  ),
     })
   }
 
   function askThenWrite(
     copy: ObligationActionCopy,
-    op: 'markDelivered' | 'confirmReceived' | 'reportNotReceived' | 'reportNoShow',
+    op:
+      | 'markDelivered'
+      | 'confirmReceived'
+      | 'reportNotReceived'
+      | 'reportNoShow'
+      | 'requestReview',
     obligationId: string,
   ) {
     if (op === 'reportNoShow') {
@@ -725,6 +739,28 @@ export default function NegotiationScreen() {
             onSubmit={() => askThenWrite(REPORT_NO_SHOW_COPY, 'reportNoShow', obligation.id)}
             busy={busy}
           />
+        ) : null}
+        {/* ITEM X — the deliverer's one move when the receiver never answered.
+            A SEPARATE control from the receipt answers and from the no-show report, because it
+            is the only one on this card that belongs to the DELIVERER after delivery: PD-057's
+            window elapsed, PD-062's two routes into Under Review were both receiver acts, and
+            without this the deliverer could do nothing at all but wait forever.
+
+            Offered only while `lib/obligationState.ts` says every condition holds — deliverer,
+            delivered, Needs Attention, not already under review, not cancelled, not resolved —
+            each of which the server checks again. Secondary styling on purpose: asking is not a
+            stronger act than delivering, and it decides nothing. The confirmation says so
+            before it is sent. */}
+        {o.canRequestReview ? (
+          <View style={styles.actions}>
+            <TouchableOpacity
+              style={[styles.secondaryBtn, busy && styles.btnDisabled]}
+              disabled={busy}
+              onPress={() => askThenWrite(REQUEST_REVIEW_COPY, 'requestReview', obligation.id)}
+            >
+              <Text style={styles.secondaryText}>{REQUEST_REVIEW_COPY.confirmLabel}</Text>
+            </TouchableOpacity>
+          </View>
         ) : null}
         {/* The reporter's own words, once a report exists. ATTRIBUTION comes from
             lib/obligationState.ts, never from a ternary here: it is a STATEMENT by one

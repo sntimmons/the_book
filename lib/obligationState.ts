@@ -140,6 +140,24 @@ export interface ObligationView {
    */
   canReportNoShow: boolean
   /**
+   * May the viewer ask The Book to look at this obligation? **Deliverer only** (item X).
+   *
+   * PD-057 gives the receiver a window; PD-062 made Under Review the entry to adjudication, but
+   * only through two RECEIVER acts. So when a receiver simply stopped opening the app, the
+   * DELIVERER had no move at all and the trade sat in Needs Attention forever. This is the
+   * third route, and it is deliberately the narrow one OQ-071 left room for: a person asks. No
+   * timer, no automatic escalation, no second deadline.
+   *
+   * Offered only while the obligation is genuinely in Needs Attention and NOT already under
+   * review — a second ask changes nothing, and the server treats a repeat as the same ask. The
+   * server enforces every one of these conditions independently; drawing the control on any
+   * other state would be a button that can only fail.
+   *
+   * ASKING IS NOT BEING ANSWERED. It records a request and produces no outcome. See
+   * `REQUEST_REVIEW_COPY` for what the deliverer is told before they send it.
+   */
+  canRequestReview: boolean
+  /**
    * The response deadline worth showing, with the label that makes it true for THIS viewer, or
    * null when there is no live window. The timestamp is returned raw and the caller formats it,
    * so one formatter renders every time on the card.
@@ -443,6 +461,18 @@ export function obligationView(f: ObligationViewFacts): ObligationView {
     // role check is a second, independent refusal: the server already refuses a deliverer, and
     // a button that can only fail must never be drawn.
     canReportNoShow: role === 'receiver' && canReportNoShow && !tradeCancelled && !resolved,
+    // ITEM X. Every conjunct is one the server also checks:
+    //   deliverer only          — the receiver has two routes in already and does not need a third
+    //   delivered + needs_attention — the window has genuinely passed unanswered
+    //   not already under review    — a second ask changes nothing, and the label would be a lie
+    //   not cancelled, not resolved — nothing left to look at
+    canRequestReview:
+      role === 'deliverer'
+      && status === 'delivered'
+      && window === 'needs_attention'
+      && !review
+      && !tradeCancelled
+      && !resolved,
     attention: review ? UNDER_REVIEW_LABEL : w.attention,
     // The RESOLUTION, reported separately from `attention` on purpose: attention states are
     // things still waiting on somebody, and this is the opposite of that. A screen renders one
@@ -494,6 +524,37 @@ export const NOT_RECEIVED_COPY: ObligationActionCopy = {
   confirmLabel: "Didn't receive",
   cancelLabel: 'Go back',
 }
+
+/**
+ * ITEM X — what the deliverer is told before they ask.
+ *
+ * Every sentence is a limit. It does NOT claim the delivery happened, does not fault the
+ * receiver, does not contradict their silence, and promises no answer by any particular time:
+ * PD-068 is explicit that there is no SLA, and the operator Review Queue that will actually read
+ * these is Session 8 work that does not exist yet. Saying "someone will look" and stopping is
+ * the most this can honestly say — and it is still strictly more than the deliverer had, which
+ * was nothing.
+ */
+export const REQUEST_REVIEW_COPY: ObligationActionCopy = {
+  title: 'Ask The Book to review this?',
+  body:
+    'This asks The Book to look at this part of the trade because the other provider has not'
+    + ' answered. It does not decide anything, does not say they were at fault, and does not'
+    + ' record that your delivery was received. There is no set response time.',
+  confirmLabel: 'Ask The Book to review',
+  cancelLabel: 'Not yet',
+}
+
+/** The control's own label, so the screen and the confirmation cannot drift apart. */
+export const REQUEST_REVIEW_LABEL = 'Ask The Book to review'
+
+/**
+ * What the deliverer is told once they have asked. Deliberately the same destination as the
+ * other two routes — the trade reads "Under review" and waits — because a requested review is
+ * not a better or faster kind of review, and the copy must not imply it is.
+ */
+export const REVIEW_REQUESTED_NOTE =
+  'You asked The Book to look at this. Nothing has been decided.'
 
 /** The same 200-character bound the server enforces, and the same one cancellation uses. */
 export const MAX_NO_SHOW_REASON = 200

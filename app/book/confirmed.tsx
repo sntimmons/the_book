@@ -12,7 +12,7 @@ import { useBookingStore } from '@/store/bookingStore'
 
 export default function BookConfirmed() {
   const insets = useSafeAreaInsets()
-  useLocalSearchParams<{ bookingId: string }>()
+  const { bookingId } = useLocalSearchParams<{ bookingId?: string }>()
   const {
     providerName,
     selectedService,
@@ -34,6 +34,34 @@ export default function BookConfirmed() {
 
   function handleBackToHome() {
     reset()
+    router.replace('/(tabs)/')
+  }
+
+  // ITEM N: the primary action after sending is VIEW REQUEST.
+  //
+  // "Back to Home" was the only way off this screen, which dropped the client
+  // back into discovery with nothing to act on and no route to the thing they
+  // had just done. The request they just sent is the one place where its status,
+  // the provider's answer and the option to withdraw all live, so that is where
+  // the primary button goes. Home stays as the quiet secondary.
+  //
+  // `reset()` still runs: the booking-flow store is per-attempt scratch state,
+  // and leaving it populated would make a later attempt resume this one's
+  // service and date. The request itself is on the server and is what the next
+  // screen reads.
+  function handleViewRequest() {
+    reset()
+    if (bookingId) {
+      // `/bookings/[id]`, NOT `/bookings/request/[id]`. The latter is the
+      // PROVIDER's request screen: a client who lands on it is told "This view is
+      // only available to the provider", and because this screen is replaced, the
+      // only way back out of that dead end was into the completed send step —
+      // which would have sent a second request. The client's own booking detail
+      // is where the status, the provider's answer and the withdraw control live.
+      router.replace({ pathname: '/bookings/[id]', params: { id: bookingId } })
+      return
+    }
+    // No id to open — do not pretend there is a request to show.
     router.replace('/(tabs)/')
   }
 
@@ -70,23 +98,34 @@ export default function BookConfirmed() {
           accept or decline. You&apos;ll see their response in The Book.
         </Text>
 
-        {/* PRODUCT TRUTH: a "has 24 hours to respond" timer used to sit here,
-            driven by a hardcoded string, and told the CLIENT that a response was
-            guaranteed within a window.
+        {/* ITEM 2 (PM decision, PR #74): the client IS told the window.
 
-            BE PRECISE ABOUT WHAT IS AND IS NOT ENFORCED, because an earlier
-            version of this comment said "nothing expires a pending booking" and
-            that is wrong. There is no server-side expiry — no trigger, no job,
-            no column, and a pending booking sits pending forever in the
-            database. But the PROVIDER's controls do expire client-side at 24h
-            from `created_at`: app/(tabs)/business/index.tsx disables Accept and
-            Decline, and app/bookings/request/[id].tsx says the request "has
-            expired". So the window is real UI behaviour on one side and no
-            guarantee on the other, which is exactly why a promise to the client
-            was the wrong thing to make. Removed rather than restated with a
-            different number. Whether the client should be told about a window
-            the provider is held to is a Founder question, recorded, not decided
-            here. */}
+            A "has 24 hours to respond" timer used to sit here, driven by a
+            hardcoded string that matched no enforced rule. It was removed rather
+            than corrected, and PD-071 recorded whether to tell the client at all
+            as a Founder question. That question is now answered: tell them.
+
+            The number is the real one — PD-071's server-authoritative 72 hours —
+            and the clause after it is the REST of the real one: the server rule is
+            `expires_at = LEAST(submitted_at + 72 hours, appointment_time)`, and
+            the calendar sells same-day and next-day slots, so the appointment is
+            very often the binding term. A flat "72 hours" would overstate the
+            window in the ordinary case, not an edge one.
+
+            The last sentence is what makes the rest safe to say. There is no
+            push, email or SMS channel in this product, so the client is told
+            where to LOOK rather than promised something will arrive.
+
+            THIS SCREEN IS ONLY EVER REACHED FOR A REQUEST JUST SENT, which is the
+            premise the copy rests on — so it does not need to derive an expiry
+            state the way the request detail does. The resume path used to land
+            here too, which would have shown "BOOKING REQUEST SENT" and a live
+            window for a request days old; it now goes to `/bookings/[id]`
+            instead. Keep it that way, or this copy needs the derivation. */}
+        <Text style={styles.responseWindowText}>
+          Your provider has up to 72 hours to respond, or until your requested
+          time — whichever comes first. You can check this request anytime.
+        </Text>
 
         {/* Booking summary pill */}
         {bookingSummary.length > 0 && (
@@ -113,7 +152,10 @@ export default function BookConfirmed() {
             {
               n: '1',
               title: 'Provider reviews your request',
-              // No response deadline is stated: none is enforced anywhere.
+              // Was "No response deadline is stated: none is enforced anywhere."
+              // Both halves are now false — PD-071 enforces one (PT425) and
+              // PD-077 states it above. Left as the step's plain description;
+              // the deadline is stated once, at the top, not repeated per step.
               desc: `${firstName} will review your profile and confirm or suggest an alternative time.`,
               green: false,
             },
@@ -149,6 +191,15 @@ export default function BookConfirmed() {
 
       {/* Bottom buttons, inside scroll so they never overlap content */}
       <View style={styles.bottomButtons}>
+        {bookingId ? (
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            activeOpacity={0.85}
+            onPress={handleViewRequest}
+          >
+            <Text style={styles.primaryBtnText}>View Request</Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
           style={styles.homeBtn}
           activeOpacity={0.7}
@@ -163,6 +214,29 @@ export default function BookConfirmed() {
 }
 
 const styles = StyleSheet.create({
+  responseWindowText: {
+    marginTop: 14,
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 19,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
+  primaryBtn: {
+    height: 54,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    backgroundColor: '#F0E8D5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  primaryBtnText: {
+    fontSize: 16,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
+  },
   root: {
     flex: 1,
     backgroundColor: '#080808',

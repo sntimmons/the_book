@@ -29,14 +29,52 @@ listed explicitly so they are not mistaken for defects (cross-check
 - **Intentional placeholders:** OTP delivery requires real email/SMS; a `__DEV__`-only bypass exists (non-prod).
 - **Open decisions:** none.
 
-## J2 — Discover → Provider profile → Service → Date/Time → (Message) → (Policy) → (Contract) → Booking request → Confirmation
+## J1b — New client onboarding (profile → photo → preview → Discover)  ·  **IMPLEMENTED**
+- **Actor:** a newly authenticated user who chose the client path.
+- **Entry:** `app/path-selection.tsx` → "I'm here to book" → `app/onboarding/client/`.
+- **Steps (current, THREE screens — two numbered, then the summary):**
+  1. **Who you are** (`index.tsx`) — first name, last name, neighborhood (via `NeighborhoodPicker`), short bio. Held in `useClientStore`; nothing is written yet.
+  2. **Photo** (`uploads.tsx`) — optional avatar; skippable.
+  3. **Preview** (`preview.tsx`) — shows the profile as assembled, then **one write on continue**: the avatar is uploaded (when one was picked) and a single `clients` upsert on `id` persists `name`, `notes`, `neighborhood` and `avatar_url`. The session role is then re-resolved so it settles as `client`, and the user lands on Discover.
+- **Expected end state:** exactly one `clients` row for the user; the session resolves as a client; the user is on Discover (per NAVIGATION.md, everyone lands on Discover).
+- **Nothing is persisted before the last step**, so abandoning onboarding leaves no partial profile — and re-entering starts clean rather than resuming a half-written row.
+- **Intentional placeholders:** none in the write path.
+- **Changed by Correction 3 (item A) and the PR #74 Founder rulings (PD-079, PD-081):** the `preferences.tsx` step is **GONE**. It collected notification switches (a channel that does not exist), an interests grid and a "show mobile providers" switch — none of them persisted, none of them read. Removing them left the screen asking the same question step 1 asks, with the same component, on the screen that does not persist it — so the step went too. **The neighborhood is unaffected**: step 1 collects it, writes it to the store, and the preview step persists it, and it is what the Near You lane reads. No recommendation engine is to be built to justify the removed interests field, and no replacement question was invented to preserve the step count.
+- **The REAL mobile-provider capability is untouched.** What was removed was an onboarding-only preference with zero consumers; the working filter is the "Mobile only" switch on Search, which item M wired to `providers.is_mobile`.
+- **Open decisions:** whether interests should influence Discover ordering (they do not today — see the discovery lanes in J2a); whether a client profile should ever be publicly visible beyond `clients_public` (name + avatar).
+
+## J2 — Discover → Provider profile → Service → Date/Time → (Message) → (Policy) → **Draft request** → (Contract) → Submit → Confirmation
 - **Actor:** client.
-- **Entry:** Discover feed provider card.
-- **Steps:** provider profile → "Book Now" → select service → pick date/time (from provider availability) → optional message/photos → review policy (checkbox) → **contract gate** (shown only if the provider has a contract; a genuine "no contract" skips, a technical load error blocks with retry) → payment **request** screen (no charge) → submit → confirmation.
-- **Expected end state:** one `bookings` row, `status='pending'`, `payment_status='unpaid'`; user on a confirmation screen truthfully stating no payment was taken.
+- **Entry:** Discover feed provider card (or a lane card — see J2a).
+- **Steps:** provider profile → "Book Now" → select service → pick date/time (from provider availability) → optional message/photos → review policy (checkbox) → **the booking row is created as a DRAFT** → **contract gate** (shown only if the provider has a contract; a genuine "no contract" skips, a technical load error blocks with retry) → confirm screen → **Send Booking Request** → confirmation.
+- **Expected end state:** ONE `bookings` row with `submitted_at` set (server-stamped) and `expires_at` derived from it; `status='pending'`, `payment_status='unpaid'`; the client on a confirmation screen truthfully stating no payment was taken, whose PRIMARY action is **View Request**.
 - **Status:** IMPLEMENTED (as a *request* flow).
-- **Intentional placeholders:** no payment/charge (BETA_SCOPE Payments); contract signature is a placeholder with `signature_url=null` (BETA_SCOPE Contracts).
-- **Open decisions:** whether a real signature is required; whether confirmation should link forward to the created booking; atomicity of booking-vs-signature writes (**PRODUCT DECISION / ENGINEERING REQUIRED**).
+
+**RESHAPED BY PRE-SESSION-8 CORRECTION 3 (items B, D, H, I, J, K, N).** What changed and why:
+
+- **The booking row now exists BEFORE the contract step (item J).** It is inserted as a DRAFT — `submitted_at IS NULL` — by `lib/bookingDraft.ts` when the client reaches the contract screen. A draft is **invisible to the provider**: the provider SELECT policy requires `submitted_at IS NOT NULL`, so an abandoned flow leaves a private row, not a request anyone must answer.
+- **Contract access is scoped to that booking (item J).** `contract_for_booking(p_booking_id)` replaces `provider_contract_for_booking(p_provider_id)`, which has been **dropped**. The old function returned any approved provider's contract text to any authenticated caller; the new one returns it only to the client holding that booking with that provider. There is no standing read path into other people's contract terms.
+- **One intent = one request (item K).** A partial unique index (`bookings_one_draft_per_pair`) allows at most one draft per (client, provider), and the client resumes it by lookup rather than inserting again. A dropped network, a failed signature, a back-out or a double tap all continue the SAME request. The signature is written **before** submission, so a request the provider can see is never one whose signature failed to save.
+- **The contract must be OPENED before it can be signed (item I).** For a PDF that means tapping through to the document; for an inline agreement it means scrolling to the end. The screen states plainly that The Book records that the agreement was opened and agreed to, and **does not verify that every word was read** — the ticked box is the client's own statement, not something the app proved.
+- **Requests expire at 72 hours, server-side (item B).** `expires_at = LEAST(submitted_at + 72 hours, appointment_time)`, never earlier than `submitted_at`. Computed by the write-integrity trigger and never client-supplied. Past it, the provider can no longer ACCEPT (`PT425`); declining stays available, and the row is **not deleted and not hidden** — it stays in both sides' history. `booking_request_urgency()` derives `draft | none | nudge (24h) | urgent (48h) | expired` per read; nothing flips a row when the deadline passes. **It is a read state, not a message: no push, device or email channel exists, so no surface built on it may claim a reminder was delivered.**
+- **A de-approved provider takes no NEW bookings (item H).** The insert is refused with `PT426`; the client is told "Not currently available for new bookings", which is availability and not a judgement. **The PROVIDER is told too (PD-078)**, on their own dashboard: *"Your business is not currently available for new bookings. Your existing bookings, messages, and history are still available."* — not dismissable, no reason given, and never equating marketplace approval with identity verification. All existing bookings, messages and history with that provider are untouched and still reachable.
+- **Payment copy is the approved wording (item D):** "In-app payments aren't available during beta. Payment is handled directly with your provider for now."
+- **The confirmation's primary action is View Request (item N),** replacing "Back to Home" as the only exit. It opens the CLIENT's own booking detail (`/bookings/[id]`) — not `/bookings/request/[id]`, which is the provider's request screen and tells a client "This view is only available to the provider".
+- **A DRAFT IS NEVER PRESENTED AS A SENT REQUEST.** It is excluded from the client's Bookings tab, the Care list, their profile booking count and the derived notifications; it cannot open a conversation, cannot reverse a provider's decline, and does not disclose the client's identity to a provider who cannot see it. A cancelled draft frees the one-draft slot rather than locking the client out of that provider. `__tests__/guards/bookingLifecycleReads.test.ts` fails on a client booking read that forgets this.
+
+- **Intentional placeholders:** no payment/charge (BETA_SCOPE Payments); contract signature is still a placeholder with `signature_url=null` (BETA_SCOPE Contracts).
+- **Open decisions:** whether a real signature is required. **Resolved by Correction 3:** the confirmation now links forward to the created booking (item N), and booking-vs-signature ordering is settled — the signature is written against the draft before the request is sent, so the two can no longer disagree.
+- **The client IS told the window (PD-077):** *"Your provider has up to 72 hours to respond. You can check this request anytime."* — on the confirmation screen and again on the request itself. It says where to look rather than promising a notification, because no push, email or SMS channel exists.
+- **PM RULING on the NULL `appointment_time` case (2026-09-09):** the rule is unchanged. Where an authoritative timestamp exists the clamp uses it; where there is genuinely none, 72 hours stands. `requested_date` is a bare DATE and `requested_time` a display string, so deriving a deadline from them would mean inventing a time-of-day and a timezone — refused. Recorded as **OQ-072**, not resolved in code. The gap is narrow: the date/time step will not advance without both, so a normal request carries an `appointment_time`.
+
+## J2a — Discover feed: beta discovery lanes  ·  **IMPLEMENTED (Correction 3, items S and T)**
+- **Actor:** any user on Discover, unfiltered by category.
+- **Lanes shown, each with its RULE printed beneath its name:** Near You (same neighborhood, else same city), Available Soon (the server says they published hours for today and today is not blocked), New to The Book (joined in the last 30 days), Popular Near You (ranked by completed bookings, then client reviews), Worth a Look (everyone the rows above did not show).
+- **THE FAIRNESS RULE (item S), which outranks every lane:** a provider is **never** placed lower in MARKETPLACE discovery because they do not create social content. Not by posts, reels, followers, likes, views or engagement. Reels ranking and marketplace ranking are two different systems; `lib/discovery.ts` cannot see a content signal — its input type has no field for one — and `__tests__/lib/discovery.test.ts` asserts both the type and the behaviour.
+- **No percentage quotas** (item T). Each lane is a filter and a sort a person can read and check against a provider's own row. Ties break on a hashed, stable pseudo-random rank so neither alphabetical order nor signup order confers a durable advantage.
+- **The lanes never replace the feed.** They sit above the complete, paginated grid, so a provider who does not fit a capped row is not thereby hidden. `providersWithNoLane()` is the checkable form of that guarantee.
+- **The lanes read their own unranked pool**, not the feed's first page: page one is ordered by feature flag and rating, so computing "New to The Book" from it excluded new providers systematically. Lane membership also does not shift as the grid pages.
+- **Open decisions:** whether client interests (J1b) should influence lane membership — they do not today.
 
 ## J3 — Client booking lifecycle
 - **Actor:** client.
@@ -79,12 +117,19 @@ listed explicitly so they are not mistaken for defects (cross-check
 - **Status:** IMPLEMENTED (transaction-gated, blind, two-sided, 7-day window).
 - **Open decisions:** free-text vs structured review input (PRODUCT DIRECTION); whether reviews additionally require identity-verified parties (ties to J9/J10). *(Reveal timing is NOT open and NOT a mismatch — it is decided and implemented.)*
 
-## J7 — Provider onboarding → Go Live
+## J7 — Provider onboarding → **Review your business** → Go Live
 - **Actor:** user becoming a provider.
 - **Entry:** "Become a provider" funnel → onboarding steps.
-- **Steps:** profile → services → availability → policy → media → go live (writes provider + related rows). Signed-out preview is `__DEV__`-only; production requires a session.
+- **Steps (current, seven):** profile → portfolio → reels → services → availability → policy → **review** → go live (writes provider + related rows). Signed-out preview is `__DEV__`-only; production requires a session.
 - **Expected end state:** an active provider business reachable from the shared shell.
 - **Status:** IMPLEMENTED.
+
+**CHANGED BY PRE-SESSION-8 CORRECTION 3 (item Y):**
+- **A final review page is now required before Go Live** (`app/onboarding/provider/review.tsx`): "Review your business" / "Make sure everything looks right before your profile goes live." It lists what has actually been set — profile, category, services, where they work, hours, public content, policy — each linking back to the step that owns it. Go Live is a PUBLISHING act, and the eight screens before it each forgot the last.
+- **It checks; it does not gate.** The only hard preconditions remain one service and a profile photo. Anything missing is reported as a CONSEQUENCE in the provider's own words ("clients can't book you until you add hours"), not as an error.
+- **The payout step was removed from the required path, and the screen was DELETED.** It was "Step 7 of 8", with a Continue button and no skip, for a capability that does not exist in beta — so every new provider had to walk past an apology. The Business dashboard's Payouts entry goes to `app/(tabs)/business/payouts.tsx`, which carries the same explanation; keeping a second copy in the onboarding tree would have left two files answering one product question. Onboarding does not require analytics, payouts, reels or advanced settings.
+- **Minimum onboarding, stated:** basic profile, category, at least one service, location / service mode, basic availability, enough public content to be worth looking at, and the required policy/contract. Nothing else.
+
 - **Intentional placeholders:** `identity_verified` is inserted `false` (verification is a separate journey, J9/J10).
 
 ## J8 — Returning client → Rebook

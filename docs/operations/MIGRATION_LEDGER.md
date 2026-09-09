@@ -1318,8 +1318,8 @@ NOT in the migration that created it.
 | `public.release_barter_interest` | `20260909000000_barter_interest_release.sql` | **`20260913000000_trade_activity_hardening.sql`** | `20260910000000` added the in-transaction counterparty signal; `20260911000000` made that signal unable to veto the release and added the provider-identity assertion. **`20260909000000`'s header instructs future slices to add the agreement guard "HERE, inside this function", and `20260911000000` repeats it saying "THIS definition, the live one". BOTH now point at DEAD definitions. Extend the current one.** `20260912000000` adds the post-context label and addresses the notice via `system_recipient_id`. |
 | `public.enforce_barter_interest_write` | `20260906000000_barter_integrity_slice1.sql` | **`20260909000000_barter_interest_release.sql`** | Adds the `accepted -> released` transition and the release-column allow-list, gated on a transaction-local marker **and** the transition itself. The trigger **derives** `released_at` / `released_by` / `release_reason` rather than trusting them, so attribution is non-forgeable independent of the caller — that clamp is the load-bearing part, not the marker. The INSERT path additionally null-clamps the three new release columns so they are never author-supplied. The pre-existing owner-only `pending -> accepted\|declined` rule and the pre-existing INSERT clamps are carried through unchanged. |
 | `public.enforce_message_immutability` (new) / policy `participants_mark_messages_read` | `20260829000000_canonical_live_baseline.sql` (policy) | **`20260911000000_message_authorship_pin.sql`** | The policy's `sender_id = sender_id` conjuncts were TAUTOLOGIES — an RLS policy cannot reference OLD — so they pinned nothing and were NULL for a null sender. The pin moved to a BEFORE UPDATE trigger, where it can compare to OLD; the policy now asserts only participation. |
-| `public.enforce_conversation_update` | `20260901000000_prebooking_message_requests.sql` | **`20260908000000_canonical_provider_pair.sql`** | Redefined twice. `20260907000000` added `declined -> accepted` for the barter handoff (gated on an accepted match AND a transaction-local marker set only by `accept_barter_interest`); `20260908000000` then widened the booking-attach predicate to accept EITHER orientation of a provider pair, because a conversation is now canonical for the pair and its orientation need not match the direction a booking was made in. |
-| `public.enforce_prebooking_message_rules` | `20260901000000_prebooking_message_requests.sql` | **`20260914000000_trade_activity_corrections.sql`** | Redefined THREE times. `20260901010000` added the `select ... for update` row lock closing the SEC-DATA-001 read-then-insert race. `20260913000000` added the `system_recipient_id` insert clamp **and silently deleted that lock**, because its body was written from `20260901000000` rather than from the live definition. `20260914000000` restores the lock and keeps the clamp. **`supabase/tests/messaging.test.sql` asserts on `prosrc`, with comments stripped, that the lock is on the conversation lookup statement itself** — the only mechanism that survives a future `create or replace`. |
+| `public.enforce_conversation_update` | `20260901000000_prebooking_message_requests.sql` | **`20260908000000_canonical_provider_pair.sql`** | Redefined twice. `20260907000000` added `declined -> accepted` for the barter handoff (gated on an accepted match AND a transaction-local marker set only by `accept_barter_interest`); `20260908000000` then widened the booking-attach predicate to accept EITHER orientation of a provider pair, because a conversation is now canonical for the pair and its orientation need not match the direction a booking was made in. **SUPERSEDED 2026-09-09 by `20261045000000_drafts_are_not_relationships.sql`**, which added `and b.submitted_at is not null` wherever this function tests that a booking exists for the pair. Correction 3 made a `bookings` row able to mean an UNSENT DRAFT — invisible to the provider and unthrottled — and this test was written when it could only mean a real request. Without the conjunct a draft bought an ungated conversation and could reverse a provider's decline. **Read `20261045000000` before touching this, and carry every rule named above forward with it.** |
+| `public.enforce_prebooking_message_rules` | `20260901000000_prebooking_message_requests.sql` | **`20260914000000_trade_activity_corrections.sql`** | Redefined THREE times. `20260901010000` added the `select ... for update` row lock closing the SEC-DATA-001 read-then-insert race. `20260913000000` added the `system_recipient_id` insert clamp **and silently deleted that lock**, because its body was written from `20260901000000` rather than from the live definition. `20260914000000` restores the lock and keeps the clamp. **`supabase/tests/messaging.test.sql` asserts on `prosrc`, with comments stripped, that the lock is on the conversation lookup statement itself** — the only mechanism that survives a future `create or replace`. **SUPERSEDED 2026-09-09 by `20261045000000_drafts_are_not_relationships.sql`**, which added `and b.submitted_at is not null` wherever this function tests that a booking exists for the pair. Correction 3 made a `bookings` row able to mean an UNSENT DRAFT — invisible to the provider and unthrottled — and this test was written when it could only mean a real request. Without the conjunct a draft bought an ungated conversation and could reverse a provider's decline. **Read `20261045000000` before touching this, and carry every rule named above forward with it.** |
 | `public.barter_terms_label` | `20260913000000_trade_activity_hardening.sql` | **`20260914000000_trade_activity_corrections.sql`** | Delegates to the new `public.barter_terms_sanitize`. `20260913000000` quoted and capped the owner-authored offer terms but did not strip the QUOTE CHARACTER, so the boundary the quotes draw could be erased by the quoted text. Sanitising now happens BEFORE the empty test and BEFORE the 40-char cap, so an attacker cannot pad with strippable codepoints. |
 | `public.accept_barter_interest` | `20260907000000_barter_accept_handoff.sql` | **`20260915000000_barter_closed_post_terminal.sql`** | Routes the handoff message's two participant-authored values (`providers.display_name`, `barter_offers.offering_service`) through `barter_terms_sanitize` and caps each at 40 chars. That call site was missed when the release notice was hardened. Lower stakes — the message is attributed to the owner, so it never posed as platform speech — but it interpolated up to 200 unbounded characters with a working quote breakout. **The new body was taken from `20260907000000` and diffed before commit: exactly 2 lines of the FUNCTION BODY changed.** Outside the body, the two trailing `revoke` statements were also consolidated into one `revoke all ... from public, anon` — semantically identical, and it still removes the `anon` grant Supabase's `ALTER DEFAULT PRIVILEGES` creates. Recorded because the bare "2 lines" claim was one line short of the literal file diff. |
 | `public.enforce_barter_accept_open_offer` → **`public.enforce_barter_answer_open_offer`** | `20260914000000_trade_activity_corrections.sql` | **`20260916000000_barter_guard_admin_escape.sql`** (RENAMED by `20260915000000`, which dropped the old function and trigger; body refreshed by `20260916000000`) | Now refuses the transition into `declined` as well as `accepted` when the parent offer is closed (PD-052), and gains the `service_role` exemption every sibling trigger on this table has — without it the INSERT arm bound *only* service_role, since `enforce_barter_interest_write` clamps every authenticated insert to `pending`. Renamed because "accept" understated what it refuses. Trigger `barter_interests_zy_accept_open_offer` → `barter_interests_zy_answer_open_offer`. `20260916000000` then added the null-`auth.uid()` half of the admin exemption, which `20260915000000` omitted. |
@@ -1332,6 +1332,11 @@ NOT in the migration that created it.
 | `public.enforce_no_change_after_agreement` | `20260927000000_barter_agreement_finalization.sql` | **`20260928000000_agreement_guard_field_ref.sql`** | Referenced `new.version_id` inside a CASE branch meant for `barter_version_acceptances`; PL/pgSQL resolves NEW's fields regardless of branch, so on a `barter_proposal_versions` row it raised 42703 and blocked EVERY version insert. Caught by B5B on the first run after apply. Now reads the row through `to_jsonb(new)`. |
 | `public.enforce_barter_terms_write` | `20260921000000_negotiation_write_boundary.sql` | **`20260926000000_negotiation_stale_comment.sql`** | `20260923000000` removed a per-row write-once count that tripped on the second row of the RPC's own insert; the trigger keeps only the marker check. Write-once now rests on the statement-level `enforce_barter_terms_written_once` (`20260924000000`), and `20260926000000` refreshed a body comment that still cited a since-dropped index. |
 | `public.enforce_barter_offer_active_one_way` | `20260915000000_barter_closed_post_terminal.sql` | **`20260916000000_barter_guard_admin_escape.sql`** | Makes `is_active` one-way for authenticated writers (PD-051). `20260915000000` exempted only `auth.role() = 'service_role'`, which covers the PostgREST service path but NOT a psql / SQL-console / migration session, where there is no JWT and `auth.role()` is NULL — so it silently excluded the sessions an operator actually recovers from, and would abort any future migration touching `is_active`. `20260916000000` adds `or (select auth.uid()) is null`, matching `enforce_barter_offer_delete`. |
+| `public.enforce_booking_write_integrity` | `20260830010000` | **`20261041000000_booking_write_integrity_restore.sql`** | **THE EXACT HAZARD THIS TABLE EXISTS FOR, and it happened here.** Correction 3's `20261037000000` rebuilt this function from `20260902000000` and asserted in its own header that that was the live definition. It was not: **`20260904000000_booking_completed_no_show_guard.sql` had redefined it afterwards**, and copying the older body forward silently deleted TWO rules — the `completed_at is immutable once set` RAISE (replaced by a silent latch, so a provider re-completing a booking would have had `completed_at` quietly held rather than the write refused) and **`A completed booking cannot be marked no_show` (SEC-LIFECYCLE-001)**, which is a review-suppression vector: without it a provider could flip a completed booking to `no_show` to make the client's earned review disappear. **B5B caught it on the first run after apply, with three failures.** `20261041000000` rebuilds from the true `20260904000000` body with Correction 3's four additions re-applied on top: the draft/submit transition, the server-derived `expires_at`, the `PT425` expiry refusal on ACCEPT only, and the `PT426` refusal of a new booking for a de-approved provider. **Before redefining this function, read `20260904000000` — not `20260902000000`, and not this row's "created in" column.** |
+| `public.enforce_barter_adjudication_consistent` | `20261019000000_barter_obligation_adjudication.sql` | **`20261042000000_adjudication_consistency_review_request.sql`** | **Eligibility for adjudication is enforced in TWO places by design** — in `adjudicate_barter_obligation` and again in this trigger, so a direct privileged INSERT cannot bypass the RPC — **and Correction 3's `20261039000000` updated only the first.** The deliverer's review request (PD-072) reached Under Review in the read model and in the RPC's precondition, while this trigger went on refusing the INSERT with `object_not_in_prerequisite_state`: a transition that read correctly and did nothing, which is precisely the "cosmetic" failure `20261039000000`'s own § 7 said it existed to prevent. Caught by `supabase/tests/barter_review_request.test.sql` § 10, which asserts an operator can actually RESOLVE a requested review rather than only that the RPC's own check passes. `20261042000000` is written from `pg_get_functiondef` on the live object, whose definition is **`20261023000000`** per the row above — and preserves the two rules a copy-forward drops silently: the explicit NULL-`adjudicator_user_id` refusal (load-bearing since the column became nullable for erasure, because the participant test below it evaluates to NULL rather than true on a null) and the participant check made against BOTH the agreement's participants and the obligation's. **Rule this reinforces: when a rule is deliberately enforced twice, a change to it is TWO edits, and the test must exercise the write end-to-end rather than the precondition alone.** |
+| `public.enforce_conversation_insert` | `20260901000000_prebooking_message_requests.sql` | **`20261045000000_drafts_are_not_relationships.sql`** | The client-side booking-attach gate: a client naming a `booking_id` must own a booking with that provider. Since Correction 3 it must own a **SUBMITTED** one — an unsent draft is invisible to the provider, is created by merely reaching the contract step, and is unthrottled, so without the conjunct it opened an ungated conversation with any approved provider and bypassed the message-request gate entirely. The `request_opened_at` server stamp and the pending-clamp are carried through unchanged. Its two siblings (`enforce_conversation_update`, `enforce_prebooking_message_rules`) took the same conjunct in the same file — see their rows above, and note that each had a DIFFERENT live definition to copy forward from. |
+| `public.available_today` (new, then DROPPED) | `20261040000000_provider_availability_signals.sql` | **DROPPED by `20261044000000_open_today_without_whole_row.sql`** | A PostgREST computed column on `providers`, which cannot work for client roles: a computed column is a WHOLE-ROW reference and `20261030000000` left `anon`/`authenticated` with column-level grants only. Superseded by `public.providers_open_today()`, which returns ids. **Do not add a computed column to `providers`.** |
+| `public.clients_provider` (view) | `20260829000000_canonical_live_baseline.sql` | **`20261045000000`** | A definer view (`security_invoker = false`) that shows a provider a client's name, join date and neighborhood. Its booking arm now requires `submitted_at is not null`: an unsent draft is invisible to the provider and is not a relationship the client chose to create. The conversation arm is unchanged. |
 | `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |
 
 `20260907000000`'s "RECORDED, NOT RESOLVED / TWO THREADS PER PAIR" note is **resolved** by
@@ -1347,10 +1352,15 @@ the B5B case asserting the reader equals what the trigger wrote; a divergence wo
 silent, since the release lookup would miss and the counterparty would never be told.
 
 **`public.enforce_prebooking_message_rules`** current definition is
-`20260914000000_trade_activity_corrections.sql`. LINEAGE: created in `20260901000000`,
+**`20261045000000_drafts_are_not_relationships.sql`** (this paragraph named
+`20260914000000` until 2026-09-09, and was left saying so by the change that superseded it — a
+contradiction inside the one control that exists to stop a copy-forward deleting a security
+conjunct; caught in re-review, and the reason the table above is now the single pointer).
+LINEAGE: created in `20260901000000`,
 **corrected by `20260901010000`** (which added the `select ... for update` row lock closing the
 SEC-DATA-001 read-then-insert race), redefined by `20260913000000` (the `system_recipient_id`
-clamp), and redefined again by `20260914000000`.
+clamp), redefined again by `20260914000000`, and **superseded by `20261045000000`**, which
+narrowed "an open conversation" to one linked to a SUBMITTED booking.
 
 `20260913000000` **deleted the lock**, because its body was written from `20260901000000` — the
 migration that CREATED the function — rather than from the definition that was actually live.
@@ -1461,7 +1471,9 @@ the real PostgREST boundary as anon and as three distinct authenticated identiti
 
 **Nothing in this batch redefines a function whose live definition lives elsewhere**, so the
 § "Functions redefined across migrations" table below is unchanged by it.
-`provider_contract_for_booking` is new. The `contracts` and `storage.objects` policies are
+`provider_contract_for_booking` is new. **~~is new~~ — SUPERSEDED 2026-09-09: it was DROPPED by
+`20261038000000` and replaced by `contract_for_booking(p_booking_id)`, which is scoped to a
+booking the caller actually holds rather than to any approved provider. Do not reinstate it.** The `contracts` and `storage.objects` policies are
 dropped and recreated in full within their own files, which is the only definition each has.
 
 ## 2026-09-08 — `20261035000000` … `20261036000000` **APPLIED to non-production 2026-09-08** (reviewer findings on Correction 2 itself)
@@ -1579,6 +1591,96 @@ Applied migrations are never edited, so the corrections live here.
 - **`authenticated` keeps default privileges on future SEQUENCES.** Revoking would break a future
   serial column's insert; this schema uses `gen_random_uuid()` throughout, and `anon` — the role
   that actually matters — is revoked on both existing and future sequences.
+
+## 2026-09-09 — `20261037000000` … `20261045000000` **APPLIED to non-production 2026-09-09** (Pre-Session-8 Correction 3)
+
+**Nine files, of which FOUR are forward corrections to the other five.** Two were caught by the
+B5B suite on the first run after apply; two more by the security and QA reviews of the branch.
+Nothing in production was touched, and no applied migration was edited.
+
+| File | What it does |
+|---|---|
+| `20261037000000_booking_request_lifecycle.sql` | Items B, J, K, H. Adds `bookings.submitted_at` (NULL = DRAFT, invisible to the provider) and `bookings.expires_at`; backfills every existing row **before** the guards, so no live request is stranded as a draft; adds the partial unique index `bookings_one_draft_per_pair`; recreates the provider SELECT policy with `submitted_at is not null`; redefines the write-integrity trigger; adds `booking_request_urgency()`. |
+| `20261038000000_contract_scoped_to_booking.sql` | Item J. Creates `contract_for_booking(p_booking_id)` and **DROPS `provider_contract_for_booking(p_provider_id)`**, which returned any approved provider's contract text to any authenticated caller. Also narrows `can_read_contract_pdf`'s prospective-signer arm to "the caller holds a booking with this contract's provider", which closes Correction 2's de-approved silent-skip defect as a side effect. **The client 404s until `lib/contracts.ts` is updated — it is, in the same PR.** |
+| `20261039000000_barter_review_request.sql` | Item X / PD-072. `barter_obligation_review_requests` (append-only, one per obligation, deliverer-bound), the `request_barter_obligation_review` RPC, the third `under_review` disjunct on `my_barter_obligations`, and the eligibility disjunct in `adjudicate_barter_obligation`. **Incomplete — see `20261042000000`.** |
+| `20261040000000_provider_availability_signals.sql` | Item M. The `available_today(providers)` PostgREST computed column, so the search screen's "Available today" chip filters on authoritative server-evaluated data instead of nothing. Means **open today**, not "has a free slot": booked time is deliberately not subtracted, because that needs a slot engine this beta does not have and under-claiming is the safe direction. |
+| **`20261041000000_booking_write_integrity_restore.sql`** | **Forward correction to `20261037000000`.** See the `enforce_booking_write_integrity` row in the redefinition table above — the older body was copied forward and silently dropped SEC-LIFECYCLE-001. |
+| **`20261042000000_adjudication_consistency_review_request.sql`** | **Forward correction to `20261039000000`.** The eligibility rule is enforced twice by design and only one copy was updated, leaving item X's transition cosmetic. |
+| `20261043000000_posts_owner_delete.sql` | Item L. Adds the owner-scoped DELETE policy and grant on `public.posts`, which had none at all — so provider-authored media could never be removed by its author. Also adds the missing `WITH CHECK` to `posts_update_own`, which had a USING clause only and therefore let a provider reassign `provider_id`, publishing their media onto a stranger's public profile. |
+
+**`20261044000000` — `available_today` could never have worked, and it took the feed with it.**
+`20261040000000` exposed "open today" as a PostgREST COMPUTED COLUMN — a function
+taking `public.providers`'s ROW TYPE. PostgREST renders that as a **whole-row
+reference**, and PostgreSQL requires SELECT on **every** column for one, while
+Correction 2's `20261030000000` deliberately left `anon`/`authenticated` with 28
+NAMED column grants and no table-level SELECT. Reproduced as `anon`:
+`ERROR: 42501: permission denied for table providers`. Because the name had been
+added to `PUBLIC_PROVIDER_FIELDS`, this was not a broken chip — it was the
+**discovery feed, the provider profile and search all failing for every user**.
+Replaced by `providers_open_today()`, which returns ids and touches no provider
+column, so the grant shape is irrelevant to it. **A computed column on `providers`
+is unreachable for client roles and must not be reintroduced.**
+
+**`20261045000000` — a draft is not a relationship.**
+Moving the `bookings` row earlier created a row that is NOT a request, and three
+boundaries written before drafts existed tested only "a booking exists for this
+pair": `enforce_conversation_insert`, `enforce_conversation_update` and
+`enforce_prebooking_message_rules`. A draft satisfied all three, so an ordinary
+authenticated account could open an **ungated conversation** with any approved
+provider — bypassing the pre-booking message-request gate — and **reverse a
+provider's explicit decline**. The same file also narrows
+`bookings_one_draft_per_pair` to LIVE drafts (a cancelled draft held the slot
+forever behind a false "request sent" screen) and adds `submitted_at is not null`
+to `clients_provider`, so an unsent draft no longer discloses the client's name
+and neighborhood to a provider who cannot see the row.
+
+**All four corrections are forward-only. No applied migration was edited.**
+
+**What the four failures have in common.** Three of them are the same mistake in three costumes: a
+rule enforced in more than one place, where the edit updated only the copy in view. Twice the second
+copy was another SQL object (`enforce_booking_write_integrity`'s live definition;
+`enforce_barter_adjudication_consistent`); once it was **three unchanged boundaries that tested for
+the existence of a row whose MEANING had just been widened** (`20261045000000`). The fourth
+(`20261044000000`) is different and worse: the feature was tested only as `service_role`, the one
+role that could not fail, so a completely broken read path passed every check.
+
+**Two rules follow from this session, and they are the ones to carry forward:**
+
+1. **When a migration widens what an existing row type can MEAN, the review question is not "is the
+   new column safe?" — it is "what else tests for the existence of this row, and was it written
+   assuming the old meaning?"** Grep for the table, not for the column.
+2. **Assert as the role that will actually call it.** A privilege test (`has_function_privilege`) is
+   not a reachability test, and `service_role` holds grants no client role does. Every behavioural
+   assertion for a client-facing read must run as `anon` or `authenticated`, or it can pass over a
+   feature that is entirely broken. `supabase/tests/booking_lifecycle.test.sql` § 12 now does.
+
+### Accepted trade-offs and standing corrections from Correction 3's reviews
+
+Recorded so they are decisions rather than surprises.
+
+- **Abandoned drafts accumulate.** Narrowing `bookings_one_draft_per_pair` to LIVE drafts
+  (`submitted_at is null and status = 'pending'`) means a client can cancel and re-create a draft
+  repeatedly, leaving permanent `cancelled_by_client` rows. Draft creation is unthrottled — the
+  rate limit is checked at SUBMIT — and there is no client DELETE policy on `bookings`, so the rows
+  cannot be reclaimed. **This is the deliberate trade**: before the narrowing, one such row locked
+  the client out of that provider *forever*, behind a "BOOKING REQUEST SENT" screen for a request
+  that did not exist. Junk rows are invisible to both sides and cross no boundary. Bounding or
+  reaping them is a product decision, not a defect.
+- **`20261037000000` § 7's `revoke update (expires_at) ... from authenticated` is a NO-OP.**
+  `authenticated` holds a *table-level* grant on `bookings` (canonical baseline), and a
+  column-level REVOKE cannot subtract from one — Postgres emits a warning and changes nothing.
+  **The boundary is real and is the trigger**, which holds `expires_at` in its blanket immutable
+  list and refuses any caller-supplied change. The statement is harmless; the reasoning in its
+  comment is wrong. Do not add a column-level revoke to a table that carries a table-level grant
+  and assume it did something. (`20261030000000` records the inverse of the same misunderstanding
+  for `providers`, where the table-level revoke came first and the column grants were the point.)
+- **`20261043000000`'s grant rationale is wrong.** Its comment says Correction 2's
+  `20261035000000` revoked blanket privileges on `public.posts` "so the policy alone is not
+  enough". `20261035000000` does not mention `posts`; `authenticated` already held DELETE from the
+  baseline, and `20261034000000` revoked only TRUNCATE from it. **The `grant delete` is a no-op and
+  the missing piece was always the POLICY**, which that migration correctly adds. The SQL is
+  harmless and the outcome is right; the stated reason is not, and it is recorded here rather than
+  edited, because the migration is applied.
 
 ## Production application policy
 

@@ -141,10 +141,14 @@ export function ClientMe() {
       }
 
       // Booking stats
+      // Unsent drafts are excluded: a client who opened a booking flow and
+      // backed out has not made a booking, and counting it would inflate a number
+      // shown on their own profile.
       const { data: bookings } = await supabase
         .from('bookings')
         .select('id, status')
         .eq('user_id', user.id)
+        .not('submitted_at', 'is', null)
       const totalBookings = bookings?.length ?? 0
 
       // Following count. provider_follows may not exist yet; treat missing
@@ -173,6 +177,9 @@ export function ClientMe() {
         )
         .eq('user_id', user.id)
         .in('status', ['accepted', 'arriving'])
+        // An unsent DRAFT is not a booking. It is invisible to the provider and
+        // exists only inside the client's own booking flow (PD-071).
+        .not('submitted_at', 'is', null)
         .gte('requested_date', today)
         .order('requested_date', { ascending: true })
         .order('requested_time', { ascending: true })

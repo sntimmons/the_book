@@ -17,7 +17,12 @@ import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useNotifications } from '@/hooks/useNotifications'
 import { getOrCreateConversation } from '@/hooks/useMessaging'
-import { bookingStatusLabel } from '@/lib/bookingStatus'
+import {
+  bookingStatusLabel,
+  bookingRequestUrgency,
+  canAcceptRequest,
+  requestTimeRemaining,
+} from '@/lib/bookingStatus'
 
 interface BookingRequest {
   id: string
@@ -29,6 +34,11 @@ interface BookingRequest {
   status: string
   payment_amount: number | null
   created_at: string
+  // The request lifecycle, server-owned (PD-071). `created_at` is the DRAFT
+  // timestamp and says nothing about the deadline; `submitted_at` starts the
+  // clock and `expires_at` ends it.
+  submitted_at: string | null
+  expires_at: string | null
   client_name?: string
 }
 
@@ -76,24 +86,13 @@ const QUICK_ACTIONS = [
   // real share/deep-link target when that exists.
 ]
 
-function timeRemaining(createdAt: string): string {
-  const created = new Date(createdAt).getTime()
-  const deadline = created + 24 * 60 * 60 * 1000
-  const diff = deadline - Date.now()
-  if (diff <= 0) return 'Expired'
-  const hours = Math.floor(diff / (1000 * 60 * 60))
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-  if (hours > 0) return `${hours}h left`
-  return `${minutes}m left`
-}
-
-// A request past its 24h window can no longer be accepted or declined from the
-// UI. This is a client-side guard only; see note in payloads about server-side
-// expiry not existing yet.
-function isRequestExpired(createdAt: string): boolean {
-  const deadline = new Date(createdAt).getTime() + 24 * 60 * 60 * 1000
-  return deadline - Date.now() <= 0
-}
+// The two functions that were here — `timeRemaining(createdAt)` and
+// `isRequestExpired(createdAt)` — each computed `created_at + 24 hours` and are
+// gone. Correction 3 made all three parts of that wrong at once: the window is
+// 72 hours, `created_at` is now the DRAFT timestamp rather than the moment the
+// request was sent, and expiry was disabling DECLINE, which the server
+// deliberately allows forever. The rule now lives once, in lib/bookingStatus.ts,
+// derived from the server's own `submitted_at` / `expires_at`.
 
 function SkeletonCard({ index }: { index: number }) {
   const opacity = useRef(new Animated.Value(0.4)).current
@@ -135,6 +134,11 @@ export default function ProviderDashboard() {
   const [requestsLoading, setRequestsLoading] = useState(true)
   const [hasAvailability, setHasAvailability] = useState<boolean | null>(null)
   const [availNudgeDismissed, setAvailNudgeDismissed] = useState(false)
+  // ITEM 5 (PM decision, PR #74): a provider who is not currently approved must
+  // be TOLD. Until now they simply stopped receiving requests, with nothing
+  // anywhere saying why — the client side of item H was built and the provider
+  // side was not. Null while unknown, so nothing is asserted before the read.
+  const [acceptingBookings, setAcceptingBookings] = useState<boolean | null>(null)
 
   const channelIdRef = useRef<number | null>(null)
   if (channelIdRef.current === null) channelIdRef.current = ++channelInstanceSeq
@@ -147,7 +151,7 @@ export default function ProviderDashboard() {
     try {
       const { data: provider } = await supabase
         .from('providers')
-        .select('id, display_name')
+        .select('id, display_name, is_approved')
         .eq('user_id', user.id)
         .maybeSingle()
 
@@ -157,6 +161,7 @@ export default function ProviderDashboard() {
       }
       setProviderDbId(provider.id)
       if (provider.display_name) setProviderName(provider.display_name)
+      setAcceptingBookings(provider.is_approved !== false)
 
       // Whether the provider has set any availability — drives the dashboard
       // nudge below. A provider with no hours can't be booked.
@@ -176,11 +181,16 @@ export default function ProviderDashboard() {
         supabase
           .from('bookings')
           .select(
-            'id, user_id, service_name, requested_date, requested_time, message, status, payment_amount, created_at',
+            'id, user_id, service_name, requested_date, requested_time, message, status, payment_amount, created_at, submitted_at, expires_at',
             { count: 'exact' },
           )
           .eq('provider_id', provider.id)
           .eq('status', 'pending')
+          // A draft is already invisible here — the provider SELECT policy
+          // requires `submitted_at is not null`. Asking for it explicitly costs
+          // nothing and means this list does not depend on that policy staying
+          // exactly as it is to avoid showing a request nobody sent.
+          .not('submitted_at', 'is', null)
           .order('created_at', { ascending: false })
           .limit(20),
         // Earnings: ALL completed bookings (small columns), fetched separately
@@ -314,7 +324,18 @@ export default function ProviderDashboard() {
               })
               .eq('id', booking.id)
             if (error) {
-              Alert.alert('Error', 'Could not accept booking. Please try again.')
+              // PT425 is the server's expiry boundary and it is PERMANENT for
+              // accepting. A generic retry prompt loops the provider on an action
+              // the database has already closed, and says nothing about declining
+              // — which the server allows forever, and which is the way out.
+              if ((error as { code?: string }).code === 'PT425') {
+                Alert.alert(
+                  'This request has expired',
+                  'It can no longer be accepted. You can still decline it to clear it from your queue.',
+                )
+              } else {
+                Alert.alert('Error', 'Could not accept booking. Please try again.')
+              }
               return
             }
             setPendingRequests((prev) => prev.filter((r) => r.id !== booking.id))
@@ -420,6 +441,43 @@ export default function ProviderDashboard() {
           </Text>
         </View>
 
+        {/* ITEM 5. NOT dismissable, and deliberately unlike the availability
+            nudge beside it: that one is a task the provider can finish, and this
+            is a state they cannot change from here. It states the fact and what
+            still works, and stops.
+
+            It says nothing about WHY, and nothing that reads as a judgement. It
+            is emphatically NOT a verification claim in either direction —
+            marketplace approval is not government or third-party identity
+            verification, and PD-074 keeps those two apart. **Nothing here may
+            imply an identity-verification failure**, because that is not the
+            reason and there is no such check to fail.
+
+            NO "CONTACT SUPPORT" BUTTON, and its absence is the decision rather
+            than an omission. A provider in a state they cannot change should
+            have a route to ask about it — the Founder ruling on this PR says so
+            — but the only support entry that exists today is
+            `app/settings/index.tsx`'s `stub('Contact Support')`, which opens an
+            alert reading "Coming soon". Pointing a de-approved provider at that
+            would be a dead button on the one screen where they most need a live
+            one, which is worse than the honest silence. The provider
+            review/appeal action is recorded as a **Session 8 requirement**
+            alongside the operator Review Queue (PD-068, PD-072), and the button
+            arrives with the path behind it. */}
+        {acceptingBookings === false && (
+          <View style={styles.notAcceptingCard}>
+            <Feather name="pause-circle" size={18} color="#C8922A" />
+            <View style={styles.notAcceptingText}>
+              <Text style={styles.notAcceptingTitle}>
+                Your business is not currently available for new bookings
+              </Text>
+              <Text style={styles.notAcceptingSub}>
+                Your existing bookings, messages, and history are still available.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {hasAvailability === false && !availNudgeDismissed && (
           <TouchableOpacity
             style={styles.availNudge}
@@ -499,7 +557,12 @@ export default function ProviderDashboard() {
             </View>
           ) : (
             pendingRequests.map((req, i) => {
-              const expired = isRequestExpired(req.created_at)
+              // Only ACCEPT is gated. Declining a stale request is something the
+              // server permits forever, and a provider clearing their queue is
+              // not a thing to prevent.
+              const canAccept = canAcceptRequest(req)
+              const urgency = bookingRequestUrgency(req)
+              const remaining = requestTimeRemaining(req)
               return (
               <View
                 key={req.id}
@@ -528,9 +591,21 @@ export default function ProviderDashboard() {
                       {req.message}
                     </Text>
                   ) : null}
-                  <View style={styles.timerPill}>
-                    <Text style={styles.timerPillText}>{timeRemaining(req.created_at)}</Text>
-                  </View>
+                  {/* Absent when the row carries no deadline, rather than showing
+                      a pill with nothing in it. `urgency` is the same vocabulary
+                      the database derives (`booking_request_urgency`), so the
+                      badge and the server cannot describe a request differently. */}
+                  {remaining ? (
+                    <View
+                      style={[
+                        styles.timerPill,
+                        urgency === 'urgent' && styles.timerPillUrgent,
+                        urgency === 'expired' && styles.timerPillExpired,
+                      ]}
+                    >
+                      <Text style={styles.timerPillText}>{remaining}</Text>
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
                 <View style={styles.requestRight}>
                   <Text style={styles.requestPrice}>
@@ -543,9 +618,7 @@ export default function ProviderDashboard() {
                       style={[
                         styles.requestBtn,
                         styles.requestBtnDecline,
-                        expired && styles.requestBtnDisabled,
                       ]}
-                      disabled={expired}
                       onPress={() => handleDecline(req)}
                     >
                       <Feather name="x" size={14} color="rgba(240,232,213,0.5)" />
@@ -570,9 +643,9 @@ export default function ProviderDashboard() {
                       style={[
                         styles.requestBtn,
                         styles.requestBtnAccept,
-                        expired && styles.requestBtnDisabled,
+                        !canAccept && styles.requestBtnDisabled,
                       ]}
-                      disabled={expired}
+                      disabled={!canAccept}
                       onPress={() => handleAccept(req)}
                     >
                       <Feather name="check" size={14} color="#080808" />
@@ -731,6 +804,33 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     marginTop: 4,
     minHeight: 18,
+  },
+  notAcceptingCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(200,146,42,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.22)',
+  },
+  notAcceptingText: { flex: 1 },
+  notAcceptingTitle: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    lineHeight: 19,
+  },
+  notAcceptingSub: {
+    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 17,
   },
   availNudge: {
     flexDirection: 'row',
@@ -921,6 +1021,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: 'rgba(200,146,42,0.1)',
   },
+  timerPillUrgent: { backgroundColor: 'rgba(200,146,42,0.18)' },
+  timerPillExpired: { backgroundColor: 'rgba(240,232,213,0.06)' },
   timerPillText: {
     fontSize: 10,
     color: '#C8922A',

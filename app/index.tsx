@@ -135,8 +135,8 @@ const DEV_NAV: NavSection[] = [
       { label: 'Step 4. Services', route: '/onboarding/provider/services' },
       { label: 'Step 5. Availability', route: '/onboarding/provider/availability' },
       { label: 'Step 6. Policy', route: '/onboarding/provider/policy' },
-      { label: 'Step 7. Payout', route: '/onboarding/provider/payout' },
-      { label: 'Step 8. Go Live', route: '/onboarding/provider/golive' },
+      { label: 'Step 7. Review Your Business', route: '/onboarding/provider/review' },
+      { label: 'Go Live', route: '/onboarding/provider/golive' },
     ],
   },
   {
@@ -157,7 +157,11 @@ const DEV_NAV: NavSection[] = [
   {
     label: 'SYSTEM SCREENS',
     items: [
-      { label: 'Review Detail', route: '/reviews/1' },
+      // 'Review Detail' was here, pointing at `/reviews/1` — an id that has
+      // never existed, so the only navigation into the review screen anywhere in
+      // the app could land on nothing but its not-found state. There is no fixed
+      // id to link to; a review is reached from the provider profile that
+      // carries it (Correction 3, item U).
       { label: 'Notifications', route: '/notifications' },
     ],
   },
@@ -224,8 +228,8 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/onboarding/provider/services (Step 4)', route: '/onboarding/provider/services', status: 'Built' },
   { label: '/onboarding/provider/availability (Step 5)', route: '/onboarding/provider/availability', status: 'Built' },
   { label: '/onboarding/provider/policy (Step 6)', route: '/onboarding/provider/policy', status: 'Built' },
-  { label: '/onboarding/provider/payout (Step 7)', route: '/onboarding/provider/payout', status: 'Built' },
-  { label: '/onboarding/provider/golive (Step 8)', route: '/onboarding/provider/golive', status: 'Built' },
+  { label: '/onboarding/provider/review (Step 7)', route: '/onboarding/provider/review', status: 'Built' },
+  { label: '/onboarding/provider/golive', route: '/onboarding/provider/golive', status: 'Built' },
   { label: '/(tabs)/business', route: '/(tabs)/business', status: 'Built' },
   { label: '/(tabs)/business/bookings', route: '/(tabs)/business/bookings', status: 'Stub' },
   { label: '/(tabs)/business/availability', route: '/(tabs)/business/availability', status: 'Stub' },
@@ -257,7 +261,6 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/post-booking/submitted', route: '/post-booking/submitted', status: 'Built' },
   { label: '/post-booking/issue', route: '/post-booking/issue', status: 'Built' },
   { label: '/post-booking/provider-review', route: '/post-booking/provider-review', status: 'Built' },
-  { label: '/reviews/[id]', route: '/reviews/1', status: 'Stub' },
   { label: '/notifications', route: '/notifications', status: 'Stub' },
   { label: '/(tabs)/search', route: '/(tabs)/search', status: 'Built' },
   { label: '/(tabs)/reels', route: '/(tabs)/reels', status: 'Built' },

@@ -117,6 +117,87 @@ export async function fetchRevealedProviderReviews(
   }))
 }
 
+// ONE revealed client -> provider review, for the review detail screen (item L's
+// sibling, Correction 3 item U).
+//
+// SAME REVEAL BOUNDARY, NOT A NEW ONE. `provider_reviews` has a single SECURITY
+// DEFINER-gated SELECT policy: the database returns a row only if it is revealed
+// or the reader wrote it. A read by primary key is subject to exactly that
+// policy, so this adds no read path — an unrevealed review returns zero rows here
+// for the same reason it is absent from the list. `private_note` is not selected,
+// as it is not selected anywhere in any display path.
+//
+// Returns null for "no such review, or not visible to you", which the screen
+// renders as one honest not-found state. The two are deliberately NOT
+// distinguished: telling a reader that a review exists but is hidden from them
+// would leak the existence of a blind review, which is the whole point of the
+// blind window.
+export interface RevealedReviewDetail extends RevealedReview {
+  providerId: string
+  providerName: string | null
+}
+
+export async function fetchRevealedReviewById(
+  reviewId: string,
+): Promise<RevealedReviewDetail | null> {
+  if (!reviewId) return null
+  const { data, error } = await supabase
+    .from('provider_reviews')
+    .select('id, booking_id, provider_id, reviewer_user_id, rating, review_text, tags, created_at')
+    .eq('id', reviewId)
+    .maybeSingle()
+
+  if (error) {
+    console.log('provider_review detail read error:', error.message)
+    // A technical failure is NOT "no such review": the caller distinguishes them
+    // so a connection problem offers a retry instead of asserting absence.
+    throw error
+  }
+  if (!data) return null
+
+  const r = data as {
+    id: string
+    booking_id: string
+    provider_id: string
+    reviewer_user_id: string | null
+    rating: number
+    review_text: string | null
+    tags: string[] | null
+    created_at: string
+  }
+
+  // Two small lookups, each allowed to fail quietly: a missing display name
+  // degrades to the same generic label the list uses, and neither is worth
+  // failing the whole screen over.
+  let reviewerName = 'Client'
+  if (r.reviewer_user_id) {
+    const { data: client } = await supabase
+      .from('clients_public')
+      .select('name')
+      .eq('id', r.reviewer_user_id)
+      .maybeSingle()
+    reviewerName = (client as { name: string | null } | null)?.name || 'Client'
+  }
+
+  const { data: provider } = await supabase
+    .from('providers')
+    .select('display_name')
+    .eq('id', r.provider_id)
+    .maybeSingle()
+
+  return {
+    id: r.id,
+    bookingId: r.booking_id,
+    providerId: r.provider_id,
+    providerName: (provider as { display_name: string | null } | null)?.display_name ?? null,
+    rating: r.rating,
+    reviewText: r.review_text,
+    tags: r.tags,
+    createdAt: r.created_at,
+    reviewerName,
+  }
+}
+
 // Provider -> client reviews. PROVIDER-ONLY (the booking-request reputation view).
 // Same reveal rule; reviewer display is the provider who wrote it.
 export async function fetchRevealedClientReviews(
@@ -288,10 +369,20 @@ export async function fetchClientCompletionRate(
     .from('bookings')
     .select('status')
     .eq('user_id', clientUserId)
+    // Drafts do not change the ratio — see the note below — but excluding them
+    // keeps every client-facing booking read saying the same thing about what a
+    // booking is, rather than relying on each reader to re-derive it.
+    .not('submitted_at', 'is', null)
   if (error) {
     console.log('client completion read error:', error.message)
     return null
   }
+  // DRAFTS DO NOT AFFECT THIS, and it was worth checking. Since Correction 3 an
+  // abandoned booking flow leaves a row in this result set, but the denominator
+  // is `completed + no_show + late_cancelled` — a live draft is `pending` and a
+  // discarded one is `cancelled_by_client`, so neither is counted, and a client
+  // is never penalised for changing their mind inside the flow. Stated here so
+  // the next reader does not have to re-derive it from the status vocabulary.
   const rows = (data ?? []) as Array<{ status: string }>
   const completed = rows.filter((r) => r.status === 'completed').length
   const missed = rows.filter(
@@ -304,15 +395,19 @@ export async function fetchClientCompletionRate(
 
 // Provider trust stats for the profile reviews-section triple, all real:
 // rebookedPct = clients with >1 completed booking / clients with >=1; and
-// avgResponseMins from provider_first_response_at - created_at.
+// avgResponseMins from provider_first_response_at - submitted_at.
 export async function fetchProviderTrustStats(providerId: string): Promise<{
   rebookedPct: number | null
   avgResponseMins: number | null
 }> {
   const { data, error } = await supabase
     .from('bookings')
-    .select('user_id, status, created_at, provider_first_response_at')
+    .select('user_id, status, created_at, submitted_at, provider_first_response_at')
     .eq('provider_id', providerId)
+    // Unsent drafts are not bookings. They would otherwise count toward the
+    // rebooked ratio's denominator and, before the fix below, distort the
+    // response-time average as well.
+    .not('submitted_at', 'is', null)
   if (error) {
     console.log('provider trust stats read error:', error.message)
     return { rebookedPct: null, avgResponseMins: null }
@@ -321,6 +416,7 @@ export async function fetchProviderTrustStats(providerId: string): Promise<{
     user_id: string | null
     status: string
     created_at: string | null
+    submitted_at: string | null
     provider_first_response_at: string | null
   }>
 
@@ -336,13 +432,24 @@ export async function fetchProviderTrustStats(providerId: string): Promise<{
   const rebookedPct =
     clientsWithCompleted > 0 ? (repeatClients / clientsWithCompleted) * 100 : null
 
-  const responded = rows.filter((r) => r.provider_first_response_at && r.created_at)
+  // MEASURED FROM `submitted_at`, NOT `created_at`.
+  //
+  // Since Correction 3, `created_at` is stamped when the client's DRAFT is
+  // created at the contract step, which can precede the actual request by
+  // minutes or days — all of it time the CLIENT spent deciding, none of it the
+  // provider's. Measuring from it charged a client's hesitation to a provider's
+  // public responsiveness number, in a marketplace where that number is a trust
+  // signal. `created_at` remains the fallback for rows predating the column,
+  // where the two are the same instant.
+  const responded = rows.filter(
+    (r) => r.provider_first_response_at && (r.submitted_at || r.created_at),
+  )
   const avgResponseMins =
     responded.length > 0
       ? responded.reduce((s, r) => {
           const diff =
             new Date(r.provider_first_response_at as string).getTime() -
-            new Date(r.created_at as string).getTime()
+            new Date((r.submitted_at ?? r.created_at) as string).getTime()
           return s + diff / (1000 * 60)
         }, 0) / responded.length
       : null

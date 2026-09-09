@@ -128,7 +128,7 @@ export async function fetchProviderContract(providerId: string): Promise<Contrac
   return mapContract(data as RawContractRow)
 }
 
-// The contract a client is about to be asked to sign, for ONE provider.
+// The contract a client is about to be asked to sign, for ONE BOOKING.
 //
 // WHY THIS IS NOT `fetchProviderContract`. That function reads `contracts`
 // directly, and the table's RLS is `auth.uid() = user_id OR is_contract_signer(id)`
@@ -137,21 +137,25 @@ export async function fetchProviderContract(providerId: string): Promise<Contrac
 // this module correctly reported "no contract exists", and the booking flow
 // skipped the signing gate entirely for every client, every provider, always.
 //
-// The fix is a `SECURITY DEFINER` read function rather than a widened policy, so
-// the table's own boundary is untouched and there is exactly one place to narrow
-// this later. It returns the ACTIVE contract of an APPROVED provider, one at a
-// time, to authenticated callers only.
+// WHY IT IS SCOPED TO A BOOKING (Correction 3, item J). The first fix was a
+// `SECURITY DEFINER` read keyed on the PROVIDER, which meant any authenticated
+// user could pull any approved provider's contract text at any time, whether or
+// not they were transacting with them. Now the row exists before this step (see
+// lib/bookingDraft.ts), so access is keyed on the BOOKING instead:
+// `contract_for_booking` returns the active contract only to the client who
+// holds that booking with that provider. Nobody has a standing read path into
+// other people's contract terms.
 //
 // A technical failure still THROWS rather than reporting absence — the Batch 4A
 // rule — because a failed lookup must never be mistaken for "no contract
 // required" and skip the gate a second way.
-export async function fetchContractToSign(providerId: string): Promise<Contract | null> {
-  if (!providerId) return null
-  const { data, error } = await supabase.rpc('provider_contract_for_booking', {
-    p_provider_id: providerId,
+export async function fetchContractForBooking(bookingId: string): Promise<Contract | null> {
+  if (!bookingId) return null
+  const { data, error } = await supabase.rpc('contract_for_booking', {
+    p_booking_id: bookingId,
   })
   if (error) {
-    console.log('Fetch contract to sign error:', error)
+    console.log('Fetch contract for booking error:', error)
     throw error
   }
   const rows = (data as RawContractRow[] | null) ?? []
@@ -200,18 +204,37 @@ export async function fetchProviderSignatures(
   const bookingIds = Array.from(new Set(sigs.map((s) => s.bookingId).filter(Boolean)))
   const clientIds = Array.from(new Set(sigs.map((s) => s.clientUserId).filter(Boolean)))
 
+  // ── ONLY SIGNATURES ON A SENT REQUEST ───────────────────────────────────
+  //
+  // The signature is written against the booking BEFORE it is submitted, and
+  // deliberately so: a request the provider can see is never one whose signature
+  // failed to save. The cost is that an abandoned flow can leave a signature
+  // pointing at a DRAFT — and the provider cannot read that booking at all
+  // (their SELECT policy requires `submitted_at is not null`), so it rendered
+  // here as "someone signed my contract" with a blank date and no service name.
+  //
+  // The booking lookup already runs as the provider, so RLS has ALREADY answered
+  // the question: a signature whose booking is absent from this map is one the
+  // provider has no sent request for. `bookingsReadFailed` keeps that inference
+  // honest — a failed query also produces an empty map, and dropping every
+  // signature on a connection error would tell a provider nobody had ever signed
+  // anything.
   const bookingMap = new Map<string, { date: string | null; service: string | null }>()
+  let bookingsReadFailed = false
   if (bookingIds.length > 0) {
-    const { data: bookings } = await supabase
+    const { data: bookings, error: bookingsError } = await supabase
       .from('bookings')
       .select('id, requested_date, service_name')
       .in('id', bookingIds)
+    if (bookingsError) bookingsReadFailed = true
     for (const b of (bookings as
       | { id: string; requested_date: string | null; service_name: string | null }[]
       | null) ?? []) {
       bookingMap.set(b.id, { date: b.requested_date, service: b.service_name })
     }
   }
+  const visible = bookingsReadFailed ? sigs : sigs.filter((s) => bookingMap.has(s.bookingId))
+  if (visible.length === 0) return []
 
   const clientMap = new Map<string, string>()
   if (clientIds.length > 0) {
@@ -224,7 +247,7 @@ export async function fetchProviderSignatures(
     }
   }
 
-  return sigs.map((s) => ({
+  return visible.map((s) => ({
     signature: s,
     clientName: clientMap.get(s.clientUserId) ?? 'Client',
     bookingDate: bookingMap.get(s.bookingId)?.date ?? null,

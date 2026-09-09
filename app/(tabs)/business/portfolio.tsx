@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
   StyleSheet,
   useWindowDimensions,
 } from 'react-native'
@@ -21,6 +22,11 @@ import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { uploadMedia } from '@/lib/storage'
 import { cacheBustedPhoto } from '@/lib/image'
+import {
+  deleteProviderMedia,
+  DELETE_MEDIA_COPY,
+  DELETE_MEDIA_FAILED,
+} from '@/lib/providerMedia'
 
 interface PortfolioPhoto {
   id: string
@@ -38,6 +44,7 @@ export default function ProviderPortfolio() {
   const [photos, setPhotos] = useState<PortfolioPhoto[]>([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // 3-column grid within 20px page padding and two 12px gaps.
@@ -154,7 +161,45 @@ export default function ProviderPortfolio() {
     }
   }
 
-  const canAdd = !!providerId && !uploading
+  // ITEM L: a provider can take their own photo down.
+  //
+  // There was no delete control on this screen and no DELETE policy behind it, so
+  // a portfolio photo — publicly readable the moment it is inserted — could never
+  // be removed by the person who posted it. That matters most for the case the
+  // product cannot ignore: a photo of a client who later asks for it to come
+  // down. Confirmed first, because it cannot be undone.
+  function confirmDelete(photo: PortfolioPhoto) {
+    if (uploading || deletingId) return
+    Alert.alert(DELETE_MEDIA_COPY.title, DELETE_MEDIA_COPY.body, [
+      { text: DELETE_MEDIA_COPY.cancelLabel, style: 'cancel' },
+      {
+        text: DELETE_MEDIA_COPY.confirmLabel,
+        style: 'destructive',
+        onPress: () => removePhoto(photo),
+      },
+    ])
+  }
+
+  async function removePhoto(photo: PortfolioPhoto) {
+    if (!providerId) return
+    setDeletingId(photo.id)
+    setError(null)
+    // OPTIMISM IS NOT SAFE HERE. The row is removed from the list only after the
+    // server confirms the delete affected a row — RLS filters rather than raising,
+    // so a refused delete returns no error, and dropping the tile first would tell
+    // a provider their photo was gone while it was still on their public profile.
+    const result = await deleteProviderMedia(photo.id, photo.media_url)
+    if (!result.ok) {
+      setError(DELETE_MEDIA_FAILED)
+      await loadPhotos(providerId)
+      setDeletingId(null)
+      return
+    }
+    await loadPhotos(providerId)
+    setDeletingId(null)
+  }
+
+  const canAdd = !!providerId && !uploading && !deletingId
 
   return (
     <View style={styles.root}>
@@ -222,6 +267,21 @@ export default function ProviderPortfolio() {
                     style={StyleSheet.absoluteFill}
                     resizeMode="cover"
                   />
+                  {deletingId === photo.id ? (
+                    <View style={styles.cellBusy}>
+                      <ActivityIndicator color="#F0E8D5" size="small" />
+                    </View>
+                  ) : (
+                    <Pressable
+                      style={styles.deleteBadge}
+                      onPress={() => confirmDelete(photo)}
+                      disabled={!!deletingId || uploading}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityLabel="Delete this photo"
+                    >
+                      <Feather name="trash-2" size={13} color="#F0E8D5" />
+                    </Pressable>
+                  )}
                 </View>
               ))}
 
@@ -257,6 +317,29 @@ export default function ProviderPortfolio() {
 }
 
 const styles = StyleSheet.create({
+  // Small and quiet, in the corner of the tile: a delete control should be
+  // reachable without being the first thing a thumb lands on. `hitSlop` gives it
+  // a real tap target without making the badge itself large enough to obscure
+  // the photo it sits on.
+  deleteBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(8,8,8,0.7)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cellBusy: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(8,8,8,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   root: { flex: 1, backgroundColor: '#080808' },
   header: {
     paddingHorizontal: 20,

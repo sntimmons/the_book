@@ -18,10 +18,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import {
   useProviders,
   useCategories,
+  fetchOpenTodayProviderIds,
+  fetchDiscoveryPool,
   Provider,
   Category,
 } from '../../hooks/useProviders'
 import { cacheBustedPhoto } from '../../lib/image'
+import { supabase } from '../../lib/supabase'
+import DiscoveryLanes from '../../components/DiscoveryLanes'
 import { useAuth } from '../../context/AuthContext'
 import { fetchDueReminder, CareReminder } from '../../lib/care'
 
@@ -277,6 +281,58 @@ export default function DiscoveryFeed() {
   const { width } = useWindowDimensions()
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
 
+  const { user, isProvider } = useAuth()
+  // The viewer's own neighborhood, for the Near You lane. Read once and allowed
+  // to fail silently: a missing value simply drops that one lane (the module
+  // omits it rather than guessing a location), which is the right failure — a
+  // "Near You" row built on a guess is worse than no row.
+  const [viewerNeighborhood, setViewerNeighborhood] = useState<string | null>(null)
+  // The "Available Soon" lane's input. Null until it is known — the lane is
+  // omitted rather than guessed, because a row whose name is a claim must not be
+  // built from an unanswered question.
+  const [openToday, setOpenToday] = useState<Set<string> | null>(null)
+  // The lanes' own provider set. NOT the feed's current page — see
+  // `fetchDiscoveryPool` for why that made "New to The Book" exclude new
+  // providers, and made lane membership shift as the grid paged.
+  const [lanePool, setLanePool] = useState<Provider[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const [ids, pool] = await Promise.all([
+        fetchOpenTodayProviderIds(),
+        fetchDiscoveryPool(),
+      ])
+      if (cancelled) return
+      setOpenToday(ids)
+      setLanePool(pool)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!user?.id) {
+      setViewerNeighborhood(null)
+      return
+    }
+    ;(async () => {
+      const { data } = await supabase
+        .from('clients')
+        .select('neighborhood')
+        .eq('id', user.id)
+        .maybeSingle()
+      if (!cancelled) {
+        setViewerNeighborhood((data as { neighborhood: string | null } | null)?.neighborhood ?? null)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
   const { providers, loading, loadingMore, hasMore, fetchMore } = useProviders(
     activeCategoryId ?? undefined,
     20,
@@ -302,6 +358,27 @@ export default function DiscoveryFeed() {
             <Text style={s.subheading}>Curated beauty for you</Text>
           </View>
           <View style={s.headerActions}>
+            {/* ITEM P (Correction 3): a provider's route into their own business,
+                from the screen they actually open.
+
+                The ONLY door into the dashboard was Me → My Studio, which meant a
+                provider checking their requests had to go through their personal
+                profile to get there. Me stays personal — this does not move
+                anything out of it — but a provider working is not doing something
+                personal, and the tab they land on should not make them detour
+                through their own profile page to answer a client.
+
+                Clients never see it. */}
+            {isProvider ? (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={[s.searchBtn, s.businessBtn]}
+                accessibilityLabel="Go to your business dashboard"
+                onPress={() => router.push('/(tabs)/business' as any)}
+              >
+                <Ionicons name="briefcase-outline" size={16} color="#C8922A" />
+              </TouchableOpacity>
+            ) : null}
             <TouchableOpacity
               activeOpacity={0.7}
               style={s.searchBtn}
@@ -350,6 +427,29 @@ export default function DiscoveryFeed() {
             />
           ))}
         </ScrollView>
+
+        {/* ── BETA DISCOVERY LANES (Correction 3, items S and T) ──────────
+            Visible rows with visible rules, ABOVE the complete grid — never
+            instead of it. The lanes order attention; the grid below is still
+            every approved provider, so a provider who does not fit a capped row
+            is not hidden by one. Shown only on the unfiltered feed: inside a
+            category the viewer has already told us what they want, and a second
+            set of rows would be re-sorting a set they narrowed on purpose.
+
+            The rules themselves are in lib/discovery.ts, including the fairness
+            rule that no marketplace lane may rank on social content. */}
+        {!loading && activeCategoryId === null && lanePool.length > 0 ? (
+          <DiscoveryLanes
+            providers={lanePool}
+            openTodayIds={openToday}
+            viewerNeighborhood={viewerNeighborhood}
+            // The neighborhood picker stores a "Midtown, Houston"-shaped value,
+            // so the same string carries the city fallback. It is passed
+            // explicitly rather than derived inside the module: the module does
+            // not get to invent a location for a viewer who has not given one.
+            viewerLocation={viewerNeighborhood}
+          />
+        ) : null}
 
         {/* ── Feed ────────────────────────────────────────────────────────── */}
         {loading ? (
@@ -509,6 +609,13 @@ const s = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
+  },
+  businessBtn: {
+    // `searchBtn` draws no border, so the tint needs one of its own or the
+    // colour would have nothing to sit on.
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.45)',
+    backgroundColor: 'rgba(200,146,42,0.1)',
   },
   searchBtn: {
     width: 40,

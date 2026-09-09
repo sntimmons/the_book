@@ -67,6 +67,7 @@ export type BarterWriteOp =
   | 'confirmReceived'
   | 'reportNotReceived'
   | 'reportNoShow'
+  | 'requestReview'
   | 'cancelTrade'
 
 export interface BarterWriteFailure {
@@ -200,6 +201,11 @@ const RETRY: Record<BarterWriteOp, BarterWriteFailure> = {
     title: 'Could not record your report',
     body: 'Please try again.',
   },
+  requestReview: {
+    terminal: false,
+    title: 'Could not send this for review',
+    body: 'Please try again.',
+  },
   cancelTrade: { terminal: false, title: 'Could not cancel', body: 'Please try again.' },
 }
 
@@ -275,6 +281,11 @@ const NO_ROWS: Record<BarterWriteOp, BarterWriteFailure> = {
     body: 'It may have been removed. The details have been updated.',
   },
   reportNoShow: {
+    terminal: true,
+    title: 'That trade is no longer available',
+    body: 'It may have been removed. The details have been updated.',
+  },
+  requestReview: {
     terminal: true,
     title: 'That trade is no longer available',
     body: 'It may have been removed. The details have been updated.',
@@ -637,6 +648,45 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       terminal: false,
       title: 'That reason is too long',
       body: 'Please shorten it and try again.',
+    },
+    [CHECK_VIOLATION]: {
+      terminal: true,
+      title: 'That trade is no longer available',
+      body: 'It may have been removed. The details have been updated.',
+    },
+  },
+  // ITEM X. The deliverer asked The Book to look. NONE of these may imply that anything was
+  // decided, that the delivery was accepted, or that the other provider did something wrong —
+  // a refusal to ACCEPT the request is not a finding about the trade.
+  requestReview: {
+    [TRADE_CANCELLED]: {
+      terminal: true,
+      stale: true,
+      title: 'This trade was cancelled',
+      body:
+        'This trade was cancelled, so there is nothing to review. The details have been updated.',
+    },
+    [OBLIGATION_RESOLVED]: {
+      terminal: true,
+      stale: true,
+      title: 'This was already resolved',
+      body: RESOLVED_BODY,
+    },
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Not yours to send for review',
+      body: 'Only the provider who owed this delivery can ask The Book to review it.',
+    },
+    [NOT_IN_PREREQUISITE_STATE]: {
+      // NOT terminal, and NOT stale in the "you missed your chance" sense: the response window
+      // simply has not passed yet. The control returns on its own when it does, so the copy
+      // must say "not yet" rather than "no".
+      terminal: false,
+      stale: true,
+      title: 'Not yet',
+      body:
+        'The other provider still has time to answer. You can ask The Book to review this once'
+        + ' that time has passed. The details have been updated.',
     },
     [CHECK_VIOLATION]: {
       terminal: true,

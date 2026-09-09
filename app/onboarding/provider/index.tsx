@@ -125,7 +125,7 @@ export default function ProviderOnboardingStep1() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Build your profile</Text>
-        <Text style={styles.topBarStep}>Step 1 of 8</Text>
+        <Text style={styles.topBarStep}>Step 1 of 7</Text>
       </View>
 
       <ScrollView

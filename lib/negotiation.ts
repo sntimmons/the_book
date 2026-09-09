@@ -558,6 +558,39 @@ export async function reportObligationNoShow(
 }
 
 /**
+ * ITEM X — the DELIVERER asks The Book to look at an obligation the receiver never answered.
+ *
+ * The third and last route into Under Review, and deliberately the narrow one: a person asks.
+ * PD-057's window elapsing produces Needs Attention and nothing else, and PD-062's two existing
+ * routes were both RECEIVER acts — so a receiver who simply stopped opening the app left the
+ * deliverer with no move at all. No timer, no automatic escalation and no second deadline was
+ * added to close that; the deliverer presses a button.
+ *
+ * Only the obligation id is sent. There is no outcome parameter, because asking for a review is
+ * not deciding one: the three terminal outcomes stay reachable only through
+ * `adjudicate_barter_obligation`, which no participant may execute (PD-068). The server derives
+ * the requester, derives the agreement, stamps the time against its own clock, and refuses the
+ * receiver, a non-participant, an obligation not in Needs Attention, a cancelled trade and an
+ * already-resolved obligation.
+ *
+ * IDEMPOTENT. A repeat returns the ORIGINAL timestamp rather than erroring, so a double tap or
+ * a retry after a lost response lands on the same ask.
+ *
+ * NOTHING PROCESSES THESE YET. The obligation reaches Under Review and waits, exactly as a
+ * receiver-reported one already does; the internal Review Queue that reads them is Session 8
+ * work (PD-068). No copy built on this may promise a response or a time.
+ */
+export async function requestObligationReview(
+  obligationId: string,
+): Promise<{ ok: boolean; requestedAt: string | null; error: unknown }> {
+  const { data, error } = await supabase.rpc('request_barter_obligation_review', {
+    p_obligation_id: obligationId,
+  })
+  if (error) return { ok: false, requestedAt: null, error }
+  return { ok: true, requestedAt: (data as string | null) ?? null, error: null }
+}
+
+/**
  * Cancel a confirmed trade before either side has delivered, or record that you agree with a
  * cancellation the other provider started.
  *

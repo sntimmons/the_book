@@ -104,7 +104,7 @@ export default function ProviderReels() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Your reels</Text>
-        <Text style={styles.topBarStep}>Step 3 of 8</Text>
+        <Text style={styles.topBarStep}>Step 3 of 7</Text>
       </View>
 
       <ScrollView
