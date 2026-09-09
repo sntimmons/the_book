@@ -1,14 +1,14 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** **PR #74** (Pre-Session-8 Correction 3), which recorded **PD-071 … PD-080** —
+**Last edited by:** **PR #74** (Pre-Session-8 Correction 3), which recorded **PD-071 … PD-081** —
 the booking-request lifecycle and its 72-hour server expiry, the deliverer's review request
 (closing OQ-071), the beta discovery lanes and their content-neutrality rule, the "Houston Beta
 Provider" trust signal (closing the claims half of OQ-035), provider-owned no-show policy and
 de-approval wording, provider media deletion and the required onboarding review page, the client's
 72-hour expectation, telling a de-approved provider, no placebo preference data, and the barter
-happy-path shape as a future requirement. **PD-080 is the only one of the ten not implemented, and
-deliberately so.** Before it, the post-Session-7 state reconciliation changed **no decision** — only
+happy-path shape as a future requirement. **PD-080 is the only one of the eleven not implemented, and deliberately so** —
+PD-081 is implemented apart from the Session 8 appeal route it records. Before it, the post-Session-7 state reconciliation changed **no decision** — only
 this preamble's indexing — and before that, the derived-agreement-presentation branch (**PR #70**,
 `f5fd197`) recorded **PD-070** and removed the last live barter dollar-value UX under PD-069, and
 before that the manual-adjudication branch (**PR #68**, `5c24e8f`) recorded **PD-064** through
@@ -1408,7 +1408,11 @@ as locked decisions.
   it to the mobile-providers switch is a reading of the principle it states, taken because leaving
   the last placebo control on a screen the ruling had just cleared would look like an oversight. A
   REAL mobile filter exists on Search (`providers.is_mobile`, item M) and is unaffected.
-- **Evidence.** PM decision on PR #74, 2026-09-09. `app/onboarding/client/preferences.tsx`.
+- **Evidence.** PM decision on PR #74, 2026-09-09. The controls lived in
+  `app/onboarding/client/preferences.tsx`, **which no longer exists**: removing them left it
+  asking the same question step 1 asks with the same component, so the Founder rulings on this PR
+  removed the step itself (see PD-081). The neighborhood picker survives on step 1, which is the
+  screen that persists it.
 - **Status:** Locked; **implemented**
 
 ---
@@ -1440,6 +1444,44 @@ as locked decisions.
     approved requirement filed there would have been uncitable.
 - **Evidence.** PM decision on PR #74, 2026-09-09.
 - **Status:** Locked as a **requirement**; **not implemented**, and deliberately so.
+
+---
+
+### PD-081 — Client onboarding is two steps, and a de-approved provider's appeal route is Session 8 work
+
+- **Decision.** Two clarifications from the Founder's final rulings on PR #74.
+  1. **The client onboarding preferences step is removed.** The flow is `index → uploads →
+     preview`, numbered *of 2*.
+  2. **No "Contact Support" control is added to the de-approval notice.** The provider
+     review/appeal action becomes a **Session 8 requirement**, alongside the operator Review
+     Queue.
+- **Context.**
+  1. PD-079 removed the interests grid and the mobile switch from that step as data nothing read.
+     What was left was a neighborhood picker — asking the SAME question step 1 asks, with the SAME
+     component, on the screen that does NOT persist it. A step that re-asks what the previous step
+     answered is not a step.
+  2. PD-078 tells a de-approved provider the fact and gives no next step. A provider in a state
+     they cannot change should have a route to ask about it. The only support entry that exists is
+     `app/settings/index.tsx`'s `stub('Contact Support')` — an alert reading *"Coming soon"*.
+- **Consequences.**
+  - **No replacement question was invented to preserve the step count.** The count follows the
+    content, not the other way round. `betaClaimsAbsent.test.ts` now asserts *of 2*, and asserts
+    the removed screen has no surviving route — the payment step outlived its wiring as a
+    deep-linkable route once already, and that is the failure being avoided.
+  - The neighborhood is unaffected: step 1 collects it, writes it to the store, and `preview.tsx`
+    persists it. It remains what the Near You lane reads (PD-073).
+  - **A dead button is worse than honest silence**, and most so on the one screen where a provider
+    needs a live one. The notice keeps its approved wording and gains nothing that cannot act.
+  - **Session 8 owes, together:** the operator Review Queue that PD-068 makes a pre-beta
+    requirement and that PD-072's review requests wait on, AND a real operator-backed route for a
+    de-approved provider to ask for review. The support control ships with the path behind it.
+  - **Nothing about de-approval may imply an identity-verification failure**, because that is not
+    the reason and there is no such check to fail (PD-074).
+- **Evidence.** Founder rulings on PR #74, 2026-09-09. `app/onboarding/client/index.tsx`,
+  `app/onboarding/client/uploads.tsx`, `app/(tabs)/business/index.tsx`,
+  `__tests__/guards/betaClaimsAbsent.test.ts`.
+- **Status:** Locked; **implemented**, except the Session 8 appeal route, which is a recorded
+  requirement.
 
 ---
 

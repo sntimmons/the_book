@@ -265,8 +265,15 @@ describe('no live surface renders a verification claim from identity_verified', 
 // route (thebook://onboarding/client/payment) carrying four false claims. It WAS
 // wired in at some earlier point — `docs/history/PASS1_BUTTON_INVENTORY.md`
 // records it, and uploads.tsx still carried a stale "Progress bar 75%" comment —
-// but docs/history is a dated snapshot and the code is what governs. The live
-// flow is index → preferences → uploads → preview, and says "of 3".
+// but docs/history is a dated snapshot and the code is what governs.
+//
+// THE FLOW IS NOW TWO STEPS: index → uploads → preview, and says "of 2".
+// `preferences.tsx` was deleted by the PR #74 Founder rulings: PD-079 removed the
+// interests grid and the mobile switch as data nothing read, which left it asking
+// the SAME question step 1 asks with the SAME component — and step 1 is the one
+// that writes the answer to the store. No replacement question was invented to
+// preserve the count. `preview.tsx` is deliberately not in the list below: it is
+// the summary screen and carries no step label.
 describe('client onboarding does not collect payment', () => {
   it('has no payment step file', () => {
     expect(existsSync(join(ROOT, 'app/onboarding/client/payment.tsx'))).toBe(false)
@@ -279,15 +286,24 @@ describe('client onboarding does not collect payment', () => {
     expect(offenders).toEqual([])
   })
 
-  it('numbers its steps over the three that exist', () => {
+  it('numbers its steps over the two that exist', () => {
     for (const rel of [
       'app/onboarding/client/index.tsx',
-      'app/onboarding/client/preferences.tsx',
       'app/onboarding/client/uploads.tsx',
     ]) {
-      expect(code(rel)).toMatch(/Step \d of 3/)
-      expect(code(rel)).not.toMatch(/of 4/)
+      expect(code(rel)).toMatch(/Step \d of 2/)
+      expect(code(rel)).not.toMatch(/of 3|of 4/)
     }
+  })
+
+  it('has no route into the removed preferences step', () => {
+    // The step is gone, not hidden. A surviving route would leave it
+    // deep-linkable, which is exactly how the payment step outlived its wiring.
+    expect(existsSync(join(ROOT, 'app/onboarding/client/preferences.tsx'))).toBe(false)
+    const offenders = liveSourceFiles().filter((rel) =>
+      /onboarding\/client\/preferences/.test(code(rel)),
+    )
+    expect(offenders).toEqual([])
   })
 })
 

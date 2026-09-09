@@ -27,7 +27,7 @@ export default function ClientUploads() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Build your vibe</Text>
-        <Text style={styles.topBarStep}>Step 3 of 3</Text>
+        <Text style={styles.topBarStep}>Step 2 of 2</Text>
       </View>
 
       <ScrollView

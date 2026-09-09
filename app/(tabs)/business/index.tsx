@@ -449,7 +449,21 @@ export default function ProviderDashboard() {
             It says nothing about WHY, and nothing that reads as a judgement. It
             is emphatically NOT a verification claim in either direction —
             marketplace approval is not government or third-party identity
-            verification, and PD-074 keeps those two apart. */}
+            verification, and PD-074 keeps those two apart. **Nothing here may
+            imply an identity-verification failure**, because that is not the
+            reason and there is no such check to fail.
+
+            NO "CONTACT SUPPORT" BUTTON, and its absence is the decision rather
+            than an omission. A provider in a state they cannot change should
+            have a route to ask about it — the Founder ruling on this PR says so
+            — but the only support entry that exists today is
+            `app/settings/index.tsx`'s `stub('Contact Support')`, which opens an
+            alert reading "Coming soon". Pointing a de-approved provider at that
+            would be a dead button on the one screen where they most need a live
+            one, which is worse than the honest silence. The provider
+            review/appeal action is recorded as a **Session 8 requirement**
+            alongside the operator Review Queue (PD-068, PD-072), and the button
+            arrives with the path behind it. */}
         {acceptingBookings === false && (
           <View style={styles.notAcceptingCard}>
             <Feather name="pause-circle" size={18} color="#C8922A" />

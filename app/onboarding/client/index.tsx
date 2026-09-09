@@ -68,7 +68,7 @@ export default function ClientProfileSetup() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Set up your profile</Text>
-        <Text style={styles.topBarStep}>Step 1 of 3</Text>
+        <Text style={styles.topBarStep}>Step 1 of 2</Text>
       </View>
 
       {/* Scrollable form */}
@@ -190,7 +190,16 @@ export default function ClientProfileSetup() {
             setName(`${firstName} ${lastName}`.trim())
             setNotes(bio)
             setStoreNeighborhood(neighborhood)
-            router.push('/onboarding/client/preferences')
+            // Straight to the photo step. `preferences.tsx` sat between them and
+            // asked THIS SAME QUESTION with THIS SAME COMPONENT — after PD-079
+            // removed the interests grid and the mobile switch (data nothing
+            // read), the neighborhood picker was all it had left, and this screen
+            // already collects it and is the one that writes it to the store. A
+            // step that re-asks what the previous step answered is not a step.
+            //
+            // No replacement question was invented to preserve the count: client
+            // onboarding is two steps now, and says so.
+            router.push('/onboarding/client/uploads')
           }}
         >
           <Text style={styles.continueBtnText}>Continue</Text>
@@ -218,7 +227,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   progressFill: {
-    width: '33%',
+    width: '50%',
     height: 4,
     backgroundColor: 'rgba(240,232,213,0.6)',
   },

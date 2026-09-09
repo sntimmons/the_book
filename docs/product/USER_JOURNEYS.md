@@ -29,18 +29,18 @@ listed explicitly so they are not mistaken for defects (cross-check
 - **Intentional placeholders:** OTP delivery requires real email/SMS; a `__DEV__`-only bypass exists (non-prod).
 - **Open decisions:** none.
 
-## J1b — New client onboarding (profile → preferences → photo → preview → Discover)  ·  **IMPLEMENTED**
+## J1b — New client onboarding (profile → photo → preview → Discover)  ·  **IMPLEMENTED**
 - **Actor:** a newly authenticated user who chose the client path.
 - **Entry:** `app/path-selection.tsx` → "I'm here to book" → `app/onboarding/client/`.
-- **Steps (current, four screens):**
+- **Steps (current, THREE screens — two numbered, then the summary):**
   1. **Who you are** (`index.tsx`) — first name, last name, neighborhood (via `NeighborhoodPicker`), short bio. Held in `useClientStore`; nothing is written yet.
-  2. **Your area** (`preferences.tsx`) — the neighborhood picker, and nothing else. It carried an interests grid and a "show mobile providers" switch until PD-079 removed both as data nothing read.
-  3. **Photo** (`uploads.tsx`) — optional avatar; skippable.
-  4. **Preview** (`preview.tsx`) — shows the profile as assembled, then **one write on continue**: the avatar is uploaded (when one was picked) and a single `clients` upsert on `id` persists `name`, `notes`, `neighborhood` and `avatar_url`. The session role is then re-resolved so it settles as `client`, and the user lands on Discover.
+  2. **Photo** (`uploads.tsx`) — optional avatar; skippable.
+  3. **Preview** (`preview.tsx`) — shows the profile as assembled, then **one write on continue**: the avatar is uploaded (when one was picked) and a single `clients` upsert on `id` persists `name`, `notes`, `neighborhood` and `avatar_url`. The session role is then re-resolved so it settles as `client`, and the user lands on Discover.
 - **Expected end state:** exactly one `clients` row for the user; the session resolves as a client; the user is on Discover (per NAVIGATION.md, everyone lands on Discover).
 - **Nothing is persisted before the last step**, so abandoning onboarding leaves no partial profile — and re-entering starts clean rather than resuming a half-written row.
 - **Intentional placeholders:** none in the write path.
-- **Changed by Correction 3 (item A) and the PR #74 PM pass (PD-079):** `preferences.tsx` no longer collects anything nothing reads. The **notification preferences section was removed** (three switches collected and then discarded, for a delivery channel that does not exist), and so were the **interests grid** and the **"Show mobile providers"** switch — the grid sat under the promise *"We'll surface the best providers for the things you care about most"* while being written to no store and no column, and read by nothing. The step now collects only the **neighborhood**, which is genuinely persisted and genuinely consumed: it is what the Near You lane reads. No recommendation engine is to be built to justify the removed field.
+- **Changed by Correction 3 (item A) and the PR #74 Founder rulings (PD-079, PD-081):** the `preferences.tsx` step is **GONE**. It collected notification switches (a channel that does not exist), an interests grid and a "show mobile providers" switch — none of them persisted, none of them read. Removing them left the screen asking the same question step 1 asks, with the same component, on the screen that does not persist it — so the step went too. **The neighborhood is unaffected**: step 1 collects it, writes it to the store, and the preview step persists it, and it is what the Near You lane reads. No recommendation engine is to be built to justify the removed interests field, and no replacement question was invented to preserve the step count.
+- **The REAL mobile-provider capability is untouched.** What was removed was an onboarding-only preference with zero consumers; the working filter is the "Mobile only" switch on Search, which item M wired to `providers.is_mobile`.
 - **Open decisions:** whether interests should influence Discover ordering (they do not today — see the discovery lanes in J2a); whether a client profile should ever be publicly visible beyond `clients_public` (name + avatar).
 
 ## J2 — Discover → Provider profile → Service → Date/Time → (Message) → (Policy) → **Draft request** → (Contract) → Submit → Confirmation
