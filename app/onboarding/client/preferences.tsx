@@ -63,9 +63,6 @@ export default function ClientPreferences() {
   const [selected, setSelected] = useState<Set<InterestId>>(new Set(DEFAULT_SELECTED))
   const [location, setLocation] = useState('Midtown, Houston')
   const [mobileProv, setMobileProv] = useState(true)
-  const [notifBooking, setNotifBooking] = useState(true)
-  const [notifCreator, setNotifCreator] = useState(true)
-  const [notifDeals, setNotifDeals] = useState(false)
 
   function toggleInterest(id: InterestId) {
     setSelected((prev) => {
@@ -161,50 +158,15 @@ export default function ClientPreferences() {
           </View>
         </View>
 
-        {/* Notifications section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionLabel}>NOTIFICATIONS</Text>
-        </View>
-        <View style={styles.sectionCard}>
-          <View style={styles.notifRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.notifTitle}>Booking updates</Text>
-              <Text style={styles.notifSubtext}>Confirmations and reminders</Text>
-            </View>
-            <Switch
-              value={notifBooking}
-              onValueChange={setNotifBooking}
-              trackColor={{ false: 'rgba(240,232,213,0.15)', true: 'rgba(240,232,213,0.5)' }}
-              thumbColor={notifBooking ? '#F0E8D5' : 'rgba(240,232,213,0.4)'}
-            />
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.notifRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.notifTitle}>New providers nearby</Text>
-              <Text style={styles.notifSubtext}>When providers join your area</Text>
-            </View>
-            <Switch
-              value={notifCreator}
-              onValueChange={setNotifCreator}
-              trackColor={{ false: 'rgba(240,232,213,0.15)', true: 'rgba(240,232,213,0.5)' }}
-              thumbColor={notifCreator ? '#F0E8D5' : 'rgba(240,232,213,0.4)'}
-            />
-          </View>
-          <View style={styles.divider} />
-          <View style={styles.notifRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.notifTitle}>Deals & promotions</Text>
-              <Text style={styles.notifSubtext}>Special offers from providers</Text>
-            </View>
-            <Switch
-              value={notifDeals}
-              onValueChange={setNotifDeals}
-              trackColor={{ false: 'rgba(240,232,213,0.15)', true: 'rgba(240,232,213,0.5)' }}
-              thumbColor={notifDeals ? '#F0E8D5' : 'rgba(240,232,213,0.4)'}
-            />
-          </View>
-        </View>
+        {/* ITEM A (Correction 3): the Notifications section is removed.
+            Three switches — booking updates, new providers nearby, deals &
+            promotions — were collected during onboarding and then thrown away:
+            nothing persisted them, nothing read them, and there is no push,
+            device or email channel in this product for them to govern. Asking a
+            new client to configure delivery preferences for messages that cannot
+            be delivered is worse than not asking. The section returns when there
+            is a real channel behind it. */}
+
       </ScrollView>
 
       {/* Fixed bottom CTA */}
@@ -396,18 +358,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     gap: 12,
-  },
-  notifTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-    marginBottom: 2,
-  },
-  notifSubtext: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
   },
   cta: {
     position: 'absolute',

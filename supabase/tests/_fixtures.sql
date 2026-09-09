@@ -31,22 +31,30 @@ begin
     values (pu, 'B5B Provider', 'b5b_'||substr(pu::text,1,8)) returning id into pid;
 
   -- Bookings, one per review state we need to prove.
-  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review)
-    values (cu, pid, 'svc', current_date, 'completed', now() - interval '1 day', false) returning id into b_elig;
-  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review)
-    values (cu, pid, 'svc', current_date, 'completed', now() - interval '1 day', false) returning id into b_sub;
-  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review)
-    values (cu, pid, 'svc', current_date, 'completed', now() - interval '8 days', false) returning id into b_win;
-  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review)
-    values (cu, pid, 'svc', current_date, 'completed', now() - interval '1 day', true) returning id into b_ur;
+  --
+  -- EVERY ONE CARRIES `submitted_at`. `20261037000000` made a booking with a null
+  -- `submitted_at` a DRAFT — invisible to the provider, and unique per
+  -- (client, provider) so the flow can resume it. Seeded rows are real submitted
+  -- requests, so they say so explicitly: the write-integrity trigger early-returns
+  -- for service_role and would otherwise leave them all as drafts, which would
+  -- both trip the one-draft index on the second insert and hide every fixture
+  -- booking from the provider assertions.
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review, submitted_at, expires_at)
+    values (cu, pid, 'svc', current_date, 'completed', now() - interval '1 day', false, now() - interval '1 day', now() - interval '1 day' + interval '72 hours') returning id into b_elig;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review, submitted_at, expires_at)
+    values (cu, pid, 'svc', current_date, 'completed', now() - interval '1 day', false, now() - interval '1 day', now() - interval '1 day' + interval '72 hours') returning id into b_sub;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review, submitted_at, expires_at)
+    values (cu, pid, 'svc', current_date, 'completed', now() - interval '8 day', false, now() - interval '8 day', now() - interval '8 day' + interval '72 hours') returning id into b_win;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review, submitted_at, expires_at)
+    values (cu, pid, 'svc', current_date, 'completed', now() - interval '1 day', true, now() - interval '1 day', now() - interval '1 day' + interval '72 hours') returning id into b_ur;
   -- A GENUINE no_show: never completed, so completed_at is null.
-  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, no_show_flag)
-    values (cu, pid, 'svc', current_date, 'no_show', null, true) returning id into b_ns;
-  insert into public.bookings(user_id, provider_id, service_name, requested_date, status)
-    values (cu, pid, 'svc', current_date, 'pending') returning id into b_pend;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, no_show_flag, submitted_at, expires_at)
+    values (cu, pid, 'svc', current_date, 'no_show', null, true, now() - interval '2 days', now() - interval '2 days' + interval '72 hours') returning id into b_ns;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, submitted_at, expires_at)
+    values (cu, pid, 'svc', current_date, 'pending', now() - interval '1 hour', now() + interval '71 hours') returning id into b_pend;
   -- Repeat booking: same client + provider pair, independently reviewable.
-  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review)
-    values (cu, pid, 'svc', current_date, 'completed', now() - interval '1 day', false) returning id into b_rep;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status, completed_at, under_review, submitted_at, expires_at)
+    values (cu, pid, 'svc', current_date, 'completed', now() - interval '1 day', false, now() - interval '1 day', now() - interval '1 day' + interval '72 hours') returning id into b_rep;
 
   -- b_sub already has the CLIENT's review, so it reads already_submitted for the
   -- client while staying eligible for the provider (blindness).

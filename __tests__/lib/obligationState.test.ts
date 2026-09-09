@@ -8,6 +8,7 @@ import {
   ObligationStatus,
   obligationTimeline,
   obligationView,
+  REQUEST_REVIEW_COPY,
   RESPOND_LABELS,
 } from '@/lib/obligationState'
 import { sideForRole } from '@/lib/negotiationState'
@@ -76,6 +77,88 @@ describe('obligationView capability', () => {
         expect(v.canRespond).toBe(false)
       }
     }
+  })
+
+  // ── ITEM X: the deliverer's one move ─────────────────────────────────────
+  //
+  // Every conjunct here is also enforced by the server, so each of these is pinning that the
+  // client does not DRAW a control the database would refuse — the caption-contradicts-
+  // capability defect this module exists to prevent.
+
+  it('offers Ask The Book to review only to the deliverer, and only from Needs Attention', () => {
+    for (const role of ROLES) {
+      for (const status of STATUSES) {
+        const v = obligationView({ role, status, window: 'needs_attention' })
+        expect([role, status, v.canRequestReview]).toEqual([
+          role,
+          status,
+          role === 'deliverer' && status === 'delivered',
+        ])
+      }
+    }
+  })
+
+  it('does not offer it while the receiver still has time to answer', () => {
+    for (const window of ['none', 'awaiting_receiver'] as const) {
+      const v = obligationView({ role: 'deliverer', status: 'delivered', window })
+      expect([window, v.canRequestReview]).toEqual([window, false])
+    }
+  })
+
+  it('does not offer it a second time once the obligation is already under review', () => {
+    const v = obligationView({
+      role: 'deliverer',
+      status: 'delivered',
+      window: 'needs_attention',
+      obligationUnderReview: true,
+    })
+    expect(v.canRequestReview).toBe(false)
+    // And the card says which state it is in, rather than inviting the same ask again.
+    expect(v.attention).toBe('Under review')
+  })
+
+  it('does not offer it on a cancelled or resolved obligation', () => {
+    const cancelled = obligationView({
+      role: 'deliverer',
+      status: 'delivered',
+      window: 'needs_attention',
+      tradeCancelled: true,
+    })
+    const resolved = obligationView({
+      role: 'deliverer',
+      status: 'delivered',
+      window: 'needs_attention',
+      terminalOutcome: 'closed_without_resolution',
+    })
+    expect(cancelled.canRequestReview).toBe(false)
+    expect(resolved.canRequestReview).toBe(false)
+  })
+
+  it('never offers the receiver a route it does not need', () => {
+    // The receiver already has `not_received` and the no-show report. A third route for them
+    // would be a way to escalate their own silence, which is exactly what item X is not.
+    for (const status of STATUSES) {
+      for (const window of ['none', 'awaiting_receiver', 'needs_attention'] as const) {
+        expect(obligationView({ role: 'receiver', status, window }).canRequestReview).toBe(false)
+      }
+    }
+  })
+
+  it('asks for a review without claiming one, promising one, or blaming anyone', () => {
+    const text = `${REQUEST_REVIEW_COPY.title} ${REQUEST_REVIEW_COPY.body}`.toLowerCase()
+    // It must not declare the delivery accepted, or say the trade is finished.
+    for (const word of ['fulfilled', 'unfulfilled', 'complete', 'completed', 'resolved',
+      'received it', 'dispute', 'disputed', 'penalty', 'refund', 'rating', 'reputation']) {
+      expect([word, text.includes(word)]).toEqual([word, false])
+    }
+    // It must not blame the counterparty. "Fault" appears only in the denial.
+    expect(text).toContain('does not say they were at fault')
+    // It must not promise a response time — PD-068 is explicit that there is no SLA, and the
+    // Review Queue that reads these does not exist yet.
+    for (const promise of ['within', 'hours', 'days', 'we will respond', 'shortly', 'soon']) {
+      expect([promise, text.includes(promise)]).toEqual([promise, false])
+    }
+    expect(text).toContain('no set response time')
   })
 
   it('titles each obligation by the viewer’s end of it', () => {

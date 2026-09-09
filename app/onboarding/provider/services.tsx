@@ -171,7 +171,7 @@ export default function ProviderServices() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Your services</Text>
-        <Text style={styles.topBarStep}>Step 4 of 8</Text>
+        <Text style={styles.topBarStep}>Step 4 of 7</Text>
       </View>
 
       <ScrollView

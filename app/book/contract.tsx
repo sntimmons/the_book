@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -13,26 +13,81 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Sentry from '@sentry/react-native'
 import { useBookingStore } from '@/store/bookingStore'
-import { fetchContractToSign, Contract } from '@/lib/contracts'
+import { useAuth } from '@/context/AuthContext'
+import { fetchContractForBooking, Contract } from '@/lib/contracts'
+import {
+  ensureBookingDraft,
+  toIsoDate,
+  buildAppointmentTime,
+  ProviderUnavailableError,
+} from '@/lib/bookingDraft'
 
 export default function BookContract() {
   const insets = useSafeAreaInsets()
-  const { providerId, setContractSigned } = useBookingStore()
+  const { user } = useAuth()
+  const {
+    providerId,
+    selectedService,
+    selectedDate,
+    rawDate,
+    selectedTime,
+    bookingMessage,
+    setContractSigned,
+    setDraftBookingId,
+  } = useBookingStore()
 
   const [contract, setContract] = useState<Contract | null>(null)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
+  const [unavailable, setUnavailable] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [agreed, setAgreed] = useState(false)
   const [signed, setSigned] = useState(false)
+  // ITEM I: the contract has to be OPENED before it can be signed. For a PDF
+  // that means tapping through to the document; for an inline agreement it means
+  // the text has actually been scrolled to the end. This is a real precondition,
+  // not a claim: see the note above the gate for what it does and does not prove.
+  const [opened, setOpened] = useState(false)
+  const bodyHeight = useRef(0)
+  const viewportHeight = useRef(0)
+
+  const servicePrice = parseFloat(selectedService?.price ?? '0') || 0
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       try {
-        const c = providerId ? await fetchContractToSign(providerId) : null
+        // ITEM J: the booking exists BEFORE the contract step. Creating (or
+        // resuming) the draft here is what lets contract access be scoped to a
+        // transaction the client is actually in — `contract_for_booking` returns
+        // the terms only to the client who holds this booking with this provider,
+        // so there is no standing read path into other people's contract text.
+        //
+        // The draft is invisible to the provider until the request is sent, so
+        // reaching this screen and backing out creates nothing anyone must answer.
+        if (!user || !providerId || !selectedService) {
+          if (!cancelled) {
+            setLoadError(true)
+            setLoading(false)
+          }
+          return
+        }
+        const bookingId = await ensureBookingDraft(user.id, {
+          providerId,
+          serviceId: selectedService.id || null,
+          serviceName: selectedService.name,
+          requestedDate: rawDate || toIsoDate(selectedDate),
+          requestedTime: selectedTime,
+          appointmentTime: buildAppointmentTime(rawDate, selectedTime),
+          message: bookingMessage || null,
+          paymentAmount: servicePrice,
+        })
         if (cancelled) return
-        // A genuine "no contract exists" (null, no error) skips the step.
+        setDraftBookingId(bookingId)
+
+        const c = await fetchContractForBooking(bookingId)
+        if (cancelled) return
+        // A genuine "no contract exists" (empty, no error) skips the step.
         if (!c) {
           router.replace('/book/payment')
           return
@@ -40,10 +95,17 @@ export default function BookContract() {
         setContract(c)
         setLoading(false)
       } catch (e) {
+        if (cancelled) return
+        // ITEM H: the provider is no longer taking new bookings. That is
+        // availability, not a technical failure and not a judgement of them.
+        if (e instanceof ProviderUnavailableError) {
+          setUnavailable(true)
+          setLoading(false)
+          return
+        }
         // A technical failure must NOT masquerade as "no contract" and skip
         // signing. Surface an error so the client can retry rather than
         // proceeding to book without agreeing to the provider's contract.
-        if (cancelled) return
         Sentry.captureException(e)
         setLoadError(true)
         setLoading(false)
@@ -52,16 +114,26 @@ export default function BookContract() {
     return () => {
       cancelled = true
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providerId, reloadKey])
 
   function retryLoad() {
     setLoadError(false)
+    setUnavailable(false)
     setLoading(true)
     setReloadKey((k) => k + 1)
   }
 
+  // An inline agreement counts as opened once its text has been scrolled to the
+  // end — or immediately if it is short enough to fit on one screen, since there
+  // is nothing left to scroll to.
+  function noteBodyScroll(offsetY: number) {
+    if (opened) return
+    if (bodyHeight.current - viewportHeight.current - offsetY <= 24) setOpened(true)
+  }
+
   function signAndContinue() {
-    if (!agreed || !contract) return
+    if (!agreed || !signed || !opened || !contract) return
     // Capture the signing intent; the contract_signatures row is written in
     // book/payment.tsx once the booking (and its id) exists.
     setContractSigned(contract.id)
@@ -79,6 +151,30 @@ export default function BookContract() {
       <View style={styles.root}>
         <View style={styles.centerBody}>
           <ActivityIndicator color="rgba(240,232,213,0.4)" />
+        </View>
+      </View>
+    )
+  }
+
+  if (unavailable) {
+    // ITEM H: availability, stated as availability. Their history with this
+    // client is untouched and still reachable — only NEW bookings are closed —
+    // and nothing here is a verification claim or a judgement of the provider.
+    return (
+      <View style={styles.root}>
+        <View style={styles.centerBody}>
+          <Text style={styles.title}>Not currently available for new bookings</Text>
+          <Text style={styles.bodyText}>
+            This provider is not taking new bookings right now. Any bookings and
+            messages you already have with them are unaffected.
+          </Text>
+          <TouchableOpacity
+            style={[styles.recoveryBtn, styles.recoveryBtnQuiet]}
+            onPress={() => router.back()}
+            activeOpacity={0.85}
+          >
+            <Text style={[styles.recoveryBtnText, styles.recoveryBtnTextQuiet]}>Go back</Text>
+          </TouchableOpacity>
         </View>
       </View>
     )
@@ -128,17 +224,37 @@ export default function BookContract() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ padding: 20, paddingBottom: 24 }}
+        scrollEventThrottle={16}
+        onLayout={(e) => {
+          viewportHeight.current = e.nativeEvent.layout.height
+          if (contract?.contractType !== 'pdf') noteBodyScroll(0)
+        }}
+        onContentSizeChange={(_w, h) => {
+          bodyHeight.current = h
+          if (contract?.contractType !== 'pdf') noteBodyScroll(0)
+        }}
+        onScroll={(e) => {
+          if (contract?.contractType !== 'pdf') noteBodyScroll(e.nativeEvent.contentOffset.y)
+        }}
       >
         <Text style={styles.title}>{contract?.title}</Text>
 
         {contract?.contractType === 'pdf' ? (
           <View style={styles.pdfBlock}>
-            <Text style={styles.pdfHint}>You must read the full contract before signing.</Text>
+            {/* Was "You must read the full contract before signing." — a rule the
+                app could not enforce and did not check. What it can require, and
+                now does, is that the contract be OPENED. */}
+            <Text style={styles.pdfHint}>
+              {opened
+                ? 'Take your time — you can reopen the contract as often as you like.'
+                : 'Open the contract to read it. You can sign once you have opened it.'}
+            </Text>
             <TouchableOpacity
               style={styles.readBtn}
               activeOpacity={0.85}
               onPress={() => {
                 if (contract?.pdfUrl) {
+                  setOpened(true)
                   router.push({
                     pathname: '/contracts/pdf-viewer',
                     params: { url: contract.pdfUrl },
@@ -147,7 +263,9 @@ export default function BookContract() {
               }}
             >
               <Feather name="file-text" size={16} color="#080808" />
-              <Text style={styles.readBtnText}>Read Contract</Text>
+              <Text style={styles.readBtnText}>
+                {opened ? 'Reopen Contract' : 'Read Contract'}
+              </Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -169,9 +287,23 @@ export default function BookContract() {
               <Text style={styles.sigPlaceholderText}>
                 Signature canvas — requires development build
               </Text>
-              <TouchableOpacity style={styles.sigSimBtn} activeOpacity={0.85} onPress={() => setSigned(true)}>
-                <Text style={styles.sigSimBtnText}>Sign</Text>
+              <TouchableOpacity
+                style={[styles.sigSimBtn, !opened && styles.sigSimBtnInactive]}
+                activeOpacity={0.85}
+                disabled={!opened}
+                onPress={() => setSigned(true)}
+              >
+                <Text style={[styles.sigSimBtnText, !opened && styles.sigSimBtnTextInactive]}>
+                  Sign
+                </Text>
               </TouchableOpacity>
+              {!opened ? (
+                <Text style={styles.sigGateText}>
+                  {contract?.contractType === 'pdf'
+                    ? 'Open the contract above first.'
+                    : 'Scroll to the end of the agreement first.'}
+                </Text>
+              ) : null}
             </>
           )}
         </View>
@@ -181,11 +313,21 @@ export default function BookContract() {
             {agreed ? <Feather name="check" size={13} color="#080808" /> : null}
           </View>
           <Text style={styles.checkboxText}>
-            {contract?.contractType === 'pdf'
-              ? 'I have read and agree to the terms in this PDF contract.'
-              : 'I have read and agree to this service agreement.'}
+            I agree to the terms of this service agreement.
           </Text>
         </Pressable>
+
+        {/* ITEM I. The gate above is real: the contract must be opened before the
+            Sign control activates. This line exists so the product does not imply
+            more than that. The Book checks that the agreement was opened; it
+            cannot and does not verify that every word was read, and the ticked
+            box is the client's own statement rather than something the app
+            proved. Saying so plainly is the difference between a real gate and a
+            trust claim we cannot support. */}
+        <Text style={styles.gateNote}>
+          The Book records that you opened this agreement and agreed to it. It
+          does not verify that you read every word.
+        </Text>
       </ScrollView>
 
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
@@ -193,12 +335,17 @@ export default function BookContract() {
           <Text style={styles.declineText}>Decline</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.continueBtn, (!agreed || !signed) && styles.continueBtnInactive]}
+          style={[styles.continueBtn, (!agreed || !signed || !opened) && styles.continueBtnInactive]}
           activeOpacity={0.85}
           onPress={signAndContinue}
-          disabled={!agreed || !signed}
+          disabled={!agreed || !signed || !opened}
         >
-          <Text style={[styles.continueText, (!agreed || !signed) && styles.continueTextInactive]}>
+          <Text
+            style={[
+              styles.continueText,
+              (!agreed || !signed || !opened) && styles.continueTextInactive,
+            ]}
+          >
             Sign and Continue
           </Text>
         </TouchableOpacity>
@@ -311,6 +458,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0E8D5',
   },
   sigSimBtnText: { fontSize: 14, color: '#080808', fontFamily: 'Manrope_700Bold' },
+  sigSimBtnInactive: { backgroundColor: 'rgba(240,232,213,0.1)' },
+  sigSimBtnTextInactive: { color: 'rgba(240,232,213,0.3)' },
+  sigGateText: {
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.4)',
+    fontFamily: 'Manrope_400Regular',
+    textAlign: 'center',
+  },
+  gateNote: {
+    marginTop: 12,
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 17,
+  },
   sigSignedRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sigSignedText: { fontSize: 15, color: '#4CAF50', fontFamily: 'Manrope_700Bold' },
   checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 24 },

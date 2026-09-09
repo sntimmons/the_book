@@ -293,6 +293,12 @@ export default function ProviderProfilePage() {
       isFollowing={isFollowing}
       isSaved={isSaved}
       isOwnProfile={isOwnProfile}
+      // ITEM H: a profile reached directly (a saved provider, a message thread,
+      // a past booking) is the one place a de-approved provider is still
+      // visible — discovery already filters them out. Without this the client
+      // would be offered Book Now and only discover the refusal at the end of
+      // the flow, as a database error.
+      acceptingBookings={provider.is_approved !== false}
       onBookNow={handleBookNow}
       onFollow={handleToggleFollow}
       onSave={handleToggleSave}

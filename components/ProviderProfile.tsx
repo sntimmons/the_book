@@ -56,6 +56,21 @@ export interface ProviderProfileProps {
   // When the viewer owns this provider, the follow / save / message / book
   // controls are hidden entirely — a user cannot act on their own profile.
   isOwnProfile?: boolean
+  /**
+   * ITEM H (Correction 3). False when this provider is no longer taking NEW
+   * bookings.
+   *
+   * AVAILABILITY, NOT A JUDGEMENT, and never a verification claim. Everything
+   * else about the profile stays exactly as it is — the portfolio, the reviews,
+   * the services, the message control and every existing booking and
+   * conversation. Only the one act the database would now refuse (PT426) is
+   * withdrawn, and it is withdrawn HERE rather than being allowed to fail three
+   * screens later with a raw error.
+   *
+   * Defaults to true so no caller that has not been updated silently hides a
+   * live provider's Book Now.
+   */
+  acceptingBookings?: boolean
   onBookNow?: () => void
   onFollow?: () => void
   onSave?: () => void
@@ -82,6 +97,7 @@ export default function ProviderProfile({
   isFollowing = false,
   isSaved = false,
   isOwnProfile = false,
+  acceptingBookings = true,
   onBookNow,
   onFollow,
   onSave,
@@ -275,6 +291,23 @@ export default function ProviderProfile({
           contentContainerStyle={styles.badgesRow}
           style={styles.badgesScroll}
         >
+          {/* ITEM W (Correction 3) resolves what the note below left open.
+              "Houston Beta Provider" is the beta's approved trust signal, and it
+              is a FACT rather than a claim: this provider was approved into the
+              Houston beta, which is a thing that either happened or did not. It
+              asserts no identity check, no background check and no government-ID
+              verification, none of which exist.
+
+              It is shown only while the provider IS approved. A provider who is
+              no longer taking new bookings does not carry a label saying they are
+              a current beta provider, and no replacement label is invented for
+              them — the availability line on the booking bar says what is true. */}
+          {acceptingBookings ? (
+            <View style={[styles.badge, styles.badgeMuted]}>
+              <Feather name="map-pin" size={12} color="rgba(240,232,213,0.4)" />
+              <Text style={styles.badgeText}>Houston Beta Provider</Text>
+            </View>
+          ) : null}
           {/* PRODUCT TRUTH: an "ID Verified" badge used to render here whenever
               `isVerified` was true, directly beside "Verification coming soon" —
               two contradictory claims in one strip, and the affirmative one was
@@ -283,13 +316,12 @@ export default function ProviderProfile({
               completed one. Removed rather than reworded: a weaker word for the
               same unproven claim is still the claim.
 
-              NO REPLACEMENT TRUST LABEL IS INVENTED HERE. Whether approved beta
-              providers should carry a visible trust label, and what it may say,
-              is a Founder decision (OQ-035) and is deliberately left open. */}
-          <View style={[styles.badge, styles.badgeMuted]}>
-            <Feather name="clock" size={12} color="rgba(240,232,213,0.4)" />
-            <Text style={styles.badgeText}>Verification coming soon</Text>
-          </View>
+              OQ-035 — whether approved beta providers should carry a visible
+              trust label, and what it may say — was the open question this note
+              recorded. Item W ANSWERS it: "Houston Beta Provider", rendered
+              above. The pill that used to sit here, "Verification coming soon",
+              is gone with it: it made a roadmap promise instead of stating
+              anything true about the provider a client was looking at. */}
           <View style={[styles.badge, styles.badgeMuted]}>
             <Feather name="scissors" size={12} color="rgba(240,232,213,0.4)" />
             <Text style={styles.badgeText}>{provider.category}</Text>
@@ -467,9 +499,21 @@ export default function ProviderProfile({
           >
             <Feather name="message-circle" size={20} color="#F0E8D5" />
           </TouchableOpacity>
-          <Pressable style={styles.bookNowBtn} onPress={onBookNow}>
-            <Text style={styles.bookNowText}>Book Now</Text>
-          </Pressable>
+          {acceptingBookings ? (
+            <Pressable style={styles.bookNowBtn} onPress={onBookNow}>
+              <Text style={styles.bookNowText}>Book Now</Text>
+            </Pressable>
+          ) : (
+            // Not a disabled Book Now: a greyed button invites a tap and says
+            // nothing. It states the fact in the provider's own terms, and the
+            // MESSAGE control beside it stays live — a client who already knows
+            // this provider can still reach them.
+            <View style={[styles.bookNowBtn, styles.bookNowBtnClosed]}>
+              <Text style={styles.bookNowClosedText}>
+                Not currently available for new bookings
+              </Text>
+            </View>
+          )}
         </View>
       )}
 
@@ -959,6 +1003,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#C8922A',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  bookNowBtnClosed: {
+    backgroundColor: 'rgba(240,232,213,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(240,232,213,0.12)',
+  },
+  bookNowClosedText: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_500Medium',
+    textAlign: 'center',
+    paddingHorizontal: 12,
   },
   bookNowText: {
     fontSize: 16,

@@ -620,7 +620,7 @@ export default function AvailabilityEditor({
               <Feather name="chevron-left" size={18} color="#F0E8D5" />
             </TouchableOpacity>
             <Text style={styles.onboardingHeaderLabel}>Your availability</Text>
-            <Text style={styles.onboardingHeaderStep}>Step 5 of 8</Text>
+            <Text style={styles.onboardingHeaderStep}>Step 5 of 7</Text>
           </View>
         </>
       ) : (

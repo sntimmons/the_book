@@ -187,7 +187,17 @@ an entry is self-describing when quoted alone.
   **PD-068** and `BARTER_BETA_CONTRACT.md` § 7.4 / § 7.5 since 2026-09-07. It is given a number
   so the one open engine question lives in the document whose job that is, instead of only in
   the prose of five locked decisions. **No decision is made or implied by recording it.**
-- **Status:** Open
+- **CLOSED 2026-09-09 by PD-072** (Founder ruling, Pre-Session-8 Correction 3, item X). The
+  answer is the narrow one this entry left room for: a **DELIVERER-INITIATED, EXPLICIT ACT**.
+  A provider who delivered and was never answered may ask The Book to review that obligation once
+  the window has passed, and that request is the third route into Under Review. **None of the
+  four forbidden resolutions was used** — there is no second timer, no automatic escalation, no
+  operator auto-escalation, and the participant act that exists is a REQUEST rather than an
+  escalation: it produces no outcome, assigns no fault and contradicts nobody's silence. The dead
+  end this entry described is gone; a provider whose counterparty stops opening the app now has a
+  move. What is NOT closed by this and is tracked in PD-072 instead: nothing processes these
+  requests until Session 8 builds the operator Review Queue, and there is still no SLA.
+- **Status:** CLOSED — resolved by PD-072, 2026-09-09
 
 ### OQ-008 — May an offer's terms still be edited once providers have responded to them?
 - **Area:** Barter
@@ -409,7 +419,8 @@ schema; the product rules around them do not. Each question below is separately 
 
 ### OQ-035 — Which identity-verification vendor, and which trust claims may each level display?
 - **Area:** Houston Beta
-- **Why it matters:** PD-005 locks that a specialist third party performs government-ID verification and that The Book avoids storing raw documents — but no vendor is selected, and what a verified badge is allowed to *claim* is undefined. `BETA_SCOPE.md` flags this as PRODUCT DECISION REQUIRED. *(Previously filed under `## Payments` with an `Area` of "Houston Beta / Identity"; relocated to its declared area on 2026-09-03. Identity/verification remains the specific subject — only the filing changed.)*
+- **PARTLY CLOSED 2026-09-09 by PD-074.** The **trust-claim half is answered**: an approved beta provider carries **"Houston Beta Provider"** and nothing else. Permitted alongside it are real profile/business information, portfolio and service info, location and mode, reviews from completed bookings and their count, completed-booking information, and the provider's own policy/contract. Explicitly NOT permitted: "Verified", "ID Verified", trust scores, any badge implying government identity verification, and barter reputation. The label is a fact — this provider was approved into the Houston beta — and asserts no identity check of any kind. **The VENDOR half remains open**, which is why this entry is not closed.
+- **Why it matters:** PD-005 locks that a specialist third party performs government-ID verification and that The Book avoids storing raw documents — but no vendor is selected, ~~and what a verified badge is allowed to *claim* is undefined~~ **(the claim question is now answered by PD-074; the vendor question is not)**. `BETA_SCOPE.md` flags this as PRODUCT DECISION REQUIRED. *(Previously filed under `## Payments` with an `Area` of "Houston Beta / Identity"; relocated to its declared area on 2026-09-03. Identity/verification remains the specific subject — only the filing changed.)*
 - **Blocks:** any hard verification gate (PD-004 keeps beta messaging educational).
 - **Status:** Open
 

@@ -12,7 +12,7 @@ import { useBookingStore } from '@/store/bookingStore'
 
 export default function BookConfirmed() {
   const insets = useSafeAreaInsets()
-  useLocalSearchParams<{ bookingId: string }>()
+  const { bookingId } = useLocalSearchParams<{ bookingId?: string }>()
   const {
     providerName,
     selectedService,
@@ -34,6 +34,28 @@ export default function BookConfirmed() {
 
   function handleBackToHome() {
     reset()
+    router.replace('/(tabs)/')
+  }
+
+  // ITEM N: the primary action after sending is VIEW REQUEST.
+  //
+  // "Back to Home" was the only way off this screen, which dropped the client
+  // back into discovery with nothing to act on and no route to the thing they
+  // had just done. The request they just sent is the one place where its status,
+  // the provider's answer and the option to withdraw all live, so that is where
+  // the primary button goes. Home stays as the quiet secondary.
+  //
+  // `reset()` still runs: the booking-flow store is per-attempt scratch state,
+  // and leaving it populated would make a later attempt resume this one's
+  // service and date. The request itself is on the server and is what the next
+  // screen reads.
+  function handleViewRequest() {
+    reset()
+    if (bookingId) {
+      router.replace({ pathname: '/bookings/request/[id]', params: { id: bookingId } })
+      return
+    }
+    // No id to open — do not pretend there is a request to show.
     router.replace('/(tabs)/')
   }
 
@@ -149,6 +171,15 @@ export default function BookConfirmed() {
 
       {/* Bottom buttons, inside scroll so they never overlap content */}
       <View style={styles.bottomButtons}>
+        {bookingId ? (
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            activeOpacity={0.85}
+            onPress={handleViewRequest}
+          >
+            <Text style={styles.primaryBtnText}>View Request</Text>
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity
           style={styles.homeBtn}
           activeOpacity={0.7}
@@ -163,6 +194,20 @@ export default function BookConfirmed() {
 }
 
 const styles = StyleSheet.create({
+  primaryBtn: {
+    height: 54,
+    borderRadius: 16,
+    borderCurve: 'continuous',
+    backgroundColor: '#F0E8D5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  primaryBtnText: {
+    fontSize: 16,
+    color: '#080808',
+    fontFamily: 'Manrope_700Bold',
+  },
   root: {
     flex: 1,
     backgroundColor: '#080808',

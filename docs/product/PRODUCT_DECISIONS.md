@@ -1119,6 +1119,205 @@ as locked decisions.
 
 ---
 
+### PD-071 — A booking request has a lifecycle: a private draft, a submitted request, and a 72-hour server-authoritative expiry
+
+- **Decision.** The `bookings` row is created as a **DRAFT** when the client reaches the contract
+  step, carried unchanged through the contract, the signature and the send, and becomes a real
+  request only when the client submits it. A draft has `submitted_at IS NULL` and **no provider
+  can see it**. A submitted request expires at
+  `LEAST(submitted_at + 72 hours, appointment_time)`, never earlier than `submitted_at`.
+- **Context.** The row used to be inserted on the very last screen, after signing. That single
+  ordering caused three separate problems. Contract access had to be granted on "any live
+  provider" rather than on a transaction, because there was no transaction to point at. Every
+  failure between the first screen and the last either lost the attempt or risked a second
+  request for the same intent. And the only expiry anywhere was a **client-side** 24-hour cutoff
+  that disabled the provider's Accept button while the database happily kept the row pending
+  forever — a rule that existed on one side of the marketplace and not the other.
+- **Consequences.**
+  - **One intent = one request.** A partial unique index (`bookings_one_draft_per_pair`) permits
+    at most one draft per (client, provider); the client RESUMES it rather than inserting again.
+    A dropped network, a failed signature, a back-out or a double tap continue the same request.
+    An abandoned flow leaves a private row, not something a provider must answer.
+  - **The draft is editable and the request is not.** While `submitted_at` is null the client may
+    revise the service, date, time and note — which is what makes moving backwards through the
+    steps safe. On submission those fields freeze: a provider answers the request they were
+    shown, and a client cannot rewrite the appointment underneath an acceptance.
+  - **Expiry is a real boundary, and only for ACCEPTING.** Past the deadline the provider is
+    refused with `PT425`; declining stays available forever, because letting a provider close out
+    a stale request is not a thing to prevent. **Expired requests are not deleted and not
+    hidden** — they stay in both sides' history with `status='pending'`.
+  - **Nothing flips a row when the deadline passes.** `booking_request_urgency()` derives
+    `draft | none | nudge (24h) | urgent (48h) | expired` per read, the same discipline as
+    PD-057's receiver window, so there is no persisted transition that can disagree with the
+    timestamps. **It is a read state, not a notification:** there is no push, device or email
+    channel in this product, and no surface built on it may claim a reminder was delivered.
+  - **The `appointment_time` clamp** is the answer to "what if the appointment is sooner than 72
+    hours". It is one `least()` over a column the row already has, and it invents no scheduling
+    system. **PM REVIEW:** when `appointment_time` is NULL the 72-hour deadline stands alone, so
+    a request can outlive its own requested slot, bounded at 72 hours.
+  - **Why a column and not a status:** `bookings.status` is constrained and `pending` already
+    means "a real request the provider must answer". A draft *status* would have put every
+    abandoned flow into the provider's queue — the opposite of what this decision is for.
+- **Evidence.** Founder ruling, Pre-Session-8 Correction 3 (items B, J, K), 2026-09-09.
+  `supabase/migrations/20261037000000_booking_request_lifecycle.sql` and its forward correction
+  `20261041000000`; `lib/bookingDraft.ts`; `app/book/contract.tsx`; `app/book/payment.tsx`.
+  Proven by `supabase/tests/booking_lifecycle.test.sql`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-072 — The deliverer may ask The Book to review an unanswered obligation. Asking is not being answered.
+
+- **Decision.** A provider who delivered and was never answered may explicitly **ask The Book to
+  review** that obligation, once the PD-057 window has passed and it sits in Needs Attention.
+  That request is the **third and last** route into Under Review.
+- **Context.** This closes **OQ-071**, the one genuinely open question left in the barter
+  lifecycle engine. PD-062 made Under Review the entry condition for adjudication but reachable
+  only by two RECEIVER acts — a `not_received` answer or a no-show report — so a receiver who
+  simply stopped opening the app left the deliverer with no move at all, permanently.
+- **Consequences.**
+  - **It is a participant act, not a timer.** OQ-071 forbade resolving itself by implementation:
+    no second timer, no automatic escalation, no operator auto-escalation. None was created. A
+    person presses a button, and a person then has to look.
+  - **Asking produces no outcome.** It does not declare the obligation fulfilled, does not fault
+    the receiver, does not contradict their silence and rewrites nothing — `delivered_at`, the
+    receiver's answer, the no-show report and every cancellation stand exactly as their authors
+    left them. The three terminal outcomes remain reachable only through
+    `adjudicate_barter_obligation`, which no participant may execute (**PD-068 is unchanged**).
+  - **The receiver keeps their controls.** Under Review has never frozen them (PD-062) and does
+    not here: a receiver who returns can still confirm or say they did not receive.
+  - **Idempotent, append-only, deliverer-only.** A repeat returns the original timestamp rather
+    than erroring; the record cannot be withdrawn or re-attributed; the receiver is refused
+    because they already have two routes and do not need a third.
+  - **NOTHING PROCESSES THESE YET, and no copy may pretend otherwise.** A requested review
+    reaches Under Review and waits, exactly as a receiver-reported one does. **Session 8 owes:** a
+    surface where an authorised operator sees requested reviews; triage between a requested review
+    and a receiver-reported one, which are different evidence; and whatever response policy exists
+    — there is still **no SLA** (PD-068), and participant-facing language stays "This trade is
+    under review."
+- **Evidence.** Founder ruling, Pre-Session-8 Correction 3 (item X), 2026-09-09.
+  `supabase/migrations/20261039000000_barter_review_request.sql`, plus its forward correction
+  `20261042000000_adjudication_consistency_review_request.sql` — eligibility is enforced in TWO
+  places by design (the RPC and the adjudications table's consistency trigger), and updating only
+  the first left a transition that read correctly and did nothing. `lib/obligationState.ts`
+  (`canRequestReview`, `REQUEST_REVIEW_COPY`), `lib/negotiation.ts`
+  (`requestObligationReview`). Proven by `supabase/tests/barter_review_request.test.sql` and
+  `__tests__/lib/obligationState.test.ts`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-073 — Beta discovery is visible lanes with visible rules, and marketplace placement is content-neutral
+
+- **Decision.** Discover shows named lanes — **Near You, Available Soon, New to The Book, Popular
+  Near You, Worth a Look** — each printing the rule that put a provider in it. **No percentage
+  quotas.** And the rule that outranks all of them: **a provider is never placed lower in
+  MARKETPLACE discovery because they do not create social content.**
+- **Context.** Reels is both provider discovery and social proof, which creates a standing
+  temptation to let content performance decide marketplace placement. A service marketplace that
+  quietly requires content production has changed what it charges providers without telling them,
+  and someone's livelihood is on the other side of that.
+- **Consequences.**
+  - **Two systems, deliberately separate.** Reels ranking decides which video plays next.
+    Marketplace ranking decides who a client sees when they are looking to book. Nothing in
+    `lib/discovery.ts` consults posts, reels, followers, likes, views or engagement — its input
+    type has no field for any of them, so a content signal cannot arrive without a type change a
+    reviewer must approve.
+  - **Every lane states its rule** beneath its name. "Why am I not in that row" is a fair question
+    from someone whose income depends on the answer, and a lane whose rule is invisible cannot be
+    argued with.
+  - **Exposure guardrails.** `Worth a Look` is every provider the other lanes missed, so nobody is
+    invisible; the lanes sit ABOVE the complete grid rather than replacing it, so a capped row
+    never becomes a filter on who exists; and ties break on a stable hashed rank so neither
+    alphabetical order nor signup order confers a durable, compounding advantage.
+  - **Popular Near You is the only lane that ranks on performance,** and it ranks on **completed
+    bookings and client reviews** — marketplace facts. A provider with no bookings is ABSENT from
+    it rather than ranked last: having no track record is not a worse one.
+- **Evidence.** Founder ruling, Pre-Session-8 Correction 3 (items S and T), 2026-09-09.
+  `lib/discovery.ts`, `components/DiscoveryLanes.tsx`, `app/(tabs)/index.tsx`. Proven by
+  `__tests__/lib/discovery.test.ts`, which asserts the fairness rule against both the type and
+  the behaviour.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-074 — "Houston Beta Provider" is the beta's trust signal, and it is the only badge
+
+- **Decision.** An approved provider carries **Houston Beta Provider**. Permitted alongside it:
+  real profile and business information, portfolio and service info, location and service mode,
+  reviews from completed bookings and their count, completed-booking information, and the
+  provider's own policy and contract. **Not permitted:** "Verified", "ID Verified", trust scores,
+  any badge implying government identity verification, and barter reputation.
+- **Context.** This **closes OQ-035**'s second half — what a beta trust label may claim.
+  Correction 1 removed the "ID Verified" badge and deliberately invented no replacement, leaving
+  a "Verification coming soon" pill that made a roadmap promise instead of stating anything true
+  about the provider a client was looking at.
+- **Consequences.** The label is a **fact, not a claim**: this provider was approved into the
+  Houston beta, which either happened or did not. It asserts no identity check, no background
+  check and no government-ID verification, none of which exist. It is shown only while the
+  provider is approved — a provider who is no longer taking new bookings does not carry a label
+  saying they are a current beta provider, and **no replacement label is invented for them**
+  (see PD-075's availability wording). The vendor half of OQ-035 stays open.
+- **Evidence.** Founder ruling, Pre-Session-8 Correction 3 (item W), 2026-09-09.
+  `components/ProviderProfile.tsx`. `__tests__/guards/betaClaimsAbsent.test.ts` continues to fail
+  on any reintroduced verification claim.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-075 — Providers own their own no-show policy, and a de-approved provider is described as unavailable, never as judged
+
+- **Decision.** The Book authors **no default no-show fee**. And a provider who is no longer
+  approved is shown as **"Not currently available for new bookings"** — availability, never a
+  judgement — while all of their history stays reachable.
+- **Context.** `DEFAULT_POLICY.noShowFeePercent` was `'100'`: The Book was authoring a
+  100%-of-service no-show fee on behalf of every provider who never opened the policy editor, and
+  then displaying it to clients as **that provider's** terms.
+- **Consequences.** The default is `'0'` — the only value that says nothing on a provider's
+  behalf. This is a default for the editor and the display fallback, **not a migration**: a
+  provider who deliberately chose 100 keeps 100, because the stored row is preferred and the
+  default is reached only when no policy row exists. For de-approval, the refusal is enforced at
+  the database (`PT426` on insert) and stated in the client at the profile, so a client is never
+  walked to the end of a booking flow to be told no. **Existing bookings, messages, reviews and
+  history are untouched** — this is an INSERT-only refusal — and nothing about it is a
+  verification claim.
+- **Evidence.** Founder ruling, Pre-Session-8 Correction 3 (items C and H), 2026-09-09.
+  `lib/policy.ts`, `supabase/migrations/20261037000000_booking_request_lifecycle.sql` § 5,
+  `components/ProviderProfile.tsx`, `app/book/contract.tsx`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-076 — A provider can delete their own media, and provider onboarding stays minimal with a required final review
+
+- **Decision.** Providers have a real, user-facing way to delete their own portfolio photos,
+  posts and reels. And provider onboarding requires only: a basic profile, a category, at least
+  one service, location / service mode, basic availability, enough public content, and the
+  required policy or contract — plus a **required final review page** before Go Live: *"Review
+  your business" / "Make sure everything looks right before your profile goes live."*
+- **Context.** `public.posts` holds every piece of provider-authored media in the product and had
+  **no DELETE policy at all** and no delete control on any screen. A provider who uploaded the
+  wrong photo — or a photo of a client who later asked for it to come down — had no way to remove
+  it. Separately, onboarding made every new provider walk past a **required** payout step for a
+  capability that does not exist in beta, and then press "Go Live Now" without ever seeing their
+  eight screens of answers together.
+- **Consequences.** Deletion is a hard delete of the row plus its storage object, respecting the
+  owner-scoped policies; the row is deleted first so a failure orphans a file rather than leaving
+  a broken card on a public profile, and a zero-row delete is reported as a FAILURE rather than
+  as success. The confirmation says it cannot be undone and does **not** promise that copies
+  anyone already saved disappear. Onboarding does **not** require analytics, payouts, reels or
+  advanced settings; the payout screen is unchanged and still reachable from the Business
+  dashboard, just no longer in the way. The review page **checks, it does not gate**: the only
+  hard preconditions remain one service and a profile photo, and anything missing is reported as
+  a consequence in the provider's own words rather than as an error.
+- **Evidence.** Founder ruling, Pre-Session-8 Correction 3 (items L and Y), 2026-09-09.
+  `supabase/migrations/20261043000000_posts_owner_delete.sql`, `lib/providerMedia.ts`,
+  `app/(tabs)/business/portfolio.tsx`, `app/(tabs)/business/posts.tsx`,
+  `app/onboarding/provider/review.tsx`, `app/onboarding/provider/policy.tsx`.
+- **Status:** Locked; **implemented**
+
+---
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

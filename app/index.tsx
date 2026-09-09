@@ -157,7 +157,11 @@ const DEV_NAV: NavSection[] = [
   {
     label: 'SYSTEM SCREENS',
     items: [
-      { label: 'Review Detail', route: '/reviews/1' },
+      // 'Review Detail' was here, pointing at `/reviews/1` — an id that has
+      // never existed, so the only navigation into the review screen anywhere in
+      // the app could land on nothing but its not-found state. There is no fixed
+      // id to link to; a review is reached from the provider profile that
+      // carries it (Correction 3, item U).
       { label: 'Notifications', route: '/notifications' },
     ],
   },
@@ -257,7 +261,6 @@ const SITE_MAP: SiteMapRoute[] = [
   { label: '/post-booking/submitted', route: '/post-booking/submitted', status: 'Built' },
   { label: '/post-booking/issue', route: '/post-booking/issue', status: 'Built' },
   { label: '/post-booking/provider-review', route: '/post-booking/provider-review', status: 'Built' },
-  { label: '/reviews/[id]', route: '/reviews/1', status: 'Stub' },
   { label: '/notifications', route: '/notifications', status: 'Stub' },
   { label: '/(tabs)/search', route: '/(tabs)/search', status: 'Built' },
   { label: '/(tabs)/reels', route: '/(tabs)/reels', status: 'Built' },

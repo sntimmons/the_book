@@ -286,7 +286,7 @@ export default function PolicyEditor({
               <Feather name="chevron-left" size={18} color="#F0E8D5" />
             </TouchableOpacity>
             <Text style={styles.topBarLabel}>Your policies</Text>
-            <Text style={styles.topBarStep}>Step 6 of 8</Text>
+            <Text style={styles.topBarStep}>Step 6 of 7</Text>
           </View>
         </>
       ) : (

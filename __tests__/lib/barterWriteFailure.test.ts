@@ -14,7 +14,9 @@ import { barterWriteFailure, BarterWriteOp, interpretWrite } from '../../lib/bar
 // against a thirteen-member union, compiling green.
 //
 // A total `Record<BarterWriteOp, true>` cannot do that: omit a member and it is a COMPILE
-// error, so a fourteenth operation must be added here before `npm run check` will pass. The
+// error, so each new operation must be added here before `npm run check` will pass — which is
+// exactly what happened when Correction 3's `requestReview` arrived: it failed to compile until
+// it was listed, and its refusals are now covered by both safety suites below. The
 // keys are then the whole union, which is what both safety suites below need — one asserts
 // that an unrecognised SQLSTATE stays retryable, the other that a zero-row write is terminal,
 // and an operation missing from either is an operation whose refusals nothing checks.
@@ -32,6 +34,7 @@ const OPS: Record<BarterWriteOp, true> = {
   confirmReceived: true,
   reportNotReceived: true,
   reportNoShow: true,
+  requestReview: true,
   cancelTrade: true,
 }
 const ALL_OPS = Object.keys(OPS) as BarterWriteOp[]
@@ -403,8 +406,12 @@ describe('PT409 means exactly one thing per operation', () => {
   // answer was recorded and cannot be changed." These four assertions are what would have
   // caught that.
   const PT424 = 'PT424'
+  // `requestReview` joined this list with Correction 3 item X: the server refuses a review
+  // request on an already-resolved obligation with PT424 too, and it must be told the same
+  // thing every other resolvable write is — "already resolved", never "already answered", for
+  // the same reason the code exists at all.
   const RESOLVABLE = ['markDelivered', 'confirmReceived', 'reportNotReceived',
-    'reportNoShow'] as const
+    'reportNoShow', 'requestReview'] as const
 
   it('maps PT424 to a terminal, stale resolved refusal on every write it can reach', () => {
     for (const op of RESOLVABLE) {

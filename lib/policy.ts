@@ -98,10 +98,20 @@ export const POLICY_OPTIONS = {
 export const DEPOSIT_NOT_CHARGED_NOTE =
   'Not charged in this beta — you arrange payment with your client'
 
+// ITEM C (Correction 3). `noShowFeePercent` used to default to '100' — The Book
+// authoring a 100%-of-service no-show fee on behalf of every provider who never
+// opened the policy editor, and then showing it to clients as that provider's
+// terms. The platform does not set providers' fees. A provider who wants a
+// no-show fee sets one; until they do, there is none to state, and '0' is the
+// only default that says nothing on their behalf.
+//
+// This is a DEFAULT for the editor and for the display fallback, not a migration:
+// a provider who deliberately chose 100 keeps 100, because `policyFromRow` below
+// prefers the stored row and falls back here only when no policy row exists.
 export const DEFAULT_POLICY: PolicyValue = {
   cancelWindow: '24 hours before',
   cancellationFeePercent: '0',
-  noShowFeePercent: '100',
+  noShowFeePercent: '0',
   rescheduleWindow: '24 hours before',
   rescheduleFeeEnabled: false,
   rescheduleFee: '',

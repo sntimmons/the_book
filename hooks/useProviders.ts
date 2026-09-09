@@ -31,6 +31,21 @@ export interface Provider {
   years_experience: number | null
   specialties: string[] | null
   created_at: string | null
+  // ITEM H (Correction 3). Discovery already filtered on this, but a profile
+  // reached DIRECTLY — from a saved provider, a message thread, or a past
+  // booking — did not know it, and offered Book Now to a provider the database
+  // would refuse (PT426). Reading it here is what lets the profile say "not
+  // currently available for new bookings" instead of failing at the last step.
+  //
+  // It is an AVAILABILITY fact and nothing else. It is never a verification
+  // claim, never a judgement of the provider, and history stays fully reachable.
+  is_approved: boolean
+  // PostgREST COMPUTED COLUMN (`public.available_today`, 20261040000000): the
+  // SERVER's answer to "has this provider published hours for today, and is
+  // today not blocked?", evaluated against server time. Optional because not
+  // every query selects it; `null`/absent means UNKNOWN and must never be
+  // rendered as "available today" (item M).
+  available_today?: boolean | null
   // Best portfolio photo, resolved from the posts table after the provider
   // fetch. Used as the Discover card image in preference to profile_photo_url.
   heroImage?: string
@@ -91,10 +106,16 @@ const PUBLIC_PROVIDER_FIELDS = [
   'next_available',
   'is_trending',
   'is_featured',
+  'is_approved',
   'is_demo',
   'years_experience',
   'specialties',
   'created_at',
+  // A computed column, not a stored one — PostgREST exposes a function taking the
+  // table's row type as a virtual column, so it arrives in the same round trip
+  // and stays consistent with the `.eq('available_today', true)` filter the
+  // search uses.
+  'available_today',
 ].join(', ')
 
 export async function getLiveCount(): Promise<number> {
@@ -313,6 +334,12 @@ export function useProviderSearch(
   // the "Maximum update depth exceeded" loop. Key the work off the primitive
   // values the search actually uses instead, via a stable useCallback.
   const minRating = filters?.minRating
+  // ITEM M (Correction 3). These two were accepted by this hook and then
+  // silently dropped — only `minRating` ever reached the query — so the search
+  // screen rendered an "Available today" chip and a "Mobile only" switch that
+  // changed nothing. Both are now real filters against authoritative data.
+  const availableToday = filters?.availableToday
+  const mobileOnly = filters?.mobileOnly
 
   const searchProviders = useCallback(async () => {
     try {
@@ -358,6 +385,28 @@ export function useProviderSearch(
         dbQuery = dbQuery.gte('rating', minRating)
       }
 
+      // `is_mobile` is the provider's own published service mode and is already
+      // in the public column grant, so this needs nothing but the filter.
+      if (mobileOnly) {
+        dbQuery = dbQuery.eq('is_mobile', true)
+      }
+
+      // `available_today` is a PostgREST COMPUTED COLUMN (20261040000000): a
+      // function over `provider_availability` and `provider_blocked_dates`
+      // evaluated against SERVER time, so the answer cannot come from a stale
+      // client clock or a cached flag. Filtering on it composes with the query
+      // above in one round trip, which an id-list RPC could not do without
+      // breaking the ordering and the limit.
+      //
+      // IT MEANS "OPEN TODAY", NOT "HAS A FREE SLOT". The provider published
+      // working hours for today and has not blocked the date. Booked time is
+      // deliberately not subtracted — that needs a slot engine this beta does
+      // not have — so the filter under-claims rather than telling a client
+      // someone is free when they are not.
+      if (availableToday) {
+        dbQuery = dbQuery.eq('available_today', true)
+      }
+
       dbQuery = dbQuery.order('rating', { ascending: false }).limit(20)
 
       const { data, error } = await dbQuery
@@ -368,7 +417,7 @@ export function useProviderSearch(
     } finally {
       setLoading(false)
     }
-  }, [query, categoryId, minRating])
+  }, [query, categoryId, minRating, mobileOnly, availableToday])
 
   useEffect(() => {
     if (query.length < 2 && !categoryId) {

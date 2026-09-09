@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import {
   View,
   Text,
@@ -6,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   Alert,
-  Switch,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
@@ -69,36 +67,6 @@ function NavRow({
   )
 }
 
-function ToggleRow({
-  icon,
-  label,
-  value,
-  onValueChange,
-  isLast,
-}: {
-  icon: keyof typeof Ionicons.glyphMap
-  label: string
-  value: boolean
-  onValueChange: (v: boolean) => void
-  isLast?: boolean
-}) {
-  return (
-    <View style={[s.row, !isLast && s.rowBorder]}>
-      <View style={s.rowLeft}>
-        <Ionicons name={icon} size={20} color="rgba(240,232,213,0.45)" />
-        <Text style={s.rowLabel}>{label}</Text>
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: 'rgba(240,232,213,0.12)', true: '#C8922A' }}
-        thumbColor="#F0E8D5"
-        ios_backgroundColor="rgba(240,232,213,0.12)"
-      />
-    </View>
-  )
-}
-
 // ── Screen ────────────────────────────────────────────────────────────────────
 
 export default function SettingsScreen() {
@@ -107,10 +75,6 @@ export default function SettingsScreen() {
 
   const email = user?.email ?? 'Not set'
   const phone = maskPhone(user?.phone)
-
-  const [bookingUpdates, setBookingUpdates] = useState(true)
-  const [providerActivity, setProviderActivity] = useState(true)
-  const [dealsAlerts, setDealsAlerts] = useState(false)
 
   function handleSignOut() {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -203,29 +167,16 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* NOTIFICATIONS */}
-        <GroupLabel>Notifications</GroupLabel>
-        <View style={s.group}>
-          <ToggleRow
-            icon="notifications-outline"
-            label="Booking Updates"
-            value={bookingUpdates}
-            onValueChange={setBookingUpdates}
-          />
-          <ToggleRow
-            icon="sparkles-outline"
-            label="Provider Activity"
-            value={providerActivity}
-            onValueChange={setProviderActivity}
-          />
-          <ToggleRow
-            icon="pricetag-outline"
-            label="Deals & Alerts"
-            value={dealsAlerts}
-            onValueChange={setDealsAlerts}
-            isLast
-          />
-        </View>
+        {/* ITEM A (Correction 3): the Notifications group is removed.
+            Three switches — Booking Updates, Provider Activity, Deals & Alerts —
+            held state in local React state and nothing else. Nothing was
+            persisted, nothing read them, and there is no push, device or email
+            channel in this product for them to govern, so flipping one changed
+            nothing at all and quietly told the user they had control they did
+            not have. The group comes back when there is a real channel to
+            control. In-app notifications are DERIVED from booking, message and
+            trade state (hooks/useNotifications.ts) and have never had per-type
+            preferences to set. */}
 
         {/* PRIVACY */}
         <GroupLabel>Privacy</GroupLabel>

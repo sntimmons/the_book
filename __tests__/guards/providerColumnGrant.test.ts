@@ -44,6 +44,24 @@ const GRANTED = new Set([
   'years_experience', 'specialties', 'created_at',
 ])
 
+// COMPUTED columns: not stored on `providers` at all, so no column grant exists
+// or could exist for them. PostgREST exposes a function taking the table's row
+// type as a virtual column, and the privilege that governs it is EXECUTE on that
+// function — which `20261040000000` grants to `anon`, `authenticated` and
+// `service_role`, the same audience as the public column surface.
+//
+// They are listed separately rather than merged into GRANTED so the count above
+// keeps meaning "the 28 columns the migration granted", and so that adding one
+// here forces a moment's thought about which privilege actually backs it.
+const COMPUTED = new Set([
+  // public.available_today(providers) — "has this provider published hours for
+  // today, and is today not blocked?", evaluated against SERVER time. Reads only
+  // provider_availability and provider_blocked_dates, both already public-read.
+  'available_today',
+])
+
+const READABLE = new Set([...GRANTED, ...COMPUTED])
+
 // Columns the app writes but never reads. Security Batch 3a grants INSERT/UPDATE
 // on these; a write privilege is not a read privilege, so they are legal in an
 // `.insert()`/`.update()`/`.upsert()` payload and illegal in a select list.
@@ -127,7 +145,12 @@ function providerColumnReads(): Ref[] {
     // is a joined table whose privileges are its own. An earlier version of this
     // guard reported `providers.categories` as an ungranted column, which is the
     // right instinct applied to the wrong token.
-    for (const e of src.matchAll(/providers\s*!?\w*\s*\(([^)]*)\)/g)) {
+    // `(?:!\w+)?` and NOT `\w*`: the looser form matched a FUNCTION whose name
+    // merely starts with the word — `providersWithNoLane(providers, lanes)` in
+    // lib/discovery.ts was reported as reading `providers.providers` and
+    // `providers.lanes`. An embed is `providers(`, `provider:providers(` or
+    // `providers!fkey(`, never `providersSomething(`.
+    for (const e of src.matchAll(/providers(?:!\w+)?\s*\(([^)]*)\)/g)) {
       for (const raw of e[1].split(',')) {
         const term = raw.trim()
         if (term.includes('(')) continue
@@ -151,7 +174,7 @@ describe('every provider column the app reads is one the database grants', () =>
 
   it('reads no column outside the granted set', () => {
     const offenders = refs
-      .filter((r) => !GRANTED.has(r.column))
+      .filter((r) => !READABLE.has(r.column))
       .map(
         (r) =>
           `${r.file} reads providers.${r.column} (${r.how}) — not granted to anon/authenticated` +
@@ -171,7 +194,7 @@ describe('every provider column the app reads is one the database grants', () =>
     expect(block).not.toBeNull()
     const cols = [...(block as RegExpMatchArray)[1].matchAll(/'([a-z_]+)'/g)].map((m) => m[1])
     expect(cols.length).toBeGreaterThan(20)
-    expect(cols.filter((c) => !GRANTED.has(c))).toEqual([])
+    expect(cols.filter((c) => !READABLE.has(c))).toEqual([])
   })
 
   // The point of the migration, asserted from this side as well: naming one of

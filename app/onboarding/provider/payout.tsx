@@ -6,9 +6,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 export default function ProviderPayout() {
   const insets = useSafeAreaInsets()
 
-  function navigate() {
-    router.push('/onboarding/provider/golive')
-  }
 
   return (
     <View style={styles.root}>
@@ -28,7 +25,12 @@ export default function ProviderPayout() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Payouts</Text>
-        <Text style={styles.topBarStep}>Step 7 of 8</Text>
+        {/* No step number: payout setup is NOT part of onboarding any more
+            (Correction 3, item Y). This screen is reached from the Business
+            dashboard's Payouts entry, where it explains why there is nothing to
+            set up yet; it is no longer a required stop on the way to going
+            live. */}
+        <View style={styles.topBarSpacer} />
       </View>
 
       <View style={styles.body}>
@@ -47,10 +49,12 @@ export default function ProviderPayout() {
         </Text>
       </View>
 
-      {/* Fixed CTA */}
+      {/* Was "Continue", which pushed on to Go Live — the tell that this screen
+          sat in the onboarding path. It goes back to where the provider came
+          from instead, because there is nothing here to continue THROUGH. */}
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
-        <Pressable style={styles.continueBtn} onPress={navigate}>
-          <Text style={styles.continueBtnText}>Continue</Text>
+        <Pressable style={styles.continueBtn} onPress={() => router.back()}>
+          <Text style={styles.continueBtnText}>Go back</Text>
         </Pressable>
       </View>
     </View>
@@ -98,6 +102,7 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },
+  topBarSpacer: { width: 74 },
   topBarStep: {
     fontSize: 13,
     color: 'rgba(240,232,213,0.45)',

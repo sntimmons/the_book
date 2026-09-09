@@ -17,43 +17,13 @@ import { useBookingStore } from '@/store/bookingStore'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { checkRateLimit } from '@/lib/rateLimit'
-
-// Convert "May 28, 2026" to "2026-05-28" for the date column.
-export function toIsoDate(displayDate: string): string {
-  const d = new Date(displayDate)
-  if (Number.isNaN(d.getTime())) return displayDate
-  const yyyy = d.getFullYear()
-  const mm = (d.getMonth() + 1).toString().padStart(2, '0')
-  const dd = d.getDate().toString().padStart(2, '0')
-  return `${yyyy}-${mm}-${dd}`
-}
-
-// Assemble an ISO timestamp from a YYYY-MM-DD date and a "H:MM AM/PM" time
-// using numeric parts. Hermes (React Native's engine) cannot parse locale
-// strings like "June 21, 2026 11:00 AM" via new Date(), so we never rely on
-// string parsing. Returns null if inputs are missing or malformed, so a bad
-// value can never throw "Date value out of bounds" (appointment_time is
-// nullable).
-export function buildAppointmentTime(
-  isoDate: string | null | undefined,
-  displayTime: string | null | undefined,
-): string | null {
-  if (!isoDate || !displayTime) return null
-  const dateMatch = isoDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  const timeMatch = displayTime.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i)
-  if (!dateMatch || !timeMatch) return null
-  let hour = parseInt(timeMatch[1], 10) % 12
-  if (/PM/i.test(timeMatch[3])) hour += 12
-  const d = new Date(
-    parseInt(dateMatch[1], 10),
-    parseInt(dateMatch[2], 10) - 1,
-    parseInt(dateMatch[3], 10),
-    hour,
-    parseInt(timeMatch[2], 10),
-  )
-  if (Number.isNaN(d.getTime())) return null
-  return d.toISOString()
-}
+import {
+  ensureBookingDraft,
+  submitBookingRequest,
+  toIsoDate,
+  buildAppointmentTime,
+  ProviderUnavailableError,
+} from '@/lib/bookingDraft'
 
 function money(n: number): string {
   return '$' + Number(n).toFixed(2)
@@ -74,12 +44,17 @@ export default function BookPayment() {
     bookingMessage,
     contractId,
     contractSigned,
+    setDraftBookingId,
   } = useBookingStore()
   const [isProcessing, setIsProcessing] = useState(false)
   const [processError, setProcessError] = useState('')
-  // Set when a booking was created but its contract signature failed to save.
-  // While set, submitting retries only the signature (no duplicate booking).
-  const [pendingBookingId, setPendingBookingId] = useState<string | null>(null)
+  // True once the signature for this attempt is known to be recorded, so a retry
+  // of a later step does not re-attempt it.
+  const [signatureSaved, setSignatureSaved] = useState(false)
+  // Item K: the request is SENT when this screen's submit succeeds. It is set
+  // before navigating so that a bounce back to this screen cannot send a second
+  // one — the same booking is simply carried forward.
+  const [submitted, setSubmitted] = useState(false)
 
   // Service price — shown for information only. The Book charges nothing and
   // holds nothing, at request time or ever (PD-042). An earlier version of this
@@ -114,81 +89,53 @@ export default function BookPayment() {
     setProcessError('')
 
     try {
-      // When a prior attempt created the booking but its contract signature
-      // failed to save, `pendingBookingId` holds that booking's id. In that case
-      // we must NOT create a second booking — we retry ONLY the signature insert
-      // against the existing booking. A fresh submit (no pending id) creates the
-      // booking first.
-      let bookingId = pendingBookingId
+      // ── ONE INTENT = ONE REQUEST (item K) ──────────────────────────────
+      //
+      // Every step below is resumable and lands on the SAME booking row. The
+      // draft was created before the contract step (item J) and is looked up by
+      // (client, provider) rather than re-inserted, so a dropped network, a
+      // failed signature, a back-out or a double tap continues one request
+      // instead of starting a second. The row only becomes visible to the
+      // provider at the final step.
+      const dateForRow = rawDate || toIsoDate(selectedDate)
+      const appointmentTime = buildAppointmentTime(rawDate, selectedTime)
 
-      if (!bookingId) {
-        // Server-side rate limit (max 3 booking requests/hour/client). Expected
-        // behavior, not an error — no Sentry capture. Only applies to creating a
-        // new booking, not to retrying a signature on an existing one.
+      // The rate limit guards SENDING a request, so it is checked once, before
+      // the first submit — not on a retry of a request already in flight, and
+      // not on the draft write, which no provider can see. Expected behavior,
+      // not an error: no Sentry capture.
+      if (!submitted) {
         const rl = await checkRateLimit(user.id, 'booking_create')
         if (!rl.allowed) {
           setIsProcessing(false)
           Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')
           return
         }
-
-        Sentry.addBreadcrumb({
-          message: 'Booking submit',
-          category: 'booking',
-          data: { providerId, serviceId: selectedService.id ?? null },
-        })
-
-        // rawDate is YYYY-MM-DD (set in book/datetime.tsx) and selectedTime is
-        // "H:MM AM/PM". Build appointment_time from numeric parts; if it cannot
-        // be assembled it stays null rather than crashing the save.
-        const dateForRow = rawDate || toIsoDate(selectedDate)
-        const appointmentTime = buildAppointmentTime(rawDate, selectedTime)
-
-        const { data: booking, error } = await supabase
-          .from('bookings')
-          .insert({
-            user_id: user.id,
-            provider_id: providerId,
-            service_id: selectedService.id || null,
-            service_name: selectedService.name,
-            requested_date: dateForRow,
-            requested_time: selectedTime,
-            appointment_time: appointmentTime,
-            message: bookingMessage || null,
-            status: 'pending',
-            payment_status: 'unpaid',
-            payment_amount: servicePrice,
-            created_at: new Date().toISOString(),
-          })
-          .select('id')
-          .single()
-
-        if (error) {
-          console.log('Booking insert error:', error)
-          Sentry.captureException(error)
-          // Surface the real reason rather than hiding every failure behind a
-          // single generic line. If the request fails because of a schema or
-          // permission problem (e.g. a missing column or an RLS rule), the tester
-          // now sees exactly what went wrong so it can be reported and fixed.
-          setProcessError(
-            error.message
-              ? `We could not send your request: ${error.message}`
-              : 'We could not send your request. Please try again.',
-          )
-          setIsProcessing(false)
-          return
-        }
-
-        bookingId = booking.id
       }
 
-      // If the client signed the provider's contract earlier in the flow, write
-      // the signature row now that the booking (and its id) exists. This is part
-      // of the signing flow: a FAILED signature insert must NOT advance to the
-      // confirmed screen as though signing succeeded. Instead we keep the created
-      // booking's id, stay on this screen, and let the user retry the signature
-      // (the button re-runs this handler, which skips booking creation) or go back.
-      if (contractSigned && contractId) {
+      Sentry.addBreadcrumb({
+        message: 'Booking submit',
+        category: 'booking',
+        data: { providerId, serviceId: selectedService.id ?? null },
+      })
+
+      const bookingId = await ensureBookingDraft(user.id, {
+        providerId,
+        serviceId: selectedService.id || null,
+        serviceName: selectedService.name,
+        requestedDate: dateForRow,
+        requestedTime: selectedTime,
+        appointmentTime,
+        message: bookingMessage || null,
+        paymentAmount: servicePrice,
+      })
+      setDraftBookingId(bookingId)
+
+      // The signature is recorded against the booking BEFORE it is submitted, so
+      // a request the provider can see is never one whose signature failed to
+      // save. A failed signature keeps the draft — invisible, resumable — rather
+      // than leaving a sent request in a half-signed state.
+      if (contractSigned && contractId && !signatureSaved) {
         const { error: sigError } = await supabase.from('contract_signatures').insert({
           contract_id: contractId,
           booking_id: bookingId,
@@ -197,20 +144,24 @@ export default function BookPayment() {
           signed_at: new Date().toISOString(),
           status: 'signed',
         })
-        if (sigError) {
+        // A duplicate means a previous attempt already recorded it — the retry
+        // succeeded from the client's point of view, so treat it as saved.
+        if (sigError && sigError.code !== '23505') {
           console.log('Contract signature insert error:', sigError)
           Sentry.captureException(sigError)
-          setPendingBookingId(bookingId)
           setProcessError(
-            'Your booking request was sent, but we could not save your contract signature. Tap Retry Signature to record it now, or go back.',
+            'We could not save your contract signature, so your request has not been sent yet. Tap Send Booking Request to try again — nothing was sent twice.',
           )
           setIsProcessing(false)
           return
         }
+        setSignatureSaved(true)
       }
 
-      // Signing (if any) succeeded — clear any pending retry state and continue.
-      setPendingBookingId(null)
+      // THE SEND. Until this line the provider cannot see anything.
+      await submitBookingRequest(bookingId)
+      setSubmitted(true)
+
       setIsProcessing(false)
       router.push({
         pathname: '/book/confirmed',
@@ -218,9 +169,22 @@ export default function BookPayment() {
       })
     } catch (err: any) {
       console.log('Booking error:', err)
-      Sentry.captureException(err)
       setIsProcessing(false)
-      Alert.alert('Booking failed', 'We could not submit your request. Please try again.')
+      // ITEM H: the provider stopped taking new bookings between opening the
+      // flow and sending. That is availability, not a fault and not a judgement
+      // of the provider, and it is not a technical failure worth a Sentry event.
+      if (err instanceof ProviderUnavailableError) {
+        setProcessError(
+          'This provider is not currently available for new bookings. Your existing bookings and messages with them are unaffected.',
+        )
+        return
+      }
+      Sentry.captureException(err)
+      setProcessError(
+        err?.message
+          ? `We could not send your request: ${err.message}`
+          : 'We could not send your request. Please try again.',
+      )
     }
   }
 
@@ -252,9 +216,14 @@ export default function BookPayment() {
             after the provider accepts your request." The first half was true;
             the second promised an in-app payment step that does not exist and
             is not coming in this beta (PD-042). */}
+        {/* ITEM D (Correction 3): the Founder-approved wording, verbatim. It
+            says the same thing the corrected line said, in the words the product
+            has settled on — and "for now" is the one forward-looking clause item
+            D permits: payment is COMING LATER, which is true, as against the
+            removed copy that implied a charge was already part of this flow. */}
         <Text style={styles.headerSubtext}>
-          No in-app payment in this beta. Payment is handled directly between you
-          and the provider.
+          In-app payments aren&apos;t available during beta. Payment is handled
+          directly with your provider for now.
         </Text>
 
         {/* Order summary */}
@@ -348,9 +317,7 @@ export default function BookPayment() {
               <Text style={styles.confirmBtnText}>Sending your request...</Text>
             </View>
           ) : (
-            <Text style={styles.confirmBtnText}>
-              {pendingBookingId ? 'Retry Signature' : 'Send Booking Request'}
-            </Text>
+            <Text style={styles.confirmBtnText}>Send Booking Request</Text>
           )}
         </Pressable>
 

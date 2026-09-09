@@ -117,6 +117,87 @@ export async function fetchRevealedProviderReviews(
   }))
 }
 
+// ONE revealed client -> provider review, for the review detail screen (item L's
+// sibling, Correction 3 item U).
+//
+// SAME REVEAL BOUNDARY, NOT A NEW ONE. `provider_reviews` has a single SECURITY
+// DEFINER-gated SELECT policy: the database returns a row only if it is revealed
+// or the reader wrote it. A read by primary key is subject to exactly that
+// policy, so this adds no read path — an unrevealed review returns zero rows here
+// for the same reason it is absent from the list. `private_note` is not selected,
+// as it is not selected anywhere in any display path.
+//
+// Returns null for "no such review, or not visible to you", which the screen
+// renders as one honest not-found state. The two are deliberately NOT
+// distinguished: telling a reader that a review exists but is hidden from them
+// would leak the existence of a blind review, which is the whole point of the
+// blind window.
+export interface RevealedReviewDetail extends RevealedReview {
+  providerId: string
+  providerName: string | null
+}
+
+export async function fetchRevealedReviewById(
+  reviewId: string,
+): Promise<RevealedReviewDetail | null> {
+  if (!reviewId) return null
+  const { data, error } = await supabase
+    .from('provider_reviews')
+    .select('id, booking_id, provider_id, reviewer_user_id, rating, review_text, tags, created_at')
+    .eq('id', reviewId)
+    .maybeSingle()
+
+  if (error) {
+    console.log('provider_review detail read error:', error.message)
+    // A technical failure is NOT "no such review": the caller distinguishes them
+    // so a connection problem offers a retry instead of asserting absence.
+    throw error
+  }
+  if (!data) return null
+
+  const r = data as {
+    id: string
+    booking_id: string
+    provider_id: string
+    reviewer_user_id: string | null
+    rating: number
+    review_text: string | null
+    tags: string[] | null
+    created_at: string
+  }
+
+  // Two small lookups, each allowed to fail quietly: a missing display name
+  // degrades to the same generic label the list uses, and neither is worth
+  // failing the whole screen over.
+  let reviewerName = 'Client'
+  if (r.reviewer_user_id) {
+    const { data: client } = await supabase
+      .from('clients_public')
+      .select('name')
+      .eq('id', r.reviewer_user_id)
+      .maybeSingle()
+    reviewerName = (client as { name: string | null } | null)?.name || 'Client'
+  }
+
+  const { data: provider } = await supabase
+    .from('providers')
+    .select('display_name')
+    .eq('id', r.provider_id)
+    .maybeSingle()
+
+  return {
+    id: r.id,
+    bookingId: r.booking_id,
+    providerId: r.provider_id,
+    providerName: (provider as { display_name: string | null } | null)?.display_name ?? null,
+    rating: r.rating,
+    reviewText: r.review_text,
+    tags: r.tags,
+    createdAt: r.created_at,
+    reviewerName,
+  }
+}
+
 // Provider -> client reviews. PROVIDER-ONLY (the booking-request reputation view).
 // Same reveal rule; reviewer display is the provider who wrote it.
 export async function fetchRevealedClientReviews(

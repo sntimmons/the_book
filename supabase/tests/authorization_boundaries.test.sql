@@ -144,63 +144,71 @@ select pg_temp.chk('authz', 'anon holds nothing on contracts or contract_signatu
    or has_table_privilege('anon','public.contracts','INSERT')
    or has_table_privilege('anon','public.contract_signatures','SELECT'))::text);
 
--- ══ 3. THE PROSPECTIVE-CLIENT CONTRACT READ ════════════════════════════════
+-- ══ 3. THE CONTRACT READ, NOW SCOPED TO THE TRANSACTION ═══════════════════
 --
--- Reproduced: a first-time client's read of the contract they are about to sign
--- returned ZERO ROWS AND NO ERROR, because the table policy is owner-or-signer
--- and a first-time client is neither. `lib/contracts.ts` correctly reported "no
--- contract exists" and the booking flow skipped the signing gate — for every
--- client, every provider, always.
+-- Reproduced in Correction 2: a first-time client's read of the contract they
+-- are about to sign returned ZERO ROWS AND NO ERROR, because the table policy is
+-- owner-or-signer and a first-time client is neither. The flow reported "no
+-- contract exists" and skipped the signing gate — for every client, always.
+--
+-- Correction 2 unblocked it with `provider_contract_for_booking(provider_id)` and
+-- recorded honestly that it could not be booking-scoped, because the booking did
+-- not exist yet at that point in the flow. `20261037000000` creates the booking
+-- first, so `20261038000000` replaced it with `contract_for_booking(booking_id)`
+-- and DROPPED the broad path. These assertions moved with it.
 
-select pg_temp.chk('authz', 'provider_contract_for_booking is SECURITY DEFINER', 'true',
-  (select prosecdef::text from pg_proc
+select pg_temp.chk('authz', 'the broad provider-scoped contract read is gone', '0',
+  (select count(*)::text from pg_proc
     where proname='provider_contract_for_booking' and pronamespace='public'::regnamespace));
-select pg_temp.chk('authz', 'provider_contract_for_booking pins search_path', 'true',
-  (select (coalesce(proconfig::text,'') like '%search_path=%')::text
-     from pg_proc where proname='provider_contract_for_booking'
-       and pronamespace='public'::regnamespace));
-select pg_temp.chk('authz', 'anon cannot EXECUTE provider_contract_for_booking', 'false',
-  has_function_privilege('anon','public.provider_contract_for_booking(uuid)','EXECUTE')::text);
-select pg_temp.chk('authz', 'PUBLIC cannot EXECUTE provider_contract_for_booking', 'false',
-  has_function_privilege('public','public.provider_contract_for_booking(uuid)','EXECUTE')::text);
-select pg_temp.chk('authz', 'authenticated CAN EXECUTE provider_contract_for_booking', 'true',
-  has_function_privilege('authenticated','public.provider_contract_for_booking(uuid)','EXECUTE')::text);
 
--- The function must not hand a prospective client the provider's auth id.
--- For a RETURNS TABLE function, `proargnames` carries the OUT column names
--- alongside the input parameter, so this asks the catalog directly.
-select pg_temp.chk('authz', 'the contract RPC returns no user_id column', 'false',
+select pg_temp.chk('authz', 'contract_for_booking is SECURITY DEFINER with a pinned search_path', 'true',
+  (select (prosecdef and coalesce(proconfig::text,'') like '%search_path=%')::text
+     from pg_proc where proname='contract_for_booking' and pronamespace='public'::regnamespace));
+select pg_temp.chk('authz', 'anon cannot EXECUTE contract_for_booking', 'false',
+  has_function_privilege('anon','public.contract_for_booking(uuid)','EXECUTE')::text);
+select pg_temp.chk('authz', 'PUBLIC cannot EXECUTE contract_for_booking', 'false',
+  has_function_privilege('public','public.contract_for_booking(uuid)','EXECUTE')::text);
+select pg_temp.chk('authz', 'authenticated CAN EXECUTE contract_for_booking', 'true',
+  has_function_privilege('authenticated','public.contract_for_booking(uuid)','EXECUTE')::text);
+select pg_temp.chk('authz', 'contract_for_booking returns no user_id column', 'false',
   (select ('user_id' = any(proargnames))::text
-     from pg_proc where proname='provider_contract_for_booking'
-       and pronamespace='public'::regnamespace));
+     from pg_proc where proname='contract_for_booking' and pronamespace='public'::regnamespace));
 
--- The intended client CAN now read the contract; the table stays shut.
-select pg_temp.act(current_setting('b5b.cu5')::uuid);
-select pg_temp.chk('authz', 'first-time client reads the contract to sign', '1',
-  (select count(*)::text from public.provider_contract_for_booking(current_setting('b5b.pid')::uuid)));
+-- THE CLIENT WHO OWNS THE BOOKING reads the contract governing it. `b_pend` is
+-- the fixture's pending request from `cu` to this provider.
+select pg_temp.act(current_setting('b5b.cu')::uuid);
+select pg_temp.chk('authz', 'the booking''s own client reads the governing contract', '1',
+  (select count(*)::text from public.contract_for_booking(current_setting('b5b.b_pend')::uuid)));
 select pg_temp.chk('authz', 'the contracts TABLE stays closed to that same non-signer', '0',
   (select count(*)::text from public.contracts where provider_id = current_setting('b5b.pid')::uuid));
 
--- The owner is unaffected by the new path.
+-- A STRANGER HOLDING THE BOOKING ID GETS NOTHING. This is the whole narrowing:
+-- the old function took a provider id anyone could read off the public feed, so
+-- any authenticated user could read any live provider's contract. Now the caller
+-- must own the transaction.
+select pg_temp.act(current_setting('b5b.ou')::uuid);
+select pg_temp.chk('authz', 'a stranger cannot read a contract through someone else''s booking', '0',
+  (select count(*)::text from public.contract_for_booking(current_setting('b5b.b_pend')::uuid)));
+select pg_temp.act(current_setting('b5b.pu2')::uuid);
+select pg_temp.chk('authz', 'an unrelated provider cannot either', '0',
+  (select count(*)::text from public.contract_for_booking(current_setting('b5b.b_pend')::uuid)));
+
+-- The owning provider still reads their own contract from the table.
 select pg_temp.act(current_setting('b5b.pu')::uuid);
-select pg_temp.chk('authz', 'owner provider reads their own contract through the RPC', '1',
-  (select count(*)::text from public.provider_contract_for_booking(current_setting('b5b.pid')::uuid)));
 select pg_temp.chk('authz', 'owner provider still reads it directly from the table', '1',
   (select count(*)::text from public.contracts where provider_id = current_setting('b5b.pid')::uuid));
 
--- An unrelated provider gains nothing: the second provider has no contract, and
--- the table read for someone else's contract is still empty.
-select pg_temp.act(current_setting('b5b.pu2')::uuid);
-select pg_temp.chk('authz', 'unrelated provider reads no contract from the table', '0',
-  (select count(*)::text from public.contracts where provider_id = current_setting('b5b.pid')::uuid));
-
--- A provider hidden from the marketplace has no prospective clients, so the
--- function offers nothing. This is the conjunct that keeps the widening bounded.
+-- A DE-APPROVED PROVIDER STILL HONOURS EXISTING BOOKINGS. Correction 2's QA
+-- review found that its `and p.is_approved` conjunct reproduced the very defect
+-- the RPC existed to fix: for a de-approved provider it returned zero rows and no
+-- error, so the gate silently skipped again. Item H is explicit that history and
+-- existing relationships survive de-approval; only NEW activity stops. There is
+-- no is_approved term in the booking-scoped function, and this proves it.
 select pg_temp.act_service();
 update public.providers set is_approved = false where id = current_setting('b5b.pid')::uuid;
-select pg_temp.act(current_setting('b5b.cu5')::uuid);
-select pg_temp.chk('authz', 'a de-approved provider offers no contract to sign', '0',
-  (select count(*)::text from public.provider_contract_for_booking(current_setting('b5b.pid')::uuid)));
+select pg_temp.act(current_setting('b5b.cu')::uuid);
+select pg_temp.chk('authz', 'a de-approved provider''s existing booking can still be signed', '1',
+  (select count(*)::text from public.contract_for_booking(current_setting('b5b.b_pend')::uuid)));
 select pg_temp.act_service();
 update public.providers set is_approved = true where id = current_setting('b5b.pid')::uuid;
 
@@ -239,6 +247,114 @@ select pg_temp.chk('authz', 'posts-media public read is preserved on purpose', '
   (select count(*)::text from pg_policies
     where schemaname='storage' and tablename='objects'
       and policyname='posts_media_public_read' and cmd='SELECT'));
+
+-- ── Correction 3 item L: the provider can delete their own media ROW ──────
+--
+-- The storage half above has been owner-bound since Correction 2. The `posts`
+-- table it describes had NO DELETE POLICY AT ALL and no delete control on any
+-- screen, so provider-authored media — publicly readable the moment it is
+-- inserted — could never be removed by the person who posted it. These assertions
+-- pin both halves of the fix: that a provider may now delete their own row, and
+-- that the boundary is the OWNER, not merely "any authenticated caller".
+do $$
+declare
+  pu uuid := current_setting('b5b.pu')::uuid;
+  pu2 uuid := current_setting('b5b.pu2')::uuid;
+  pid uuid := current_setting('b5b.pid')::uuid;
+  v_post uuid; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into public.posts(provider_id, media_url, media_type, content_type,
+                           visibility, is_active, is_demo, sort_order)
+  values (pid, 'https://example.test/b5b-owner-delete.jpg', 'image', 'portfolio',
+          'public', true, false, 0)
+  returning id into v_post;
+  perform set_config('b5b.post_l', v_post::text, true);
+
+  -- ANOTHER PROVIDER CANNOT. RLS filters rather than raising, so the check is on
+  -- the ROW COUNT: a delete that silently affects nothing is exactly what an
+  -- optimistic client would report as success.
+  perform pg_temp.act(pu2);
+  delete from public.posts where id = v_post;
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.posts where id = v_post;
+  perform pg_temp.chk('authz', 'another provider cannot delete this provider''s media',
+    '1', v_n::text);
+
+  -- THE OWNER CAN.
+  perform pg_temp.act(pu);
+  delete from public.posts where id = v_post;
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.posts where id = v_post;
+  perform pg_temp.chk('authz', 'the owning provider CAN delete their own media', '0', v_n::text);
+end $$;
+
+-- A CLIENT holds the grant (it is table-level) and must still be filtered by the
+-- policy to zero rows. The grant is not the boundary; the policy is.
+do $$
+declare
+  cu uuid := current_setting('b5b.cu')::uuid;
+  pid uuid := current_setting('b5b.pid')::uuid;
+  v_post uuid; v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into public.posts(provider_id, media_url, media_type, content_type,
+                           visibility, is_active, is_demo, sort_order)
+  values (pid, 'https://example.test/b5b-client-delete.jpg', 'image', 'portfolio',
+          'public', true, false, 1)
+  returning id into v_post;
+
+  perform pg_temp.act(cu);
+  delete from public.posts where id = v_post;
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.posts where id = v_post;
+  perform pg_temp.chk('authz', 'a client cannot delete a provider''s media', '1', v_n::text);
+  delete from public.posts where id = v_post;
+end $$;
+
+-- `anon` holds nothing on this table, so an unauthenticated delete cannot even be
+-- attempted — a second, independent refusal beneath the policy.
+select pg_temp.chk('authz', 'anon holds no DELETE on posts', 'false',
+  has_table_privilege('anon', 'public.posts', 'DELETE')::text);
+select pg_temp.chk('authz', 'authenticated holds DELETE, so the policy is what decides', 'true',
+  has_table_privilege('authenticated', 'public.posts', 'DELETE')::text);
+select pg_temp.chk('authz', 'exactly one DELETE policy governs posts', 'posts_delete_own',
+  (select string_agg(policyname, ',' order by policyname) from pg_policies
+    where schemaname='public' and tablename='posts' and cmd='DELETE'));
+
+-- THE ADJACENT DEFECT `20261043000000` also closed. `posts_update_own` had a
+-- USING clause and no WITH CHECK: USING decides which rows may be updated, WITH
+-- CHECK decides what they may be updated INTO. Without the second half a provider
+-- could take their own row and set `provider_id` to another provider, publishing
+-- their media onto a stranger's public profile under that stranger's name.
+select pg_temp.chk('authz', 'the posts UPDATE policy now binds the row AFTER the write too', 'true',
+  (select (qual is not null and with_check is not null)::text from pg_policies
+    where schemaname='public' and tablename='posts' and policyname='posts_update_own'));
+do $$
+declare
+  pu uuid := current_setting('b5b.pu')::uuid;
+  pid uuid := current_setting('b5b.pid')::uuid;
+  v_other uuid; v_post uuid; v_owner uuid;
+begin
+  perform pg_temp.act_service();
+  select p.id into v_other from public.providers p where p.id <> pid limit 1;
+  insert into public.posts(provider_id, media_url, media_type, content_type,
+                           visibility, is_active, is_demo, sort_order)
+  values (pid, 'https://example.test/b5b-reassign.jpg', 'image', 'portfolio',
+          'public', true, false, 2)
+  returning id into v_post;
+
+  perform pg_temp.act(pu);
+  begin
+    update public.posts set provider_id = v_other where id = v_post;
+  exception when others then null;
+  end;
+  perform pg_temp.act_service();
+  select provider_id into v_owner from public.posts where id = v_post;
+  perform pg_temp.chk('authz', 'a provider cannot reassign their media to another provider',
+    pid::text, v_owner::text);
+  delete from public.posts where id = v_post;
+end $$;
 
 -- posts-media now matches the provider-media posture Batch 2a established, which
 -- is the whole claim this migration makes.
@@ -435,8 +551,25 @@ update public.contracts set contract_type = 'pdf',
                  || current_setting('b5b.pu') || '/contract_b5b.pdf'
  where id = current_setting('b5b.ctr')::uuid;
 
+-- The prospective signer is now the client who HOLDS A BOOKING with this
+-- provider, not merely any authenticated user — `20261038000000` narrowed the
+-- disjunct to the transaction.
+--
+-- `cu5` gets a booking of their own here, deliberately, because `cu` has ALREADY
+-- SIGNED earlier in this suite and would therefore satisfy the signer arm — the
+-- assertion would pass without ever exercising the prospective arm it is named
+-- for. A fresh booking with no signature is the only way to isolate it.
+select pg_temp.act_service();
+insert into public.bookings(user_id, provider_id, service_name, requested_date,
+                            status, submitted_at, expires_at)
+values (current_setting('b5b.cu5')::uuid, current_setting('b5b.pid')::uuid, 'svc',
+        current_date, 'pending', now() - interval '1 hour', now() + interval '71 hours');
+
 select pg_temp.act(current_setting('b5b.cu5')::uuid);
-select pg_temp.chk('authz', 'a prospective signer CAN read the PDF they are shown', 'true',
+select pg_temp.chk('authz', 'a prospective signer with a booking CAN read the PDF', 'true',
+  public.can_read_contract_pdf(current_setting('b5b.pu') || '/contract_b5b.pdf')::text);
+select pg_temp.act(current_setting('b5b.ou')::uuid);
+select pg_temp.chk('authz', 'an authenticated stranger with no booking CANNOT read the PDF', 'false',
   public.can_read_contract_pdf(current_setting('b5b.pu') || '/contract_b5b.pdf')::text);
 select pg_temp.act(current_setting('b5b.pu')::uuid);
 select pg_temp.chk('authz', 'the owning provider can still read their own PDF', 'true',

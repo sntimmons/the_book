@@ -128,7 +128,7 @@ export async function fetchProviderContract(providerId: string): Promise<Contrac
   return mapContract(data as RawContractRow)
 }
 
-// The contract a client is about to be asked to sign, for ONE provider.
+// The contract a client is about to be asked to sign, for ONE BOOKING.
 //
 // WHY THIS IS NOT `fetchProviderContract`. That function reads `contracts`
 // directly, and the table's RLS is `auth.uid() = user_id OR is_contract_signer(id)`
@@ -137,21 +137,25 @@ export async function fetchProviderContract(providerId: string): Promise<Contrac
 // this module correctly reported "no contract exists", and the booking flow
 // skipped the signing gate entirely for every client, every provider, always.
 //
-// The fix is a `SECURITY DEFINER` read function rather than a widened policy, so
-// the table's own boundary is untouched and there is exactly one place to narrow
-// this later. It returns the ACTIVE contract of an APPROVED provider, one at a
-// time, to authenticated callers only.
+// WHY IT IS SCOPED TO A BOOKING (Correction 3, item J). The first fix was a
+// `SECURITY DEFINER` read keyed on the PROVIDER, which meant any authenticated
+// user could pull any approved provider's contract text at any time, whether or
+// not they were transacting with them. Now the row exists before this step (see
+// lib/bookingDraft.ts), so access is keyed on the BOOKING instead:
+// `contract_for_booking` returns the active contract only to the client who
+// holds that booking with that provider. Nobody has a standing read path into
+// other people's contract terms.
 //
 // A technical failure still THROWS rather than reporting absence — the Batch 4A
 // rule — because a failed lookup must never be mistaken for "no contract
 // required" and skip the gate a second way.
-export async function fetchContractToSign(providerId: string): Promise<Contract | null> {
-  if (!providerId) return null
-  const { data, error } = await supabase.rpc('provider_contract_for_booking', {
-    p_provider_id: providerId,
+export async function fetchContractForBooking(bookingId: string): Promise<Contract | null> {
+  if (!bookingId) return null
+  const { data, error } = await supabase.rpc('contract_for_booking', {
+    p_booking_id: bookingId,
   })
   if (error) {
-    console.log('Fetch contract to sign error:', error)
+    console.log('Fetch contract for booking error:', error)
     throw error
   }
   const rows = (data as RawContractRow[] | null) ?? []
