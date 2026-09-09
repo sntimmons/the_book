@@ -92,6 +92,8 @@ export default function CareHub() {
         .select('id, service_name, requested_date, requested_time, provider_id, status')
         .eq('user_id', user.id)
         .in('status', ['pending', 'accepted'])
+    // An unsent draft is not an upcoming appointment.
+    .not('submitted_at', 'is', null)
         .gte('requested_date', today)
         .order('requested_date', { ascending: true })
         .limit(5),
@@ -107,6 +109,9 @@ export default function CareHub() {
         .select('id, service_name, payment_amount, requested_date, created_at, provider_id')
         .eq('user_id', user.id)
         .eq('status', 'completed')
+        // An unsent DRAFT is not a booking. It is invisible to the provider and
+        // exists only inside the client's own booking flow (PD-071).
+        .not('submitted_at', 'is', null)
         .order('created_at', { ascending: false }),
     ])
 

@@ -14,6 +14,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../context/AuthContext'
+import { canAcceptRequest } from '../../../lib/bookingStatus'
 import {
   fetchRevealedClientReviews,
   fetchClientCompletionRate,
@@ -38,6 +39,10 @@ interface RequestBooking {
   message: string | null
   status: string
   created_at: string | null
+  // The request lifecycle, server-owned (PD-071). `created_at` is the DRAFT
+  // timestamp and says nothing about the deadline.
+  submitted_at: string | null
+  expires_at: string | null
 }
 
 export default function BookingRequestScreen() {
@@ -64,7 +69,7 @@ export default function BookingRequestScreen() {
     try {
       const { data: b } = await supabase
         .from('bookings')
-        .select('id, user_id, provider_id, service_name, requested_date, requested_time, message, status, created_at')
+        .select('id, user_id, provider_id, service_name, requested_date, requested_time, message, status, created_at, submitted_at, expires_at')
         .eq('id', id)
         .maybeSingle()
       if (!b) {
@@ -248,12 +253,14 @@ export default function BookingRequestScreen() {
   }
 
   const isPending = booking.status === 'pending'
-  // Client-side 24h expiry guard. A request past its window can no longer be
-  // accepted or declined here. The DB has no expiry concept yet, so this only
-  // gates the UI; a stale request stays 'pending' server-side.
-  const isExpired =
-    !!booking.created_at &&
-    new Date(booking.created_at).getTime() + 24 * 60 * 60 * 1000 - Date.now() <= 0
+  // The SERVER's deadline, not a local rule. This was `created_at + 24 hours`,
+  // which Correction 3 made wrong three ways at once: the window is 72 hours,
+  // `created_at` is now the DRAFT timestamp (so a request submitted from a
+  // day-old draft arrived already "expired"), and it disabled DECLINE — which the
+  // server deliberately allows forever. `expires_at` is derived server-side; this
+  // only compares it, and the database still refuses a late accept with PT425
+  // whatever the device clock says.
+  const isExpired = !canAcceptRequest(booking)
   const dimStats = aggregateClientDimensions(reviews)
 
   return (
@@ -345,7 +352,8 @@ export default function BookingRequestScreen() {
         <View style={[s.actionBar, { paddingBottom: insets.bottom + 16 }]}>
           {isExpired ? (
             <Text style={s.expiredNote}>
-              This request has expired and can no longer be accepted or declined.
+              This request has expired and can no longer be accepted. You can still
+              decline it to clear it from your queue.
             </Text>
           ) : null}
           <Pressable
@@ -356,8 +364,8 @@ export default function BookingRequestScreen() {
             <Text style={s.acceptText}>Accept Booking</Text>
           </Pressable>
           <Pressable
-            style={[s.declineBtn, (actionLoading || isExpired) && s.btnDisabled]}
-            disabled={actionLoading || isExpired}
+            style={[s.declineBtn, actionLoading && s.btnDisabled]}
+            disabled={actionLoading}
             onPress={handleDecline}
           >
             <Text style={s.declineText}>Decline Request</Text>

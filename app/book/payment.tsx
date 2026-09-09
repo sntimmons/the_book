@@ -23,6 +23,7 @@ import {
   toIsoDate,
   buildAppointmentTime,
   ProviderUnavailableError,
+  BookingWriteBlockedError,
 } from '@/lib/bookingDraft'
 
 function money(n: number): string {
@@ -44,6 +45,7 @@ export default function BookPayment() {
     bookingMessage,
     contractId,
     contractSigned,
+    draftBookingId,
     setDraftBookingId,
   } = useBookingStore()
   const [isProcessing, setIsProcessing] = useState(false)
@@ -65,6 +67,19 @@ export default function BookPayment() {
 
   async function handleConfirm() {
     if (isProcessing) return
+    // ALREADY SENT. `submitted` used to gate only the rate-limit check, which
+    // left the real hazard open: bouncing back to this screen from the pushed
+    // confirmation and tapping again could not FIND the submitted draft
+    // (`findDraft` looks for `submitted_at IS NULL`), so it inserted and
+    // submitted a SECOND request — and because `signatureSaved` was already
+    // true, that second request carried no contract signature at all. One intent
+    // is one request; going forward is the only thing left to do here.
+    if (submitted) {
+      if (draftBookingId) {
+        router.push({ pathname: '/book/confirmed', params: { bookingId: draftBookingId } })
+      }
+      return
+    }
 
     // Specific, actionable validation instead of one generic "something is
     // missing". The service / date / time are required to advance through the
@@ -173,6 +188,16 @@ export default function BookPayment() {
       // ITEM H: the provider stopped taking new bookings between opening the
       // flow and sending. That is availability, not a fault and not a judgement
       // of the provider, and it is not a technical failure worth a Sentry event.
+      // A write the database FILTERED to zero rows. It reports no error, so this
+      // is the only place it can be caught — and it must never be allowed to
+      // reach the confirmation screen, which would tell the client their request
+      // was sent when nothing was written.
+      if (err instanceof BookingWriteBlockedError) {
+        setProcessError(
+          'We could not send your request — nothing was saved. Please try again, or go back and start a new request with this provider.',
+        )
+        return
+      }
       if (err instanceof ProviderUnavailableError) {
         setProcessError(
           'This provider is not currently available for new bookings. Your existing bookings and messages with them are unaffected.',

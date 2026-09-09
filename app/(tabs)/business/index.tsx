@@ -17,7 +17,12 @@ import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { useNotifications } from '@/hooks/useNotifications'
 import { getOrCreateConversation } from '@/hooks/useMessaging'
-import { bookingStatusLabel } from '@/lib/bookingStatus'
+import {
+  bookingStatusLabel,
+  bookingRequestUrgency,
+  canAcceptRequest,
+  requestTimeRemaining,
+} from '@/lib/bookingStatus'
 
 interface BookingRequest {
   id: string
@@ -29,6 +34,11 @@ interface BookingRequest {
   status: string
   payment_amount: number | null
   created_at: string
+  // The request lifecycle, server-owned (PD-071). `created_at` is the DRAFT
+  // timestamp and says nothing about the deadline; `submitted_at` starts the
+  // clock and `expires_at` ends it.
+  submitted_at: string | null
+  expires_at: string | null
   client_name?: string
 }
 
@@ -76,24 +86,13 @@ const QUICK_ACTIONS = [
   // real share/deep-link target when that exists.
 ]
 
-function timeRemaining(createdAt: string): string {
-  const created = new Date(createdAt).getTime()
-  const deadline = created + 24 * 60 * 60 * 1000
-  const diff = deadline - Date.now()
-  if (diff <= 0) return 'Expired'
-  const hours = Math.floor(diff / (1000 * 60 * 60))
-  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-  if (hours > 0) return `${hours}h left`
-  return `${minutes}m left`
-}
-
-// A request past its 24h window can no longer be accepted or declined from the
-// UI. This is a client-side guard only; see note in payloads about server-side
-// expiry not existing yet.
-function isRequestExpired(createdAt: string): boolean {
-  const deadline = new Date(createdAt).getTime() + 24 * 60 * 60 * 1000
-  return deadline - Date.now() <= 0
-}
+// The two functions that were here — `timeRemaining(createdAt)` and
+// `isRequestExpired(createdAt)` — each computed `created_at + 24 hours` and are
+// gone. Correction 3 made all three parts of that wrong at once: the window is
+// 72 hours, `created_at` is now the DRAFT timestamp rather than the moment the
+// request was sent, and expiry was disabling DECLINE, which the server
+// deliberately allows forever. The rule now lives once, in lib/bookingStatus.ts,
+// derived from the server's own `submitted_at` / `expires_at`.
 
 function SkeletonCard({ index }: { index: number }) {
   const opacity = useRef(new Animated.Value(0.4)).current
@@ -176,11 +175,16 @@ export default function ProviderDashboard() {
         supabase
           .from('bookings')
           .select(
-            'id, user_id, service_name, requested_date, requested_time, message, status, payment_amount, created_at',
+            'id, user_id, service_name, requested_date, requested_time, message, status, payment_amount, created_at, submitted_at, expires_at',
             { count: 'exact' },
           )
           .eq('provider_id', provider.id)
           .eq('status', 'pending')
+          // A draft is already invisible here — the provider SELECT policy
+          // requires `submitted_at is not null`. Asking for it explicitly costs
+          // nothing and means this list does not depend on that policy staying
+          // exactly as it is to avoid showing a request nobody sent.
+          .not('submitted_at', 'is', null)
           .order('created_at', { ascending: false })
           .limit(20),
         // Earnings: ALL completed bookings (small columns), fetched separately
@@ -499,7 +503,12 @@ export default function ProviderDashboard() {
             </View>
           ) : (
             pendingRequests.map((req, i) => {
-              const expired = isRequestExpired(req.created_at)
+              // Only ACCEPT is gated. Declining a stale request is something the
+              // server permits forever, and a provider clearing their queue is
+              // not a thing to prevent.
+              const canAccept = canAcceptRequest(req)
+              const urgency = bookingRequestUrgency(req)
+              const remaining = requestTimeRemaining(req)
               return (
               <View
                 key={req.id}
@@ -528,9 +537,21 @@ export default function ProviderDashboard() {
                       {req.message}
                     </Text>
                   ) : null}
-                  <View style={styles.timerPill}>
-                    <Text style={styles.timerPillText}>{timeRemaining(req.created_at)}</Text>
-                  </View>
+                  {/* Absent when the row carries no deadline, rather than showing
+                      a pill with nothing in it. `urgency` is the same vocabulary
+                      the database derives (`booking_request_urgency`), so the
+                      badge and the server cannot describe a request differently. */}
+                  {remaining ? (
+                    <View
+                      style={[
+                        styles.timerPill,
+                        urgency === 'urgent' && styles.timerPillUrgent,
+                        urgency === 'expired' && styles.timerPillExpired,
+                      ]}
+                    >
+                      <Text style={styles.timerPillText}>{remaining}</Text>
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
                 <View style={styles.requestRight}>
                   <Text style={styles.requestPrice}>
@@ -543,9 +564,7 @@ export default function ProviderDashboard() {
                       style={[
                         styles.requestBtn,
                         styles.requestBtnDecline,
-                        expired && styles.requestBtnDisabled,
                       ]}
-                      disabled={expired}
                       onPress={() => handleDecline(req)}
                     >
                       <Feather name="x" size={14} color="rgba(240,232,213,0.5)" />
@@ -570,9 +589,9 @@ export default function ProviderDashboard() {
                       style={[
                         styles.requestBtn,
                         styles.requestBtnAccept,
-                        expired && styles.requestBtnDisabled,
+                        !canAccept && styles.requestBtnDisabled,
                       ]}
-                      disabled={expired}
+                      disabled={!canAccept}
                       onPress={() => handleAccept(req)}
                     >
                       <Feather name="check" size={14} color="#080808" />
@@ -921,6 +940,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: 'rgba(200,146,42,0.1)',
   },
+  timerPillUrgent: { backgroundColor: 'rgba(200,146,42,0.18)' },
+  timerPillExpired: { backgroundColor: 'rgba(240,232,213,0.06)' },
   timerPillText: {
     fontSize: 10,
     color: '#C8922A',

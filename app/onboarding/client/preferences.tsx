@@ -140,11 +140,15 @@ export default function ClientPreferences() {
           <Text style={styles.sectionLabel}>LOCATION</Text>
         </View>
         <NeighborhoodPicker value={location} onChange={setLocation} />
+        {/* PRODUCT TRUTH: this read "Providers within 15 miles". There is no
+            distance calculation anywhere in the product — discovery matches
+            neighborhood and city as TEXT (lib/discovery.ts) — so the number
+            described a radius nothing computes. */}
         <Text style={[styles.locationSubtext, { marginTop: 8, marginLeft: 4 }]}>
-          Providers within 15 miles
+          Used to show you providers working in your area
         </Text>
         <View style={[styles.sectionCard, { marginTop: 16 }]}>
-          <View style={styles.notifRow}>
+          <View style={styles.preferenceRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.locationTitle}>Show mobile providers</Text>
               <Text style={styles.locationSubtext}>Providers that come to you</Text>
@@ -177,7 +181,14 @@ export default function ClientPreferences() {
         >
           <Text style={styles.startBtnText}>Continue</Text>
         </Pressable>
-        <Text style={styles.ctaNote}>You can update these anytime in settings.</Text>
+        {/* PRODUCT TRUTH: this read "You can update these anytime in settings."
+            There is no settings surface for interests, area or the mobile-provider
+            toggle — Settings has Account, Provider, Payments, Privacy, Support and
+            Legal, and none of them holds these. The claim promised a screen that
+            does not exist. Whether these preferences should persist at all is an
+            open product question (USER_JOURNEYS J1b); until it is answered, this
+            says only what is true. */}
+        <Text style={styles.ctaNote}>You can change your area anytime from your profile.</Text>
       </View>
     </View>
   )
@@ -352,7 +363,9 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_400Regular',
   },
-  notifRow: {
+  // Named for the notification rows that item A removed; it now styles the
+  // "Show mobile providers" row, which is the only one left using it.
+  preferenceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,

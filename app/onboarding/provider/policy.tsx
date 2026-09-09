@@ -8,8 +8,14 @@ import { DEFAULT_POLICY } from '@/lib/policy'
 // a capability that does not exist. Payouts are not available during beta, so the
 // screen's only content was an apology, and every new provider had to walk past
 // it. Item Y is explicit that payout setup must not be part of the minimum
-// onboarding path. The screen itself is untouched and still reachable from the
-// Business dashboard's Payouts entry; it is simply no longer in the way.
+// onboarding path.
+//
+// The onboarding payout screen has been DELETED rather than left behind. An
+// earlier draft of this comment said it was "still reachable from the Business
+// dashboard's Payouts entry" — it was not: that entry goes to
+// `app/(tabs)/business/payouts.tsx`, a different file with the same explanation.
+// Taking a screen out of a flow and leaving it in the tree gives you two files
+// answering one product question, and the next copy change lands in only one.
 export default function ProviderPolicy() {
   const setPolicy = useProviderStore((s) => s.setPolicy)
   return (

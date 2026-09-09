@@ -18,6 +18,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import {
   useProviders,
   useCategories,
+  fetchOpenTodayProviderIds,
+  fetchDiscoveryPool,
   Provider,
   Category,
 } from '../../hooks/useProviders'
@@ -285,6 +287,30 @@ export default function DiscoveryFeed() {
   // omits it rather than guessing a location), which is the right failure — a
   // "Near You" row built on a guess is worse than no row.
   const [viewerNeighborhood, setViewerNeighborhood] = useState<string | null>(null)
+  // The "Available Soon" lane's input. Null until it is known — the lane is
+  // omitted rather than guessed, because a row whose name is a claim must not be
+  // built from an unanswered question.
+  const [openToday, setOpenToday] = useState<Set<string> | null>(null)
+  // The lanes' own provider set. NOT the feed's current page — see
+  // `fetchDiscoveryPool` for why that made "New to The Book" exclude new
+  // providers, and made lane membership shift as the grid paged.
+  const [lanePool, setLanePool] = useState<Provider[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const [ids, pool] = await Promise.all([
+        fetchOpenTodayProviderIds(),
+        fetchDiscoveryPool(),
+      ])
+      if (cancelled) return
+      setOpenToday(ids)
+      setLanePool(pool)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -412,9 +438,10 @@ export default function DiscoveryFeed() {
 
             The rules themselves are in lib/discovery.ts, including the fairness
             rule that no marketplace lane may rank on social content. */}
-        {!loading && activeCategoryId === null && providers.length > 0 ? (
+        {!loading && activeCategoryId === null && lanePool.length > 0 ? (
           <DiscoveryLanes
-            providers={providers}
+            providers={lanePool}
+            openTodayIds={openToday}
             viewerNeighborhood={viewerNeighborhood}
             // The neighborhood picker stores a "Midtown, Houston"-shaped value,
             // so the same string carries the city fallback. It is passed

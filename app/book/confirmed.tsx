@@ -52,7 +52,13 @@ export default function BookConfirmed() {
   function handleViewRequest() {
     reset()
     if (bookingId) {
-      router.replace({ pathname: '/bookings/request/[id]', params: { id: bookingId } })
+      // `/bookings/[id]`, NOT `/bookings/request/[id]`. The latter is the
+      // PROVIDER's request screen: a client who lands on it is told "This view is
+      // only available to the provider", and because this screen is replaced, the
+      // only way back out of that dead end was into the completed send step —
+      // which would have sent a second request. The client's own booking detail
+      // is where the status, the provider's answer and the withdraw control live.
+      router.replace({ pathname: '/bookings/[id]', params: { id: bookingId } })
       return
     }
     // No id to open — do not pretend there is a request to show.
@@ -96,19 +102,18 @@ export default function BookConfirmed() {
             driven by a hardcoded string, and told the CLIENT that a response was
             guaranteed within a window.
 
-            BE PRECISE ABOUT WHAT IS AND IS NOT ENFORCED, because an earlier
-            version of this comment said "nothing expires a pending booking" and
-            that is wrong. There is no server-side expiry — no trigger, no job,
-            no column, and a pending booking sits pending forever in the
-            database. But the PROVIDER's controls do expire client-side at 24h
-            from `created_at`: app/(tabs)/business/index.tsx disables Accept and
-            Decline, and app/bookings/request/[id].tsx says the request "has
-            expired". So the window is real UI behaviour on one side and no
-            guarantee on the other, which is exactly why a promise to the client
-            was the wrong thing to make. Removed rather than restated with a
-            different number. Whether the client should be told about a window
-            the provider is held to is a Founder question, recorded, not decided
-            here. */}
+            THIS NOTE HAS NOW BEEN WRONG TWICE, which is worth recording. It first
+            said "nothing expires a pending booking"; that was corrected to "there
+            is no server-side expiry — no trigger, no job, no column", and PD-071
+            then added all three. The rule today is real and server-authoritative:
+            a request expires at LEAST(submitted_at + 72 hours, appointment_time),
+            after which the provider can no longer ACCEPT it (declining stays open
+            forever, and the request stays in both histories).
+
+            Nothing about that window is stated to the CLIENT here, and that is
+            still deliberate: whether the client should be told about a deadline
+            the provider is held to is a Founder question, recorded in PD-071 and
+            not decided by implementation. What is gone for good is the promise. */}
 
         {/* Booking summary pill */}
         {bookingSummary.length > 0 && (

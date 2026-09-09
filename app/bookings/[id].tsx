@@ -33,6 +33,11 @@ interface BookingDetail {
   payment_status: string | null
   payment_amount: number | null
   created_at: string
+  // NULL means this row is still an unsent DRAFT inside the booking flow. It is
+  // invisible to the provider, and nothing here may describe it as a request
+  // anyone has been asked to answer.
+  submitted_at: string | null
+  expires_at: string | null
   provider_first_response_at: string | null
   provider_confirmed_at: string | null
   client_checked_in_at: string | null
@@ -472,6 +477,7 @@ export default function BookingDetailScreen() {
           bucket={bucket}
           isProvider={isProvider}
           bookingId={booking.id}
+          isDraft={booking.submitted_at === null}
           actionLoading={actionLoading}
           reviewOpp={reviewOpp}
           reviewOppLoading={reviewOppLoading}
@@ -515,6 +521,8 @@ interface ActionButtonsProps {
   bucket: StatusBucket
   isProvider: boolean
   bookingId: string
+  /** True when this row is still an unsent draft (`submitted_at IS NULL`). */
+  isDraft: boolean
   actionLoading: boolean
   reviewOpp: ReviewOpportunity
   reviewOppLoading: boolean
@@ -528,7 +536,7 @@ interface ActionButtonsProps {
 }
 
 function ActionButtons(props: ActionButtonsProps) {
-  const { bucket, isProvider, bookingId, actionLoading, reviewOpp, reviewOppLoading, canMarkNoShow, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onReviewClient, onBack } = props
+  const { bucket, isProvider, bookingId, isDraft, actionLoading, reviewOpp, reviewOppLoading, canMarkNoShow, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onReviewClient, onBack } = props
 
   // Persistent provider→client review entry, keyed by booking_id so each booking is
   // independently reviewable. Driven ONLY by the server's answer — never by `bucket`
@@ -577,6 +585,28 @@ function ActionButtons(props: ActionButtonsProps) {
         >
           <Text style={styles.primaryBtnText}>Review Request</Text>
         </Pressable>
+      )
+    }
+    // AN UNSENT DRAFT IS NOT A REQUEST. It is excluded from every list, so this
+    // is reached only by direct navigation — but if someone gets here, the screen
+    // must not offer to cancel a request nobody received or to message a provider
+    // about it. The server refuses to attach a draft to a conversation
+    // (`20261045000000`), so the message control could only fail.
+    if (isDraft) {
+      return (
+        <View>
+          <Text style={styles.draftNote}>
+            You haven&apos;t sent this request yet. Start again from the provider&apos;s
+            profile when you&apos;re ready.
+          </Text>
+          <Pressable
+            style={[styles.secondaryBtnFull, actionLoading && styles.btnDisabled]}
+            onPress={onCancel}
+            disabled={actionLoading}
+          >
+            <Text style={styles.secondaryBtnText}>Discard</Text>
+          </Pressable>
+        </View>
       )
     }
     return (
@@ -875,6 +905,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
+  },
+  draftNote: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 19,
+    marginBottom: 12,
   },
   secondaryBtnFull: {
     borderRadius: 14,

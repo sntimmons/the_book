@@ -44,21 +44,25 @@ const GRANTED = new Set([
   'years_experience', 'specialties', 'created_at',
 ])
 
-// COMPUTED columns: not stored on `providers` at all, so no column grant exists
-// or could exist for them. PostgREST exposes a function taking the table's row
-// type as a virtual column, and the privilege that governs it is EXECUTE on that
-// function — which `20261040000000` grants to `anon`, `authenticated` and
-// `service_role`, the same audience as the public column surface.
+// COMPUTED COLUMNS ARE NOT USABLE ON THIS TABLE, and the empty set is the
+// finding rather than an oversight.
 //
-// They are listed separately rather than merged into GRANTED so the count above
-// keeps meaning "the 28 columns the migration granted", and so that adding one
-// here forces a moment's thought about which privilege actually backs it.
-const COMPUTED = new Set([
-  // public.available_today(providers) — "has this provider published hours for
-  // today, and is today not blocked?", evaluated against SERVER time. Reads only
-  // provider_availability and provider_blocked_dates, both already public-read.
-  'available_today',
-])
+// `20261040000000` added `available_today(p public.providers)` as a PostgREST
+// computed column and this guard was widened to admit it. Both were wrong.
+// PostgREST renders a computed column as a WHOLE-ROW reference, and PostgreSQL
+// requires SELECT on EVERY column for a whole-row reference — while
+// `20261030000000` deliberately left `anon` and `authenticated` with 28 NAMED
+// columns and no table-level grant. Every such read is refused with 42501,
+// reproduced against non-production, and because the name had been added to
+// `PUBLIC_PROVIDER_FIELDS` it took the discovery feed, the provider profile and
+// search down with it. `20261044000000` replaced it with
+// `providers_open_today()`, which returns ids and touches no provider column.
+//
+// **A computed column added here in future will be unreachable for the same
+// reason.** Widening this set is not the fix; the fix is a function that does not
+// take the row type. Kept as an empty set, with this note, so the next author
+// meets the reason before the exception.
+const COMPUTED = new Set<string>([])
 
 const READABLE = new Set([...GRANTED, ...COMPUTED])
 

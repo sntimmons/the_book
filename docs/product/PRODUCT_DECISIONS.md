@@ -1159,9 +1159,21 @@ as locked decisions.
     means "a real request the provider must answer". A draft *status* would have put every
     abandoned flow into the provider's queue — the opposite of what this decision is for.
 - **Evidence.** Founder ruling, Pre-Session-8 Correction 3 (items B, J, K), 2026-09-09.
-  `supabase/migrations/20261037000000_booking_request_lifecycle.sql` and its forward correction
-  `20261041000000`; `lib/bookingDraft.ts`; `app/book/contract.tsx`; `app/book/payment.tsx`.
-  Proven by `supabase/tests/booking_lifecycle.test.sql`.
+  `supabase/migrations/20261037000000_booking_request_lifecycle.sql` plus forward corrections
+  `20261041000000` and `20261045000000`; `lib/bookingDraft.ts`; `lib/bookingStatus.ts`;
+  `app/book/contract.tsx`; `app/book/payment.tsx`. Proven by
+  `supabase/tests/booking_lifecycle.test.sql`, `__tests__/lib/bookingDraft.test.ts` and
+  `__tests__/guards/bookingLifecycleReads.test.ts`.
+- **A DRAFT IS NOT A RELATIONSHIP, and the first implementation of this decision did not make
+  that true.** It taught the provider's SELECT policy about drafts and stopped, leaving three
+  boundaries that tested only "a booking exists for this pair" — which let an unsent draft open
+  an ungated conversation and reverse a provider's decline — and leaving every client-facing
+  list showing an abandoned draft as "Pending, waiting for provider confirmation". A cancelled
+  draft also held the one-draft slot forever, behind a "BOOKING REQUEST SENT" screen for a
+  request that did not exist. `20261045000000` closes all of it. **The standing rule this
+  decision now carries: anything that asks "does a booking exist for this pair?" must say
+  whether it means a SUBMITTED one, and for every question except "may this client resume their
+  draft?" the answer is yes.**
 - **Status:** Locked; **implemented**
 
 ---
@@ -1237,6 +1249,14 @@ as locked decisions.
   `lib/discovery.ts`, `components/DiscoveryLanes.tsx`, `app/(tabs)/index.tsx`. Proven by
   `__tests__/lib/discovery.test.ts`, which asserts the fairness rule against both the type and
   the behaviour.
+- **THE LANES NEED THEIR OWN DATA, and the first implementation did not give them any.** They
+  were computed over the feed's first page, which is ordered `is_featured DESC, average_rating
+  DESC NULLS LAST` — so a genuinely new provider, having no rating and no feature flag, sorted
+  to the very end of the market and was the LEAST likely provider to appear. "New to The Book"
+  systematically excluded exactly the providers it exists for, and the fairness intent was
+  defeated by the fetch rather than by the rules. The lanes now read an unranked pool of their
+  own (`fetchDiscoveryPool`), ordered only by id so the ordering contributes no bias, which also
+  stops lane membership shifting as the grid pages more rows in beneath it.
 - **Status:** Locked; **implemented**
 
 ---

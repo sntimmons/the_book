@@ -212,20 +212,26 @@ select pg_temp.chk_blocked('bookinglifecycle', 'a completed booking still cannot
 
 -- ── 9. AVAILABILITY IS A REAL FILTER (item M) ─────────────────────────────
 --
--- The search screen's "Available today" chip filtered nothing at all. It is now a
--- PostgREST computed column over the provider's own published hours.
+-- The search screen's "Available today" chip filtered nothing at all. It is now
+-- `providers_open_today()`, over the provider's own published hours.
+--
+-- REWRITTEN after review. This section first tested a PostgREST computed column,
+-- `available_today(providers)` — and passed, while the feature was completely
+-- broken for every real caller, because every assertion ran as `service_role`.
+-- See § 12, which runs the same question as the roles that actually call it.
 
-select pg_temp.chk('bookinglifecycle', 'available_today is callable by anon and authenticated', 'true',
-  (has_function_privilege('anon','public.available_today(public.providers)','EXECUTE')
-   and has_function_privilege('authenticated','public.available_today(public.providers)','EXECUTE'))::text);
+-- `pg_temp.open_today` — is this provider in the set right now?
+create or replace function pg_temp.open_today(p_pid uuid)
+returns boolean language sql as $$
+  select exists (select 1 from public.providers_open_today() t where t = p_pid)
+$$;
 
 select pg_temp.act_service();
 delete from public.provider_availability where provider_id = current_setting('b5b.pid')::uuid;
 delete from public.provider_blocked_dates where provider_id = current_setting('b5b.pid')::uuid;
 
-select pg_temp.chk('bookinglifecycle', 'no published hours today -> not available', 'false',
-  (select public.available_today(p.*)::text from public.providers p
-    where p.id = current_setting('b5b.pid')::uuid));
+select pg_temp.chk('bookinglifecycle', 'no published hours today -> not open today', 'false',
+  pg_temp.open_today(current_setting('b5b.pid')::uuid)::text);
 
 select pg_temp.act_service();
 insert into public.provider_availability(provider_id, weekday, start_time, end_time, is_available, timezone)
@@ -233,9 +239,8 @@ values (current_setting('b5b.pid')::uuid,
         extract(dow from (now() at time zone 'America/Chicago'))::int,
         '09:00', '17:00', true, 'America/Chicago');
 
-select pg_temp.chk('bookinglifecycle', 'published hours today -> available', 'true',
-  (select public.available_today(p.*)::text from public.providers p
-    where p.id = current_setting('b5b.pid')::uuid));
+select pg_temp.chk('bookinglifecycle', 'published hours today -> open today', 'true',
+  pg_temp.open_today(current_setting('b5b.pid')::uuid)::text);
 
 -- A blocked date wins over published hours: the provider said they are away.
 select pg_temp.act_service();
@@ -243,8 +248,7 @@ insert into public.provider_blocked_dates(provider_id, date)
 values (current_setting('b5b.pid')::uuid, (now() at time zone 'America/Chicago')::date);
 
 select pg_temp.chk('bookinglifecycle', 'a blocked date overrides published hours', 'false',
-  (select public.available_today(p.*)::text from public.providers p
-    where p.id = current_setting('b5b.pid')::uuid));
+  pg_temp.open_today(current_setting('b5b.pid')::uuid)::text);
 
 -- Hours marked unavailable are not availability either.
 select pg_temp.act_service();
@@ -253,5 +257,254 @@ update public.provider_availability set is_available = false
  where provider_id = current_setting('b5b.pid')::uuid;
 
 select pg_temp.chk('bookinglifecycle', 'hours switched off are not availability', 'false',
-  (select public.available_today(p.*)::text from public.providers p
-    where p.id = current_setting('b5b.pid')::uuid));
+  pg_temp.open_today(current_setting('b5b.pid')::uuid)::text);
+
+-- Restored so § 12's role-scoped checks run against a provider who IS open.
+select pg_temp.act_service();
+update public.provider_availability set is_available = true
+ where provider_id = current_setting('b5b.pid')::uuid;
+
+-- ══ § 10. WHAT A DRAFT IS NOT ════════════════════════════════════════════
+--
+-- Added after review. Every object `20261037000000` changed was tested in
+-- isolation and passed; what nothing asked was **what the new kind of row meant
+-- to boundaries that were not changed**. Three of them tested only "a booking
+-- exists for this pair", written when that could only mean a request the provider
+-- had been shown — and a draft satisfied all three.
+--
+-- These assertions are the question that was missing: when a migration widens
+-- what an existing row type can MEAN, what else tests for its existence?
+
+do $$
+declare
+  cu uuid := current_setting('b5b.cu5')::uuid;
+  pid uuid := current_setting('b5b.pid')::uuid;
+  pu uuid := current_setting('b5b.pu')::uuid;
+  v_draft uuid; v_conv uuid; v_code text; v_n integer;
+begin
+  -- A live draft: exactly what a client holds after reaching the contract step.
+  perform pg_temp.act(cu);
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (cu, pid, 'draft not a relationship', current_date)
+  returning id into v_draft;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('bookinglifecycle', 'the fixture really is a draft', 'true',
+    (select (submitted_at is null)::text from public.bookings where id = v_draft));
+
+  -- 1. IT MAY NOT BUY AN UNGATED CONVERSATION. This is the authorization bypass:
+  -- a draft is unthrottled (the rate limit is checked at SUBMIT), so without this
+  -- an ordinary account could open a chat with any approved provider and skip the
+  -- message-request gate entirely.
+  perform pg_temp.act(cu);
+  begin
+    insert into public.conversation(client_id, provider_id, booking_id)
+    values (cu, pid, v_draft);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookinglifecycle',
+    'a DRAFT cannot be used to open a conversation', '23514', v_code);
+end $$;
+
+do $$
+declare
+  cu uuid := current_setting('b5b.cu5')::uuid;
+  pid uuid := current_setting('b5b.pid')::uuid;
+  v_draft uuid; v_real uuid; v_conv uuid; v_code text; v_status text;
+begin
+  perform pg_temp.act_service();
+  select id into v_draft from public.bookings
+   where user_id = cu and provider_id = pid and submitted_at is null limit 1;
+  -- One conversation per pair is a hard constraint, and the fixtures may already
+  -- have seeded one for this pair; start from a known state.
+  delete from public.conversation where client_id = cu and provider_id = pid;
+
+  -- 2. IT MAY NOT REVERSE A PROVIDER'S DECLINE. The supersede branch opens a
+  -- conversation whenever a booking is attached, so a draft would have let the
+  -- declined party reopen a thread the provider had closed.
+  insert into public.conversation(client_id, provider_id, request_status, request_opened_at)
+  values (cu, pid, 'declined', now() - interval '1 day')
+  returning id into v_conv;
+
+  perform pg_temp.act(cu);
+  begin
+    update public.conversation
+       set booking_id = v_draft, request_status = 'accepted'
+     where id = v_conv;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookinglifecycle',
+    'a DRAFT cannot reopen a declined conversation', '23514', v_code);
+  perform pg_temp.act_service();
+  select request_status into v_status from public.conversation where id = v_conv;
+  perform pg_temp.chk('bookinglifecycle', 'and the decline still stands',
+    'declined', v_status);
+
+  -- THE COMPLEMENT, so this is a rule about drafts and not a blanket refusal that
+  -- would have broken the booking-supersedes-request behaviour PD-013 depends on.
+  -- A SUBMITTED booking must still open the same thread.
+  perform pg_temp.act(cu);
+  update public.bookings set submitted_at = now() where id = v_draft;
+  begin
+    update public.conversation
+       set booking_id = v_draft, request_status = 'accepted'
+     where id = v_conv;
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookinglifecycle',
+    'a SUBMITTED booking still supersedes a declined request', 'OK', v_code);
+  perform pg_temp.act_service();
+  delete from public.conversation where id = v_conv;
+end $$;
+
+do $$
+declare
+  cu uuid := current_setting('b5b.cu4')::uuid;
+  pid uuid := current_setting('b5b.pid')::uuid;
+  pu uuid := current_setting('b5b.pu')::uuid;
+  v_draft uuid; v_n integer;
+begin
+  -- 3. IT DOES NOT DISCLOSE THE CLIENT'S IDENTITY. Reaching the contract step and
+  -- backing out is not a relationship the client chose to create with anyone.
+  perform pg_temp.act_service();
+  delete from public.conversation where client_id = cu and provider_id = pid;
+  delete from public.bookings where user_id = cu and provider_id = pid;
+  -- `clients_provider` reads from `public.clients`, which the shared fixtures do
+  -- not seed. Without this row BOTH assertions below return 0 and the pair passes
+  -- vacuously — which is exactly what the first draft of this test did.
+  insert into public.clients(id, name, neighborhood)
+  values (cu, 'B5B Draft Client', 'Midtown')
+  on conflict (id) do nothing;
+  perform pg_temp.act(cu);
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (cu, pid, 'invisible', current_date) returning id into v_draft;
+
+  perform pg_temp.act(pu);
+  select count(*) into v_n from public.clients_provider where id = cu;
+  perform pg_temp.chk('bookinglifecycle',
+    'a draft alone does not expose the client to the provider', '0', v_n::text);
+
+  -- Submitting it IS the act that creates the relationship.
+  perform pg_temp.act(cu);
+  update public.bookings set submitted_at = now() where id = v_draft;
+  perform pg_temp.act(pu);
+  select count(*) into v_n from public.clients_provider where id = cu;
+  perform pg_temp.chk('bookinglifecycle',
+    'submitting it does expose them, as it always has', '1', v_n::text);
+  perform pg_temp.act_service();
+end $$;
+
+-- ══ § 11. A CANCELLED DRAFT MUST NOT LOCK THE CLIENT OUT ═════════════════
+--
+-- The worst defect review found. `bookings_one_draft_per_pair` had no status
+-- term, so a cancelled draft kept the single slot forever while the client's own
+-- UPDATE policy no longer admitted it. Every later attempt found that row, wrote
+-- to it, was FILTERED to zero rows with no error, and reported success — a
+-- "BOOKING REQUEST SENT" screen for a request that did not exist, permanently,
+-- for that provider.
+do $$
+declare
+  cu uuid := current_setting('b5b.cu3')::uuid;
+  pid uuid := current_setting('b5b.pid')::uuid;
+  v_first uuid; v_second uuid; v_code text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  delete from public.bookings where user_id = cu and provider_id = pid;
+
+  perform pg_temp.act(cu);
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (cu, pid, 'abandoned', current_date) returning id into v_first;
+  update public.bookings
+     set status = 'cancelled_by_client', cancellation_actor = 'client'
+   where id = v_first;
+
+  -- THE SLOT IS FREE AGAIN. Without the narrowed index this insert raises 23505
+  -- and the client can never start another request with this provider.
+  begin
+    insert into public.bookings(user_id, provider_id, service_name, requested_date)
+    values (cu, pid, 'second attempt', current_date) returning id into v_second;
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookinglifecycle',
+    'a cancelled draft frees the one-draft slot', 'OK', v_code);
+
+  -- And the new one is fully usable: editable, then submittable. This is the pair
+  -- of writes that silently affected zero rows before.
+  update public.bookings set service_name = 'revised' where id = v_second;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('bookinglifecycle', 'the replacement draft is editable',
+    'revised', (select service_name from public.bookings where id = v_second));
+  perform pg_temp.act(cu);
+  update public.bookings set submitted_at = now() where id = v_second;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('bookinglifecycle', 'and it can actually be submitted', 'true',
+    (select (submitted_at is not null)::text from public.bookings where id = v_second));
+
+  -- STILL ONE LIVE DRAFT AT A TIME. The narrowing must not have removed the rule.
+  perform pg_temp.act(cu);
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (cu, pid, 'live draft', current_date);
+  begin
+    insert into public.bookings(user_id, provider_id, service_name, requested_date)
+    values (cu, pid, 'second live draft', current_date);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookinglifecycle',
+    'but two LIVE drafts for one pair are still refused', '23505', v_code);
+  perform pg_temp.act_service();
+end $$;
+
+-- ══ § 12. "OPEN TODAY" MUST BE REACHABLE BY THE ROLES THAT NEED IT ═══════
+--
+-- The assertion that was missing, and its absence is why a broken discovery feed
+-- passed review: `available_today` was a PostgREST COMPUTED COLUMN, which renders
+-- as a WHOLE-ROW reference, and Correction 2 left anon/authenticated with 28
+-- NAMED column grants. Every behavioural check ran as `service_role` — the one
+-- role that holds table-level SELECT — so the suite could not see it.
+--
+-- These run as the roles that actually call it.
+select pg_temp.chk('bookinglifecycle', 'the whole-row computed column is gone', '0',
+  (select count(*)::text from pg_proc
+    where proname = 'available_today' and pronamespace = 'public'::regnamespace));
+-- Captured under each role and RECORDED afterwards: `_results` is granted to
+-- `authenticated` and not to `anon`, so an assertion written while acting as anon
+-- fails on the scratch table rather than on the thing being tested.
+do $$
+declare
+  v_anon text; v_auth text; v_compose text;
+begin
+  perform pg_temp.act(null, 'anon');
+  begin
+    perform count(*) from public.providers_open_today();
+    v_anon := 'OK';
+  exception when others then v_anon := sqlstate;
+  end;
+
+  perform pg_temp.act(current_setting('b5b.cu')::uuid);
+  begin
+    perform count(*) from public.providers_open_today();
+    v_auth := 'OK';
+  exception when others then v_auth := sqlstate;
+  end;
+
+  -- The composition the search actually performs: filter `providers` by that id
+  -- set. This is the shape that failed with 42501 when it was a computed column,
+  -- because a whole-row reference needs SELECT on every column and these roles
+  -- hold 28 named ones.
+  begin
+    perform id from public.providers
+     where id = any(array(select public.providers_open_today())) limit 1;
+    v_compose := 'OK';
+  exception when others then v_compose := sqlstate;
+  end;
+
+  perform pg_temp.act_service();
+  perform pg_temp.chk('bookinglifecycle', 'anon CAN evaluate open-today', 'OK', v_anon);
+  perform pg_temp.chk('bookinglifecycle', 'and so can an authenticated client', 'OK', v_auth);
+  perform pg_temp.chk('bookinglifecycle',
+    'and it composes with a providers query under the column grant', 'OK', v_compose);
+end $$;

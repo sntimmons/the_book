@@ -40,11 +40,11 @@ export interface Provider {
   // It is an AVAILABILITY fact and nothing else. It is never a verification
   // claim, never a judgement of the provider, and history stays fully reachable.
   is_approved: boolean
-  // PostgREST COMPUTED COLUMN (`public.available_today`, 20261040000000): the
-  // SERVER's answer to "has this provider published hours for today, and is
-  // today not blocked?", evaluated against server time. Optional because not
-  // every query selects it; `null`/absent means UNKNOWN and must never be
-  // rendered as "available today" (item M).
+  // "Open today", as the SERVER answers it. NOT a column on this table and NOT a
+  // PostgREST computed column — see `fetchOpenTodayProviderIds` below for why
+  // that approach could not work here. Populated by the caller from that id set,
+  // so `undefined` means "nobody asked", which must never be rendered as
+  // "available today" (item M).
   available_today?: boolean | null
   // Best portfolio photo, resolved from the posts table after the provider
   // fetch. Used as the Discover card image in preference to profile_photo_url.
@@ -111,12 +111,71 @@ const PUBLIC_PROVIDER_FIELDS = [
   'years_experience',
   'specialties',
   'created_at',
-  // A computed column, not a stored one — PostgREST exposes a function taking the
-  // table's row type as a virtual column, so it arrives in the same round trip
-  // and stays consistent with the `.eq('available_today', true)` filter the
-  // search uses.
-  'available_today',
 ].join(', ')
+
+// The ids of providers who are open today, per the server.
+//
+// ── WHY THIS IS AN RPC AND NOT A COLUMN ───────────────────────────────────
+//
+// It was a PostgREST computed column (`available_today(providers)`) for exactly
+// one day, and that could never have worked. PostgREST renders a computed column
+// as a WHOLE-ROW reference to the table, and PostgreSQL requires SELECT on EVERY
+// column for a whole-row reference — while Correction 2 (`20261030000000`)
+// deliberately left `anon` and `authenticated` holding 28 NAMED columns and no
+// table-level grant. Every such read was refused with 42501, and because the name
+// had been added to `PUBLIC_PROVIDER_FIELDS` that took the discovery feed, the
+// provider profile and search down with it, not just the filter.
+//
+// `providers_open_today()` touches no `providers` column at all, so the grant
+// shape is irrelevant to it. One extra round trip, taken only when something
+// actually needs the set, and the main provider query stays single, ordered and
+// paginated.
+//
+// Returns null on failure rather than an empty array, so a caller can tell "the
+// server said nobody" from "we could not ask" — an empty array would silently
+// render an active filter as "no providers are open today", which is a claim.
+// The provider set the DISCOVERY LANES are computed over.
+//
+// ── WHY THE LANES CANNOT USE THE FEED'S PAGE ──────────────────────────────
+//
+// The grid pages 20 at a time ordered `is_featured DESC, average_rating DESC
+// NULLS LAST`. Handing that page to `buildDiscoveryLanes` quietly broke the lane
+// the fairness rule cares most about: a genuinely new provider has no rating
+// (NULLS LAST) and is not featured, so they sort to the very END of the market
+// and are the LEAST likely provider to appear on page one — meaning "New to The
+// Book" systematically excluded exactly the providers it exists for. Near You and
+// Available Soon were silently rating-filtered by the same slice, while their
+// printed rules said nothing of the kind.
+//
+// So the lanes get their own read: a flat, unranked pool ordered only by id, so
+// the ordering contributes no bias of its own and every lane rule is applied to
+// the market rather than to a leaderboard's head. One extra query on Discover,
+// bounded — this is a single-city beta, and the lane caps are far below this.
+//
+// It also fixes the second half of the same defect: lane membership no longer
+// shifts as the grid pages more rows in beneath it.
+export async function fetchDiscoveryPool(limit: number = 200): Promise<Provider[]> {
+  const { data, error } = await supabase
+    .from('providers')
+    .select(PUBLIC_PROVIDER_FIELDS)
+    .eq('is_approved', true)
+    .order('id', { ascending: true })
+    .limit(limit)
+  // Empty, not null: the lanes simply do not render, and the complete grid below
+  // them is unaffected. There is nothing here a viewer needs to be told.
+  if (error) return []
+  return attachHeroImages((data as unknown as Provider[]) || [])
+}
+
+export async function fetchOpenTodayProviderIds(): Promise<Set<string> | null> {
+  const { data, error } = await supabase.rpc('providers_open_today')
+  // Null, not an empty set: the caller must be able to tell "the server said
+  // nobody" from "we could not ask". An empty array would render an active
+  // filter as "no providers are open today", which is a claim.
+  if (error) return null
+  // A `setof uuid` arrives as an array of bare strings.
+  return new Set(((data as string[] | null) ?? []).map(String))
+}
 
 export async function getLiveCount(): Promise<number> {
   const { count } = await supabase
@@ -327,6 +386,10 @@ export function useProviderSearch(
 ) {
   const [results, setResults] = useState<Provider[]>([])
   const [loading, setLoading] = useState(false)
+  // Set when a FILTER could not be evaluated, as distinct from "no matches".
+  // The screen must be able to tell those apart: one is an answer, the other is
+  // the absence of one.
+  const [filterFailed, setFilterFailed] = useState(false)
 
   // `filters` is passed as an inline object literal from the caller, so its
   // reference changes on every render. Depending on the object directly made
@@ -344,6 +407,7 @@ export function useProviderSearch(
   const searchProviders = useCallback(async () => {
     try {
       setLoading(true)
+      setFilterFailed(false)
 
       let dbQuery = supabase
         .from('providers')
@@ -391,20 +455,32 @@ export function useProviderSearch(
         dbQuery = dbQuery.eq('is_mobile', true)
       }
 
-      // `available_today` is a PostgREST COMPUTED COLUMN (20261040000000): a
-      // function over `provider_availability` and `provider_blocked_dates`
-      // evaluated against SERVER time, so the answer cannot come from a stale
-      // client clock or a cached flag. Filtering on it composes with the query
-      // above in one round trip, which an id-list RPC could not do without
-      // breaking the ordering and the limit.
+      // "Open today", from the server: the provider published working hours for
+      // today's weekday and has not blocked the date, evaluated against SERVER
+      // time so a stale device clock cannot invent the claim.
       //
-      // IT MEANS "OPEN TODAY", NOT "HAS A FREE SLOT". The provider published
-      // working hours for today and has not blocked the date. Booked time is
-      // deliberately not subtracted — that needs a slot engine this beta does
-      // not have — so the filter under-claims rather than telling a client
-      // someone is free when they are not.
+      // IT MEANS "OPEN TODAY", NOT "HAS A FREE SLOT". Booked time is deliberately
+      // not subtracted — that needs a slot engine this beta does not have — so
+      // the filter under-claims rather than telling a client someone is free when
+      // they are not.
+      //
+      // A FAILED LOOKUP MUST NOT LOOK LIKE AN ANSWER. If the set could not be
+      // fetched we surface the failure and show nothing, rather than leaving the
+      // previous unfiltered list on screen beneath an active filter chip — a
+      // stale list under a filter label is the product making a claim the server
+      // never made.
       if (availableToday) {
-        dbQuery = dbQuery.eq('available_today', true)
+        const openToday = await fetchOpenTodayProviderIds()
+        if (openToday === null) {
+          setResults([])
+          setFilterFailed(true)
+          return
+        }
+        if (openToday.size === 0) {
+          setResults([])
+          return
+        }
+        dbQuery = dbQuery.in('id', Array.from(openToday))
       }
 
       dbQuery = dbQuery.order('rating', { ascending: false }).limit(20)
@@ -414,6 +490,10 @@ export function useProviderSearch(
       setResults((data as unknown as Provider[]) || [])
     } catch (err: any) {
       console.log('Search error:', err)
+      // A failed search must not leave the previous results standing as though
+      // they answered the current query.
+      setResults([])
+      setFilterFailed(true)
     } finally {
       setLoading(false)
     }
@@ -427,7 +507,7 @@ export function useProviderSearch(
     searchProviders()
   }, [query, categoryId, searchProviders])
 
-  return { results, loading }
+  return { results, loading, filterFailed }
 }
 
 // A post surfaced by content search, flattened with the provider info needed

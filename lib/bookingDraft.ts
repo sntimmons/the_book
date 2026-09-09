@@ -85,7 +85,21 @@ export class ProviderUnavailableError extends Error {
   }
 }
 
-const DRAFT_COLUMNS = 'id, provider_id, submitted_at'
+const DRAFT_COLUMNS = 'id, provider_id, submitted_at, status'
+
+// A zero-row write is NOT a success.
+//
+// RLS expresses authorization as a USING clause, which FILTERS rows rather than
+// raising — so a write the policy refuses comes back with `error === null` and no
+// rows. Treating that as success is how a client gets told "BOOKING REQUEST SENT"
+// for a request that was never written, which is the worst outcome this module
+// has. Every write below therefore asks for the affected row back and checks it.
+export class BookingWriteBlockedError extends Error {
+  constructor(what: string) {
+    super(`That ${what} could not be saved. Please try again.`)
+    this.name = 'BookingWriteBlockedError'
+  }
+}
 
 function isUniqueViolation(error: { code?: string } | null): boolean {
   return error?.code === '23505'
@@ -107,6 +121,14 @@ async function findDraft(userId: string, providerId: string): Promise<string | n
     .eq('user_id', userId)
     .eq('provider_id', providerId)
     .is('submitted_at', null)
+    // A LIVE draft only. A client who abandoned an earlier attempt leaves a
+    // `cancelled_by_client` row that is still `submitted_at IS NULL`; adopting it
+    // would hand the flow a row the client's own UPDATE policy no longer admits,
+    // and every write against it would be filtered to zero rows. That produced a
+    // permanent per-provider lockout behind a success screen. The matching
+    // partial index (`20261045000000`) carries the same `status = 'pending'`
+    // term, so a cancelled draft frees the slot rather than holding it forever.
+    .eq('status', 'pending')
     .maybeSingle()
   // Rethrown, not logged: the caller decides what to say, and the error object
   // reaches it intact. What must NOT happen is returning null on a failure —
@@ -139,8 +161,15 @@ export async function ensureBookingDraft(
 
   const existing = await findDraft(userId, details.providerId)
   if (existing) {
-    const { error } = await supabase.from('bookings').update(row).eq('id', existing)
+    const { data, error } = await supabase
+      .from('bookings')
+      .update(row)
+      .eq('id', existing)
+      .select('id')
     if (error) throw error
+    if (((data as { id: string }[] | null) ?? []).length === 0) {
+      throw new BookingWriteBlockedError('booking')
+    }
     return existing
   }
 
@@ -162,8 +191,15 @@ export async function ensureBookingDraft(
     if (isUniqueViolation(error)) {
       const won = await findDraft(userId, details.providerId)
       if (won) {
-        const { error: updateError } = await supabase.from('bookings').update(row).eq('id', won)
+        const { data: wonRows, error: updateError } = await supabase
+          .from('bookings')
+          .update(row)
+          .eq('id', won)
+          .select('id')
         if (updateError) throw updateError
+        if (((wonRows as { id: string }[] | null) ?? []).length === 0) {
+          throw new BookingWriteBlockedError('booking')
+        }
         return won
       }
     }
@@ -196,9 +232,18 @@ export async function submitBookingRequest(bookingId: string): Promise<void> {
   if (readError) throw readError
   if ((data as { submitted_at: string | null }).submitted_at) return
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from('bookings')
     .update({ submitted_at: new Date().toISOString() })
     .eq('id', bookingId)
+    // THE MOST IMPORTANT `.select()` IN THIS MODULE. Without it a policy-filtered
+    // submit returns no error and no rows, this function returns normally, and
+    // the client is shown a confirmation screen for a request that was never
+    // sent. The row is asked for back, and its absence is a failure.
+    .select('id, submitted_at')
   if (error) throw error
+  const rows = (updated as { id: string; submitted_at: string | null }[] | null) ?? []
+  if (rows.length === 0 || !rows[0].submitted_at) {
+    throw new BookingWriteBlockedError('request')
+  }
 }

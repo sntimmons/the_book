@@ -121,6 +121,9 @@ export function useNotifications() {
           'id, status, service_name, provider_id, payment_amount, created_at, provider_confirmed_at, cancelled_at, completed_at',
         )
         .eq('user_id', user.id)
+        // An unsent DRAFT is not a booking: no provider has seen it, so there is
+        // nothing about it to notify anyone of (PD-071).
+        .not('submitted_at', 'is', null)
         // Anchored on completed_at as well as status: a booking that completed and
         // then legally moved off 'completed' must still surface its completion (and
         // the review prompt it carries). Filtering on status alone re-introduced the

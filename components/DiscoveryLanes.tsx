@@ -30,6 +30,16 @@ import { cacheBustedPhoto } from '@/lib/image'
 
 export interface DiscoveryLanesProps {
   providers: Provider[]
+  /**
+   * The ids the SERVER says are open today, or null when that is not known yet
+   * (or could not be fetched).
+   *
+   * NULL IS NOT "NOBODY". It is passed through as `availableToday: null`, which
+   * `lib/discovery.ts` treats as unknown — so the Available Soon lane is simply
+   * absent rather than rendered empty or, far worse, rendered with providers
+   * whose availability nobody established.
+   */
+  openTodayIds?: Set<string> | null
   viewerNeighborhood?: string | null
   viewerLocation?: string | null
 }
@@ -38,7 +48,7 @@ export interface DiscoveryLanesProps {
 // see. It is the narrow point: a content or engagement signal would have to be
 // added here, to `DiscoveryProvider`, and to the module — three deliberate edits,
 // none of them accidental.
-function toDiscoveryProvider(p: Provider): DiscoveryProvider {
+function toDiscoveryProvider(p: Provider, openToday: Set<string> | null): DiscoveryProvider {
   return {
     id: p.id,
     neighborhood: p.neighborhood,
@@ -46,7 +56,7 @@ function toDiscoveryProvider(p: Provider): DiscoveryProvider {
     createdAt: p.created_at,
     totalBookings: p.total_bookings,
     averageRating: p.average_rating ?? p.rating,
-    availableToday: p.available_today ?? null,
+    availableToday: openToday === null ? null : openToday.has(p.id),
   }
 }
 
@@ -92,12 +102,13 @@ function LaneCard({ provider }: { provider: Provider }) {
 
 export default function DiscoveryLanes({
   providers,
+  openTodayIds = null,
   viewerNeighborhood = null,
   viewerLocation = null,
 }: DiscoveryLanesProps) {
   const byId = new Map(providers.map((p) => [p.id, p]))
   const lanes = buildDiscoveryLanes({
-    providers: providers.map(toDiscoveryProvider),
+    providers: providers.map((p) => toDiscoveryProvider(p, openTodayIds)),
     viewerNeighborhood,
     viewerLocation,
   })

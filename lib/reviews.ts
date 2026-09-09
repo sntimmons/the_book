@@ -369,10 +369,20 @@ export async function fetchClientCompletionRate(
     .from('bookings')
     .select('status')
     .eq('user_id', clientUserId)
+    // Drafts do not change the ratio — see the note below — but excluding them
+    // keeps every client-facing booking read saying the same thing about what a
+    // booking is, rather than relying on each reader to re-derive it.
+    .not('submitted_at', 'is', null)
   if (error) {
     console.log('client completion read error:', error.message)
     return null
   }
+  // DRAFTS DO NOT AFFECT THIS, and it was worth checking. Since Correction 3 an
+  // abandoned booking flow leaves a row in this result set, but the denominator
+  // is `completed + no_show + late_cancelled` — a live draft is `pending` and a
+  // discarded one is `cancelled_by_client`, so neither is counted, and a client
+  // is never penalised for changing their mind inside the flow. Stated here so
+  // the next reader does not have to re-derive it from the status vocabulary.
   const rows = (data ?? []) as Array<{ status: string }>
   const completed = rows.filter((r) => r.status === 'completed').length
   const missed = rows.filter(
@@ -385,15 +395,19 @@ export async function fetchClientCompletionRate(
 
 // Provider trust stats for the profile reviews-section triple, all real:
 // rebookedPct = clients with >1 completed booking / clients with >=1; and
-// avgResponseMins from provider_first_response_at - created_at.
+// avgResponseMins from provider_first_response_at - submitted_at.
 export async function fetchProviderTrustStats(providerId: string): Promise<{
   rebookedPct: number | null
   avgResponseMins: number | null
 }> {
   const { data, error } = await supabase
     .from('bookings')
-    .select('user_id, status, created_at, provider_first_response_at')
+    .select('user_id, status, created_at, submitted_at, provider_first_response_at')
     .eq('provider_id', providerId)
+    // Unsent drafts are not bookings. They would otherwise count toward the
+    // rebooked ratio's denominator and, before the fix below, distort the
+    // response-time average as well.
+    .not('submitted_at', 'is', null)
   if (error) {
     console.log('provider trust stats read error:', error.message)
     return { rebookedPct: null, avgResponseMins: null }
@@ -402,6 +416,7 @@ export async function fetchProviderTrustStats(providerId: string): Promise<{
     user_id: string | null
     status: string
     created_at: string | null
+    submitted_at: string | null
     provider_first_response_at: string | null
   }>
 
@@ -417,13 +432,24 @@ export async function fetchProviderTrustStats(providerId: string): Promise<{
   const rebookedPct =
     clientsWithCompleted > 0 ? (repeatClients / clientsWithCompleted) * 100 : null
 
-  const responded = rows.filter((r) => r.provider_first_response_at && r.created_at)
+  // MEASURED FROM `submitted_at`, NOT `created_at`.
+  //
+  // Since Correction 3, `created_at` is stamped when the client's DRAFT is
+  // created at the contract step, which can precede the actual request by
+  // minutes or days — all of it time the CLIENT spent deciding, none of it the
+  // provider's. Measuring from it charged a client's hesitation to a provider's
+  // public responsiveness number, in a marketplace where that number is a trust
+  // signal. `created_at` remains the fallback for rows predating the column,
+  // where the two are the same instant.
+  const responded = rows.filter(
+    (r) => r.provider_first_response_at && (r.submitted_at || r.created_at),
+  )
   const avgResponseMins =
     responded.length > 0
       ? responded.reduce((s, r) => {
           const diff =
             new Date(r.provider_first_response_at as string).getTime() -
-            new Date(r.created_at as string).getTime()
+            new Date((r.submitted_at ?? r.created_at) as string).getTime()
           return s + diff / (1000 * 60)
         }, 0) / responded.length
       : null

@@ -1,19 +1,42 @@
-import { View, Text, StyleSheet } from 'react-native'
+import { View, Text, Pressable, StyleSheet } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { router } from 'expo-router'
 import { RevealedReview, formatReviewDate, initialsOf } from '../lib/reviews'
 
-// A single client->provider review card. Not tappable: matches the Figma which
-// shows a static card with no interactive affordance.
+// A single client->provider review card.
+//
+// TAPPABLE, as of Correction 3 item U. It was deliberately static ("matches the
+// Figma which shows a static card with no interactive affordance") — which was
+// the right call while `/reviews/[id]` was a placeholder saying "Coming in the
+// next update", because navigating into that was worse than not navigating at
+// all. Now that the screen is real, the card is the only route to it, and a
+// finished screen nothing can reach is not a delivered feature.
+//
+// `openable` defaults to true; a caller that renders a review with no id, or in a
+// context where a full-screen push would be wrong, can opt out.
 export default function ReviewCard({
   review,
   subtitle,
+  openable = true,
 }: {
   review: RevealedReview
   subtitle?: string
+  openable?: boolean
 }) {
   const stars = Math.round(review.rating)
+  const canOpen = openable && !!review.id
+  const Card = canOpen ? Pressable : View
   return (
-    <View style={s.card}>
+    <Card
+      style={s.card}
+      {...(canOpen
+        ? {
+            accessibilityRole: 'button' as const,
+            onPress: () =>
+              router.push({ pathname: '/reviews/[id]', params: { id: review.id } }),
+          }
+        : {})}
+    >
       <View style={s.topRow}>
         <View style={s.avatar}>
           <Text style={s.avatarText}>{initialsOf(review.reviewerName)}</Text>
@@ -49,7 +72,7 @@ export default function ReviewCard({
           ))}
         </View>
       ) : null}
-    </View>
+    </Card>
   )
 }
 

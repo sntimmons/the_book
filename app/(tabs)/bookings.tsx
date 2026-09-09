@@ -87,9 +87,15 @@ export default function BookingsScreen() {
       const { data, error } = await supabase
         .from('bookings')
         .select(
-          'id, service_name, requested_date, requested_time, status, payment_amount, provider_id, message, created_at',
+          'id, service_name, requested_date, requested_time, status, payment_amount, provider_id, message, created_at, submitted_at',
         )
         .eq('user_id', user.id)
+        // A DRAFT is not a request. The client's own SELECT policy shows them
+        // their drafts — that is what makes resuming one possible — but a row
+        // the provider cannot see must never be presented here as "Pending,
+        // waiting for provider confirmation". That told a client to wait for an
+        // answer to something nobody had been asked.
+        .not('submitted_at', 'is', null)
         .order('created_at', { ascending: false })
 
       if (error) {

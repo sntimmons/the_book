@@ -1334,6 +1334,9 @@ NOT in the migration that created it.
 | `public.enforce_barter_offer_active_one_way` | `20260915000000_barter_closed_post_terminal.sql` | **`20260916000000_barter_guard_admin_escape.sql`** | Makes `is_active` one-way for authenticated writers (PD-051). `20260915000000` exempted only `auth.role() = 'service_role'`, which covers the PostgREST service path but NOT a psql / SQL-console / migration session, where there is no JWT and `auth.role()` is NULL — so it silently excluded the sessions an operator actually recovers from, and would abort any future migration touching `is_active`. `20260916000000` adds `or (select auth.uid()) is null`, matching `enforce_barter_offer_delete`. |
 | `public.enforce_booking_write_integrity` | `20260830010000` | **`20261041000000_booking_write_integrity_restore.sql`** | **THE EXACT HAZARD THIS TABLE EXISTS FOR, and it happened here.** Correction 3's `20261037000000` rebuilt this function from `20260902000000` and asserted in its own header that that was the live definition. It was not: **`20260904000000_booking_completed_no_show_guard.sql` had redefined it afterwards**, and copying the older body forward silently deleted TWO rules — the `completed_at is immutable once set` RAISE (replaced by a silent latch, so a provider re-completing a booking would have had `completed_at` quietly held rather than the write refused) and **`A completed booking cannot be marked no_show` (SEC-LIFECYCLE-001)**, which is a review-suppression vector: without it a provider could flip a completed booking to `no_show` to make the client's earned review disappear. **B5B caught it on the first run after apply, with three failures.** `20261041000000` rebuilds from the true `20260904000000` body with Correction 3's four additions re-applied on top: the draft/submit transition, the server-derived `expires_at`, the `PT425` expiry refusal on ACCEPT only, and the `PT426` refusal of a new booking for a de-approved provider. **Before redefining this function, read `20260904000000` — not `20260902000000`, and not this row's "created in" column.** |
 | `public.enforce_barter_adjudication_consistent` | `20261019000000_barter_obligation_adjudication.sql` | **`20261042000000_adjudication_consistency_review_request.sql`** | **Eligibility for adjudication is enforced in TWO places by design** — in `adjudicate_barter_obligation` and again in this trigger, so a direct privileged INSERT cannot bypass the RPC — **and Correction 3's `20261039000000` updated only the first.** The deliverer's review request (PD-072) reached Under Review in the read model and in the RPC's precondition, while this trigger went on refusing the INSERT with `object_not_in_prerequisite_state`: a transition that read correctly and did nothing, which is precisely the "cosmetic" failure `20261039000000`'s own § 7 said it existed to prevent. Caught by `supabase/tests/barter_review_request.test.sql` § 10, which asserts an operator can actually RESOLVE a requested review rather than only that the RPC's own check passes. `20261042000000` is written from `pg_get_functiondef` on the live object, whose definition is **`20261023000000`** per the row above — and preserves the two rules a copy-forward drops silently: the explicit NULL-`adjudicator_user_id` refusal (load-bearing since the column became nullable for erasure, because the participant test below it evaluates to NULL rather than true on a null) and the participant check made against BOTH the agreement's participants and the obligation's. **Rule this reinforces: when a rule is deliberately enforced twice, a change to it is TWO edits, and the test must exercise the write end-to-end rather than the precondition alone.** |
+| `public.enforce_conversation_insert` / `public.enforce_conversation_update` / `public.enforce_prebooking_message_rules` | `20260901000000` / `20260901000000` / `20260901000000` | **`20261045000000_drafts_are_not_relationships.sql`** (all three) | Previously live at `20260901000000` (insert), `20260908000000` (update — the canonical-pair fix that accepts BOTH orientations) and `20260914000000` (message rules — which itself RESTORED a `for update` lock that an earlier copy-forward had dropped). All three now also require `b.submitted_at is not null` wherever they test that a booking exists for the pair. **Read `20260908000000` and `20260914000000`, not `20260901000000`, before touching these** — the update gate's two-orientation predicate and the message gate's lock-then-read are both invisible from the creating migration, and both have been silently deleted by a copy-forward once already. The added conjunct is what stops an UNSENT DRAFT from buying an ungated conversation or reversing a provider's decline; a blanket refusal would have broken the booking-supersedes-request behaviour, so `booking_lifecycle.test.sql` § 10 asserts the complement — a SUBMITTED booking still opens a declined thread. |
+| `public.available_today` (new, then DROPPED) | `20261040000000_provider_availability_signals.sql` | **DROPPED by `20261044000000_open_today_without_whole_row.sql`** | A PostgREST computed column on `providers`, which cannot work for client roles: a computed column is a WHOLE-ROW reference and `20261030000000` left `anon`/`authenticated` with column-level grants only. Superseded by `public.providers_open_today()`, which returns ids. **Do not add a computed column to `providers`.** |
+| `public.clients_provider` (view) | `20260829000000_canonical_live_baseline.sql` | **`20261045000000`** | A definer view (`security_invoker = false`) that shows a provider a client's name, join date and neighborhood. Its booking arm now requires `submitted_at is not null`: an unsent draft is invisible to the provider and is not a relationship the client chose to create. The conversation arm is unchanged. |
 | `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |
 
 `20260907000000`'s "RECORDED, NOT RESOLVED / TWO THREADS PER PAIR" note is **resolved** by
@@ -1599,14 +1602,51 @@ day and both caught by the B5B suite rather than by review. Nothing in productio
 | **`20261042000000_adjudication_consistency_review_request.sql`** | **Forward correction to `20261039000000`.** The eligibility rule is enforced twice by design and only one copy was updated, leaving item X's transition cosmetic. |
 | `20261043000000_posts_owner_delete.sql` | Item L. Adds the owner-scoped DELETE policy and grant on `public.posts`, which had none at all — so provider-authored media could never be removed by its author. Also adds the missing `WITH CHECK` to `posts_update_own`, which had a USING clause only and therefore let a provider reassign `provider_id`, publishing their media onto a stranger's public profile. |
 
-**Both corrections are forward-only. No applied migration was edited.**
+**`20261044000000` — `available_today` could never have worked, and it took the feed with it.**
+`20261040000000` exposed "open today" as a PostgREST COMPUTED COLUMN — a function
+taking `public.providers`'s ROW TYPE. PostgREST renders that as a **whole-row
+reference**, and PostgreSQL requires SELECT on **every** column for one, while
+Correction 2's `20261030000000` deliberately left `anon`/`authenticated` with 28
+NAMED column grants and no table-level SELECT. Reproduced as `anon`:
+`ERROR: 42501: permission denied for table providers`. Because the name had been
+added to `PUBLIC_PROVIDER_FIELDS`, this was not a broken chip — it was the
+**discovery feed, the provider profile and search all failing for every user**.
+Replaced by `providers_open_today()`, which returns ids and touches no provider
+column, so the grant shape is irrelevant to it. **A computed column on `providers`
+is unreachable for client roles and must not be reintroduced.**
 
-**What the two failures have in common, and what to take from them:** each was a rule enforced in
-two places on purpose — once in the current file's line of sight and once outside it — where the
-edit updated only the copy in view. The redefinition table caught neither, because in one case the
-table had no row for the function and in the other the second enforcement point was a different
-object entirely. **The check that worked both times was a test that exercised the write
-end-to-end**, not one that asserted the precondition it had just changed.
+**`20261045000000` — a draft is not a relationship.**
+Moving the `bookings` row earlier created a row that is NOT a request, and three
+boundaries written before drafts existed tested only "a booking exists for this
+pair": `enforce_conversation_insert`, `enforce_conversation_update` and
+`enforce_prebooking_message_rules`. A draft satisfied all three, so an ordinary
+authenticated account could open an **ungated conversation** with any approved
+provider — bypassing the pre-booking message-request gate — and **reverse a
+provider's explicit decline**. The same file also narrows
+`bookings_one_draft_per_pair` to LIVE drafts (a cancelled draft held the slot
+forever behind a false "request sent" screen) and adds `submitted_at is not null`
+to `clients_provider`, so an unsent draft no longer discloses the client's name
+and neighborhood to a provider who cannot see the row.
+
+**All four corrections are forward-only. No applied migration was edited.**
+
+**What the four failures have in common.** Three of them are the same mistake in three costumes: a
+rule enforced in more than one place, where the edit updated only the copy in view. Twice the second
+copy was another SQL object (`enforce_booking_write_integrity`'s live definition;
+`enforce_barter_adjudication_consistent`); once it was **three unchanged boundaries that tested for
+the existence of a row whose MEANING had just been widened** (`20261045000000`). The fourth
+(`20261044000000`) is different and worse: the feature was tested only as `service_role`, the one
+role that could not fail, so a completely broken read path passed every check.
+
+**Two rules follow from this session, and they are the ones to carry forward:**
+
+1. **When a migration widens what an existing row type can MEAN, the review question is not "is the
+   new column safe?" — it is "what else tests for the existence of this row, and was it written
+   assuming the old meaning?"** Grep for the table, not for the column.
+2. **Assert as the role that will actually call it.** A privilege test (`has_function_privilege`) is
+   not a reachability test, and `service_role` holds grants no client role does. Every behavioural
+   assertion for a client-facing read must run as `anon` or `authenticated`, or it can pass over a
+   feature that is entirely broken. `supabase/tests/booking_lifecycle.test.sql` § 12 now does.
 
 ## Production application policy
 

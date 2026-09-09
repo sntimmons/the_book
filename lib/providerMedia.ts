@@ -12,7 +12,8 @@ import { supabase } from './supabase'
 // photo, or a photo of a client who later asked for it to come down, could do
 // nothing about it. `20261043000000` added the owner-scoped policy; this is the
 // one place the client acts on it, so the ordering and the failure handling below
-// exist once rather than in each of the three screens.
+// exist once rather than in each of the two screens that offer it (the portfolio
+// grid and the posts/reels grid; the Reels player has no delete).
 //
 // ── OWNERSHIP IS THE SERVER'S ANSWER, NOT THIS MODULE'S ───────────────────
 //
