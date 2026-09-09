@@ -610,17 +610,27 @@ function ActionButtons(props: ActionButtonsProps) {
       )
     }
     return (
-      <View style={styles.row}>
-        <Pressable
-          style={[styles.secondaryBtnHalf, actionLoading && styles.btnDisabled]}
-          onPress={onCancel}
-          disabled={actionLoading}
-        >
-          <Text style={styles.secondaryBtnText}>Cancel Request</Text>
-        </Pressable>
-        <Pressable style={styles.primaryBtnHalf} onPress={onMessage}>
-          <Text style={styles.primaryBtnText}>Message Provider</Text>
-        </Pressable>
+      <View>
+        {/* ITEM 2 (PM decision, PR #74). The confirmation screen tells the client
+            "you can check this request anytime" — this is where they check, so
+            the window is restated here rather than left on a screen they have
+            already navigated away from. Same number, same absence of a promised
+            channel. */}
+        <Text style={styles.responseWindowNote}>
+          Your provider has up to 72 hours to respond.
+        </Text>
+        <View style={styles.row}>
+          <Pressable
+            style={[styles.secondaryBtnHalf, actionLoading && styles.btnDisabled]}
+            onPress={onCancel}
+            disabled={actionLoading}
+          >
+            <Text style={styles.secondaryBtnText}>Cancel Request</Text>
+          </Pressable>
+          <Pressable style={styles.primaryBtnHalf} onPress={onMessage}>
+            <Text style={styles.primaryBtnText}>Message Provider</Text>
+          </Pressable>
+        </View>
       </View>
     )
   }
@@ -905,6 +915,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
+  },
+  responseWindowNote: {
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.55)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 19,
+    marginBottom: 12,
   },
   draftNote: {
     fontSize: 13,

@@ -883,3 +883,31 @@ When future product work turns up something worth saying out loud:
 Adding an idea here costs nothing and commits nothing. That is the point — the file is cheap
 to write to precisely so good thinking is not lost to the alternative, which is skipping the
 exploration step and putting an unapproved idea somewhere it will be mistaken for a decision.
+
+
+## Barter happy path — Find → Talk → Propose → Agree → Do it → Confirm
+
+**Status: APPROVED AS A FUTURE UI/UX DESIGN REQUIREMENT. Not a PR #74 merge blocker, and
+deliberately NOT attempted in Correction 3.**
+
+The barter surface should *feel* like six plain steps:
+
+**Find → Talk → Propose → Agree → Do it → Confirm.**
+
+**What this is not.** It is not a change to the engine. Session 7's backend stands exactly as it
+is — the proposal/version model, the two directed obligations, the cancellation model, the
+adjudication model, PT424, derived agreement presentation and agreement immutability are all
+locked (PD-057 … PD-070, PD-072) and none of them is reopened by this. It is not a change to the
+participant-facing vocabulary either: **Needs Attention** and **Under Review** are the approved
+simplified terms and stay, and no internal engine terminology may surface (PD-062, PD-068).
+
+**Why it was not done in Correction 3.** Reshaping how a flow feels is a subjective design
+judgement, and the Correction 3 brief reserves those for the Founder. The implementation engine
+declined to invent one rather than ship a redesign nobody had approved. That was the right call and
+is recorded so the omission is not later read as an oversight.
+
+**What a future design pass owes.** A mapping from each of the six words to the states that already
+exist, with nothing added to the engine to make the story tidier — if a step has no state behind
+it, the step is wrong, not the engine. The one genuinely new participant act of Correction 3, the
+deliverer's *"Ask The Book to review"* (PD-072), belongs inside **Confirm** rather than as a
+seventh step.

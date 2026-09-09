@@ -1,11 +1,9 @@
-import { useState } from 'react'
 import {
   View,
   Text,
   ScrollView,
   Pressable,
   TouchableOpacity,
-  Switch,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
@@ -14,54 +12,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import NeighborhoodPicker from '@/components/NeighborhoodPicker'
 import { useClientStore } from '@/store/clientStore'
 
-const INTERESTS = [
-  { id: 'lashes', icon: '✦', title: 'Lashes', subtitle: 'Extensions & lifts' },
-  { id: 'hair', icon: '◈', title: 'Hair', subtitle: 'Cuts, color & styling' },
-  { id: 'makeup', icon: '◉', title: 'Makeup', subtitle: 'Glam & editorial' },
-  { id: 'nails', icon: '⬡', title: 'Nails', subtitle: 'Sets & nail art' },
-  { id: 'brows', icon: '⌖', title: 'Brows', subtitle: 'Shaping & tinting' },
-  { id: 'skincare', icon: '◎', title: 'Skincare', subtitle: 'Facials & glow' },
-  { id: 'massage', icon: '⊛', title: 'Massage', subtitle: 'Therapeutic & relaxation' },
-  { id: 'waxing', icon: '⊕', title: 'Waxing', subtitle: 'Body & facial' },
-  { id: 'photography', icon: '⌗', title: 'Photography', subtitle: 'Portraits & shoots' },
-] as const
-
-type InterestId = typeof INTERESTS[number]['id']
-
-const DEFAULT_SELECTED: Set<InterestId> = new Set(['lashes', 'hair', 'makeup', 'nails'])
-
-function InterestCard({
-  icon,
-  title,
-  subtitle,
-  selected,
-  onToggle,
-}: {
-  icon: string
-  title: string
-  subtitle: string
-  selected: boolean
-  onToggle: () => void
-}) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={onToggle}
-      style={[styles.interestCard, selected ? styles.interestCardSelected : styles.interestCardUnselected]}
-    >
-      <View style={styles.interestCardTopRow}>
-        <Text style={[styles.interestIcon, selected && styles.interestIconSelected]}>{icon}</Text>
-        {selected && <Text style={styles.checkmark}>✓</Text>}
-      </View>
-      <Text style={[styles.interestTitle, selected && styles.interestTitleSelected]}>{title}</Text>
-      <Text style={[styles.interestSubtitle, selected && styles.interestSubtitleSelected]}>{subtitle}</Text>
-    </TouchableOpacity>
-  )
-}
-
 export default function ClientPreferences() {
   const insets = useSafeAreaInsets()
-  const [selected, setSelected] = useState<Set<InterestId>>(new Set(DEFAULT_SELECTED))
   // THE SAME VALUE STEP 1 COLLECTED, not a second local copy.
   //
   // This picker held plain local state defaulted to 'Midtown, Houston' and wrote
@@ -77,24 +29,6 @@ export default function ClientPreferences() {
   const setStoreNeighborhood = useClientStore((st) => st.setNeighborhood)
   const location = storeNeighborhood || 'Midtown, Houston'
   const setLocation = setStoreNeighborhood
-  const [mobileProv, setMobileProv] = useState(true)
-
-  function toggleInterest(id: InterestId) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-      }
-      return next
-    })
-  }
-
-  const rows: Array<typeof INTERESTS[number][]> = []
-  for (let i = 0; i < INTERESTS.length; i += 2) {
-    rows.push(INTERESTS.slice(i, i + 2) as typeof INTERESTS[number][])
-  }
 
   return (
     <View style={styles.root}>
@@ -125,57 +59,51 @@ export default function ClientPreferences() {
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        <Text style={styles.headline}>What are you into?</Text>
+        {/* ITEM 4 (PM decision, PR #74): the interest grid is REMOVED, and the
+            headline with it.
+
+            Seven category cards, four pre-selected, under the promise "We'll
+            surface the best providers for the things you care about most."
+            Nothing consumed them. They were local React state, written to no
+            store and no column; the `clients` upsert at the end of onboarding
+            writes name, notes, neighborhood and avatar, and no query anywhere
+            reads an interests field. Discovery orders by the lanes in
+            lib/discovery.ts, which has no interest input at all.
+
+            So the screen asked a new client to describe their taste and then
+            discarded the answer, under a sentence saying it would be used. That
+            is the same defect item A removed from the notification switches on
+            this very screen, and the PM ruling is explicit: do not collect
+            placebo preference data, and do not build a recommendation engine to
+            justify the field. The grid returns if and when something reads it.
+
+            The LOCATION section below stays: `clients.neighborhood` is really
+            persisted and really consumed — it is what the Near You lane reads. */}
+        <Text style={styles.headline}>Where are you?</Text>
+        {/* PRODUCT TRUTH: the subtext under this used to read "Providers within
+            15 miles". There is no distance calculation anywhere in the product —
+            discovery matches neighborhood and city as TEXT (lib/discovery.ts) —
+            so the number described a radius nothing computes. */}
         <Text style={styles.subtext}>
-          We&apos;ll surface the best providers{'\n'}
-          for the things you care about most.
+          We use this to show you providers{'\n'}
+          working in your area.
         </Text>
 
-        {/* Interest grid */}
-        <View style={styles.grid}>
-          {rows.map((row, rowIdx) => (
-            <View key={rowIdx} style={styles.gridRow}>
-              {row.map((item) => (
-                <InterestCard
-                  key={item.id}
-                  icon={item.icon}
-                  title={item.title}
-                  subtitle={item.subtitle}
-                  selected={selected.has(item.id)}
-                  onToggle={() => toggleInterest(item.id)}
-                />
-              ))}
-              {row.length === 1 && <View style={styles.interestCardSpacer} />}
-            </View>
-          ))}
-        </View>
-
-        {/* Location section */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionLabel}>LOCATION</Text>
-        </View>
         <NeighborhoodPicker value={location} onChange={setLocation} />
-        {/* PRODUCT TRUTH: this read "Providers within 15 miles". There is no
-            distance calculation anywhere in the product — discovery matches
-            neighborhood and city as TEXT (lib/discovery.ts) — so the number
-            described a radius nothing computes. */}
-        <Text style={[styles.locationSubtext, { marginTop: 8, marginLeft: 4 }]}>
-          Used to show you providers working in your area
-        </Text>
-        <View style={[styles.sectionCard, { marginTop: 16 }]}>
-          <View style={styles.preferenceRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.locationTitle}>Show mobile providers</Text>
-              <Text style={styles.locationSubtext}>Providers that come to you</Text>
-            </View>
-            <Switch
-              value={mobileProv}
-              onValueChange={setMobileProv}
-              trackColor={{ false: 'rgba(240,232,213,0.15)', true: 'rgba(240,232,213,0.5)' }}
-              thumbColor={mobileProv ? '#F0E8D5' : 'rgba(240,232,213,0.4)'}
-            />
-          </View>
-        </View>
+
+        {/* ITEM 4, SAME RULING, ADJACENT CONTROL: the "Show mobile providers"
+            switch is removed too.
+
+            It met the PM test exactly as the interests grid did — local state,
+            persisted nowhere, read by nothing — and leaving the last placebo
+            control on a screen the same ruling had just cleared would have looked
+            like an oversight rather than a boundary. **Flagged for PM**: item 4
+            named interests specifically; this is my reading of the principle it
+            states, and it is trivially reversible.
+
+            A REAL mobile-provider filter does exist and does work: the "Mobile
+            only" switch on Search, which item M wired to `providers.is_mobile`.
+            The difference is that one filters and this one did not. */}
 
         {/* ITEM A (Correction 3): the Notifications section is removed.
             Three switches — booking updates, new providers nearby, deals &
@@ -276,103 +204,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 28,
   },
-  grid: {
-    gap: 12,
-    marginBottom: 32,
-  },
-  gridRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  interestCard: {
-    flex: 1,
-    borderRadius: 16,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    padding: 16,
-    minHeight: 100,
-  },
-  interestCardSpacer: {
-    flex: 1,
-  },
-  interestCardUnselected: {
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderColor: 'rgba(240,232,213,0.08)',
-  },
-  interestCardSelected: {
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderColor: 'rgba(240,232,213,0.28)',
-  },
-  interestCardTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  interestIcon: {
-    fontSize: 18,
-    color: 'rgba(240,232,213,0.3)',
-  },
-  interestIconSelected: {
-    color: '#F0E8D5',
-  },
-  checkmark: {
-    fontSize: 12,
-    color: '#F0E8D5',
-    fontWeight: '700',
-    fontFamily: 'Manrope_700Bold',
-  },
-  interestTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_600SemiBold',
-    marginBottom: 3,
-  },
-  interestTitleSelected: {
-    color: '#F0E8D5',
-  },
-  interestSubtitle: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.25)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 15,
-  },
-  interestSubtitleSelected: {
-    color: 'rgba(240,232,213,0.5)',
-  },
-  sectionHeader: {
-    marginBottom: 10,
-  },
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_600SemiBold',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
-  sectionCard: {
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.08)',
-    borderRadius: 16,
-    borderCurve: 'continuous',
-    marginBottom: 24,
-    overflow: 'hidden',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    marginHorizontal: 16,
-  },
-  locationTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-    marginBottom: 2,
-  },
   locationSubtext: {
     fontSize: 11,
     color: 'rgba(240,232,213,0.4)',
@@ -380,13 +211,6 @@ const styles = StyleSheet.create({
   },
   // Named for the notification rows that item A removed; it now styles the
   // "Show mobile providers" row, which is the only one left using it.
-  preferenceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 12,
-  },
   cta: {
     position: 'absolute',
     bottom: 0,

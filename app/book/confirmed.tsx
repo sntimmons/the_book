@@ -98,22 +98,21 @@ export default function BookConfirmed() {
           accept or decline. You&apos;ll see their response in The Book.
         </Text>
 
-        {/* PRODUCT TRUTH: a "has 24 hours to respond" timer used to sit here,
-            driven by a hardcoded string, and told the CLIENT that a response was
-            guaranteed within a window.
+        {/* ITEM 2 (PM decision, PR #74): the client IS told the window.
 
-            THIS NOTE HAS NOW BEEN WRONG TWICE, which is worth recording. It first
-            said "nothing expires a pending booking"; that was corrected to "there
-            is no server-side expiry — no trigger, no job, no column", and PD-071
-            then added all three. The rule today is real and server-authoritative:
-            a request expires at LEAST(submitted_at + 72 hours, appointment_time),
-            after which the provider can no longer ACCEPT it (declining stays open
-            forever, and the request stays in both histories).
+            A "has 24 hours to respond" timer used to sit here, driven by a
+            hardcoded string that matched no enforced rule. It was removed rather
+            than corrected, and PD-071 recorded whether to tell the client at all
+            as a Founder question. That question is now answered: tell them.
 
-            Nothing about that window is stated to the CLIENT here, and that is
-            still deliberate: whether the client should be told about a deadline
-            the provider is held to is a Founder question, recorded in PD-071 and
-            not decided by implementation. What is gone for good is the promise. */}
+            The number is the real one — PD-071's server-authoritative 72 hours —
+            and the second sentence is what makes the first safe to say. There is
+            no push, email or SMS channel in this product, so the client is told
+            where to LOOK rather than promised something will arrive. */}
+        <Text style={styles.responseWindowText}>
+          Your provider has up to 72 hours to respond. You can check this request
+          anytime.
+        </Text>
 
         {/* Booking summary pill */}
         {bookingSummary.length > 0 && (
@@ -199,6 +198,15 @@ export default function BookConfirmed() {
 }
 
 const styles = StyleSheet.create({
+  responseWindowText: {
+    marginTop: 14,
+    fontSize: 13,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 19,
+    textAlign: 'center',
+    paddingHorizontal: 8,
+  },
   primaryBtn: {
     height: 54,
     borderRadius: 16,

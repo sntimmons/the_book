@@ -199,6 +199,33 @@ an entry is self-describing when quoted alone.
   requests until Session 8 builds the operator Review Queue, and there is still no SLA.
 - **Status:** CLOSED — resolved by PD-072, 2026-09-09
 
+### OQ-072 — A booking carries a service DATE but not always an authoritative appointment TIME
+- **Area:** Booking lifecycle
+- **Why it matters:** PD-071 expires a request at `LEAST(submitted_at + 72 hours,
+  appointment_time)`, so the clamp that stops a request outliving its own service time depends on
+  `appointment_time` — which is **nullable**. When it is null the 72-hour deadline stands alone,
+  and a request can remain answerable after the date the client asked for.
+- **What the model actually holds.** `bookings.requested_date` is a `date` and is NOT NULL;
+  `bookings.requested_time` is free `text` (a display string, "11:00 AM"); `appointment_time` is
+  `timestamptz` and nullable. A deadline derived from the first two requires assuming **a
+  time-of-day and a timezone** — neither of which the row carries.
+- **How narrow the gap is.** The date/time step will not advance without both a date and a time,
+  and its slot labels are exactly the format the parser accepts, so a request made through the
+  normal flow **does** carry an `appointment_time`. What remains is rows predating the column and
+  any path that reaches the send step without passing that one.
+- **One further limitation, recorded with it:** `appointment_time` is assembled on the CLIENT from
+  the device's local timezone. For a single-city beta where both parties are in Houston that is
+  unremarkable, but it means the "authoritative" timestamp is only as authoritative as the device
+  clock. It cannot be abused to LENGTHEN a window — `LEAST` caps at 72 hours regardless — only to
+  shorten the client's own.
+- **Not to be resolved by implementation.** **PM ruling, 2026-09-09:** do not manufacture a rule
+  from the service date. Deriving "end of the requested day" or any other boundary means inventing
+  a time-of-day and picking a timezone on the client's behalf, and a rule invented from assumptions
+  is worse than a bounded one that is honest about its limit. Options a decision could take —
+  making `appointment_time` NOT NULL going forward, storing a booking timezone, or accepting the
+  72-hour bound as final — are all genuinely open.
+- **Status:** Open
+
 ### OQ-008 — May an offer's terms still be edited once providers have responded to them?
 - **Area:** Barter
 - **Why it matters:** Slice 1 made a response permanently immutable — including its `message`

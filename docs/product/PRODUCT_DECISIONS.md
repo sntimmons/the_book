@@ -1155,6 +1155,15 @@ as locked decisions.
     hours". It is one `least()` over a column the row already has, and it invents no scheduling
     system. **PM REVIEW:** when `appointment_time` is NULL the 72-hour deadline stands alone, so
     a request can outlive its own requested slot, bounded at 72 hours.
+  **PM RULING, 2026-09-09 — the rule is UNCHANGED, deliberately.** Where an authoritative
+  timestamp exists it is used, and the clamp already does that. Where there is genuinely none, the
+  72-hour deadline stands. The tempting third case is the one that is refused: `requested_date` is
+  a bare DATE and `requested_time` is a display string, so turning them into a deadline means
+  assuming a time-of-day and a timezone — and **a rule invented from assumptions is worse than a
+  bounded one that is honest about its limit.** The limitation is recorded as **OQ-072** rather
+  than resolved in code. In practice the null case is narrow: the date/time step requires both a
+  date and a time before it will advance, so a normal request carries an `appointment_time`; what
+  remains is rows predating the column and flows that reached the send step without that step.
   - **Why a column and not a status:** `bookings.status` is constrained and `pending` already
     means "a real request the provider must answer". A draft *status* would have put every
     abandoned flow into the provider's queue — the opposite of what this decision is for.
@@ -1334,6 +1343,65 @@ as locked decisions.
   `supabase/migrations/20261043000000_posts_owner_delete.sql`, `lib/providerMedia.ts`,
   `app/(tabs)/business/portfolio.tsx`, `app/(tabs)/business/posts.tsx`,
   `app/onboarding/provider/review.tsx`, `app/onboarding/provider/policy.tsx`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-077 — The client is told the provider has up to 72 hours, and told where to look
+
+- **Decision.** After sending a request the client sees: *"Your provider has up to 72 hours to
+  respond. You can check this request anytime."* The window is restated on the request itself,
+  where they check.
+- **Context.** PD-071 made expiry real and server-authoritative, and deliberately left "should the
+  client be told?" open — the previous copy had promised *"has 24 hours to respond"*, a number
+  matching no enforced rule, and it was removed rather than corrected. That left the client the
+  only party uninformed about a deadline the provider is held to.
+- **Consequences.** The number is the real one. The second sentence is what makes the first safe
+  to say: **there is no push, email or SMS channel in this product**, so the client is told where
+  to LOOK rather than promised that something will arrive. No copy built on this may say a
+  reminder was sent, and `__tests__/guards/betaClaimsAbsent.test.ts` still fails on a
+  notification claim.
+- **Evidence.** PM decision on PR #74, 2026-09-09. `app/book/confirmed.tsx`, `app/bookings/[id].tsx`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-078 — A de-approved provider is told, in availability terms
+
+- **Decision.** A provider who is not currently approved sees, on their own dashboard: *"Your
+  business is not currently available for new bookings. Your existing bookings, messages, and
+  history are still available."*
+- **Context.** PD-075 built the CLIENT side of this and not the provider's. A de-approved provider
+  simply stopped receiving requests, with nothing anywhere saying why and no route to ask.
+- **Consequences.** Not dismissable, and deliberately unlike the availability nudge beside it:
+  that is a task the provider can finish, this is a state they cannot change from that screen. It
+  states the fact and what still works, and stops — no reason, nothing that reads as a judgement.
+  **Marketplace approval is not identity verification** and this copy must never imply it is;
+  PD-074 keeps the two apart in both directions.
+- **Evidence.** PM decision on PR #74, 2026-09-09. `app/(tabs)/business/index.tsx`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-079 — No placebo preference data in onboarding
+
+- **Decision.** A preference is collected only if something in the live product consumes it. The
+  client onboarding **interests grid is removed**, and so is the adjacent **"Show mobile
+  providers"** switch. The neighborhood picker stays.
+- **Context.** Seven category cards, four pre-selected, under the promise *"We'll surface the best
+  providers for the things you care about most."* Nothing consumed them: they were local React
+  state, written to no store and no column. The `clients` upsert that ends onboarding writes name,
+  notes, neighborhood and avatar; no query anywhere reads an interests field; and discovery orders
+  by the lanes in `lib/discovery.ts`, which has no interest input. The screen asked a new client to
+  describe their taste and discarded the answer under a sentence saying it would be used.
+- **Consequences.** The same rule item A applied to the notification switches on this same screen.
+  **No recommendation engine is to be built to justify the field** — the grid returns if and when
+  something reads it. The neighborhood picker stays because it is genuinely persisted and genuinely
+  consumed: it is what the Near You lane reads. **PM NOTE:** the ruling named interests; extending
+  it to the mobile-providers switch is a reading of the principle it states, taken because leaving
+  the last placebo control on a screen the ruling had just cleared would look like an oversight. A
+  REAL mobile filter exists on Search (`providers.is_mobile`, item M) and is unaffected.
+- **Evidence.** PM decision on PR #74, 2026-09-09. `app/onboarding/client/preferences.tsx`.
 - **Status:** Locked; **implemented**
 
 ---

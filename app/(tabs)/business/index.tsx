@@ -134,6 +134,11 @@ export default function ProviderDashboard() {
   const [requestsLoading, setRequestsLoading] = useState(true)
   const [hasAvailability, setHasAvailability] = useState<boolean | null>(null)
   const [availNudgeDismissed, setAvailNudgeDismissed] = useState(false)
+  // ITEM 5 (PM decision, PR #74): a provider who is not currently approved must
+  // be TOLD. Until now they simply stopped receiving requests, with nothing
+  // anywhere saying why — the client side of item H was built and the provider
+  // side was not. Null while unknown, so nothing is asserted before the read.
+  const [acceptingBookings, setAcceptingBookings] = useState<boolean | null>(null)
 
   const channelIdRef = useRef<number | null>(null)
   if (channelIdRef.current === null) channelIdRef.current = ++channelInstanceSeq
@@ -146,7 +151,7 @@ export default function ProviderDashboard() {
     try {
       const { data: provider } = await supabase
         .from('providers')
-        .select('id, display_name')
+        .select('id, display_name, is_approved')
         .eq('user_id', user.id)
         .maybeSingle()
 
@@ -156,6 +161,7 @@ export default function ProviderDashboard() {
       }
       setProviderDbId(provider.id)
       if (provider.display_name) setProviderName(provider.display_name)
+      setAcceptingBookings(provider.is_approved !== false)
 
       // Whether the provider has set any availability — drives the dashboard
       // nudge below. A provider with no hours can't be booked.
@@ -434,6 +440,29 @@ export default function ProviderDashboard() {
                 : `You have ${pendingCount} pending request${pendingCount === 1 ? '' : 's'}.`}
           </Text>
         </View>
+
+        {/* ITEM 5. NOT dismissable, and deliberately unlike the availability
+            nudge beside it: that one is a task the provider can finish, and this
+            is a state they cannot change from here. It states the fact and what
+            still works, and stops.
+
+            It says nothing about WHY, and nothing that reads as a judgement. It
+            is emphatically NOT a verification claim in either direction —
+            marketplace approval is not government or third-party identity
+            verification, and PD-074 keeps those two apart. */}
+        {acceptingBookings === false && (
+          <View style={styles.notAcceptingCard}>
+            <Feather name="pause-circle" size={18} color="#C8922A" />
+            <View style={styles.notAcceptingText}>
+              <Text style={styles.notAcceptingTitle}>
+                Your business is not currently available for new bookings
+              </Text>
+              <Text style={styles.notAcceptingSub}>
+                Your existing bookings, messages, and history are still available.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {hasAvailability === false && !availNudgeDismissed && (
           <TouchableOpacity
@@ -761,6 +790,33 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     marginTop: 4,
     minHeight: 18,
+  },
+  notAcceptingCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginHorizontal: 20,
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    backgroundColor: 'rgba(200,146,42,0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.22)',
+  },
+  notAcceptingText: { flex: 1 },
+  notAcceptingTitle: {
+    fontSize: 14,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_600SemiBold',
+    lineHeight: 19,
+  },
+  notAcceptingSub: {
+    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.6)',
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 17,
   },
   availNudge: {
     flexDirection: 'row',
