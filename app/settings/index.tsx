@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -10,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
+import { amIOperator } from '@/lib/operator'
 import { supabase } from '@/lib/supabase'
 
 // ── Masked phone helper ───────────────────────────────────────────────────────
@@ -72,6 +74,19 @@ function NavRow({
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets()
   const { user, isProvider } = useAuth()
+  // Null until known, and never assumed. See the row it controls below.
+  const [isOperator, setIsOperator] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const ok = await amIOperator()
+      if (!cancelled) setIsOperator(ok)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user])
 
   const email = user?.email ?? 'Not set'
   const phone = maskPhone(user?.phone)
@@ -177,6 +192,25 @@ export default function SettingsScreen() {
             control. In-app notifications are DERIVED from booking, message and
             trade state (hooks/useNotifications.ts) and have never had per-type
             preferences to set. */}
+
+        {/* THE OPERATOR ENTRY POINT (Session 8B, PD-068).
+            Rendered ONLY for an allow-listed operator, and `=== true` on
+            purpose: an unknown answer draws nothing. This is a convenience,
+            not a boundary — every screen behind it re-checks in the database,
+            and every RPC refuses a non-operator on its own. */}
+        {isOperator === true ? (
+          <>
+            <GroupLabel>The Book</GroupLabel>
+            <View style={s.group}>
+              <NavRow
+                icon="albums-outline"
+                label="Review Queue"
+                onPress={() => router.push('/operator' as never)}
+                isLast
+              />
+            </View>
+          </>
+        ) : null}
 
         {/* PRIVACY */}
         <GroupLabel>Privacy</GroupLabel>

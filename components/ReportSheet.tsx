@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  FlatList,
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -97,16 +97,24 @@ export default function ReportSheet({
 
           <Text style={s.prompt}>What is the problem?</Text>
 
-          <FlatList
-            data={options as ReportOption[]}
-            keyExtractor={(o) => o.value}
+          {/* A ScrollView, not a FlatList. The option list is FIXED and tiny —
+              `REPORT_REASONS` is capped at 10 by test — so virtualization buys
+              nothing and costs something real: a VirtualizedList measures
+              asynchronously and updates state after mount, which inside a
+              height-capped sheet with a keyboard is the least predictable place
+              to put an async layout pass. It also made this component's own
+              test intermittently fail on an update that arrived after teardown.
+              A list you can count is a list you can render. */}
+          <ScrollView
+            style={s.list}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
-            style={s.list}
-            renderItem={({ item }) => {
+          >
+            {options.map((item) => {
               const selected = item.value === reason
               return (
                 <Pressable
+                  key={item.value}
                   style={[s.row, selected && s.rowSelected]}
                   onPress={() => setReason(item.value)}
                   accessibilityRole="radio"
@@ -118,8 +126,8 @@ export default function ReportSheet({
                   {selected ? <Feather name="check" size={18} color="#C8922A" /> : null}
                 </Pressable>
               )
-            }}
-          />
+            })}
+          </ScrollView>
 
           {/* Optional for every reason, not only "Something else": the operator
               reads the words, and a sentence of context is usually worth more

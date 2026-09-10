@@ -351,31 +351,72 @@ end $$;
 --
 -- The single most important block of assertions in this suite: operator power
 -- must be unreachable from an ordinary session.
-select pg_temp.chk('safety', 'authenticated holds NOTHING on operator_cases', 'false',
-  (has_table_privilege('authenticated','public.operator_cases','SELECT')
-   or has_table_privilege('authenticated','public.operator_cases','INSERT')
+--
+-- **REWRITTEN BY SESSION 8B, AND THE REWRITE IS THE INTERESTING PART.** These
+-- assertions originally read "authenticated holds NOTHING", which was the right
+-- shape while no authenticated caller could legitimately be an operator. One can
+-- now (`20261059000000`), so the same six checks would have failed for a
+-- CORRECT change — and the temptation at that moment is to delete them.
+--
+-- They are not deleted. Each is re-pointed at the property that still has to
+-- hold, which is narrower and stronger than the original: **the grant is not
+-- the gate.** `authenticated` may now SELECT these tables and CALL these
+-- functions, and is refused anyway unless `is_operator()` says otherwise. A
+-- grant can be widened by accident; the in-function check and the RLS policy
+-- cannot be reached around. `supabase/tests/operator_surface.test.sql` asserts
+-- the refusals end-to-end as a real non-operator user.
+
+-- WRITE access is still absent for everyone but service_role. Every change goes
+-- through the audited RPCs, which record who acted; a direct UPDATE would not.
+select pg_temp.chk('safety', 'authenticated may not WRITE operator_cases', 'false',
+  (has_table_privilege('authenticated','public.operator_cases','INSERT')
    or has_table_privilege('authenticated','public.operator_cases','UPDATE')
    or has_table_privilege('authenticated','public.operator_cases','DELETE'))::text);
-select pg_temp.chk('safety', 'nor on the case event log', 'false',
-  (has_table_privilege('authenticated','public.operator_case_events','SELECT')
-   or has_table_privilege('authenticated','public.operator_case_events','INSERT'))::text);
+select pg_temp.chk('safety', 'nor the case event log', 'false',
+  (has_table_privilege('authenticated','public.operator_case_events','INSERT')
+   or has_table_privilege('authenticated','public.operator_case_events','UPDATE')
+   or has_table_privilege('authenticated','public.operator_case_events','DELETE'))::text);
+-- READ is granted, and RLS is what actually decides. A grant with no policy
+-- would expose every case to every signed-in user, so the policy's existence is
+-- asserted here rather than assumed.
+select pg_temp.chk('safety', 'case reads are gated by a policy, not by the grant', '1',
+  (select count(*)::text from pg_policies
+    where schemaname = 'public' and tablename = 'operator_cases'
+      and cmd = 'SELECT' and qual like '%is_operator%'));
+select pg_temp.chk('safety', 'and so are case history reads', '1',
+  (select count(*)::text from pg_policies
+    where schemaname = 'public' and tablename = 'operator_case_events'
+      and cmd = 'SELECT' and qual like '%is_operator%'));
+-- ANON IS UNCHANGED AND MUST STAY THAT WAY. Session 8B widened `authenticated`
+-- only; an unauthenticated caller has no business anywhere near a case.
 select pg_temp.chk('safety', 'anon holds nothing either', 'false',
   (has_table_privilege('anon','public.operator_cases','SELECT')
    or has_table_privilege('anon','public.operator_case_events','SELECT'))::text);
-select pg_temp.chk('safety', 'no participant may run the case writer', 'false',
-  (has_function_privilege('authenticated',
+select pg_temp.chk('safety', 'nor may anon run any operator function', 'false',
+  (has_function_privilege('anon',
      'public.operator_update_case(uuid,text,uuid,text)','EXECUTE')
    or has_function_privilege('anon',
-     'public.operator_update_case(uuid,text,uuid,text)','EXECUTE'))::text);
-select pg_temp.chk('safety', 'nor set provider eligibility', 'false',
-  has_function_privilege('authenticated',
-    'public.operator_set_provider_eligibility(uuid,boolean,uuid,text)','EXECUTE')::text);
-select pg_temp.chk('safety', 'nor even ASK whether they are an operator', 'false',
-  has_function_privilege('authenticated','public.is_operator()','EXECUTE')::text);
--- Adjudication authority is unchanged by this session.
-select pg_temp.chk('safety', 'adjudication is still service_role-only', 'false',
-  has_function_privilege('authenticated',
-    'public.adjudicate_barter_obligation(uuid,text,uuid,text)','EXECUTE')::text);
+     'public.operator_set_provider_eligibility(uuid,boolean,uuid,text)','EXECUTE')
+   or has_function_privilege('anon',
+     'public.adjudicate_barter_obligation(uuid,text,uuid,text)','EXECUTE')
+   or has_function_privilege('anon','public.is_operator()','EXECUTE'))::text);
+-- The in-function gate is the real boundary, so assert it is PRESENT in each
+-- writer rather than trusting the grant list.
+select pg_temp.chk('safety', 'the case writer checks is_operator() itself', '1',
+  (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'operator_update_case'
+      and p.prosrc like '%is_operator()%'));
+select pg_temp.chk('safety', 'so does the eligibility writer', '1',
+  (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'operator_set_provider_eligibility'
+      and p.prosrc like '%is_operator()%'));
+-- `is_operator()` is callable by a client now, and that is safe for exactly one
+-- reason: it takes NO ARGUMENTS, so it can only answer about the caller. The
+-- block predicates were granted the same way and became an oracle precisely
+-- because they took a pair (20261055000000). Pinned as arity, not as a comment.
+select pg_temp.chk('safety', 'is_operator can only answer about its caller', '0',
+  (select pronargs::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'is_operator'));
 
 -- ══ 8. A BARTER REVIEW REQUEST REACHES THE QUEUE (PD-072) ═════════════════
 do $$
