@@ -45,6 +45,7 @@ import {
   submitReport,
   REPORT_SUBMITTED_COPY,
   REPORT_FAILED_COPY,
+  REPORT_LIMITED_COPY,
   ReportReason,
 } from '@/lib/safety'
 import ReportSheet from '@/components/ReportSheet'
@@ -342,7 +343,7 @@ export default function CommunityFeed() {
     // operator can find the content. `reports` has no post column; adding one
     // would be a schema change for a beta whose content surface is small, and the
     // note carries the reference without it.
-    const ok = await submitReport({
+    const res = await submitReport({
       reporterUserId: user.id,
       type: 'content',
       reason,
@@ -351,7 +352,11 @@ export default function CommunityFeed() {
       // are appended to it rather than replacing it.
       notes: notes ? `community post ${post.id}\n\n${notes}` : `community post ${post.id}`,
     })
-    const copy = ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+    if (res.limited) {
+      Alert.alert(REPORT_LIMITED_COPY.title, REPORT_LIMITED_COPY.body, [{ text: 'OK' }])
+      return false
+    }
+    const copy = res.ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
     // PRODUCT TRUTH: this once said "We'll review it", then — correctly, while no
     // operator surface existed — "this report has been recorded". A queue exists
     // now, so the copy can say it will be reviewed. It still names NO timeframe:

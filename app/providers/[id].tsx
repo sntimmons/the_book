@@ -15,6 +15,7 @@ import {
   REPORT_REASONS,
   REPORT_SUBMITTED_COPY,
   REPORT_FAILED_COPY,
+  REPORT_LIMITED_COPY,
   iBlocked,
   submitReport,
   type ReportReason,
@@ -355,7 +356,7 @@ export default function ProviderProfilePage() {
   async function handleReport(reason: ReportReason, notes: string | null) {
     if (!user || !provider) return
     setReporting(true)
-    const ok = await submitReport({
+    const res = await submitReport({
       reporterUserId: user.id,
       type: 'provider',
       reason,
@@ -364,8 +365,15 @@ export default function ProviderProfilePage() {
       reportedUserId: provider.user_id,
     })
     setReporting(false)
+    if (res.limited) {
+      // THE SHEET STAYS OPEN. PD-088 requires the text be kept, and closing the
+      // sheet would throw away what they wrote — the one thing a refused report
+      // must never do.
+      Alert.alert(REPORT_LIMITED_COPY.title, REPORT_LIMITED_COPY.body)
+      return
+    }
     setReportOpen(false)
-    const copy = ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+    const copy = res.ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
     Alert.alert(copy.title, copy.body)
   }
 

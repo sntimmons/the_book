@@ -210,7 +210,17 @@ export interface ReportInput {
  * nowhere. The caller cannot set status, `admin_notes`, `resolved_by` or
  * `resolved_at` — those columns are not in the INSERT grant (`20261052000000`).
  */
-export async function submitReport(input: ReportInput): Promise<boolean> {
+export interface ReportResult {
+  ok: boolean
+  /**
+   * True when PD-088's backstop refused this one. Distinct from a plain failure
+   * because the two need opposite handling: a rate-limited report must keep the
+   * text on screen and say what happened, and must NOT be retried immediately.
+   */
+  limited: boolean
+}
+
+export async function submitReport(input: ReportInput): Promise<ReportResult> {
   const { error } = await supabase.from('reports').insert({
     reporter_user_id: input.reporterUserId,
     report_type: input.type,
@@ -221,10 +231,34 @@ export async function submitReport(input: ReportInput): Promise<boolean> {
     booking_id: input.bookingId ?? null,
   })
   if (error) {
+    // PD-088's backstop is an EXPECTED refusal, not a fault. No Sentry event:
+    // filing it as an error would train whoever reads that queue to ignore the
+    // one signal that a real reporter is being turned away.
+    if ((error as { code?: string }).code === 'PT428') return { ok: false, limited: true }
     Sentry.captureException(error)
-    return false
+    return { ok: false, limited: false }
   }
-  return true
+  return { ok: true, limited: false }
+}
+
+/**
+ * What a reporter is told when the backstop refuses them.
+ *
+ * PD-088: *"Say the limit was reached in plain words, keep the text the person
+ * wrote, and never discard it silently."* All three matter, and the second most
+ * of all — losing what someone typed about a safety problem is its own harm, and
+ * they may not type it again.
+ *
+ * It does NOT name a number. "5 per hour" invites someone to count and wait, and
+ * the limits are deliberately loose enough that anyone hitting them is either
+ * flooding or in a situation this product cannot solve by arithmetic.
+ */
+export const REPORT_LIMITED_COPY = {
+  title: 'Too many reports just now',
+  body:
+    'You have filed several reports in a short time, so this one was not sent. Your'
+    + ' text is still here — please try again a little later. If someone is in'
+    + ' immediate danger, contact your local emergency services.',
 }
 
 /**
