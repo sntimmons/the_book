@@ -94,6 +94,46 @@ async function runSql(sql) {
 }
 
 /**
+ * A SHARED START INSTANT, so two sessions genuinely contend.
+ *
+ * Every race here launches its two operations with `Promise.all`, and each one
+ * spawns its own `supabase db query` process. Those are genuinely parallel at
+ * the OS level — but the CLI's startup ("Initialising login role... Connecting
+ * to remote database...") is SECONDS long and VARIES between the two, so the
+ * moment each session actually reaches its statement was never synchronized.
+ *
+ * The old mechanism was a flat `pg_sleep(2)` in each session before the clock
+ * started, which absorbs startup skew only while the skew is under two seconds.
+ * Observed skew against a loaded non-production API was **four**:
+ *
+ *     op maintenance window=[...555607, ...559304]   3.7s
+ *     op maintenance window=[...559684, ...559686]   2ms   <- started AFTER
+ *
+ * The second session began 380ms after the first had committed, so the two
+ * never overlapped, the scenario proved nothing, and the assertions downstream
+ * of it failed as collateral. Nondeterministically — a different race lost the
+ * coin toss on each run, which is exactly the shape that gets written off as a
+ * flake and left alone.
+ *
+ * The fix is a barrier rather than a longer guess. `Promise.all` calls both
+ * helpers within microseconds, so both compute the same target instant, and
+ * each session sleeps until IT rather than for a fixed duration. Startup skew
+ * up to LEAD is absorbed completely, and the cost is bounded by LEAD instead of
+ * being added to it — a session that took four seconds to connect sleeps four,
+ * not eight.
+ *
+ * If a session is so slow that the barrier has already passed, it starts
+ * immediately and the overlap assertion catches it honestly. That assertion is
+ * the point: a race that did not race must fail loudly, not pass quietly.
+ */
+const START_BARRIER_MS = 8000
+const barrierSql = () => {
+  const at = new Date(Date.now() + START_BARRIER_MS).toISOString()
+  return `perform pg_sleep(greatest(0, extract(epoch from `
+    + `('${at}'::timestamptz - clock_timestamp()))));`
+}
+
+/**
  * `rpcStatement` is a plpgsql STATEMENT, so a caller that needs the RPC's return value writes
  * `v_result := f(...);` instead of `perform f(...);`. Most scenarios assert on end STATE rather
  * than on what the call returned — the client re-reads the views anyway — but where the return
@@ -112,7 +152,7 @@ declare
 begin
   perform set_config('request.jwt.claims',
     json_build_object('sub', '${uid}', 'role', 'authenticated')::text, true);
-  perform pg_sleep(2);
+  ${barrierSql()}
   v_started := clock_timestamp();
   begin
     ${rpcStatement}
@@ -129,7 +169,9 @@ select json_build_object(
   'result', coalesce(result, '')
 ) as timing from _rpc_timing;`)
   const timing = parseTiming(r.out)
-  return { ...r, timing, result: scalar(r.out, 'result'), opOk: r.ok && timing?.code === '00000' }
+  const opOk = r.ok && timing?.code === '00000'
+  recordOp('user', timing, opOk)
+  return { ...r, timing, result: scalar(r.out, 'result'), opOk }
 }
 
 async function runTimedMaintenance(statement) {
@@ -142,7 +184,7 @@ declare
   v_code text := '00000';
 begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
-  perform pg_sleep(2);
+  ${barrierSql()}
   v_started := clock_timestamp();
   begin
     ${statement}
@@ -158,7 +200,9 @@ select json_build_object(
   'code', code
 ) as timing from _rpc_timing;`)
   const timing = parseTiming(r.out)
-  return { ...r, timing, opOk: r.ok && timing?.code === '00000' }
+  const opOk = r.ok && timing?.code === '00000'
+  recordOp('maintenance', timing, opOk)
+  return { ...r, timing, opOk }
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -242,10 +286,32 @@ const SCHEDULED_TERMS = (a, b) =>
   + `'${b}', clock_timestamp() + interval '30 days', null`
 
 const results = []
+// The last few timed operations, so a FAILURE can say WHY rather than only
+// that it happened.
+//
+// Every assertion here is about two sessions contending, and when one fails the
+// question is always the same: what did each session actually do — did it
+// commit, what SQLSTATE did it raise, and did the two intervals really overlap?
+// None of that was printed, so a failing race reported `expected=true
+// actual=false` and nothing else, and diagnosing it meant editing the harness
+// and re-running a ten-minute suite. Now the evidence is already there.
+const recentOps = []
+function recordOp(kind, timing, opOk) {
+  recentOps.push({ kind, ok: opOk, code: timing?.code ?? null,
+    startedAt: timing?.startedAt ?? null, endedAt: timing?.endedAt ?? null })
+  if (recentOps.length > 4) recentOps.shift()
+}
+
 const chk = (name, expected, actual) => {
   const ok = String(expected) === String(actual)
   results.push({ ok, name })
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name} :: expected=${expected} actual=${actual}`)
+  if (!ok && recentOps.length) {
+    for (const o of recentOps) {
+      console.log(`     op ${o.kind} ok=${o.ok} code=${o.code} `
+        + `window=[${o.startedAt}, ${o.endedAt}]`)
+    }
+  }
 }
 
 function scalar(out, key) {
@@ -1437,11 +1503,6 @@ async function raceAdjudicateVsNotReceived() {
   const ob = await obligationRow(ids.interest23, 'offer_owner')
   const answerLanded = d.opOk && ob.status === 'not_received'
   const answerRefused = !d.opOk && d.timing?.code === 'PT424' && ob.status === 'delivered'
-  if (answerLanded === answerRefused) {
-    console.log('  DIAG raceAdjudicateVsNotReceived:',
-      JSON.stringify({ dOk: d.opOk, dCode: d.timing?.code, obStatus: ob.status,
-        aOk: a.opOk, aCode: a.timing?.code }))
-  }
   chk('the denial either landed or was refused as resolved', 'true',
     String(answerLanded !== answerRefused))
   chk('and no third shape is reachable', 'true', String(answerLanded || answerRefused))
