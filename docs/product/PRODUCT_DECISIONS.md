@@ -998,8 +998,26 @@ as locked decisions.
   refuses participants, unrelated users and `anon` at each layer independently. The Review Queue
   and the SLA silence are **requirements recorded here, not code**: nothing in this repository
   implements either, and this entry is the reason the first is not an omission.
-- **Status:** Locked; **PARTIALLY SATISFIED — do not mark complete.** Founder ruling,
-  Session 8 final PM rulings, 2026-09-09.
+- **Status:** Locked; **SATISFIED as of Session 8B (2026-09-10), pending review of that
+  branch.** The surface exists: an allow-listed operator can see the queue, filter it, open a
+  case, read the immutable facts behind it, write an internal note, take the supported
+  resolution action, and see a durable history — without a `psql` session. The **SLA remains
+  deliberately absent** and nothing in the surface implies one; the queue is ordered oldest-open
+  first and that order is not configurable, because with no SLA the order is the only fairness
+  guarantee a waiting person has.
+  - **What Session 8B required, and it is not a footnote.** `is_operator()` admitted only
+    `service_role` and a no-claims session, so an operator opening a screen — `authenticated`,
+    with a real `auth.uid()` — was admitted by neither arm. A third arm was unavoidable, and it
+    widens an authority `20261023000000` deliberately narrowed. What keeps it narrow: the
+    allow-list has **no client privilege of any kind**, including SELECT, so an operator can
+    neither promote anyone nor enumerate who the operators are; case tables are readable by
+    operators and writable by nobody, so every change still goes through the audited RPCs.
+  - **The history below is kept as written.** Until 2026-09-09 this read PARTIALLY SATISFIED,
+    and the reason is worth preserving: **a backend queue with no surface does not satisfy a
+    decision whose requirement was that an authorized operator can actually work a case.**
+
+- **Previous status (Session 8, 2026-09-09):** Locked; **PARTIALLY SATISFIED — do not mark
+  complete.**
   - **Authority: implemented.** `is_operator()`, the `service_role`-only adjudication and case
     RPCs, and the four independent refusal layers all exist and are asserted.
   - **The queue's BACKEND: implemented** (Session 8, PD-085) — `operator_cases`,

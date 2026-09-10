@@ -1308,7 +1308,7 @@ NOT in the migration that created it.
 | `public.cancel_barter_agreement` | `20261005000000_barter_pre_delivery_cancellation.sql` | **`20261015000000_under_review_precedes_cancellation.sql`** | **Redefined SIX times — the most-redefined function in this repo. Copying ANY earlier body forward now reverts PD-063, the in-thread signal, and the neutral "Both providers cancelled" wording all at once.** `20261006000000` added the post-lock `FOUND` re-check. `20261007000000` added the counterparty notice and the shared reason. `20261008000000` restored the four properties `20261007000000` dropped by copying `20260910000000` instead of the live `20260913000000` — best-effort isolation (**a notice failure must never veto the cancellation**), the open-conversation predicate, the provider-identity re-check, and `system_recipient_id`. `20261009000000` replaced the inlined notice block with a call to `public.pair_conversation_notice` and derives the classification once. `20261010000000` changed **one string literal** — the second notice states a fact ("Both providers cancelled…") rather than an agreement, because two concurrent cancellations reach two acts without either participant assenting. **`20261015000000` adds the PD-063 refusal**: once any `barter_obligation_no_show_reports` row exists on the agreement it raises **`PT423`**, because a trade under review must not be cancellable out of review. Written from `20261010000000` and diffed before commit — exactly one block added. |
 | `public.pair_conversation_notice` (new) | `20261009000000_pair_conversation_notice.sql` | **`20261009000000_pair_conversation_notice.sql`** | **The one writer for platform notices (`sender_id IS NULL`) into a provider pair's existing conversation.** Resolves the canonical thread by `provider_pair_key` with the stale-key fallback, re-checks that both `providers` rows still belong to the agreement's users, skips a thread that cannot take a message, addresses the notice via `system_recipient_id`, and wraps the write so it **can never veto the act it announces**. Creates no conversation. **EXECUTE revoked from `public`, `anon` and `authenticated`** — callers are other definer functions. A NEW signal writer must call this rather than hand-copy it; that hand-copying is exactly what produced the `20261008000000` correction. **`public.release_barter_interest` deliberately still carries its own body** (live definition `20260913000000`): replacing a shipped, authorization-adjacent function wholesale to remove a duplicate would risk a live path to tidy one. Migrate it onto this helper the next time it is opened for a reason of its own. |
 | `public.report_barter_obligation_no_show` | `20261012000000_barter_no_show_under_review.sql` | **`20261022000000_obligation_resolved_sqlstate.sql`** | **`20261012000000` § 6 CONTAINS A FALSE LOCK-ORDER CONTRACT AND MUST NOT BE COPIED FORWARD.** It states the function "takes the OBLIGATION row lock and nothing else … so the pair cannot deadlock" and instructs future writers to preserve that. Both halves are false: the INSERT's FK to `barter_agreements` takes `for key share` on the parent, so the real order was obligation-then-agreement — the reverse of `cancel_barter_agreement`. **The deadlock was REPRODUCED** (`scripts/negotiation-concurrency.mjs` race #20 reported `FAIL neither act deadlocked` on the pre-fix schema), not theorised. `20261014000000` takes the AGREEMENT lock FIRST, making the order across the barter graph total — **agreement before obligation, obligations in id order** — and adds a terminal `unique_violation` handler so "unreachable" is not load-bearing. **Rule: enumerate the IMPLICIT locks too.** An INSERT, or an UPDATE writing a foreign-key column, takes `for key share` on the parent; one touching only non-key columns does not. **`20261020000000` then added the PD-066 refusal** once an adjudication exists — written from `20261014000000` and diffed before commit, with the AGREEMENT-first lock order preserved exactly — and **`20261022000000` moved that refusal from `PT412` to its own `PT424`**, because `PT412` on this function means *"you already confirmed you received this"* and that would have been a false statement. **Two `PT412` raises remain in this body and are correct; do not sweep them.** |
-| `public.adjudicate_barter_obligation` (new) | `20261019000000_barter_obligation_adjudication.sql` | **`20261023000000_adjudication_hardening.sql`** | **The only writer of a terminal obligation outcome, and the only function in this repo whose `EXECUTE` is granted to `service_role` alone.** Three things a copy-forward would silently drop are not obvious from the body: the **adjudicator-may-not-be-a-participant** check (made here AND re-made in `enforce_barter_adjudication_consistent`, which is the copy that holds against a direct privileged INSERT — **`20261023000000` added the copy in this function; `20261019000000` only ever had the trigger's, while five documents said otherwise**), the narrowed privileged predicate (`20261019000000`'s admitted a no-`sub` `anon` request), and the **AGREEMENT-before-obligation lock order**. A new adjudication-adjacent write must extend THIS function rather than add a second path — there is deliberately no participant-facing one, and the RPC is also the only SUPPORTED writer: a direct INSERT takes its FK key-share locks in constraint-declaration order, obligation-then-agreement, which is the reverse of `cancel_barter_agreement`. |
+| `public.adjudicate_barter_obligation` (new) | `20261019000000_barter_obligation_adjudication.sql` | **`20261059000000_operator_identity.sql`** (was `20261023000000`, then `20261039000000` — see the note) | **The only writer of a terminal obligation outcome, and the only function in this repo whose `EXECUTE` is granted to `service_role` alone.** Three things a copy-forward would silently drop are not obvious from the body: the **adjudicator-may-not-be-a-participant** check (made here AND re-made in `enforce_barter_adjudication_consistent`, which is the copy that holds against a direct privileged INSERT — **`20261023000000` added the copy in this function; `20261019000000` only ever had the trigger's, while five documents said otherwise**), the narrowed privileged predicate (`20261019000000`'s admitted a no-`sub` `anon` request), and the **AGREEMENT-before-obligation lock order**. A new adjudication-adjacent write must extend THIS function rather than add a second path — there is deliberately no participant-facing one, and the RPC is also the only SUPPORTED writer: a direct INSERT takes its FK key-share locks in constraint-declaration order, obligation-then-agreement, which is the reverse of `cancel_barter_agreement`. **STALE ROW, CORRECTED 2026-09-10 — the SECOND of this class found in two days.** This cell named `20261023000000` while `20261039000000` had already redefined the function to add PD-072's eligibility disjunct. Session 8B was about to rewrite this exact body: had it been written from the ledger's answer, **the deliverer review request would have been deleted as a route into Under Review for the second time** — the first is recorded in `20261042000000`'s header — and a deliverer whose counterparty stopped opening the app would have silently lost the only move they have. `20261059000000` is written from `20261039000000` and changes EXACTLY ONE STATEMENT: the inline role check becomes `public.is_operator()`, so operator authority finally has one definition. `operator_surface.test.sql` § 6 pins the disjunct, the participant check and the absence of any remaining `auth.role()` in the body. |
 | `public.enforce_barter_adjudication_consistent` / `public.enforce_barter_adjudication_append_only` (new) | `20261019000000_barter_obligation_adjudication.sql` | **`20261023000000`** (consistent) and **`20261026000000`** (append-only — NOT `20261024000000`, which it supersedes) | Both were redefined by the review corrections and both carry a rule that is invisible from the body alone. **Append-only's live body is `20261026000000`**, which narrowed the privileged predicate in BOTH branches to *no claims AND no subject*; copying `20261024000000`'s body forward reintroduces the loose `auth.uid() is null` disjunct that `20261023000000` had already diagnosed as unsound — the `prosrc` pin in `adjudication.test.sql` now fails on exactly that. **Consistent** now refuses a NULL `adjudicator_user_id` explicitly — load-bearing since `20261023000000` made the column nullable for erasure, because the participant test below it evaluates to NULL rather than true on a null and would let an insert naming nobody through. **Append-only** now permits exactly ONE update: a privileged caller setting `adjudicator_user_id` from non-null to null, with every other column proven identical by a whole-row comparison. That is the FK's own erasure write and nothing else; copying `20261019000000`'s body forward restores a state where an operator account cannot be deleted at all. Neither trigger is recreated by those migrations — `create or replace function` preserves the OID. |
 | `public.mark_barter_obligation_delivered` / `public.record_barter_obligation_receipt` | `20261004000000_barter_obligation_delivery.sql` | **`20261022000000_obligation_resolved_sqlstate.sql`** | Both gained a cancellation check placed **after** the obligation row lock — the half of the delivery/cancel race contract that `cancel_barter_agreement` depends on. Every guard from `20261004000000` survives in order; the check precedes the idempotent no-op branch so a cancelled trade is never reported as a successful delivery. The two public receipt wrappers (`confirm_barter_obligation_received`, `report_barter_obligation_not_received`) are untouched and still resolve, because `create or replace` preserves the OID — and note `record_barter_obligation_receipt` itself holds **no grant to `authenticated`**; those two wrappers are its only callers. **`20261020000000` adds the PD-066 refusal** to both functions, placed after the row lock and before the idempotent branch, beside the cancellation check it mirrors. Both bodies were written from `20261005000000`, the live definition, and diffed before commit. **`20261022000000` then gave that refusal its own `PT424`** — `mark_barter_obligation_delivered` has no `PT412` client mapping at all, so the borrowed code fell through to "Please try again" on a permanently impossible action. |
 | `public.enforce_barter_cancellation_consistent` | `20261005000000_barter_pre_delivery_cancellation.sql` | **`20261017000000_restore_cancellation_actor_binding.sql`** | Redefined THREE times. `20261006000000` added the server-stamped `created_at` and the ACTOR-IS-THE-CALLER check. **`20261015000000` then silently reverted both by writing its new body from `20261005000000` instead of the live `20261006000000`** — the exact hazard this table exists to prevent; B5B caught it at `cancellation.test.sql:752-759` on the first run after apply. `20261017000000` restores `20261006000000` verbatim and re-adds the PD-063 `PT423` check on top. |
@@ -1339,6 +1339,7 @@ NOT in the migration that created it.
 | `public.clients_provider` (view) | `20260829000000_canonical_live_baseline.sql` | **`20261045000000`** | A definer view (`security_invoker = false`) that shows a provider a client's name, join date and neighborhood. Its booking arm now requires `submitted_at is not null`: an unsent draft is invisible to the provider and is not a relationship the client chose to create. The conversation arm is unchanged. |
 | `public.enforce_operator_case_event_append_only` (new) | `20261049000000_operator_cases.sql` | **`20261053000000_case_events_allow_erasure_cascade.sql`** | The first version refused DELETE UNCONDITIONALLY, which — because `operator_cases` cascades from `providers` and `auth.users` — **made deleting a provider impossible**, altering the deletion semantics Session 8 was explicitly told not to touch. Every neighbouring append-only table already exempted `service_role` DELETE "so account erasure cascades still work"; the pattern was copied minus that clause. **B5B could not have caught it**: it runs in one always-rolled-back transaction and never deletes a provider. The CONCURRENCY HARNESS'S TEARDOWN found it. UPDATE remains refused for everyone, always. |
 | `public.contact_blocked` / `public.contact_blocked_provider` / `public.has_live_transaction` (new) | `20261046000000_user_blocks.sql` | **`20261055000000_block_oracle_and_submit_gate.sql`** (grants only) | All three were `SECURITY DEFINER` **and** granted `EXECUTE` to `authenticated`, so they were callable over PostgREST `/rpc/` with attacker-chosen arguments — giving a blocked person a one-request answer to *"did they block me"*, the exact question PD-082 says they may never be told, and disclosing the live-transaction relationship graph for any two uuids. **`20261046000000`'s own comment asserted this was impossible**; it was true of the refusal MESSAGES and not of the functions. `20261055000000` revokes all three from `authenticated`. **Do not re-grant one to satisfy an RLS policy** — a policy is evaluated as the caller, so that reintroduces the oracle; put the check in a `SECURITY DEFINER` trigger, as `barter_interests` now does. |
+| `public.is_operator` | `20261049000000_operator_cases.sql` | **`20261059000000_operator_identity.sql`** | Gained a THIRD ARM: a user in `public.operators`. Session 8B could not exist without it — `is_operator()` admitted only `service_role` and a no-claims psql session, and an operator opening a screen is `authenticated` with a real `auth.uid()`, which **neither original arm admits**. **Both original arms are unchanged**, and the no-claims one is load-bearing for erasure cascades (`20261053000000` exists because that was forgotten once). **EXECUTE is now granted to `authenticated`, which is safe for exactly one reason: THE FUNCTION TAKES NO ARGUMENTS.** `contact_blocked(uuid, uuid)` was granted the same way and became an oracle because it answered about ANY pair (`20261055000000`); this can only answer about its caller, who already knows. **Do not add a parameter to this function** — `operator_surface.test.sql` pins `pronargs = 0` for that reason. The allow-list itself is unreadable and unwritable by every client role, so an operator cannot promote anyone, including themselves. |
 | `public.enforce_booking_submit_not_blocked` (new) / `public.enforce_conversation_reopen_not_blocked` (new) | `20261055000000_block_oracle_and_submit_gate.sql` | **`20261058000000_block_gates_fire_last_and_name_no_stranger.sql`** | Kept OUT of the two long write-integrity functions on purpose: those are ~290 lines, have been rebuilt three times in two weeks, and have twice lost a rule to a copy-forward. **Both had two defects, and the second was caused by a comment that was simply false.** `20261055000000` asserted "`zz_` so it runs AFTER `enforce_booking_write_integrity` (triggers fire in name order)" — but the names were `bookings_zz_...` and `conversation_zz_...`, which sort on **b** and **c**, ahead of `enforce_...` on **e**. `zz_` only sorts last when it is the LEADING token; `20261056000000` got that right for barter only because every trigger on that table shares one prefix. Firing early, and reading identity from **NEW**, the conversation gate became a zero-side-effect oracle: `update conversation set provider_id = <any provider>, request_status = 'pending'` answered `42501` when a block existed and `23514` when it did not, wrote nothing, and could be repeated for every provider on the board. `20261058000000` (a) reads **OLD** identity, so the caller cannot nominate a stranger to ask about, and (b) renames the triggers `zz_bookings_submit_not_blocked` / `zz_conversation_reopen_not_blocked` so they genuinely sort last. It also gives the reopen gate the LIVE-TRANSACTION EXCEPTION every other block gate already had — without it a pair with a live booking could never open the thread that booking attaches to. **Pinned by `supabase/tests/safety_operator.test.sql` § 14, where the oracle assertion is an EQUALITY** (both probes answer identically) — the only test shape that can catch an oracle, and the reason § 1–13 did not. |
 | `public.caller_eligible_provider_id` (new) | `20261048000000_barter_eligibility_and_blocks.sql` | **`20261048000000`** | The write-side twin of `caller_provider_id()`, kept SEPARATE on purpose. `20260906000000` warned by name that gating `caller_provider_id()` itself on `is_approved` would also stop a de-approved provider **closing their own live offers**, and that gating the interest READ policy would be *actively wrong* — they would lose sight of responses already sent to them. Use this one for policies that CREATE something; `caller_provider_id()` for everything else. |
 | `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |
@@ -1754,6 +1755,105 @@ could go on writing safety reports into a table with no reader. `20261058000000`
 and drops the policy — **the rows and every FK untouched**, because erasing unread safety reports is
 a worse answer than never having read them, and requirement O puts retention out of scope. The
 lesson is the one this session had already written down and then did not apply to itself.
+
+## 2026-09-10 — `20261059000000` … `20261062000000` **APPLIED to non-production** (Session 8B: the operator surface)
+
+Four files. The first needed a decision; the second is bounded by it; the third fixes what the first got wrong; the fourth finishes what the third missed.
+
+| File | What it does |
+|---|---|
+| `20261059000000_operator_identity.sql` | `public.operators` (the allow-list), `is_operator()`'s third arm, SELECT policies on the two case tables, client grants on the audited RPCs, and the consolidation of `adjudicate_barter_obligation` onto `is_operator()`. |
+| `20261060000000_operator_case_reads.sql` | `operator_list_cases()` and `operator_case_detail()` — the queue and the facts behind one case. |
+| `20261061000000_the_named_actor_is_the_caller.sql` | **Forward correction.** Binds the actor parameter to `auth.uid()` in all three RPCs, and refreshes four stale live comments. |
+| `20261062000000_three_comments_the_last_pass_missed.sql` | Comments only. Three more objects that describe adjudication's caller set WITHOUT BEING adjudication, so the name-scoped sweep in `…61000000` did not see them. The regression assertion is widened in the same change to every function and table description in the schema, so this class cannot recur by scoping. |
+
+**THE DECISION IN THE FIRST FILE.** Session 8 amended PD-068 to PARTIALLY
+SATISFIED because working a case required a `psql` session. The surface that
+finishes it could not be built on the authority as it stood: `is_operator()`
+admitted `service_role` and a no-claims session, and an operator opening a
+screen is `authenticated` with a real `auth.uid()`. **Neither arm admitted
+them.** So this widens an authority that `20261023000000` deliberately narrowed
+— which is worth stating plainly rather than burying, because that is the kind
+of change that should never be noticed only in review.
+
+**What keeps it narrow.** The allow-list is a table with no client privilege of
+any kind: not insert, not update, not delete, and **not select**. An operator
+cannot promote anyone, including themselves; making an operator is a
+`service_role` or `psql` act. Nobody can enumerate who the operators are. Case
+tables are readable by operators and **writable by nobody** — every change still
+goes through the audited RPCs, which record who acted. And the grant is never
+the gate: `authenticated` may CALL the operator RPCs and is refused by
+`is_operator()` inside, which is the layer that cannot be reached around.
+
+**A consolidation this forced into the open.** `is_operator()`'s own comment
+called it "the single definition of operator authority". **It was not.**
+`adjudicate_barter_obligation` — the only writer of a terminal obligation
+outcome — carried its own inline copy of the same predicate, so the two could
+drift, and widening one would silently fail to widen the other. Now reconciled.
+One consequence deserves naming: **the participant check in that function is now
+load-bearing against a real signed-in person** who may be a party to the very
+trade they are looking at, where before it only guarded against a mistaken
+server process.
+
+**And one thing deliberately NOT widened.** `enforce_barter_adjudication_append_only`
+still permits DELETE only to `service_role` and a no-claims session. An operator
+may RECORD an outcome and may never delete one. "Extend `is_operator()`
+everywhere" must not be read as covering it, and `operator_surface.test.sql`
+pins the absence.
+
+**Eight existing assertions failed on first run, and all eight were right to.**
+They pinned the pre-8B grant model — "authenticated holds NOTHING on
+`operator_cases`", "adjudication is still service_role-only". A correct change
+made them false, which is the moment a suite is most likely to be edited badly.
+**None was deleted.** Each was re-pointed at the property that still has to
+hold, which is narrower and stronger than the original: the RLS policy exists
+and references `is_operator()`; the in-function check is present in each writer;
+`anon` still holds nothing anywhere; and `is_operator()` has **zero arguments**,
+which is the whole reason granting it is safe.
+
+**A THIRD FILE, `20261061000000`, added after the focused security review of this
+branch — and it fixes a hole this branch opened.**
+
+`20261019000000` wrote the precondition down in advance: the operator id is a
+PARAMETER rather than `auth.uid()` because a `service_role` call has no JWT, and
+*"that is only safe because THE PARAMETER IS NOT CLIENT-REACHABLE."*
+`20261059000000` granted the three RPCs to `authenticated` — making it reachable
+— and bound nothing. Every re-check went on testing THE NAMED ID rather than the
+caller, which are different things the moment a client chooses the name.
+
+Two consequences, both real:
+
+1. **An operator who was a PARTY to a trade could adjudicate it**, by naming a
+   colleague. `is_operator()` passed, the participant check passed (the named id
+   is not a party), and the trigger re-made the same test on the same value.
+   The result is immutable, terminal, and hidden from participants by PD-067, so
+   only another operator reading the row would ever see it. `20261059000000`'s
+   own header claimed this check was "now load-bearing against a real signed-in
+   person". It was not.
+2. **The append-only audit could name the wrong person.** An operator could
+   attribute a dismissal or an eligibility change to a colleague, permanently —
+   in the trail PD-068 requires and that matters most when a decision is
+   challenged.
+
+The fix is one guard after the `is_operator()` gate in all three: **when there is
+a caller identity, the actor must be it.** `service_role` and no-claims sessions
+have no `auth.uid()`, so the parameter keeps its original meaning and every
+trusted server path is untouched — pinned by a test asserting `service_role` may
+still name any actor. **It also closes the participant hole without a second
+rule**: once the named id must be the caller, the EXISTING participant check
+finally protects against the operator themselves.
+
+**What the suite could not have caught, and now does.** The participant rule was
+asserted as `prosrc like '%...%'` — proving the text is present and nothing about
+whether it fires — and the one behavioural adjudication case passed the same id
+as both caller and adjudicator, so the caller-≠-named case was never exercised.
+Both are now behavioural. A `pg_description` assertion also fails if any of these
+objects still claims "service_role only", because `create or replace` preserves
+comments and all three had gone stale in the permissive direction.
+
+**Validation** (non-production `wcoyjeklscuqsumpjpfo`; production untouched):
+B5B **1579/1579** with zero residue, Jest **925/925**, typecheck clean, lint 0
+errors, `supabase migration list` local == remote with no drift.
 
 ## Production application policy
 
