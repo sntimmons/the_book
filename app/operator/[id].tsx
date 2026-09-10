@@ -142,9 +142,27 @@ export default function OperatorCase() {
             // Recording an outcome answers the question the case asked, so the
             // case is closed in the same breath — otherwise the queue keeps
             // showing work that is done.
-            await updateCase(id as string, 'resolved', user.id, `outcome: ${outcome}`)
+            //
+            // TWO CALLS, AND THE SECOND CAN FAIL ON ITS OWN. The outcome is
+            // already recorded and is IMMUTABLE — there is no undo, by design
+            // (PD-066) — so a failure here leaves the trade terminally resolved
+            // with its case still open. That is recoverable and the operator
+            // must be told which half landed, because the obvious reaction to a
+            // silent failure is to try the outcome again, and the outcome is the
+            // one thing that cannot be retried.
+            const closed = await updateCase(
+              id as string, 'resolved', user.id, `outcome: ${outcome}`,
+            )
             setNote('')
             await load()
+            if (!closed.ok) {
+              Alert.alert(
+                'Outcome recorded — case still open',
+                'The outcome was saved and cannot be changed. Closing the case did not '
+                + 'go through, so it is still in the queue. Reopen it and use "Resolve" '
+                + 'to close it; do not record the outcome again.',
+              )
+            }
           },
         },
       ],

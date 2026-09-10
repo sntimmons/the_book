@@ -361,6 +361,132 @@ select pg_temp.chk('operator', 'an outcome cannot be deleted by an operator sess
     where n.nspname = 'public' and p.proname = 'enforce_barter_adjudication_append_only'
       and p.prosrc like '%is_operator()%'));
 
+-- ══ 8. THE NAMED ACTOR IS THE CALLER ══════════════════════════════════════
+--
+-- Session 8B granted three RPCs to `authenticated` and each takes the acting
+-- operator's id as a PARAMETER. `20261019000000` had written down why that was
+-- safe: *"only safe because the parameter is not client-reachable."* The grant
+-- made it reachable and bound nothing, so every re-check went on testing THE
+-- NAMED ID rather than the caller — which are different things the moment a
+-- client can choose the name.
+--
+-- **The suite could not have caught it, and the reason is worth keeping.** The
+-- participant rule was asserted with `prosrc like '%A participant cannot...%'`,
+-- which proves the TEXT is present and nothing about whether it fires; and the
+-- one behavioural adjudication case passed the same id as both caller and
+-- adjudicator, so the caller-≠-named case was never exercised. Both are fixed
+-- below, behaviourally.
+do $$
+declare
+  opu uuid := current_setting('b5b.s8b_op')::uuid;
+  usr uuid := current_setting('b5b.s8b_usr')::uuid;
+  prov uuid := current_setting('b5b.s8b_prov')::uuid;
+  v_case uuid; v_code text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  delete from public.operator_cases where provider_id = prov;
+  update public.providers set is_approved = false where id = prov;
+  insert into public.operator_cases(case_type, provider_id, status)
+  values ('provider_appeal', prov, 'open') returning id into v_case;
+
+  -- AN OPERATOR CANNOT FILE AN ACTION UNDER SOMEONE ELSE'S NAME. The event log
+  -- is append-only, so a false attribution would be permanent — and the audit
+  -- trail matters most exactly when a decision is challenged.
+  perform pg_temp.act(opu);
+  begin
+    perform public.operator_update_case(v_case, 'claimed', usr, 'not me, honest');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('operator',
+    'an operator cannot record a case action under another user''s name',
+    '42501', v_code);
+
+  -- Their OWN name still works, so the fix bound the parameter without breaking
+  -- the path it exists for.
+  begin
+    perform public.operator_update_case(v_case, 'claimed', opu, 'me, actually');
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('operator', 'but their own name works', 'OK', v_code);
+
+  begin
+    perform public.operator_set_provider_eligibility(prov, true, usr, 'not me either');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('operator',
+    'nor an eligibility change under another name', '42501', v_code);
+
+  -- THE TRUSTED PATH IS UNTOUCHED. service_role carries no auth.uid(), so the
+  -- parameter keeps its original meaning there — this is the half a careless
+  -- fix would have broken, and it is what the concurrency harness and every
+  -- migration depend on.
+  perform pg_temp.act_service();
+  begin
+    perform public.operator_set_provider_eligibility(
+      prov, true, current_setting('b5b.rw_xu')::uuid, 'service path');
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('operator',
+    'and service_role may still name any actor, because it has no caller identity',
+    'OK', v_code);
+end $$;
+
+-- AND THE ONE THAT MATTERS MOST: an operator who is a PARTY to the trade.
+--
+-- Binding the parameter closes this without a second rule — once the named id
+-- must be the caller, the EXISTING participant check finally protects against
+-- the operator themselves. Before the binding they could name a colleague and
+-- pass it, and the result is immutable, terminal, and hidden from participants
+-- by PD-067.
+do $$
+declare
+  opu uuid := current_setting('b5b.s8b_op')::uuid;
+  usr uuid := current_setting('b5b.s8b_usr')::uuid;
+  v_code text;
+begin
+  perform pg_temp.act(opu);
+  -- Naming someone else is refused before the obligation is even looked up.
+  begin
+    perform public.adjudicate_barter_obligation(
+      gen_random_uuid(), 'fulfilled', usr, 'attributing this to someone else');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('operator',
+    'an operator cannot name another person as the adjudicator', '42501', v_code);
+  perform pg_temp.act_service();
+end $$;
+
+-- The anon arm, pinned so a gateway or claims change cannot quietly satisfy it.
+do $$
+declare v_b boolean;
+begin
+  perform pg_temp.act(null, 'anon');
+  begin
+    select public.is_operator() into v_b;
+  exception when others then v_b := null;
+  end;
+  perform pg_temp.chk('operator', 'anon is never an operator', 'false',
+    coalesce(v_b, false)::text);
+  perform pg_temp.act_service();
+end $$;
+
+-- No live comment may still claim the pre-8B caller set. This repo has paid four
+-- times for a stale comment being trusted, so it is a test rather than a habit.
+select pg_temp.chk('operator', 'no operator object still claims service_role-only', '0',
+  (select count(*)::text from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+     left join pg_description d on d.objoid = p.oid
+    where n.nspname = 'public'
+      and p.proname in ('operator_update_case', 'operator_set_provider_eligibility',
+                        'adjudicate_barter_obligation')
+      and (d.description ilike '%service_role only%'
+           or d.description ilike '%service_role-only%')));
+
 -- ══ 7. SCOPE PIN — Session 8B added a surface, not a platform ═════════════
 --
 -- The founder's constraint, made testable: no generic admin capability crept in

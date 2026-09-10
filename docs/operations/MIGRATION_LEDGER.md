@@ -1756,14 +1756,15 @@ and drops the policy — **the rows and every FK untouched**, because erasing un
 a worse answer than never having read them, and requirement O puts retention out of scope. The
 lesson is the one this session had already written down and then did not apply to itself.
 
-## 2026-09-10 — `20261059000000` … `20261060000000` **APPLIED to non-production** (Session 8B: the operator surface)
+## 2026-09-10 — `20261059000000` … `20261061000000` **APPLIED to non-production** (Session 8B: the operator surface)
 
-Two files. The first is the one that needed a decision; the second is bounded by it.
+Three files. The first needed a decision; the second is bounded by it; the third fixes what the first got wrong.
 
 | File | What it does |
 |---|---|
 | `20261059000000_operator_identity.sql` | `public.operators` (the allow-list), `is_operator()`'s third arm, SELECT policies on the two case tables, client grants on the audited RPCs, and the consolidation of `adjudicate_barter_obligation` onto `is_operator()`. |
 | `20261060000000_operator_case_reads.sql` | `operator_list_cases()` and `operator_case_detail()` — the queue and the facts behind one case. |
+| `20261061000000_the_named_actor_is_the_caller.sql` | **Forward correction.** Binds the actor parameter to `auth.uid()` in all three RPCs, and refreshes four stale live comments. |
 
 **THE DECISION IN THE FIRST FILE.** Session 8 amended PD-068 to PARTIALLY
 SATISFIED because working a case required a `psql` session. The surface that
@@ -1809,8 +1810,48 @@ and references `is_operator()`; the in-function check is present in each writer;
 `anon` still holds nothing anywhere; and `is_operator()` has **zero arguments**,
 which is the whole reason granting it is safe.
 
+**A THIRD FILE, `20261061000000`, added after the focused security review of this
+branch — and it fixes a hole this branch opened.**
+
+`20261019000000` wrote the precondition down in advance: the operator id is a
+PARAMETER rather than `auth.uid()` because a `service_role` call has no JWT, and
+*"that is only safe because THE PARAMETER IS NOT CLIENT-REACHABLE."*
+`20261059000000` granted the three RPCs to `authenticated` — making it reachable
+— and bound nothing. Every re-check went on testing THE NAMED ID rather than the
+caller, which are different things the moment a client chooses the name.
+
+Two consequences, both real:
+
+1. **An operator who was a PARTY to a trade could adjudicate it**, by naming a
+   colleague. `is_operator()` passed, the participant check passed (the named id
+   is not a party), and the trigger re-made the same test on the same value.
+   The result is immutable, terminal, and hidden from participants by PD-067, so
+   only another operator reading the row would ever see it. `20261059000000`'s
+   own header claimed this check was "now load-bearing against a real signed-in
+   person". It was not.
+2. **The append-only audit could name the wrong person.** An operator could
+   attribute a dismissal or an eligibility change to a colleague, permanently —
+   in the trail PD-068 requires and that matters most when a decision is
+   challenged.
+
+The fix is one guard after the `is_operator()` gate in all three: **when there is
+a caller identity, the actor must be it.** `service_role` and no-claims sessions
+have no `auth.uid()`, so the parameter keeps its original meaning and every
+trusted server path is untouched — pinned by a test asserting `service_role` may
+still name any actor. **It also closes the participant hole without a second
+rule**: once the named id must be the caller, the EXISTING participant check
+finally protects against the operator themselves.
+
+**What the suite could not have caught, and now does.** The participant rule was
+asserted as `prosrc like '%...%'` — proving the text is present and nothing about
+whether it fires — and the one behavioural adjudication case passed the same id
+as both caller and adjudicator, so the caller-≠-named case was never exercised.
+Both are now behavioural. A `pg_description` assertion also fails if any of these
+objects still claims "service_role only", because `create or replace` preserves
+comments and all three had gone stale in the permissive direction.
+
 **Validation** (non-production `wcoyjeklscuqsumpjpfo`; production untouched):
-B5B **1562/1562** with zero residue, Jest **925/925**, typecheck clean, lint 0
+B5B **1573/1573** with zero residue, Jest **925/925**, typecheck clean, lint 0
 errors.
 
 ## Production application policy
