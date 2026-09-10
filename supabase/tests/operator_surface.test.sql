@@ -112,6 +112,32 @@ begin
 end $$;
 
 -- ══ 3. CASE DATA IS OPERATOR-ONLY ═════════════════════════════════════════
+--
+-- RLS BEING ENABLED IS NOW LOAD-BEARING, AND WAS NOT BEFORE.
+--
+-- Until Session 8B these tables were withheld from `authenticated` entirely, so
+-- RLS was the SECOND refusal and the absent grant was the first. 20261059000000
+-- granted table-level SELECT and made the POLICY the only thing standing between
+-- a signed-in user and every case in the queue — `operator_notes` included.
+--
+-- So if RLS were ever disabled here, by a migration or a console, the grant would
+-- expose everything with no error and nothing failing. Nothing asserted it. It
+-- does now, because the assertion costs one line and the failure mode is total.
+select pg_temp.chk('operator', 'RLS is enabled on operator_cases', 'true',
+  (select relrowsecurity::text from pg_class where oid = 'public.operator_cases'::regclass));
+select pg_temp.chk('operator', 'and on the case event log', 'true',
+  (select relrowsecurity::text from pg_class
+    where oid = 'public.operator_case_events'::regclass));
+-- And exactly one SELECT policy on each, so a second permissive policy cannot be
+-- added alongside the operator one without this failing. RLS is OR-ed across
+-- permissive policies: one careless addition re-opens the table.
+select pg_temp.chk('operator', 'exactly one SELECT policy governs cases', '1',
+  (select count(*)::text from pg_policies
+    where schemaname = 'public' and tablename = 'operator_cases' and cmd = 'SELECT'));
+select pg_temp.chk('operator', 'and exactly one governs case history', '1',
+  (select count(*)::text from pg_policies
+    where schemaname = 'public' and tablename = 'operator_case_events' and cmd = 'SELECT'));
+
 do $$
 declare
   opu uuid := current_setting('b5b.s8b_op')::uuid;
