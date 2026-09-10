@@ -461,6 +461,73 @@ begin
   perform pg_temp.act_service();
 end $$;
 
+-- END TO END: AN OPERATOR WHO IS A PARTY TO THE TRADE.
+--
+-- The two assertions above prove the property by COMPOSITION — the named id must
+-- be the caller, and a named party is refused. That composition is sound, but the
+-- scenario SEC-AUTHZ-001 actually described has never been run: an allow-listed
+-- operator, who is genuinely a participant, adjudicating the trade they are in.
+--
+-- Built on `pg_temp.cx_agreement` from `cancellation.test.sql`, which registers
+-- earlier in the same transaction. The participant check runs BEFORE the
+-- eligibility test, so the obligation does not need to be under review for this
+-- to be the refusal that fires — and that ordering is itself worth pinning,
+-- because a future reordering would turn this into an eligibility error and
+-- quietly stop testing the thing it is named for.
+do $$
+declare
+  opu uuid := current_setting('b5b.s8b_op')::uuid;
+  other uuid := gen_random_uuid();
+  v_ag uuid; v_ob uuid; v_code text; v_msg text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  -- The operator needs a provider row to be a barter party at all.
+  insert into auth.users(id) values (other);
+  insert into public.providers(user_id, display_name, username)
+    values (opu, 'S8B Operator Business', 's8bop_'||substr(opu::text,1,8))
+    on conflict do nothing;
+  insert into public.providers(user_id, display_name, username)
+    values (other, 'S8B Counterparty', 's8bcp_'||substr(other::text,1,8));
+
+  v_ag := pg_temp.cx_agreement(opu, other, 's8b');
+  v_ob := pg_temp.cx_ob(v_ag, 'offer_owner');
+  perform pg_temp.chk('operator', 'the operator is genuinely a party to this trade', 'true',
+    (select (owner_user_id = opu)::text from public.barter_agreements where id = v_ag));
+
+  -- They are an operator, they name THEMSELVES (the only id the guard permits),
+  -- and they are refused because they are in the trade.
+  perform pg_temp.act(opu);
+  begin
+    perform public.adjudicate_barter_obligation(v_ob, 'fulfilled', opu, 'deciding my own trade');
+    v_code := 'NO ERROR';
+  exception when others then
+    v_code := sqlstate; v_msg := sqlerrm;
+  end;
+  perform pg_temp.chk('operator',
+    'an operator who is a PARTY cannot adjudicate their own trade', '42501', v_code);
+  perform pg_temp.chk('operator', 'and it is the participant rule that refuses them, not the gate',
+    'A participant cannot adjudicate their own trade.', v_msg);
+
+  -- Nothing was written.
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.barter_obligation_adjudications where obligation_id = v_ob;
+  perform pg_temp.chk('operator', 'and no outcome was recorded', '0', v_n::text);
+
+  -- THE AGREEMENT-PARTY VARIANT. The other obligation of the same agreement —
+  -- the one they are the RECEIVER of rather than the deliverer — is refused too,
+  -- because the check tests the agreement's parties as well as the obligation's.
+  perform pg_temp.act(opu);
+  begin
+    perform public.adjudicate_barter_obligation(
+      pg_temp.cx_ob(v_ag, 'responder'), 'unfulfilled', opu, 'the other half');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('operator',
+    'including the other obligation of the same agreement', '42501', v_code);
+  perform pg_temp.act_service();
+end $$;
+
 -- The anon arm, pinned so a gateway or claims change cannot quietly satisfy it.
 do $$
 declare v_b boolean;
@@ -477,15 +544,26 @@ end $$;
 
 -- No live comment may still claim the pre-8B caller set. This repo has paid four
 -- times for a stale comment being trusted, so it is a test rather than a habit.
-select pg_temp.chk('operator', 'no operator object still claims service_role-only', '0',
-  (select count(*)::text from pg_proc p
-     join pg_namespace n on n.oid = p.pronamespace
-     left join pg_description d on d.objoid = p.oid
-    where n.nspname = 'public'
-      and p.proname in ('operator_update_case', 'operator_set_provider_eligibility',
-                        'adjudicate_barter_obligation')
+-- NO live comment anywhere may still claim adjudication is service_role-only.
+--
+-- Scoped to three function names on the first attempt, which missed the same
+-- stale claim on TWO ADJACENT OBJECTS — a review request RPC and the table it
+-- writes — because they mention adjudication without being it. Widened to every
+-- function AND table description in the schema, and classoid-qualified so a
+-- cross-catalog OID collision cannot mask a real one.
+select pg_temp.chk('operator', 'no live comment still claims adjudication is service_role-only',
+  '0',
+  (select count(*)::text from pg_description d
+    where d.classoid in ('pg_proc'::regclass, 'pg_class'::regclass)
       and (d.description ilike '%service_role only%'
-           or d.description ilike '%service_role-only%')));
+           or d.description ilike '%service_role-only%')
+      and d.description ilike '%adjudicat%'));
+-- And none may claim there is no operator UI, which stopped being true on this
+-- branch.
+select pg_temp.chk('operator', 'nor that no operator surface exists', '0',
+  (select count(*)::text from pg_description d
+    where d.classoid in ('pg_proc'::regclass, 'pg_class'::regclass)
+      and d.description ilike '%no operator ui%'));
 
 -- ══ 7. SCOPE PIN — Session 8B added a surface, not a platform ═════════════
 --

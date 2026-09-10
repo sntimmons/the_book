@@ -1756,15 +1756,16 @@ and drops the policy — **the rows and every FK untouched**, because erasing un
 a worse answer than never having read them, and requirement O puts retention out of scope. The
 lesson is the one this session had already written down and then did not apply to itself.
 
-## 2026-09-10 — `20261059000000` … `20261061000000` **APPLIED to non-production** (Session 8B: the operator surface)
+## 2026-09-10 — `20261059000000` … `20261062000000` **APPLIED to non-production** (Session 8B: the operator surface)
 
-Three files. The first needed a decision; the second is bounded by it; the third fixes what the first got wrong.
+Four files. The first needed a decision; the second is bounded by it; the third fixes what the first got wrong; the fourth finishes what the third missed.
 
 | File | What it does |
 |---|---|
 | `20261059000000_operator_identity.sql` | `public.operators` (the allow-list), `is_operator()`'s third arm, SELECT policies on the two case tables, client grants on the audited RPCs, and the consolidation of `adjudicate_barter_obligation` onto `is_operator()`. |
 | `20261060000000_operator_case_reads.sql` | `operator_list_cases()` and `operator_case_detail()` — the queue and the facts behind one case. |
 | `20261061000000_the_named_actor_is_the_caller.sql` | **Forward correction.** Binds the actor parameter to `auth.uid()` in all three RPCs, and refreshes four stale live comments. |
+| `20261062000000_three_comments_the_last_pass_missed.sql` | Comments only. Three more objects that describe adjudication's caller set WITHOUT BEING adjudication, so the name-scoped sweep in `…61000000` did not see them. The regression assertion is widened in the same change to every function and table description in the schema, so this class cannot recur by scoping. |
 
 **THE DECISION IN THE FIRST FILE.** Session 8 amended PD-068 to PARTIALLY
 SATISFIED because working a case required a `psql` session. The surface that
@@ -1851,8 +1852,8 @@ objects still claims "service_role only", because `create or replace` preserves
 comments and all three had gone stale in the permissive direction.
 
 **Validation** (non-production `wcoyjeklscuqsumpjpfo`; production untouched):
-B5B **1573/1573** with zero residue, Jest **925/925**, typecheck clean, lint 0
-errors.
+B5B **1579/1579** with zero residue, Jest **925/925**, typecheck clean, lint 0
+errors, `supabase migration list` local == remote with no drift.
 
 ## Production application policy
 

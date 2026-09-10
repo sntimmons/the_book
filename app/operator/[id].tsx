@@ -159,8 +159,8 @@ export default function OperatorCase() {
               Alert.alert(
                 'Outcome recorded — case still open',
                 'The outcome was saved and cannot be changed. Closing the case did not '
-                + 'go through, so it is still in the queue. Reopen it and use "Resolve" '
-                + 'to close it; do not record the outcome again.',
+                + 'go through, so it is still open in the queue. Open it again and use '
+                + '"Resolve" to close it — do not record the outcome a second time.',
               )
             }
           },
