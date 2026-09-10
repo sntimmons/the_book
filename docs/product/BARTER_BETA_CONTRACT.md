@@ -421,8 +421,15 @@ offer.
 
 Recorded so the gap is visible rather than assumed closed:
 
-- The **eligibility conjunct** (§ 2) is not implemented. `caller_provider_id()` provides the
-  seam without the `is_approved` condition.
+- ~~The **eligibility conjunct** (§ 2) is not implemented. `caller_provider_id()` provides the
+  seam without the `is_approved` condition.~~ **CLOSED 2026-09-09 (PD-084, `20261048000000`).**
+  The seam was used exactly as designed: a SEPARATE `caller_eligible_provider_id()` carries the
+  `is_approved` condition and gates the two barter INSERT policies, while `caller_provider_id()`
+  stays unconditional. Keeping them apart is the point — `20260906000000` warned by name that
+  gating the original would also stop a de-approved provider **closing their own live offers**,
+  and that gating the interest READ policy would be actively wrong, because they would lose sight
+  of responses already sent to them. Eligibility gates what a provider may START, never what they
+  may finish, cancel, read or clean up.
 - The **Open to Trades** opt-in control (§ 2) is not built.
 - ~~**Agreements and obligations** (§§ 4, 6, 7) do not exist as schema. Nothing in
   `barter_offers` or `barter_interests` implements them. Slice 3 is where they land.~~
@@ -431,9 +438,24 @@ Recorded so the gap is visible rather than assumed closed:
   further migrations on top through `20261025000000`. This line survived two months after the
   thing it describes shipped; struck through rather than deleted, as § 11 already does.
 - The **3-post** and **5-offer/day** limits (§ 10) are not server-enforced.
-- **Blocking and reporting** (§ 9) do not exist.
-- The **internal Review Queue / operator surface** (§ 7.5, **PD-068**) does not exist. The
-  secure adjudication path does; nothing calls it. Required **before live barter beta**.
+- ~~**Blocking and reporting** (§ 9) do not exist.~~ **CLOSED 2026-09-09 (PD-082, PD-083,
+  `20261046000000`…`20261058000000`).** Blocking is symmetric and enforced at the write gates
+  (`PT427`, deliberately distinct from `PT426`), with a **live-transaction exception**: a blocked
+  pair keeps its conversation while they have a submitted, non-terminal booking or a confirmed
+  agreement with an unresolved obligation, because severing it would trap both people inside an
+  obligation neither could finish. Reporting writes to `public.reports` through one client path
+  and opens an operator case by trigger. **Two things this does NOT include:** blocked users are
+  not yet hidden from ordinary discovery or community surfaces (**PD-089**, locked, not
+  implemented), and report intake has no abuse bound yet (**PD-088**, locked, not implemented).
+- The **internal Review Queue / operator surface** (§ 7.5, **PD-068**) — **HALF OF THIS CLOSED
+  2026-09-09, and the half that remains is the one that matters to a user.** The queue's BACKEND
+  exists (PD-085, `20261049000000`/`20261050000000`): `operator_cases`, `operator_case_events`,
+  `is_operator()`, and intake from all three sources — barter review requests, provider appeals
+  and user reports. **The operator SURFACE does not exist.** The operator RPCs are granted to
+  `service_role` alone, nothing under `app/` or `lib/` calls them, and working a case today
+  requires a psql session. So a request now LANDS somewhere a person can find, and no obligation
+  can still reach a terminal outcome through the running product. **PD-068 is PARTIALLY
+  SATISFIED**, still required **before live barter beta**, and Session 8B is the surface.
 - ~~The **terminal AGREEMENT-level outcome** (§ 7.5 table) does not exist, and whether it should
   be **persisted or derived** is undecided.~~ **RESOLVED by PD-070:** it is **derived** and will
   not be persisted. No stored agreement verdict exists, and none is coming. The § 7.5 table below

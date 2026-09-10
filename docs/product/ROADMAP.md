@@ -1,17 +1,22 @@
 # Roadmap — session-based
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `f5fd197` (2026-09-08) — squash-merge of PR #70, which earns a
-Completed row below and therefore moves this document's anchor (CHECKLIST § A tiebreak). PR #68
-(`5c24e8f`) earns a row too and is the earlier of the two, so the anchor sits at the later merge.
-The SHAs, the PR numbers and the merge order were **supplied to this reconciliation**, which had no
-shell; it confirmed from files only that `.git/refs/heads/main` and
-`.git/refs/remotes/origin/main` both read `f5fd1973b70b6163e0a1a56874d61673bdc00ee7`, that `.git/HEAD`
-points at a working branch cut from that same commit rather than at `main`, and that
-`supabase/migrations/*.sql` holds **68** files.
-**Last edited by:** PR #70 (previous edit: PR #66). PR #70 carried its own § Next text in with its
-code; this reconciliation was **not given its own PR
-number**, so this field names the last mutation whose number is known.
+**Reconciled against:** `main` @ `e5b9125` (2026-09-10) — squash-merge of **PR #76**, Session 8
+(safety, trust and operator handling), which earns a Completed row below and therefore moves this
+document's anchor (CHECKLIST § A tiebreak). **Three earlier merges earn rows in the same pass** —
+`6a3fb69`, `a125cd7` (Pre-Beta Correction 2) and `0781f49` (**PR #74**, Pre-Session-8 Correction 3)
+— and the anchor sits at the latest of the four.
+
+This run had **no shell**. What it confirmed from files: `.git/refs/heads/main` and
+`.git/refs/remotes/origin/main` both read `e5b912511829ecfa8793c2a5ad8feaba40dfa3a0`; `.git/HEAD`
+points at `chore/post-session-8-state-reconciliation`, whose ref is **`76c4576` — one commit ahead
+of `e5b9125`**, and that commit is not a Steward edit; `supabase/migrations/*.sql` holds **97**
+files; and the merge order `224d609` → `6a3fb69` → `a125cd7` → `0781f49` → `e5b9125`, read from
+`.git/logs/HEAD`. **The PR numbers for `6a3fb69` and `a125cd7` were not supplied and are recorded as
+not established**, not guessed. PR #76 and PR #74 were supplied.
+**Last edited by:** this reconciliation, which was **not given its own PR number**. The last
+numbered edit to this file that can be proven is **PR #71** (`224d609`), the post-Session-7
+reconciliation; PR #75, which would have carried the post-Correction-3 edit, **never merged**.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
 > repository facts asserted in this document were verified. A documentation-only merge that
@@ -73,6 +78,10 @@ Sessions may merge, split, or reorder. A session is "complete" only when its wor
 | **Future-ideas bank and marketing message bank** — durable product-thinking documents | [#69](https://github.com/sntimmons/the_book/pull/69) | `c04e5bd` (squash merge) — **supplied, not verified** | `docs/product/FUTURE_PRODUCT_IDEAS.md` and `docs/product/MARKETING_MESSAGE_BANK.md`, both **new files that did not previously exist**. This row is included on the same basis as #29's PM document set: it is the durable recording of product thinking, not a reconciliation of already-landed facts, which is what the inclusion rule excludes. **It is a documentation artifact and NOT a capability**, so it earns a row without moving this document's anchor — and, critically, **nothing in either file is a decision.** An idea written up there is exploration, not commitment; only a `PD-NNN` in [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) commits the product to anything. This row is placed by merge order: `c04e5bd` landed **before** `5c24e8f`. |
 | Barter **manual operator adjudication and the three terminal OBLIGATION outcomes** — implements PD-064 … PD-067; PD-068 and PD-069 were **recorded** alongside it ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md):7 attributes PD-064 … PD-069 to this PR), while **PD-069's implementation landed in PR #70** | [#68](https://github.com/sntimmons/the_book/pull/68) | `5c24e8f` (squash merge) — **supplied, not verified** | Eight migrations, `supabase/migrations/20261019000000_barter_obligation_adjudication.sql` … `20261026000000_append_only_honest_privileged_predicate.sql`. **One new table** — `public.barter_obligation_adjudications`, the **eleventh** barter table: at most one row per obligation (`unique (obligation_id)`), append-only, participant-read policy, **no write policy and no client write grant** (`20261019000000:62-99`, `:105-137`, `:210-243`). **One new RPC** — `adjudicate_barter_obligation(uuid, text, uuid, text)`, **the only function in this repo whose `EXECUTE` is granted to `service_role` alone** (`:352-355`). A participant is refused at **four independent layers**: the grant; the in-function privileged-caller check (`:280-282`); the in-function adjudicator-may-not-be-a-participant check (added by `20261023000000`); and the same check re-made in the `BEFORE INSERT` trigger (`:168-175`), which is the copy that holds against a direct privileged INSERT. **Three terminal outcomes, obligation-level and resolved independently**: `fulfilled`, `unfulfilled`, `closed_without_resolution` — the third records that the information supported **neither** finding, is **not** a softer *unfulfilled*, is **not** a finding of fault and carries **no reputation effect** (PD-065). **Eligible only while UNDER REVIEW**; a passed deadline, Needs Attention, a delivery, a passed `due_at` and a passed `scheduled_at` are all insufficient, and a cancelled agreement cannot be adjudicated at all (PD-064). **Immutable**: no edit, no withdrawal, no flip — the same outcome is a safe no-op, a different one is refused (PD-066) — and it **rewrites no history**, so a receiver's "Didn't receive" and a later `fulfilled` coexist permanently. **The outcome is participant-visible; the rationale and the adjudicator are INTERNAL**, enforced by **column-level grants** because an RLS policy cannot hide a column (PD-067, `:229-241`). A terminal outcome then **dominates**: the derived read states are suppressed and the three participant write RPCs refuse, with `PT424` after `20261022000000` gave that refusal its own SQLSTATE. `supabase/tests/adjudication.test.sql` registered at `scripts/db-security-test.mjs:54`; seven new races in `scripts/negotiation-concurrency.mjs`. **NO OPERATOR UI WAS BUILT AND NONE MAY BE INFERRED** — the secure server path lands first by Founder ruling (`20261019000000:52-55`), a minimal internal **Review Queue is a PRE-BETA requirement** (PD-068), and **no resolution SLA is promised to anyone**. **Still not built: any operator surface, agreement-level outcomes of any kind, automatic fulfilment or completion, barter reviews, reputation, and push / device / email notifications. How a plain Needs Attention might enter Under Review is STILL UNRESOLVED — this slice did not answer it.** |
 | Barter **derived agreement presentation, and the removal of the last live dollar-value UX** — PD-069, PD-070 | [#70](https://github.com/sntimmons/the_book/pull/70) | `f5fd197` (squash merge) — **supplied, not verified** | Three migrations, `supabase/migrations/20261027000000_suppression_computed_once.sql` … `20261029000000_offering_value_comment_precision.sql`, **none of which adds a table, a column, a write path or a lifecycle state**. `20261027000000` drops and recreates both read models so the terminal-outcome suppression predicate is computed **once** in a lateral instead of inlined three times, and renames the `p_trade_cancelled` parameter that had stopped meaning "cancelled"; it is now the **live definition of `public.my_barter_obligations` and `public.my_trade_activity`**. `20261028000000` implements PD-069's server half: `barter_offers.offering_value` becomes **DEPRECATED legacy data** — `enforce_barter_offer_write` **nulls it on INSERT** (silently, so a not-yet-updated mobile build keeps posting) and makes it **one-directional on UPDATE** (keepable or clearable, never introduced or changed), with `service_role` short-circuiting first. **The column is deliberately NOT dropped**: pre-ruling rows hold a figure a provider entered, and `20260917000000` copies it into immutable proposal-version snapshots. `20261029000000` is a comment precision fix on that deprecation. Client: the **estimated-value composer input and the `~$N value` board badge are REMOVED** (`app/community/barter-compose.tsx:61`, `app/community/index.tsx:944-948`) and `offering_value` is **not selected, not mapped and not typed** (`lib/barter.ts:27-35`, `:83-87`), pinned as an absence by `__tests__/guards/barterValueAbsent.test.ts`. **PD-070's derived agreement presentation**: `agreementResolution` (`lib/obligationState.ts:741-749`) returns one of four **coarse** states — `none`, `partial`, `allSettled`, `allSettledMixed` — **none of which names an outcome**, and `CONFIRMED_DETAIL` (`lib/negotiationState.ts:226-245`) is total over them, so a settled trade no longer instructs two providers to arrange something an operator already concluded. `fulfilled + closed_without_resolution` does **not** become *Partially Fulfilled* and `closed + closed` does **not** become *Not Completed*; where a roll-up would overstate, the two obligation truths are shown instead. **NO agreement-level terminal outcome is persisted, and PD-070 makes that permanent rather than pending.** |
+| **Pre-Beta Correction 1** — unsupported beta claims removed from live surfaces, and pinned as an absence | **not established** — the reconciliation that wrote this row had no shell and no PR number was supplied | `6a3fb69` (read from `.git/logs/HEAD`, commit subject *"fix: remove unsupported payment, identity, notification and SLA claims from live beta surfaces"*; the name **Pre-Beta Correction 1** and the date 2026-09-08 are [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md)'s, under OQ-036) | `__tests__/guards/betaClaimsAbsent.test.ts` — a source-reading guard over every root that can produce a user-visible string, which strips comments first so prose cannot satisfy it, and deliberately excludes `app/preview/**` and documentation. The claims it pins as gone: payment protection and deposit safety (**PD-042** — The Book processes no payment), user-completable identity verification (**PD-004**), push/device/email notification (**PD-059**), and any promised response time behind a report. Its header records that `hooks/` was originally out of scope and that `hooks/useNotifications.ts` was still shipping *"No charge was made."* while the suite reported clean — **a guard scoped narrower than the claim in its own header is worse than no guard**. This row is here because a sentence that misdescribes money or identity is the one kind of inaccuracy a beta cannot recover from, and pinning its absence is a product-truth capability. **Only the guard file was verified by this run**; the copy changes themselves were not diffed, because that needs a shell. |
+| **Pre-Beta Correction 2** — provider, contract, signature and storage ownership bound; least-privilege defaults | **not established** — no PR number was supplied | `a125cd7` (read from `.git/logs/HEAD`, commit subject *"fix(security): bind provider, contract, signature and storage ownership; least-privilege defaults"*) | Seven migrations, `supabase/migrations/20261030000000_providers_public_column_surface.sql` … `20261036000000_signature_immutability_and_review_corrections.sql`. `providers` stops being world-readable on every column and becomes a **column-level SELECT grant** — 28 public columns to `anon`/`authenticated`, 21 to `service_role` alone; contracts and `contract_signatures` are bound to a row the caller owns on both write paths; the client contract-signing gate becomes reachable through a `SECURITY DEFINER` read function; `posts-media` becomes owner-bound on INSERT, UPDATE and DELETE; and default privileges stop granting `anon`/`authenticated` every privilege on every future table. **Five defects were REPRODUCED at runtime against non-production before being fixed**, and it surfaced a pre-existing one that mattered more than any of them: provider go-live (J7) had been failing for every real provider since 2026-08-30, because `.upsert(…, { onConflict: 'user_id' })` emits `DO UPDATE SET user_id = excluded.user_id` and Batch 3a deliberately withheld UPDATE on that column. `supabase/tests/authorization_boundaries.test.sql` registered at `scripts/db-security-test.mjs:57`; `__tests__/guards/providerColumnGrant.test.ts`. Post-apply figures in [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md): **B5B 1305/1305, concurrency 181/181**, at **75** applied versions. The narrative is in [CURRENT_STATE.md](CURRENT_STATE.md) § Security posture, written by the slice itself. |
+| **Pre-Session-8 Correction 3** — booking-request lifecycle, the deliverer's review request, and the beta-flow truths (PD-071 … PD-081) | [#74](https://github.com/sntimmons/the_book/pull/74) — **supplied, not verified** | `0781f49` — **supplied, not verified** | Nine migrations, `supabase/migrations/20261037000000_booking_request_lifecycle.sql` … `20261045000000_drafts_are_not_relationships.sql`, **four of them forward corrections to the other five**. A booking gains `submitted_at` (NULL = a private DRAFT the provider cannot see) and a server-authoritative `expires_at` at `LEAST(submitted_at + 72h, appointment_time)` (**PD-071**); `contract_for_booking()` replaces a function that returned any approved provider's contract text to any authenticated caller; **`20261039000000` adds the deliverer's barter review request (PD-072) — the THIRD route into Under Review, and the answer to OQ-071**, completed by `20261042000000` after the eligibility rule was found updated in only one of its two enforcing copies; `posts` gains the owner-scoped DELETE policy it never had and the `WITH CHECK` whose absence let a provider republish their media onto a stranger's profile. **Two corrections are the record of this slice, not footnotes to it:** `20261044000000` replaced an `available_today` PostgREST **computed column** that could never have worked — a whole-row reference against Correction 2's 28 named column grants — and which had broken **discovery, the provider profile and search for every user** while passing a suite that only ever ran as `service_role`; and `20261045000000` closed the fact that a DRAFT booking satisfied three boundaries written before drafts existed, letting any authenticated account open an ungated conversation with any approved provider and reverse a provider's explicit decline. `supabase/tests/booking_lifecycle.test.sql` and `supabase/tests/barter_review_request.test.sql`, registered at `scripts/db-security-test.mjs:55-56`; `__tests__/guards/bookingLifecycleReads.test.ts`. **PD-080 is the only one of the eleven decisions not implemented, deliberately.** **No post-apply B5B, concurrency or Jest figure is recorded for this block** in the ledger or was supplied here. |
+| **Session 8 — safety, trust and operator handling** (PD-082 … PD-089) | [#76](https://github.com/sntimmons/the_book/pull/76) — **supplied, not verified** | `e5b9125` — **proven from `.git/refs`** | Thirteen migrations, `supabase/migrations/20261046000000_user_blocks.sql` … `20261058000000_block_gates_fire_last_and_name_no_stranger.sql`, **six of them forward corrections**. **User blocking** (PD-082) with the **live-transaction exception** — a blocked pair keeps an EXISTING conversation while they hold a submitted, non-terminal booking or a confirmed agreement with an unresolved obligation, because severing it would trap two people inside an obligation while removing the only means of resolving it; a DRAFT booking deliberately does not qualify. **`PT427` is the block refusal and is deliberately distinct from `PT426`.** **One reporting path** into `public.reports` with a trigger that opens an operator case (PD-083); the community feed's `community_reports` is **retired — write grant revoked and INSERT policy dropped, ROWS AND CASCADES DELIBERATELY PRESERVED**, because erasing unread safety reports is a worse answer than never having read them. **Provider eligibility gates WRITES only** via `caller_eligible_provider_id()` (PD-086) — a de-approved provider can still close their own offers and answer their own obligations. **The operator Review Queue's BACKEND** (PD-085): `operator_cases`, `operator_case_events`, `is_operator()`, intake for all three sources, and operator RPCs granted to **`service_role` alone**, with no role table and no `is_admin` column. **The de-approved provider's appeal route** (PD-086). **THE LIMIT IS THE POINT: NO OPERATOR UI WAS BUILT, and PD-068 is amended to PARTIALLY SATISFIED — do not mark it complete.** Working a case today requires a `psql` session; verified as an absence by searching `app/`, `lib/`, `components/`, `hooks/`, `store/` and `context/` for a caller of `operator_update_case`, `operator_set_provider_eligibility` or `adjudicate_barter_obligation` and finding only three prose comments. Three Founder rulings closed the questions the branch filed rather than answered: **PD-087** (a block is never announced, need not be undiscoverable — **no code change**), **PD-088** (bounded report intake before broad beta — **NOT IMPLEMENTED**) and **PD-089** (a blocked person disappears from ordinary discovery and community surfaces — **NOT IMPLEMENTED**). Client: `lib/safety.ts`, `lib/safetyMenu.ts`, `components/ReportSheet.tsx`, `app/settings/blocked.tsx`, symmetric block/report in `app/messages/[id].tsx`, and a `blockedByMe` state on the provider profile. `supabase/tests/safety_operator.test.sql` registered at `scripts/db-security-test.mjs:58`; `__tests__/lib/safety.test.ts`; `__tests__/components/ReportSheet.test.tsx`. **No post-apply B5B, concurrency or Jest figure is recorded for this block** in the ledger or was supplied here. |
 
 **Row inclusion rule.** A PR earns a row here when it **materially delivers a product,
 architecture, security, governance, infrastructure or operating capability**. A routine
@@ -238,6 +247,31 @@ versions with local == remote and no drift; and the figures **B5B 1229/1229**, *
 repository-provable. `gh pr view 68`, `gh pr view 69`, `gh pr view 70`, `git rev-parse`,
 `gh run list --branch main` and `supabase migration list --linked` close that gap.
 
+**The four newest rows are the weakest-evidenced in this table on PROVENANCE and among the
+strongest on ARTIFACT**, and that asymmetry is stated rather than averaged. They were written by a
+reconciliation with **no shell**, four merges after the last one this document recorded.
+
+*What was proven*, by reading this tree: every migration each of the four rows names exists in the
+chain, and the chain is **97** files with the four blocks the rows describe; every test file and
+guard named exists, at the registration lines given; the **absence** of any operator-RPC caller in
+client code; and `.git/refs/heads/main` == `.git/refs/remotes/origin/main` == `e5b9125`.
+
+*What is attested only*: that `e5b9125` is **PR #76** and `0781f49` is **PR #74**, both supplied in
+the invocation; the squash strategy; and the clean working tree. *What is **not established** and is
+recorded as such rather than guessed*: the PR numbers behind `6a3fb69` and `a125cd7`. *What was
+neither supplied nor found*: any CI run number or conclusion for `e5b9125`, and any post-apply B5B,
+concurrency or Jest figure for Correction 3 or Session 8 — the ledger dates both applies but records
+no figures for either, so the last figures this document can cite are Correction 2's.
+`git log --oneline --merges f5fd197..e5b9125`, `gh pr view 76`, `gh run list --branch main` and
+`supabase migration list --linked` close every one of those gaps.
+
+**One governance note the reviewer of this diff needs.** `.git/HEAD` resolves to
+`chore/post-session-8-state-reconciliation`, whose ref is **`76c4576`** — `e5b9125` plus one commit,
+*"docs: the discovery comment named a function that was dropped"*, salvaged from the superseded
+**PR #75** and touching a file **outside the Steward's five-file allowlist**. It is not a Steward
+edit and predates this reconciliation, but it means the tree these rows were verified against is
+that commit's, not `e5b9125`'s. No row above depends on the difference.
+
 **Existence is not evidence.** Where a row's artifact is a file that *pre-dates* its PR, the
 row says "modified by" and is evidenced by that PR's diff — not by the file being present.
 A path that existed before the work cannot prove the work happened.
@@ -261,6 +295,38 @@ change — not something a reconciliation can do.
 ---
 
 ## Current
+
+**SESSION 8 IS MERGED, AND PD-068 IS STILL NOT SATISFIED.** Those two facts belong in one sentence,
+because separating them is how this document would become untrue. `main` @ `e5b9125` (**PR #76**)
+holds **ninety-seven** migrations, newest
+`20261058000000_block_gates_fire_last_and_name_no_stranger.sql`. Blocking, one reporting path into
+`public.reports`, provider-eligibility gating of barter writes, the de-approved provider's appeal
+route and the **operator Review Queue's BACKEND** are all on `main`, each described in the Completed
+row above and in [CURRENT_STATE.md](CURRENT_STATE.md) § Safety, trust and operator handling.
+**There is no operator UI. The operator RPCs are reachable only as `service_role`. Working a case
+today requires a `psql` session.** PD-068 is therefore **PARTIALLY SATISFIED — do not mark it
+complete** ([PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md):1001-1012), and equally, any statement that
+the queue does not exist at all, or that nothing can reach a terminal outcome by any route, is now
+also wrong. **Backend yes, surface no.**
+
+**Two decisions from the same session are LOCKED AND NOT IMPLEMENTED**, and neither may be read as
+shipped: **PD-088** (bounded report intake before broad beta — every report now opens a case, and
+reporting is still neither rate-limited nor idempotent per subject) and **PD-089** (a blocked person
+disappears from ordinary discovery and community surfaces — Session 8 stopped at CONTACT, so a
+blocker still sees the person they blocked and can still tap Respond). **PD-087 required no code
+change** and is satisfied by current behaviour.
+
+**Three capability merges preceded Session 8 and had never been recorded here**: **Pre-Beta
+Correction 1** (`6a3fb69`), **Pre-Beta Correction 2** (`a125cd7`) and **Pre-Session-8 Correction 3**
+(`0781f49`, PR #74). All three now carry Completed rows. **PR #71** (`224d609`) was the
+documentation-only post-Session-7 reconciliation and earns none; **PR #75**, which would have been
+the post-Correction-3 one, **never merged** — `.git/logs/HEAD` records `main` going `0781f49` →
+`e5b9125` in one fast-forward — which is why the header of this document still read `f5fd197` four
+merges later.
+
+---
+
+**Historical, and correct as of `f5fd197`:**
 
 **SESSION 7 IS COMPLETE. The barter lifecycle engine is closed.** The proposal / versioning
 foundation, proposal timing extension, agreement
@@ -426,27 +492,39 @@ none of them is mistaken for unfinished Session 7 work, and none for finished wo
 tested and `service_role`-only, and **no operator surface exists** — verified as an absence by
 searching `app/` and `lib/` for a caller and finding only the concurrency test harness. Under Review
 is therefore a practical terminus today even though the schema no longer makes it one.
+**Still true at `e5b9125`, and Session 8 narrowed it rather than closing it:** the queue those cases
+land in now exists (PD-085), and **nothing calls its operator RPCs either**. A case can be created
+and cannot be worked outside `psql`.
 
-**2. The next activity is NOT a product session.** Before Session 8 implementation begins, the
+**2. The next activity is NOT a product session.** ~~Before Session 8 implementation begins, the
 Founder / PM has chosen to run a **WHOLE-APP AUDIT ROUND 2**. It is a **planning and quality gate**,
 not a feature slice: it delivers findings and sequencing, not code. **Session 8 does not begin until
-it completes.** Recorded as supplied in this reconciliation's invocation.
+it completes.**~~ **Overtaken by events: Session 8 began and merged (`e5b9125`, PR #76).** Three
+correction slices landed between PR #71 and Session 8 — `6a3fb69`, `a125cd7` and `0781f49` — each
+with a Completed row above. **Whether those slices WERE the whole-app audit round 2, or were
+something else that happened instead of it, is not established by this repository**, and this
+reconciliation will not infer it. See § WHOLE-APP AUDIT ROUND 2 below.
 
 **3. What is PRE-BETA, and therefore required rather than optional:**
 
+**Restated at `e5b9125`. Three of these four moved in Session 8, and the first moved only halfway —
+which is the whole point of the row.**
+
 | Pre-beta requirement | Status | Note |
 |---|---|---|
-| Minimal internal **Review Queue** / operator surface | **NOT BUILT** | Required by **PD-068** before live barter beta. The secure server path is complete; **nothing calls it**, so no obligation can reach a terminal outcome in the running product. |
-| **Blocking and reporting** | **NOT BUILT** | Barter contract § 9. |
-| **Operator handling** of a reported provider | **NOT BUILT** | The triage / response / restriction path behind a report. |
-| Broader **safety and trust readiness** | **NOT BUILT** | OQ-020 … OQ-026; address disclosure remains the highest-risk open surface. |
+| Minimal internal **Review Queue** / operator surface | **BACKEND BUILT — SURFACE NOT BUILT** | **PD-068 is PARTIALLY SATISFIED, not complete.** Session 8 (PD-085) delivered `operator_cases`, `operator_case_events`, `is_operator()`, intake from all three sources and the operator RPCs. **There is no operator UI**, the RPCs are `service_role`-only, and working a case takes a `psql` session — so no obligation can still reach a terminal outcome in the running product. This is the requirement **Session 8B** exists to finish. |
+| **Blocking and reporting** | **BUILT** | PD-082 and PD-083, barter contract § 9. Blocking carries the live-transaction exception and `PT427`; reporting is one path into `public.reports` that opens an operator case, and `community_reports` is retired. |
+| **Operator handling** of a reported provider | **BACKEND BUILT — SURFACE NOT BUILT** | The intake and the case model exist (PD-085); the triage, response and restriction path a human would use does not. `operator_set_provider_eligibility` exists and nothing calls it. |
+| **Report intake bounds** | **NOT BUILT** | **PD-088**, locked 2026-09-09, required **before broad beta**. Every report now opens a case, so an ordinary account can create N live cases. The limits are decided and written down; none is implemented. **Assigned to Session 8C** (2026-09-10). |
+| **Blocked users hidden from ordinary discovery / community** | **NOT BUILT** | **PD-089**, locked 2026-09-09. **Assigned to Session 8C** (2026-09-10); explicitly **not** Session 8 and **not** Session 8B. |
+| Broader **safety and trust readiness** | **PARTIAL** | OQ-020 … OQ-026; address disclosure remains the highest-risk open surface, and is untouched by Session 8. |
 
 **4. What is OPEN or FUTURE, and therefore exploratory — none of it is committed work, and
 appearing in `FUTURE_PRODUCT_IDEAS.md` commits the product to nothing:**
 
 | Exploratory item | Note |
 |---|---|
-| **Needs Attention → Under Review escalation** | **The one genuinely open ENGINE question.** No automatic escalation, second timer, participant escalation action or operator auto-escalation exists, and **none may be created by implementation** — resolving it takes a Founder decision, not a migration. |
+| ~~**Needs Attention → Under Review escalation**~~ | **NO LONGER OPEN — closed by PD-072** (2026-09-09, Correction 3), by the narrow route this row required: a **deliverer-initiated explicit REQUEST**, not an automatic escalation, a second timer or an operator auto-escalation, none of which exist even now. It was resolved by a Founder decision and then implemented, in that order. See OQ-071. |
 | Barter **trust / reliability consequences** | Explicitly absent today: an outcome carries no reputation effect (PD-065). |
 | **Reciprocal matching**, a **Wants list**, **three-way matching** | Exploration only. Beta stays direct two-provider barter (PD-069). |
 | Barter negotiation **UX simplification** | The model underneath is correct and stays; this is presentation. |
@@ -573,19 +651,24 @@ report (`PT409`), and the race resolves to exactly one state.
 
 Two absences from PR #64 are **decided, not overlooked**, and must stay documented as absent:
 
-- **How a plain Needs Attention might later enter Under Review is UNRESOLVED and deliberately
-  UNDECIDED.** It was expected to be settled by the adjudication slice; **PR #68 shipped without
-  answering it, so it is still open.** **No second timer, no automatic escalation,
-  no participant escalation button and no operator auto-escalation was created**
-  (`supabase/migrations/20261012000000_barter_no_show_under_review.sql:38-52`, and the record in
-  [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) § Closed — index). It is the one genuinely open engine
-  question, and it takes a Founder decision to close.
+- ~~**How a plain Needs Attention might later enter Under Review is UNRESOLVED and deliberately
+  UNDECIDED.**~~ **CLOSED 2026-09-09 by PD-072**, in Correction 3 (`0781f49`, PR #74). The answer is
+  a **deliverer-initiated, EXPLICIT act**: a provider who delivered and was never answered may ask
+  The Book to review that obligation once the window has passed, and that request is the **third
+  route into Under Review** (`20261039000000_barter_review_request.sql`, completed by
+  `20261042000000`). **None of the four forbidden resolutions was used** — no second timer, no
+  automatic escalation, no operator auto-escalation, and the participant act is a REQUEST, not an
+  escalation. OQ-071 records the closure. **Asking is not being answered**: nothing processes these
+  beyond queueing them, which Session 8's `operator_cases` intake now at least does.
+  (`supabase/migrations/20261012000000_barter_no_show_under_review.sql:38-52` remains the record of
+  the absence as it stood.)
 - **A no-show conversation / in-thread notice is DEFERRED** (Founder ruling, 2026-09-07), to be
   decided with the later adjudication / review workflow. **That deferral now covers adjudication
-  too**: `public.pair_conversation_notice` is called only from `20261009000000`, `20261010000000`
-  and `20261015000000` — all cancellation paths — across all **68** migrations, so neither a
-  no-show report nor a terminal outcome writes anything into the pair's thread. Each is learned by
-  opening the trade.
+  too, and Correction 3 and Session 8 did not lift it**: `public.pair_conversation_notice` is called
+  only from `20261009000000`, `20261010000000` and `20261015000000` — all cancellation paths — and
+  a sweep of all **97** migrations at `e5b9125` finds no fourth caller. So neither a no-show report,
+  nor a review request, nor a terminal outcome writes anything into the pair's thread. Each is
+  learned by opening the trade.
 
 Still not built, and this list was **shortened by PR #68 and PR #70** rather than carried forward
 unchanged. **Adjudication, the operator decision path and the three terminal OBLIGATION outcomes
@@ -597,10 +680,13 @@ without which no obligation can be resolved in the running product;
 **no push, device or email notification work** — which
 is the half of **PD-059** that remains deliberately absent, and PR #58's cancellation notice is a
 durable in-thread message, not a notification system; barter reviews and reputation;
-provider-eligibility gating of the barter surface (**PD-044**'s `is_approved` conjunct, whose
-seam is prepared but empty); the **Open to Trades** opt-in; the 3-post and 5-offers/day limits
-as server rules; the post-decline reverse-contact episode (**PD-048**); and blocking and
-reporting (contract § 9). Barter completion, trade history, notifications and reputation are
+the **Open to Trades** opt-in; the 3-post and 5-offers/day limits
+as server rules; and the post-decline reverse-contact episode (**PD-048**). **Two items left this
+list in Session 8 and are struck rather than quietly dropped:** ~~provider-eligibility gating of the
+barter surface (PD-044's `is_approved` conjunct, whose seam is prepared but empty)~~ — **BUILT** as
+the separate `caller_eligible_provider_id()` (PD-086, `20261048000000`), which gates the two INSERT
+policies and nothing else; and ~~blocking and reporting (contract § 9)~~ — **BUILT** (PD-082,
+PD-083). Barter completion, trade history, notifications and reputation are
 recorded in the Slice 1 migration header as Session 6 scope.
 
 **Two engineering obligations carried forward. Neither was discharged by PR #68 or PR #70, and
@@ -617,7 +703,9 @@ both still stand for whatever slice comes next:**
    `lib/negotiationWrite.ts` — re-read at `f5fd197`: still **six** handlers and **six** hand-copied
    `if (busy) return` guards, at `app/community/negotiation/[id].tsx:329`, `:343`, `:364`, `:395`,
    `:445` and `:471`, so **neither PR #68 nor PR #70 added a seventh** and the obligation is
-   neither tripped nor discharged — which owns the
+   neither tripped nor discharged — **re-counted at `e5b9125`, where it is still 6 handlers and
+   6 guards but every line number has moved; the current ones are in § Standing constraints and
+   these are kept only as the record of the `f5fd197` reading** — which owns the
    ordering; the four real per-operation differences are declared as options at each call site.
    **Two residual items, neither a gate on the next slice generally, both a gate on the next
    write handler on this screen:** (a) the re-entrancy `busy` guard is still hand-copied at 6/6
@@ -641,40 +729,109 @@ both still stand for whatever slice comes next:**
    for a reason of its own** (`20261009000000_pair_conversation_notice.sql:25-30`). Its live
    definition remains `20260913000000_trade_activity_hardening.sql`.
 
-### WHOLE-APP AUDIT ROUND 2 — the next activity, and NOT a session
+### WHOLE-APP AUDIT ROUND 2 — status UNESTABLISHED
 
-**This comes before Session 8 implementation begins.** The Founder / PM has chosen to run a second
-whole-app audit round as a **planning and quality gate** rather than a product session: it produces
-findings and sequencing, **not code, not migrations and not decisions**. **Session 8 does not start
-until it completes.** Recorded as supplied in this reconciliation's invocation; **no scope, no
-duration and no output format for it has been established in this repository**, and a later
-reconciliation should record those from the ruling rather than infer them.
+The text below was written before Session 8 and said the audit came first. **Session 8 has since
+merged, so either the audit ran or the plan changed, and this repository does not say which.**
+Three correction slices did land in between — `6a3fb69` (unsupported beta claims removed),
+`a125cd7` (Pre-Beta Correction 2, security and authorization) and `0781f49` / PR #74
+(Pre-Session-8 Correction 3) — and each carries findings of exactly the kind an audit produces.
+**That is a resemblance, not evidence**, and no document on `main` attributes any of the three to
+the audit. **A human should record what actually happened**; a reconciliation may not infer it.
 
-Two items already known to belong to it, carried forward rather than invented here: the **barter
-feed card / offer-responses surface-consistency** gap (§ Next → Session 7 above), and the
+~~**This comes before Session 8 implementation begins.**~~ The Founder / PM had chosen to run a
+second whole-app audit round as a **planning and quality gate** rather than a product session: it
+produces findings and sequencing, **not code, not migrations and not decisions**. That was recorded
+as supplied in an earlier reconciliation's invocation; **no scope, no duration and no output format
+for it has ever been established in this repository.**
+
+Two items were recorded as belonging to it and **neither is discharged**: the **barter feed card /
+offer-responses surface-consistency** gap (§ Next → Session 7 above), and the
 **`barter_agreements` identity-immutability** follow-up (§ "Recorded for Session 7 closeout /
 cross-app audit" above).
 
-### Session 8 — whole-app safety / trust / operator handling — **NOT STARTED**
-Addresses OQ-020 … OQ-026. Address disclosure for home-based and house-call services is
-the highest-risk open surface in the product.
+### Session 8 — whole-app safety / trust / operator handling — **MERGED** (`e5b9125`, PR #76)
 
-**Likely themes, recorded as themes and NOT as PR slices** — no slicing has been decided, and
-assigning one here would be planning rather than bookkeeping:
+**Complete means what shipped, not what the session was named after.** What it delivered is in the
+Completed row above and in [CURRENT_STATE.md](CURRENT_STATE.md) § Safety, trust and operator
+handling; what it deliberately did not deliver is below. It addressed part of OQ-020 … OQ-026.
+**Address disclosure for home-based and house-call services is untouched and remains the
+highest-risk open surface in the product.**
 
-- **Block and report** (barter contract § 9; today neither exists).
-- **Provider eligibility** — PD-044's `is_approved` conjunct, whose seam is prepared but empty.
-- **Active-agreement safety** — what a participant can do when a live trade turns unsafe.
-- **Transaction safety** across the booking and barter surfaces.
-- **Operator handling** — triage, response and restriction behind a report.
-- **Trust / reliability consequences** — explicitly absent today; PD-065 gives a terminal outcome
-  no reputation effect, and nothing may change that by implementation.
-- **Pre-beta placement of the minimal internal Review Queue** (PD-068). Whether it lands inside
-  Session 8 or as its own slice is **not decided**; that it must exist before live barter beta
-  **is**.
+The themes this section listed before the session ran, with what actually happened to each:
 
-**None of the above is committed scope.** They are the areas the session is expected to cover, and
-the audit above is what turns them into work.
+- **Block and report** (barter contract § 9) — **BUILT** (PD-082, PD-083).
+- **Provider eligibility** — **BUILT**, and not the way the seam anticipated: PD-044's conjunct did
+  not go into `caller_provider_id()`; a separate `caller_eligible_provider_id()` gates the two
+  barter INSERT policies and nothing else, so a de-approved provider can still finish, cancel, read
+  and clean up (PD-086).
+- **Operator handling** — **BACKEND ONLY** (PD-085). Triage, response and restriction exist as RPCs
+  nothing calls.
+- **Active-agreement safety** — **partially, and as an exception rather than a feature**: the
+  live-transaction carve-out in PD-082 is what stops a block stranding two people inside an
+  obligation. Nothing else about a live trade turning unsafe was built.
+- **Transaction safety** across booking and barter — **partially**; the block gates now reach the
+  booking submit path and the conversation gates (`20261047000000`, `20261051000000`,
+  `20261055000000`, `20261058000000`).
+- **Trust / reliability consequences** — **NOT BUILT**, and still explicitly absent: PD-065 gives a
+  terminal outcome no reputation effect, and nothing may change that by implementation.
+- **Pre-beta placement of the minimal internal Review Queue** (PD-068) — **half-answered.** It
+  landed inside Session 8 as a backend; the surface did not land at all.
+
+### Session 8B — the operator surface — **NOT STARTED**
+
+**The only thing that closes PD-068.** Named in
+[PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md):1011 as the session that must deliver an authorized
+operator surface, and named again in PD-089 and OQ-074/OQ-075 as the session that is **not** their
+home. PD-068's own minimum is unchanged and is the specification: on one surface an authorized
+operator can view the agreement, view the obligation, view the historical participant facts already
+recorded, choose exactly one terminal outcome, enter the required internal rationale, and submit
+**through the already-secured path** — adding no new privileged path, no new grant and no
+participant-reachable adjudication.
+
+**NOT STARTED.** A local branch `feat/session-8b-operator-surface` exists and its ref reads
+`e5b9125` — **`main`'s tip, with zero commits on it** — so it is a name, not work in flight. This
+document does not move an item to *in progress* on a branch that contains nothing.
+
+Two constraints it inherits rather than negotiates: **`adjudicate_barter_obligation` is the only
+SUPPORTED writer of its table** — a direct privileged INSERT takes its FK key-share locks in the
+reverse order of `cancel_barter_agreement` and can deadlock against it, so an operator tool must
+call the RPC (§ Standing constraints); and if it adds a write action to the negotiation screen, the
+**`busy`/re-entrancy guard must be centralized first** (§ Standing constraints, § Next → Session 7
+item 1).
+
+### Session 8C — safety hardening / enforcement cleanup — **NOT STARTED**
+
+**Founder assignment, 2026-09-10.** PD-088 and PD-089 were locked on the finished Session 8 branch
+with no session to land in; this is the one. The Steward that reconciled this document correctly
+recorded them as having **no home assigned** and correctly declined to invent one — assigning a
+session is planning, not bookkeeping. The Founder has now assigned it.
+
+Planned scope, and nothing beyond it unless a real blocker is found:
+
+- **Implement PD-088** — bounded report intake: one open case per reporter/target pair with later
+  reports APPENDED to it, 5/hour and 20/day per reporter as a backstop, and **no standing
+  requirement** (a bystander must be able to report what they saw). **Blocks broad beta.**
+- **Implement PD-089** — a blocked person disappears from ordinary discovery, content and
+  community surfaces, while the narrow access required for existing booking or barter history,
+  logistics, cancellation, completion or review is preserved.
+- **Verify the two compose with the existing live-transaction exceptions** rather than assuming
+  they do. Hiding is a different mechanism from refusing: PD-089 must not hide a counterparty a
+  pair is mid-obligation with, or it recreates the stranding that PD-082's exception exists to
+  prevent.
+- **Regression, security and concurrency tests** for both.
+
+Two constraints carried forward from the decisions themselves. PD-089 makes discovery results
+**viewer-dependent for the first time**, which interacts with **PD-073**'s content-neutrality rule
+for the beta lanes. And it must **not** be implemented with a client-callable block predicate —
+`20261055000000` established that as an oracle, and a discovery filter is exactly the shape that
+would tempt someone to re-grant one.
+
+**One outstanding QA item, recorded as SUPPLIED and not found in this repository.** The invocation
+states that manual small-device QA of `components/ReportSheet.tsx` was **removed as a merge gate by
+the Founder and moved to the later device/UX QA list** — so it is **outstanding, not done**. No
+artifact on `main` records it, and this document cannot verify a manual test in any case; it is
+written down here so it is not lost.
 
 ### Sessions 9–10 — Reviews Phase 2 / reputation
 Structured signals (PD-028) and the conduct/reliability layer that `no_show` feeds (PD-027).
@@ -755,6 +912,18 @@ These hold across every session:
   table**: a direct privileged INSERT takes its FK key-share locks in constraint-declaration
   order, obligation-then-agreement, the reverse of `cancel_barter_agreement`, and can deadlock
   against it. A future operator tool must call the RPC.
+- **The ledger's redefinition table is authoritative — and this reconciliation found ONE ROW OF IT
+  STALE, which is exactly the failure mode the table exists to prevent.**
+  [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) still names
+  `20261027000000_suppression_computed_once.sql` as the current definition of **both** read models.
+  That is correct for `public.my_trade_activity` and **wrong for `public.my_barter_obligations`**,
+  whose live definition has been
+  `20261039000000_barter_review_request.sql:317-362` since Correction 3 added the review-request
+  disjunct to its `under_review` expression. Established here by sweeping every
+  `create … view public.my_barter_obligations` in `supabase/migrations/`, not by reading the table.
+  **Before recreating that view, read the file, not the row** — copying `20261027000000`'s body
+  forward silently deletes PD-072's third route into Under Review. The ledger is not a Steward file;
+  **correcting the row is someone else's change**, and this line is the notice, not the fix.
 - **No seventh hand-copied write handler, and no seventh hand-copied `busy` guard, on the
   negotiation screen.** The consolidation this required is **done** — all six writes route through
   `lib/negotiationWrite.ts`. One thing remains before the next write action: **`runBarterWrite`
@@ -767,13 +936,19 @@ These hold across every session:
   **PR #64 did not trip this constraint, and that is worth recording rather than assuming.** Its
   new no-show write is a **fourth `op` on the existing `runObligationWrite`**, not a seventh
   handler, so it reuses that handler's single `if (busy) return` and copies no new guard.
-  **PR #66, PR #68 and PR #70 did not trip it either, and none discharged it.** Re-counted on this
-  tree at `f5fd197`: the guard is hand-copied at **6/6** call sites —
-  `app/community/negotiation/[id].tsx:329`, `:343`, `:364`, `:395`, `:445` and `:471`. PR #68 added
+  **PR #66, PR #68 and PR #70 did not trip it either, and none discharged it.** PR #68 added
   **no** client write at all (its adjudication path is `service_role`-only and unreachable from the
-  app), and PR #70 **removed** a form field rather than adding a write. The count is still
-  **six** handlers and six hand-copied guards; `lib/negotiationWrite.ts` still exposes `setBusy`
-  and no `busy` check, so the obligation stands unchanged for the next handler — **including the
-  operator Review Queue slice**, if it ever adds a write action to this screen.
+  app), and PR #70 **removed** a form field rather than adding a write.
+  **RE-COUNTED ON THIS TREE AT `e5b9125`, and the line numbers have moved — do not cite the old
+  ones.** Still **six** handlers — `onAccept` (`:330`), `onOpen` (`:344`), `onConfirm` (`:365`),
+  `runObligationWrite` (`:393`), `onCancelTrade` (`:458`) and `onSend` (`:484`) — and the guard is
+  still hand-copied at **6/6** call sites, at `app/community/negotiation/[id].tsx:331`, `:345`,
+  `:366`, `:402`, `:459` and `:485` (four written `if (!row || busy) return`, two `if (busy)
+  return`; the variation is itself the argument for centralizing it). **Correction 3 did not trip
+  it either:** PD-072's `requestObligationReview` is a **fifth `op` on the existing
+  `runObligationWrite`** (`:422`), reusing that handler's single guard, exactly as PR #64's no-show
+  write was a fourth. `lib/negotiationWrite.ts` still exposes `setBusy` and no `busy` check
+  (`:48`), so the obligation stands unchanged for the next handler — **including Session 8B**, if
+  the operator surface ever adds a write action to this screen.
 - Agents 1–3 stay read-only; the Steward's writes stay inside its five-file allowlist.
 - No session marks its own work complete — evidence on `main` does.

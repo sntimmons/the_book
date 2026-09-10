@@ -162,7 +162,10 @@ minimal internal **Review Queue is a pre-beta requirement** (**PD-068**), and **
 is promised**.
 
 **What is NOT built:** automatic fulfilment, automatic completion, any participant-reachable
-adjudication path, the operator Review Queue itself, barter reviews and reputation. Nothing yet
+adjudication path, **the operator Review Queue's SURFACE** — its backend landed 2026-09-09
+(PD-085), so a review request now opens a case a person can find, but the operator RPCs are
+`service_role`-only, nothing in the app calls them, and working a case requires a psql session,
+which is why **PD-068 is PARTIALLY SATISFIED rather than met** — barter reviews and reputation. Nothing yet
 signals a receiver that a delivery happened (**PD-059**). **And a terminal AGREEMENT outcome is
 not merely unbuilt — it is refused permanently** (**PD-070**): agreement-level resolution is
 DERIVED from the immutable obligation facts and never stored, and where a single label would

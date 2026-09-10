@@ -1701,7 +1701,8 @@ as locked decisions.
   - **What a refused report must do.** Say the limit was reached in plain words, keep the text the
     person wrote, and never discard it silently.
 - **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-074**.
-- **Status:** Locked; **NOT IMPLEMENTED.** Required before broad beta.
+- **Status:** Locked; **NOT IMPLEMENTED.** **Assigned to SESSION 8C** (safety hardening /
+  enforcement cleanup), 2026-09-10. Required before broad beta.
 
 ---
 
@@ -1728,8 +1729,11 @@ as locked decisions.
   person anything; and it must not be implemented with a client-callable block predicate, which
   `20261055000000` established as an oracle.
 - **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-075**.
-- **Status:** Locked; **NOT IMPLEMENTED.** Not in Session 8, and explicitly **not** Session 8B,
-  which is the operator surface only.
+- **Status:** Locked; **NOT IMPLEMENTED.** **Assigned to SESSION 8C** (safety hardening /
+  enforcement cleanup), 2026-09-10. Not Session 8, and explicitly **not** Session 8B, which is the
+  operator surface only. Session 8C must verify this composes with the existing live-transaction
+  exceptions rather than assuming it does — hiding is a different mechanism from refusing, and the
+  pair inside a live obligation must still see each other.
 
 ---
 
