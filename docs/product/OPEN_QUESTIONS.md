@@ -1,16 +1,31 @@
 # Open Questions
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `f5fd1973b70b6163e0a1a56874d61673bdc00ee7` (2026-09-08) — for
-the **Barter** entries only; see the scope note below.
-**Last edited by:** the post-Session-7 state reconciliation.
+**Reconciled against:** `main` @ `e5b912511829ecfa8793c2a5ad8feaba40dfa3a0` (2026-09-10) — for the
+**closure record only**; see the scope note below.
+**Last edited by:** the post-Session-8 state reconciliation. Before it, **PR #76** (`e5b9125`)
+carried OQ-073, OQ-074 and OQ-075 in with its own code and closed all three; **PR #74** (`0781f49`)
+opened OQ-072 and closed OQ-071. **The header still read `f5fd197` and named the post-Session-7
+reconciliation four merges later, because PR #75 — which would have corrected it — never merged.**
 
 > **WHAT THIS ANCHOR COVERS, AND WHAT IT DOES NOT.** An anchor asserts that *this document's*
-> facts were verified at that commit. The 2026-09-08 reconciliation re-verified the **Barter**
+> facts were verified at that commit, and this one is **narrow on purpose**. The 2026-09-10
+> reconciliation verified, at `e5b9125`, only the **closure record**: that OQ-071 is closed by
+> PD-072, that OQ-073, OQ-074 and OQ-075 are closed by PD-087, PD-088 and PD-089, that PD-088 and
+> PD-089 are **locked and NOT IMPLEMENTED**, and that OQ-072 is Open. It **re-verified no other
+> entry**, and in particular re-verified nothing carried by **OQ-006**, **OQ-007**, **OQ-011**,
+> **OQ-036** or **OQ-070**.
+>
+> **OQ-070 in particular should now be re-read rather than trusted.** Its text asserts that
+> `components/ComingSoonInterest.tsx:54` calls a `feature_interest_count` RPC no active migration
+> defines. That claim was last checked at `0e11cde` (2026-09-04) and **32 migrations have landed
+> since**, several of which changed grants on `providers` and dropped a function a comment still
+> named. Nothing here says it is wrong; it says nobody has looked.
+>
+> The 2026-09-08 reconciliation before this one re-verified the **Barter**
 > entries (OQ-001 … OQ-008, and the new OQ-071) against `f5fd197`, because Session 7 completed
 > there and those were the entries at risk of having gone stale. It did **NOT** re-verify the
-> repository claims carried by **OQ-011**, **OQ-036** or **OQ-070**, which were last checked at
-> `0e11cde` (2026-09-04) and should be re-read at the **Whole-App Audit Round 2**. Nothing
+> repository claims carried by **OQ-011**, **OQ-036** or **OQ-070**. Nothing
 > outside Barter was changed.
 >
 > **It did not move for PR #56 (`46c0bef`) either, and for the same reason.** That
@@ -512,7 +527,7 @@ schema; the product rules around them do not. Each question below is separately 
   subsequent reports appended rather than opening new cases, plus a loose server-side rate limit
   (5/hour, 20/day per reporter). **No standing requirement** — a bystander must be able to report
   what they saw. PD-088 records the exact limits and why they are deliberately loose.
-- **Blocks:** broad beta. **NOT IMPLEMENTED** — no home assigned; explicitly not Session 8B.
+- **Blocks:** broad beta. **NOT IMPLEMENTED** — **assigned to Session 8C** (2026-09-10).
 - **Status:** CLOSED — resolved by PD-088, 2026-09-09; implementation outstanding
 
 ### OQ-075 — Should someone you have blocked disappear from your feeds, or only be unable to reach you?
@@ -523,7 +538,7 @@ schema; the product rules around them do not. Each question below is separately 
   narrow access required for existing booking or barter history, logistics, cancellation,
   completion or review is preserved. The larger of the two options, and the one Session 8 did not
   implement.
-- **Blocks:** nothing shipped. **NOT IMPLEMENTED** — not Session 8, and explicitly not Session 8B.
+- **Blocks:** nothing shipped. **NOT IMPLEMENTED** — **assigned to Session 8C** (2026-09-10); not Session 8, and explicitly not Session 8B.
 - **Status:** CLOSED — resolved by PD-089, 2026-09-09; implementation outstanding
 
 ---
@@ -546,6 +561,16 @@ say that was false.
 | **OQ-004** — How should cancellation and no-show work for trades? | 2026-09-04 | **PD-046** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 7) |
 | **OQ-005** — How should barter interact with reviews and reputation? | 2026-09-04 | [BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 8 — not at all, in the first beta |
 | **OQ-008** — May an offer's terms still be edited once providers have responded? | 2026-09-04 | **PD-047** ([BARTER_BETA_CONTRACT.md](BARTER_BETA_CONTRACT.md) § 3.1) |
+| **OQ-071** — How may a plain Needs Attention enter Under Review? | 2026-09-09 | **PD-072** — a **deliverer-initiated, explicit REQUEST**. None of the four forbidden resolutions was used. Implemented in Correction 3 (`0781f49`, PR #74): `20261039000000_barter_review_request.sql`, completed by `20261042000000`. **Nothing processes these beyond queueing them.** |
+| **OQ-073** — Does PD-082 mean a block is never ANNOUNCED, or never DETERMINABLE? | 2026-09-09 | **PD-087** — reading (a). Never announced; **need not be undiscoverable**, and shadow-ban complexity must not be built merely to prevent inference. **Satisfied by current behaviour; no code change.** |
+| **OQ-074** — What bounds report intake, now that a report creates operator work? | 2026-09-09 | **PD-088** — one open case per (reporter, target) pair, 5/hour and 20/day, **no standing requirement**. **Locked but NOT IMPLEMENTED**; required before broad beta, no home assigned. |
+| **OQ-075** — Should someone you blocked disappear from your feeds, or only be unable to reach you? | 2026-09-09 | **PD-089** — they disappear from **ordinary** discovery, content and community surfaces; only the narrow access required for existing booking or barter history, logistics, cancellation, completion or review is preserved. **Locked but NOT IMPLEMENTED**, and explicitly not Session 8B. |
+
+**Three of those four closures are decisions the product has not yet built**, and the index says so
+in each row rather than letting "Closed" read as "done". A question is closed by a decision; the
+decision is implemented, or not, on its own schedule. **OQ-072** (a booking carries a service DATE
+but not always an authoritative appointment TIME) is **Open** and is deliberately not to be resolved
+by implementation.
 
 **RECORDED AS DELIBERATELY UNDECIDED, 2026-09-07 (Founder).** How a plain **Needs Attention**
 later enters **Under Review** is NOT decided and was NOT implemented. No second timer, no
@@ -618,3 +643,16 @@ above**. **OQ-004** stays Closed by PD-046 on 2026-09-04 — PD-062 supersedes t
 does not disturb the question's closure or the decision that closed it. **OQ-006** and **OQ-007**
 remain **Open**, for the reasons recorded on each. What PR #64 leaves undecided is recorded
 immediately above rather than as a new numbered entry, because no one has filed it as a question.
+
+**Correction 3 (`0781f49`, PR #74) and Session 8 (`e5b9125`, PR #76) both closed questions here,
+and both opened one — which is the first time in this ledger's history that a slice has done more
+than implement a decision made elsewhere.** Correction 3 closed **OQ-071** by PD-072 and opened
+**OQ-072**. Session 8 opened **OQ-073**, **OQ-074** and **OQ-075** as questions it deliberately
+declined to answer in code, and the Founder then closed all three on the finished branch as
+PD-087, PD-088 and PD-089. The same rulings **amended PD-068 to PARTIALLY SATISFIED**, which
+**opens no question**: PD-068 was never in doubt, only unfinished.
+
+**Nothing in either merge closed a question by repository evidence**, and the rule that produced
+this ledger is unchanged: a migration is an implementation, not an approval. **OQ-006**, **OQ-007**,
+**OQ-011**, **OQ-036**, **OQ-070** and **OQ-072** remain **Open**. Neither PD-088 nor PD-089 has an
+implementation, and neither may be read as shipped because its question is marked closed.

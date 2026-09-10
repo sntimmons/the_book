@@ -63,8 +63,12 @@ export interface DiscoveryProvider {
   /**
    * The SERVER's answer to "are they open today?" — published working hours for
    * today's weekday, minus blocked dates, evaluated against server time
-   * (`public.available_today`). Never recomputed from a device clock, and it
-   * means OPEN, not "has a free slot".
+   * (`public.providers_open_today()`, via `fetchOpenTodayProviderIds`). Never
+   * recomputed from a device clock, and it means OPEN, not "has a free slot".
+   *
+   * This cited `public.available_today` until 2026-09-09. That function was
+   * DROPPED by `20261044000000`: a PostgREST computed column is a whole-row
+   * reference, which no role holding column-level grants can evaluate.
    */
   availableToday: boolean | null
 }
