@@ -1437,6 +1437,11 @@ async function raceAdjudicateVsNotReceived() {
   const ob = await obligationRow(ids.interest23, 'offer_owner')
   const answerLanded = d.opOk && ob.status === 'not_received'
   const answerRefused = !d.opOk && d.timing?.code === 'PT424' && ob.status === 'delivered'
+  if (answerLanded === answerRefused) {
+    console.log('  DIAG raceAdjudicateVsNotReceived:',
+      JSON.stringify({ dOk: d.opOk, dCode: d.timing?.code, obStatus: ob.status,
+        aOk: a.opOk, aCode: a.timing?.code }))
+  }
   chk('the denial either landed or was refused as resolved', 'true',
     String(answerLanded !== answerRefused))
   chk('and no third shape is reachable', 'true', String(answerLanded || answerRefused))

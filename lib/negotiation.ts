@@ -576,9 +576,13 @@ export async function reportObligationNoShow(
  * IDEMPOTENT. A repeat returns the ORIGINAL timestamp rather than erroring, so a double tap or
  * a retry after a lost response lands on the same ask.
  *
- * NOTHING PROCESSES THESE YET. The obligation reaches Under Review and waits, exactly as a
- * receiver-reported one already does; the internal Review Queue that reads them is Session 8
- * work (PD-068). No copy built on this may promise a response or a time.
+ * WHERE THESE GO. The obligation reaches Under Review and waits, exactly as a receiver-reported
+ * one already does. Session 8 added the other half: a trigger opens a `barter_review` case in
+ * `operator_cases`, so the request is now IN A QUEUE rather than only in a timestamp.
+ *
+ * That changes nothing a user may be told. There is no operator UI — the operator RPCs are
+ * granted to `service_role` alone — and PD-068 says there is no SLA. **No copy built on this may
+ * promise a response or a time**, and the existence of a queue is not a licence to start.
  */
 export async function requestObligationReview(
   obligationId: string,

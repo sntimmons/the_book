@@ -20,6 +20,7 @@ import {
   toIsoDate,
   buildAppointmentTime,
   ProviderUnavailableError,
+  ContactBlockedError,
   BookingWriteBlockedError,
 } from '@/lib/bookingDraft'
 
@@ -114,7 +115,13 @@ export default function BookContract() {
         if (cancelled) return
         // ITEM H: the provider is no longer taking new bookings. That is
         // availability, not a technical failure and not a judgement of them.
-        if (e instanceof ProviderUnavailableError) {
+        // Both are PERMANENT refusals, and neither is a connection problem. Before
+        // this they fell through to "check your connection and try again" — a
+        // false cause, and an invitation to retry something that can never
+        // succeed. The block reuses the availability state deliberately: its copy
+        // says nothing about a block, because telling the blocked party would turn
+        // a safety action into a notification to the person it was taken against.
+        if (e instanceof ProviderUnavailableError || e instanceof ContactBlockedError) {
           setUnavailable(true)
           setLoading(false)
           return

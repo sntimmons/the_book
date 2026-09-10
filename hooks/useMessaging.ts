@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { checkRateLimit } from '../lib/rateLimit'
 import { messageEntryAction } from '../lib/messageRequests'
+import { MESSAGE_FAILED_COPY, MESSAGE_REFUSED_COPY } from '../lib/safety'
 import {
   addressedToMeFilter,
   countsAsUnread,
@@ -378,6 +379,20 @@ export function useMessages(conversationId: string) {
         if (error) {
           console.log('Send error:', error)
           setSending(false)
+          // QA-UX-001: a failed send used to restore the draft text and say
+          // NOTHING. That was survivable while every refusal was transient;
+          // Session 8 added a PERMANENT one — a blocked pair with no live
+          // transaction is refused every time — which turned the silent path
+          // into "type, tap, watch nothing happen, repeat forever".
+          //
+          // A refusal the SERVER STATED (a block, a declined request, the
+          // one-message-while-pending rule) will not succeed on a retry, so it
+          // must not be reported as one. Anything else — no network, a timeout —
+          // is worth trying again. The refusal copy names no cause: PD-082 says
+          // a blocked person is never told they were blocked.
+          const stated = error.code === '42501' || error.code === '23514'
+          const copy = stated ? MESSAGE_REFUSED_COPY : MESSAGE_FAILED_COPY
+          Alert.alert(copy.title, copy.body)
           return false
         }
         await supabase
@@ -389,6 +404,7 @@ export function useMessages(conversationId: string) {
       } catch (err) {
         console.log('Send exception:', err)
         setSending(false)
+        Alert.alert(MESSAGE_FAILED_COPY.title, MESSAGE_FAILED_COPY.body)
         return false
       }
     },

@@ -196,7 +196,9 @@ an entry is self-describing when quoted alone.
   escalation: it produces no outcome, assigns no fault and contradicts nobody's silence. The dead
   end this entry described is gone; a provider whose counterparty stops opening the app now has a
   move. What is NOT closed by this and is tracked in PD-072 instead: nothing processes these
-  requests until Session 8 builds the operator Review Queue, and there is still no SLA.
+  requests beyond queueing them. **Session 8 delivered the queue half** (PD-085): a trigger opens a
+  `barter_review` case, so a request now lands somewhere a person can find. It delivered **no
+  operator UI** — the operator RPCs are `service_role`-only — and there is still **no SLA**.
 - **Status:** CLOSED — resolved by PD-072, 2026-09-09
 
 ### OQ-008 — May an offer's terms still be edited once providers have responded to them?
@@ -490,6 +492,24 @@ schema; the product rules around them do not. Each question below is separately 
 - **Area:** Schema / data
 - **Why it matters:** `components/ComingSoonInterest.tsx:54` calls `supabase.rpc('feature_interest_count', { p_feature_name })`, but **no active migration defines that function**. The only mention inside the migration chain is a note at `supabase/migrations/20260829000000_canonical_live_baseline.sql:3288` recording it as absent live; a loose, non-migration SQL file sits outside the chain at `supabase/feature_interest_count.sql`, which [supabase/README.md](../../supabase/README.md) records as pre-dating the migration rule and flags as an open schema question. The call **fails soft** — the component checks `error` and leaves the count `null`, hiding the social-proof line — so the gap produces no visible defect and will not surface as a bug report. Three things are undecided: **(a)** whether the RPC is intended to exist at all; **(b)** if it is, what it should return and what its security contract should be — the component's own comment asserts a `SECURITY DEFINER` function is needed because RLS limits reads to the caller's own row, but that is a comment in application code, not a contract established by any migration; **(c)** whether the component should instead read an existing path, and the RPC be retired. **This entry records the gap only. It does not propose SQL, infer what the loose file does, or imply any of the three answers.**
 - **Blocks:** nothing yet — the surface degrades silently today.
+- **Status:** Open
+
+### OQ-073 — Does PD-082 mean a block is never ANNOUNCED, or that it is never DETERMINABLE?
+- **Area:** Schema / data
+- **Why it matters:** PD-082 says a blocked person "is never told". Session 8 read that as a rule about SURFACES and enforced it there: every refusal message is identical in both directions, and `20261058000000` closed the two routes that let a caller ask about a **stranger** (the `/rpc/` predicates, and a conversation gate that read identity from `NEW`). What remains is narrower and structural: a blocked person acting on their **own** relationship can still infer the block from a **distinct SQLSTATE**. A booking INSERT naming a provider whose `is_approved` is publicly `true` returns `PT427` only when a block exists; a barter response returns `42501`. Both are ordinary writes the shipped client makes. **Making these indistinguishable is not a bug fix — it requires shadow-banning**, i.e. accepting the write, showing success, and discarding it, which `20261046000000:45-49` deliberately rejected on the grounds that a product which lies to one user to protect another has chosen to lie to a user. The two answers lead to genuinely different products, so this is recorded rather than decided. **(a)** PD-082 is a copy rule: no surface names a block, and a determined client can still infer one — accepted, and PD-082 is narrowed in writing. **(b)** PD-082 is an information rule: every block refusal must be indistinguishable from a plausible non-block refusal, which reopens shadow-banning. **This entry proposes neither, and Session 8 implemented neither.**
+- **Blocks:** nothing shipped — the surfaces already comply under reading (a).
+- **Status:** Open
+
+### OQ-074 — What bounds report intake, now that a report creates operator work?
+- **Area:** Schema / data
+- **Why it matters:** Before Session 8 a report was an inert row. Now every `reports` INSERT opens an `operator_cases` row through a trigger, so filing a report **creates work in the queue PD-068 makes a pre-beta requirement**. Two bounds that exist elsewhere do not exist here. **(a) No rate limit:** messaging is limited to 30/min through the `rate-limit` Edge Function, and provider appeals and barter reviews are idempotent per subject — reporting is neither, so N reports produce N live cases. **(b) No standing requirement:** `reported_user_id`, `reported_provider_id` and `booking_id` are validated by foreign key alone, never against the reporter's relationship to them, so a report may name a booking or a person the reporter has never transacted with. Neither is exploitable for data access; both are queue-flooding and fabricated-moderation-record vectors from a single ordinary account. **What makes this a question rather than a defect:** a safety report is exactly the thing you least want to throttle, and a standing requirement would refuse a bystander reporting content they saw in the feed. The right bound depends on whether The Book wants reports from people outside a transaction at all. **This entry records the gap; Session 8 added no limit and no standing check.**
+- **Blocks:** nothing today; a bound should exist before the queue is staffed.
+- **Status:** Open
+
+### OQ-075 — Should someone you have blocked disappear from your feeds, or only be unable to reach you?
+- **Area:** Discovery
+- **Why it matters:** A block stops CONTACT — messages, booking requests, barter responses — and Session 8 deliberately stopped there. Neither the community feed nor the barter board filters out a blocked person's posts and offers, so a blocker keeps seeing them and can still tap Respond, which is refused. The refusal is terminal and correctly worded, but it points the reader at their **own** eligibility (the one thing true under both causes without naming a block), and for a blocker that is a false lead about themselves. Filtering the feed would fix it and is a bigger change than it looks: it is the difference between "you cannot reach me" and "you do not exist to me", it makes discovery results depend on viewer identity, and it interacts with PD-073's content-neutrality rule for the beta lanes. **This entry records the choice. Session 8 implemented neither, and the current behaviour is the smaller of the two.**
+- **Blocks:** nothing.
 - **Status:** Open
 
 ---

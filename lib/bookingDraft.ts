@@ -100,6 +100,25 @@ export class ProviderUnavailableError extends Error {
   }
 }
 
+/**
+ * A block exists between these two people, in one direction or the other.
+ *
+ * SEPARATE FROM `ProviderUnavailableError`, and the separation is the point.
+ * `PT426` means the provider is not taking new bookings; `PT427` means these two
+ * cannot transact. Similar copy, different facts — and collapsing them would tell
+ * a blocked client that a provider had been removed from the marketplace, which
+ * is both false and a statement about someone else's standing.
+ *
+ * The message is deliberately generic and identical whichever side blocked, so it
+ * cannot be used to discover that you have been blocked.
+ */
+export class ContactBlockedError extends Error {
+  constructor() {
+    super('This provider is not available for new bookings.')
+    this.name = 'ContactBlockedError'
+  }
+}
+
 const DRAFT_COLUMNS = 'id, provider_id, submitted_at, status'
 
 // A zero-row write is NOT a success.
@@ -124,6 +143,10 @@ function isProviderUnavailable(error: { code?: string; message?: string } | null
   // PostgREST surfaces the SQLSTATE the trigger raised. Match on the code, not
   // the message, so the copy can be reworded without breaking the branch.
   return error?.code === 'PT426'
+}
+
+function isContactBlocked(error: { code?: string } | null): boolean {
+  return error?.code === 'PT427'
 }
 
 // The client's existing draft with this provider, or null. Never throws for
@@ -243,6 +266,7 @@ export async function ensureBookingDraft(
 
   if (error) {
     if (isProviderUnavailable(error)) throw new ProviderUnavailableError()
+    if (isContactBlocked(error)) throw new ContactBlockedError()
     // Lost the race for the one draft slot. Adopt the row that won rather than
     // reporting a failure to a client who did nothing wrong.
     if (isUniqueViolation(error)) {
@@ -298,7 +322,21 @@ export async function submitBookingRequest(bookingId: string): Promise<void> {
     // the client is shown a confirmation screen for a request that was never
     // sent. The row is asked for back, and its absence is a failure.
     .select('id, submitted_at')
-  if (error) throw error
+  if (error) {
+    // PT427 is reachable HERE, not only on the insert — that is the whole point
+    // of `enforce_booking_submit_not_blocked`, which exists because
+    // `ensureBookingDraft` UPDATES an existing draft rather than inserting, so a
+    // blocked client with a pre-block draft never touches the INSERT gate.
+    //
+    // The classification was applied on the insert path only, so a block on the
+    // submit path rethrew raw: it missed the ContactBlockedError branch, landed
+    // in the generic catch, and was captured to Sentry with a retry-implying
+    // prefix. A permanent, expected refusal is not a technical failure and must
+    // not be reported to an error sink as one.
+    if (isProviderUnavailable(error)) throw new ProviderUnavailableError()
+    if (isContactBlocked(error)) throw new ContactBlockedError()
+    throw error
+  }
   const rows = (updated as { id: string; submitted_at: string | null }[] | null) ?? []
   if (rows.length === 0 || !rows[0].submitted_at) {
     throw new BookingWriteBlockedError('request')

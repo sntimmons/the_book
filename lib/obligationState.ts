@@ -530,10 +530,15 @@ export const NOT_RECEIVED_COPY: ObligationActionCopy = {
  *
  * Every sentence is a limit. It does NOT claim the delivery happened, does not fault the
  * receiver, does not contradict their silence, and promises no answer by any particular time:
- * PD-068 is explicit that there is no SLA, and the operator Review Queue that will actually read
- * these is Session 8 work that does not exist yet. Saying "someone will look" and stopping is
- * the most this can honestly say — and it is still strictly more than the deliverer had, which
- * was nothing.
+ * PD-068 is explicit that there is no SLA. Saying "someone will look" and stopping is the most
+ * this can honestly say — and it is still strictly more than the deliverer had, which was
+ * nothing.
+ *
+ * **The copy does not change now that Session 8 has built the queue behind it.** A request does
+ * reach `operator_cases` (`20261050000000`), so it now lands somewhere a person can find it —
+ * but there is still NO OPERATOR UI, the operator RPCs are `service_role`-only, and there is
+ * still no SLA. Nothing about what a deliverer may be PROMISED has changed, and a queue existing
+ * is not a reason to start promising.
  */
 export const REQUEST_REVIEW_COPY: ObligationActionCopy = {
   title: 'Ask The Book to review this?',

@@ -1,14 +1,22 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** **PR #74** (Pre-Session-8 Correction 3), which recorded **PD-071 … PD-081** —
+**Last edited by:** the **Session 8** branch (safety, trust and operator handling), which recorded
+**PD-082 … PD-086** — user blocking and its live-transaction exception, one reporting path that
+opens an operator case, provider eligibility gating writes but never cleanup, the operator Review
+Queue and its narrow authority, and the de-approved provider's real appeal route. **PD-086 closes
+the Session 8 appeal route PD-081 recorded as owed**, and PD-085 closes the queue PD-068 and PD-072
+were waiting on — with the limit stated plainly in both: *the data model, the intake and the
+operator RPCs exist; there is no operator UI, the RPCs are `service_role`-only, and there is still
+no SLA.*
+
+Before it, **PR #74** (Pre-Session-8 Correction 3) recorded **PD-071 … PD-081** —
 the booking-request lifecycle and its 72-hour server expiry, the deliverer's review request
 (closing OQ-071), the beta discovery lanes and their content-neutrality rule, the "Houston Beta
 Provider" trust signal (closing the claims half of OQ-035), provider-owned no-show policy and
 de-approval wording, provider media deletion and the required onboarding review page, the client's
 72-hour expectation, telling a de-approved provider, no placebo preference data, and the barter
-happy-path shape as a future requirement. **PD-080 is the only one of the eleven not implemented, and deliberately so** —
-PD-081 is implemented apart from the Session 8 appeal route it records. Before it, the post-Session-7 state reconciliation changed **no decision** — only
+happy-path shape as a future requirement. **PD-080 is the only one of the eleven not implemented, and deliberately so.** Before it, the post-Session-7 state reconciliation changed **no decision** — only
 this preamble's indexing — and before that, the derived-agreement-presentation branch (**PR #70**,
 `f5fd197`) recorded **PD-070** and removed the last live barter dollar-value UX under PD-069, and
 before that the manual-adjudication branch (**PR #68**, `5c24e8f`) recorded **PD-064** through
@@ -1217,12 +1225,14 @@ as locked decisions.
   - **Idempotent, append-only, deliverer-only.** A repeat returns the original timestamp rather
     than erroring; the record cannot be withdrawn or re-attributed; the receiver is refused
     because they already have two routes and do not need a third.
-  - **NOTHING PROCESSES THESE YET, and no copy may pretend otherwise.** A requested review
-    reaches Under Review and waits, exactly as a receiver-reported one does. **Session 8 owes:** a
-    surface where an authorised operator sees requested reviews; triage between a requested review
-    and a receiver-reported one, which are different evidence; and whatever response policy exists
-    — there is still **no SLA** (PD-068), and participant-facing language stays "This trade is
-    under review."
+  - **QUEUED, NOT PROCESSED — and no copy may pretend otherwise.** A requested review reaches
+    Under Review and waits, exactly as a receiver-reported one does. **Session 8 (PD-085) delivered
+    the queue half**: a trigger now opens a `barter_review` case, so the request lands somewhere a
+    person can find rather than only in a timestamp. **It delivered no operator UI**, the operator
+    RPCs are `service_role`-only, and there is still **no SLA** (PD-068). *Still owed:* triage
+    between a requested review and a receiver-reported one, which are different evidence, and
+    whatever response policy exists. Participant-facing language stays "This trade is under
+    review." **A queue existing is not permission for any surface to start promising a response."
 - **Evidence.** Founder ruling, Pre-Session-8 Correction 3 (item X), 2026-09-09.
   `supabase/migrations/20261039000000_barter_review_request.sql`, plus its forward correction
   `20261042000000_adjudication_consistency_review_request.sql` — eligibility is enforced in TWO
@@ -1472,16 +1482,20 @@ as locked decisions.
     persists it. It remains what the Near You lane reads (PD-073).
   - **A dead button is worse than honest silence**, and most so on the one screen where a provider
     needs a live one. The notice keeps its approved wording and gains nothing that cannot act.
-  - **Session 8 owes, together:** the operator Review Queue that PD-068 makes a pre-beta
-    requirement and that PD-072's review requests wait on, AND a real operator-backed route for a
-    de-approved provider to ask for review. The support control ships with the path behind it.
+  - **Session 8 delivered both, together (PD-085, PD-086):** the operator Review Queue that
+    PD-068 makes a pre-beta requirement and that PD-072's review requests wait on, AND a real
+    operator-backed route for a de-approved provider to ask for review. The control shipped with
+    the path behind it, as this decision required. **What did NOT ship is a support inbox**: there
+    is still no "Contact Support" button, because the only support entry in the product remains a
+    "Coming soon" stub, and the new control asks about ONE thing — the eligibility state the card
+    describes.
   - **Nothing about de-approval may imply an identity-verification failure**, because that is not
     the reason and there is no such check to fail (PD-074).
 - **Evidence.** Founder rulings on PR #74, 2026-09-09. `app/onboarding/client/index.tsx`,
   `app/onboarding/client/uploads.tsx`, `app/(tabs)/business/index.tsx`,
   `__tests__/guards/betaClaimsAbsent.test.ts`.
-- **Status:** Locked; **implemented**, except the Session 8 appeal route, which is a recorded
-  requirement.
+- **Status:** Locked; **implemented in full.** The appeal route this decision recorded as owed
+  shipped in Session 8 — see **PD-086**.
 
 ---
 

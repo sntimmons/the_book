@@ -23,6 +23,7 @@ import {
   toIsoDate,
   buildAppointmentTime,
   ProviderUnavailableError,
+  ContactBlockedError,
   BookingWriteBlockedError,
 } from '@/lib/bookingDraft'
 
@@ -213,6 +214,14 @@ export default function BookPayment() {
       if (err instanceof BookingWriteBlockedError) {
         setProcessError(
           'We could not send your request — nothing was saved. Please try again, or go back and start a new request with this provider.',
+        )
+        return
+      }
+      // A block is permanent for this pair and is NOT a technical failure — no
+      // Sentry event, no retry prompt, and no wording that names a block.
+      if (err instanceof ContactBlockedError) {
+        setProcessError(
+          'This provider is not available for new bookings. Your existing bookings and messages with them are unaffected.',
         )
         return
       }

@@ -574,3 +574,434 @@ select pg_temp.chk('safety', 'and no SLA or deadline field exists on a case', '0
       and (column_name ilike '%sla%' or column_name ilike '%due%'
            or column_name ilike '%deadline%' or column_name ilike '%priority%')));
 select pg_temp.act_service();
+
+-- ══ 12. THE THREE WAYS THE BLOCK WAS DEFEATED ═════════════════════════════
+--
+-- Every assertion below covers a defect that SHIPPED into this branch and that
+-- SECURITY REVIEW found, not this suite. Worth being precise about why, because
+-- the gap is a property of how the tests were written rather than bad luck:
+-- sections 1-11 exercise the predicates almost entirely as `service_role`,
+-- which is the one role that could not have failed. The rule this section
+-- encodes is "assert as the role that would attack it."
+
+-- ── 12a. The predicates are not callable by a client ──────────────────────
+--
+-- All three were `SECURITY DEFINER` **and** granted to `authenticated`, so they
+-- were reachable at `/rest/v1/rpc/` with attacker-chosen arguments — a
+-- one-request answer to "did they block me", which PD-082 says a blocked person
+-- may never be told, plus the live-transaction graph for any two uuids.
+select pg_temp.chk('safety', 'contact_blocked is not client-callable', 'false',
+  has_function_privilege('authenticated',
+    'public.contact_blocked(uuid,uuid)', 'EXECUTE')::text);
+select pg_temp.chk('safety', 'contact_blocked_provider is not client-callable', 'false',
+  has_function_privilege('authenticated',
+    'public.contact_blocked_provider(uuid,uuid)', 'EXECUTE')::text);
+select pg_temp.chk('safety', 'has_live_transaction is not client-callable', 'false',
+  has_function_privilege('authenticated',
+    'public.has_live_transaction(uuid,uuid)', 'EXECUTE')::text);
+select pg_temp.chk('safety', 'and anon holds none of them either', 'false',
+  (has_function_privilege('anon', 'public.contact_blocked(uuid,uuid)', 'EXECUTE')
+   or has_function_privilege('anon', 'public.contact_blocked_provider(uuid,uuid)', 'EXECUTE')
+   or has_function_privilege('anon', 'public.has_live_transaction(uuid,uuid)', 'EXECUTE'))::text);
+
+-- The barter gate therefore may NOT live in an RLS policy, because a policy is
+-- evaluated as the caller and so would force the grant straight back.
+select pg_temp.chk('safety', 'the barter block check is a trigger, not a policy', 'true',
+  (select exists(select 1 from pg_trigger
+     where tgrelid = 'public.barter_interests'::regclass
+       and tgname = 'barter_interests_zw_not_blocked')
+   and (select count(*) from pg_policies
+        where schemaname = 'public' and tablename = 'barter_interests'
+          and policyname = 'barter_interests_provider_insert'
+          and with_check like '%contact_blocked%') = 0)::text);
+
+-- ── 12b. A block refuses the SUBMIT, not only the INSERT ──────────────────
+--
+-- `PT427` sat inside `if tg_op = 'INSERT'`, but a bookings row only becomes a
+-- REQUEST on the UPDATE that stamps `submitted_at` (PD-071). The shipped client
+-- walks that path unaided — `ensureBookingDraft` UPDATES when a draft already
+-- exists — so a blocked client holding a draft created BEFORE the block could
+-- deliver a real request, and the resulting submitted booking then MANUFACTURED
+-- the live-transaction messaging exception.
+do $$
+declare
+  cu uuid := current_setting('b5b.s8_c')::uuid;
+  bu uuid := current_setting('b5b.s8_b')::uuid;
+  pb uuid := current_setting('b5b.s8_pb')::uuid;
+  v_bk uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  delete from public.user_blocks where blocker_user_id = bu and blocked_user_id = cu;
+  -- The draft exists FIRST, exactly as merely opening the booking flow leaves it.
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (cu, pb, 'pre-block draft', current_date + 3) returning id into v_bk;
+  -- Then the provider's owner blocks the client.
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (bu, cu);
+
+  perform pg_temp.act(cu);
+  begin
+    update public.bookings set submitted_at = now() where id = v_bk;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('safety',
+    'a pre-existing draft cannot be SUBMITTED once blocked', 'PT427', v_code);
+
+  -- And the compounding half: no submitted booking, so no manufactured exception.
+  perform pg_temp.act_service();
+  perform pg_temp.chk('safety',
+    'so the blocked pair still has no live transaction', 'false',
+    public.has_live_transaction(cu, bu)::text);
+  delete from public.bookings where id = v_bk;
+end $$;
+
+-- NEGATIVE CONTROL, and the more important half of 12b: a booking submitted
+-- BEFORE the block must still be completable. If the gate above ever widens from
+-- the draft->submitted transition to "any update", blocking mid-booking would
+-- strand both parties — which is the failure this whole feature is built to
+-- avoid, arriving through the fix for a different one.
+do $$
+declare
+  cu uuid := current_setting('b5b.s8_c')::uuid;
+  bu uuid := current_setting('b5b.s8_b')::uuid;
+  pb uuid := current_setting('b5b.s8_pb')::uuid;
+  v_bk uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, expires_at)
+  values (cu, pb, 'submitted before the block', current_date + 4, 'pending',
+          now() - interval '2 hours', now() + interval '70 hours')
+  returning id into v_bk;
+
+  perform pg_temp.act(cu);
+  begin
+    -- The client's own cancellation, spelled the way the write gate requires it
+    -- (PD-030: the status names WHO cancelled, and the actor fields must agree).
+    update public.bookings
+       set status = 'cancelled_by_client',
+           cancellation_actor = 'client',
+           cancelled_by = cu::text
+     where id = v_bk;
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('safety',
+    'a booking submitted BEFORE the block can still be cancelled', 'OK', v_code);
+  perform pg_temp.act_service();
+  delete from public.bookings where id = v_bk;
+end $$;
+
+-- ── 12c. A block refuses re-opening a declined request ────────────────────
+--
+-- `enforce_conversation_update` had no block gate, so a blocked party could flip
+-- a declined thread back to `pending` — putting themselves back in the blocker's
+-- Requests tab, repeatedly. The message that would follow was refused; the
+-- STATUS FLIP is itself the contact signal.
+do $$
+declare
+  cu uuid := current_setting('b5b.s8_c')::uuid;
+  bu uuid := current_setting('b5b.s8_b')::uuid;
+  pb uuid := current_setting('b5b.s8_pb')::uuid;
+  v_conv uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into public.conversation(client_id, provider_id, request_status)
+  values (cu, pb, 'declined') returning id into v_conv;
+
+  perform pg_temp.act(cu);
+  begin
+    update public.conversation set request_status = 'pending' where id = v_conv;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('safety',
+    'a blocked party cannot reopen a declined request', '42501', v_code);
+
+  -- But CLOSING one stays available, always. A blocker must never be prevented
+  -- from ending a thread, and a gate that refused every status change would do
+  -- exactly that. Declining is the PROVIDER's act — `bu` here is both the
+  -- provider's owner and the blocker, which is the case that matters: the person
+  -- who blocked must keep the control that ends the contact.
+  perform pg_temp.act_service();
+  update public.conversation set request_status = 'pending' where id = v_conv;
+  perform pg_temp.act(bu);
+  begin
+    update public.conversation set request_status = 'declined' where id = v_conv;
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('safety', 'but the blocker can still decline it', 'OK', v_code);
+  perform pg_temp.act_service();
+  delete from public.conversation where id = v_conv;
+  delete from public.user_blocks where blocker_user_id = bu and blocked_user_id = cu;
+end $$;
+
+-- ══ 13. A FINISHED CASE MUST NOT LOOK LIVE ════════════════════════════════
+--
+-- Both defects here are one mistake wearing two faces, and both were found by QA
+-- rather than by this suite: a case that was FINISHED still read as LIVE, and two
+-- different surfaces believed it.
+do $$
+declare
+  au uuid := current_setting('b5b.s8_a')::uuid;
+  pa uuid := current_setting('b5b.s8_pa')::uuid;
+  v_case uuid; v_n integer;
+begin
+  perform pg_temp.act_service();
+  delete from public.operator_cases where provider_id = pa;
+  update public.providers set is_approved = false where id = pa;
+
+  -- The provider appeals, and is told there is a live review.
+  perform pg_temp.act(au);
+  v_case := public.request_provider_review('please look again');
+  select count(*) into v_n from public.my_provider_review_status();
+  perform pg_temp.chk('safety', 'a live appeal is reported to the provider', '1', v_n::text);
+
+  -- An operator DISMISSES it. The dashboard hides "Request Review" whenever the
+  -- status function returns anything, so an unfiltered answer here left a
+  -- still-unavailable provider on a terminal screen with no control at all —
+  -- precisely the state PD-081 exists to prevent, one round later.
+  perform pg_temp.act_service();
+  perform public.operator_update_case(v_case, 'dismissed',
+    current_setting('b5b.rw_xu')::uuid, 'no change');
+
+  perform pg_temp.act(au);
+  select count(*) into v_n from public.my_provider_review_status();
+  perform pg_temp.chk('safety',
+    'a DISMISSED appeal is not reported as a live one', '0', v_n::text);
+
+  -- And the route is genuinely open again, not merely re-drawn.
+  begin
+    v_case := public.request_provider_review('circumstances changed');
+  exception when others then v_case := null;
+  end;
+  perform pg_temp.chk('safety',
+    'so the provider can ask again after a dismissal', 'true', (v_case is not null)::text);
+end $$;
+
+-- Restoring eligibility CLOSES the appeal it answers. Leaving it open left a
+-- stale "nothing has been decided yet" waiting to resurface on the provider's
+-- dashboard the next time they were de-approved — about a request they never
+-- made — and `request_provider_review` would have short-circuited to it, so
+-- their REAL appeal would never have entered the queue.
+do $$
+declare
+  au uuid := current_setting('b5b.s8_a')::uuid;
+  pa uuid := current_setting('b5b.s8_pa')::uuid;
+  v_case uuid; v_n integer; v_second uuid;
+begin
+  perform pg_temp.act_service();
+  select id into v_case from public.operator_cases
+   where provider_id = pa and status in ('open','under_review')
+   order by created_at desc limit 1;
+  perform pg_temp.chk('safety', 'the appeal is open before the decision', 'true',
+    (v_case is not null)::text);
+
+  perform public.operator_set_provider_eligibility(
+    pa, true, current_setting('b5b.rw_xu')::uuid, 'restored');
+
+  select count(*) into v_n from public.operator_cases
+   where id = v_case and status in ('open','under_review');
+  perform pg_temp.chk('safety',
+    'restoring eligibility closes the appeal it answers', '0', v_n::text);
+
+  -- The decision is recorded as history, not silently applied.
+  select count(*) into v_n from public.operator_case_events
+   where case_id = v_case and action = 'resolved';
+  perform pg_temp.chk('safety', 'and the closure is an audited event', '1', v_n::text);
+
+  -- The consequence that mattered: a LATER de-approval gets its own case rather
+  -- than being swallowed by the stale one.
+  update public.providers set is_approved = false where id = pa;
+  perform pg_temp.act(au);
+  v_second := public.request_provider_review('this is a new problem');
+  perform pg_temp.chk('safety',
+    'a later appeal opens a NEW case, not the stale one', 'true',
+    (v_second is distinct from v_case)::text);
+  perform pg_temp.act_service();
+  update public.providers set is_approved = true where id = pa;
+end $$;
+select pg_temp.act_service();
+
+-- ══ 14. THE BLOCK GATES FIRE LAST, AND NAME NO STRANGER ═══════════════════
+--
+-- `20261055000000` asserted in a comment that its two gates ran after the
+-- authoritative write-integrity triggers. They did not: the names begin
+-- `bookings_` and `conversation_`, so they sorted on 'b' and 'c', ahead of
+-- `enforce_...` on 'e'. The comment was the only thing checking, and a comment
+-- checks nothing. These assertions are the mechanism.
+
+-- ── 14a. Position, pinned by NAME ORDER rather than by presence ────────────
+-- Name order IS firing order for BEFORE triggers, so the assertion is a string
+-- comparison and nothing more. The first version of this check was written as a
+-- window function over pg_trigger and was itself wrong — which rather made the
+-- point that a guard nobody can read at a glance is not a guard.
+select pg_temp.chk('safety', 'the booking block gate sorts after write integrity', 'true',
+  ('zz_bookings_submit_not_blocked' > 'enforce_booking_write_integrity')::text);
+select pg_temp.chk('safety', 'and the conversation gate after its update rule', 'true',
+  ('zz_conversation_reopen_not_blocked' > 'enforce_conversation_update')::text);
+
+-- And the same fact read off the live schema, not off the names in this file.
+select pg_temp.chk('safety', 'and it is literally last on the table', 'zz_bookings_submit_not_blocked',
+  (select tgname from pg_trigger
+    where tgrelid = 'public.bookings'::regclass and not tgisinternal
+    order by tgname desc limit 1));
+select pg_temp.chk('safety', 'the conversation block gate is last on its table too',
+  'zz_conversation_reopen_not_blocked',
+  (select tgname from pg_trigger
+    where tgrelid = 'public.conversation'::regclass and not tgisinternal
+    order by tgname desc limit 1));
+-- The old names must be gone, not merely superseded — a leftover would fire early.
+select pg_temp.chk('safety', 'neither early-sorting name survives', '0',
+  (select count(*)::text from pg_trigger
+    where tgname in ('bookings_zz_submit_not_blocked', 'conversation_zz_reopen_not_blocked')));
+
+-- ── 14b. THE ORACLE, ASSERTED AS AN EQUALITY ──────────────────────────────
+--
+-- **This is the only test shape that can catch an oracle.** Every other
+-- assertion in this file checks that a refusal HAPPENS; an oracle is not a
+-- missing refusal but a DISTINGUISHABLE one, so the assertion has to be that two
+-- outcomes are THE SAME. Sections 1-13 could not have caught this and did not.
+--
+-- The probe: name a stranger in the same UPDATE that asks the question. If the
+-- answer differs depending on whether a block exists with the nominated party,
+-- the caller has read the block off the SQLSTATE without writing anything.
+do $$
+declare
+  cu uuid := current_setting('b5b.s8_c')::uuid;
+  au uuid := current_setting('b5b.s8_a')::uuid;
+  bu uuid := current_setting('b5b.s8_b')::uuid;
+  pa uuid := current_setting('b5b.s8_pa')::uuid;
+  pb uuid := current_setting('b5b.s8_pb')::uuid;
+  du uuid := gen_random_uuid(); pd uuid;
+  v_conv uuid; v_blocked text; v_clean text;
+begin
+  perform pg_temp.act_service();
+  delete from public.user_blocks where blocked_user_id in (au, bu);
+  -- cu IS blocked by A's owner, and is NOT blocked by B's owner. Two providers
+  -- the probe can name, differing ONLY in whether a block exists.
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (au, cu);
+
+  -- A conversation cu legitimately participates in, with a THIRD provider — so
+  -- naming either probe target is a genuine change to an immutable field, and
+  -- the two probes differ in nothing but the block.
+  insert into auth.users(id) values (du);
+  insert into public.providers(user_id, display_name, username)
+    values (du, 'S8 Provider D', 's8d_'||substr(du::text,1,8))
+    returning id into pd;
+  delete from public.conversation where client_id = cu and provider_id = pd;
+  insert into public.conversation(client_id, provider_id, request_status)
+  values (cu, pd, 'declined') returning id into v_conv;
+
+  perform pg_temp.act(cu);
+
+  -- Probe against the provider who HAS blocked them.
+  begin
+    update public.conversation
+       set provider_id = pa, request_status = 'pending' where id = v_conv;
+    v_blocked := 'NO ERROR';
+  exception when others then v_blocked := sqlstate;
+  end;
+
+  -- Probe against a provider who has NOT.
+  begin
+    update public.conversation
+       set provider_id = pb, request_status = 'pending' where id = v_conv;
+    v_clean := 'NO ERROR';
+  exception when others then v_clean := sqlstate;
+  end;
+
+  -- EQUALITY. Not "is it refused" — "is it refused the SAME WAY". A caller who
+  -- can tell these apart has been told they were blocked, which PD-082 forbids
+  -- however few rows it writes.
+  perform pg_temp.chk('safety',
+    'naming a stranger reveals nothing: both probes answer identically',
+    'true', (v_blocked = v_clean)::text);
+  -- And specifically: it is the IMMUTABILITY rule that answers, not the block
+  -- gate, because identity is no longer readable from NEW.
+  perform pg_temp.chk('safety',
+    'and the answer is the immutable-fields refusal, not a block refusal',
+    'true', (v_blocked <> '42501')::text);
+
+  perform pg_temp.act_service();
+  delete from public.conversation where id = v_conv;
+  delete from public.user_blocks where blocked_user_id = cu;
+end $$;
+
+-- ── 14c. The live-transaction exception reaches the reopen gate ───────────
+--
+-- Every other block gate carries it; this one did not. `getOrCreateConversation`
+-- attaches a booking by setting `booking_id` AND `request_status = 'accepted'`
+-- in one update, so a pair with a live booking who then blocked could never open
+-- the thread for it — two people with an appointment and no way to talk about it,
+-- which is the failure the exception exists to prevent.
+do $$
+declare
+  cu uuid := current_setting('b5b.s8_c')::uuid;
+  au uuid := current_setting('b5b.s8_a')::uuid;
+  pa uuid := current_setting('b5b.s8_pa')::uuid;
+  v_conv uuid; v_bk uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  delete from public.user_blocks where blocked_user_id in (au, cu);
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, expires_at)
+  values (cu, pa, 'live work', current_date + 1, 'accepted',
+          now() - interval '1 hour', now() + interval '71 hours')
+  returning id into v_bk;
+  -- Section 4 already built a conversation for this pair; reuse the pair by
+  -- clearing it rather than colliding with conversation_unique_pair.
+  delete from public.conversation where client_id = cu and provider_id = pa;
+  insert into public.conversation(client_id, provider_id, request_status)
+  values (cu, pa, 'declined') returning id into v_conv;
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (cu, au);
+
+  perform pg_temp.act(cu);
+  begin
+    update public.conversation set request_status = 'pending' where id = v_conv;
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('safety',
+    'a pair with a LIVE booking can still open their thread despite the block',
+    'OK', v_code);
+
+  -- And the exception is bounded, exactly as it is for messaging: once the
+  -- booking is terminal the reopen is refused again.
+  perform pg_temp.act_service();
+  update public.bookings set status = 'completed', completed_at = now() where id = v_bk;
+  update public.conversation set request_status = 'declined' where id = v_conv;
+  perform pg_temp.act(cu);
+  begin
+    update public.conversation set request_status = 'pending' where id = v_conv;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('safety',
+    'and once it is over, the reopen is refused again', '42501', v_code);
+
+  perform pg_temp.act_service();
+  delete from public.conversation where id = v_conv;
+  delete from public.bookings where id = v_bk;
+  delete from public.user_blocks where blocked_user_id = au;
+end $$;
+
+-- ── 14d. The grants that were narrowed for one role only ──────────────────
+select pg_temp.chk('safety', 'anon cannot write reports either', 'false',
+  (has_table_privilege('anon','public.reports','INSERT')
+   or has_table_privilege('anon','public.reports','UPDATE')
+   or has_table_privilege('anon','public.reports','DELETE'))::text);
+-- The orphaned table is closed by a GRANT, not by a comment. PD-084's rule,
+-- applied to the place this session first tried to answer with a label.
+select pg_temp.chk('safety', 'the orphaned community_reports table is unwritable', 'false',
+  (has_table_privilege('authenticated','public.community_reports','INSERT')
+   or has_table_privilege('anon','public.community_reports','INSERT'))::text);
+select pg_temp.chk('safety', 'and its INSERT policy is gone with the grant', '0',
+  (select count(*)::text from pg_policies
+    where schemaname = 'public' and tablename = 'community_reports' and cmd = 'INSERT'));
+-- But the ROWS are still there. Erasing unread safety reports is a worse answer
+-- than never having read them, and requirement O puts retention out of scope.
+select pg_temp.chk('safety', 'the table itself still exists, with its rows', 'true',
+  (to_regclass('public.community_reports') is not null)::text);
+select pg_temp.act_service();

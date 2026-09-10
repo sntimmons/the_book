@@ -24,6 +24,17 @@ import {
   type RequestStatus,
   type ViewerRole,
 } from '@/lib/messageRequests'
+import ReportSheet from '@/components/ReportSheet'
+import {
+  BLOCKED_THREAD_COPY,
+  REPORT_REASONS,
+  REPORT_SUBMITTED_COPY,
+  REPORT_FAILED_COPY,
+  iBlocked,
+  submitReport,
+  type ReportReason,
+} from '@/lib/safety'
+import { openSafetyMenu, confirmUnblock } from '@/lib/safetyMenu'
 
 const INPUT_ACCESSORY_ID = 'chatInput'
 const GROUP_WINDOW_MS = 5 * 60 * 1000
@@ -55,6 +66,25 @@ export default function ChatScreen() {
   const [requestStatus, setRequestStatusState] = useState<RequestStatus>(null)
   const [viewerRole, setViewerRole] = useState<ViewerRole>('client')
   const [statusBusy, setStatusBusy] = useState(false)
+  // ── SESSION 8 (QA-JOURNEY-004) ───────────────────────────────────────────
+  //
+  // Until now every safety control in the product lived on a PROVIDER PROFILE,
+  // which only a client ever opens. A provider being harassed by a client had
+  // no block and no report anywhere — and `ReportTarget: 'client'` and the
+  // `client_conduct` reason existed in lib/safety.ts with no surface that could
+  // ever reach them.
+  //
+  // The thread is the right seam, and the only one: it is where these two
+  // people actually meet, it exists for both roles, and it is reachable from
+  // either side of a booking. So the controls go here, symmetrically.
+  const [otherUserId, setOtherUserId] = useState<string | null>(null)
+  // The other party's PROVIDER row, when they have one — which is not the same
+  // question as whether the viewer is a client. On a barter thread both sides
+  // are providers. Null means they genuinely have no business.
+  const [otherProviderId, setOtherProviderId] = useState<string | null>(null)
+  const [blockedByMe, setBlockedByMe] = useState<boolean | null>(null)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reporting, setReporting] = useState(false)
   const statusChannelId = useRef(++statusChannelSeq)
   const flatListRef = useRef<FlatList<Message>>(null)
 
@@ -84,17 +114,49 @@ export default function ChatScreen() {
       if (isClient) {
         const { data: provider } = await supabase
           .from('providers')
-          .select('display_name')
+          .select('display_name, user_id')
           .eq('id', otherPartyId)
           .maybeSingle()
-        if (!cancelled) setOtherPartyName(provider?.display_name || 'Provider')
+        if (!cancelled) {
+          setOtherPartyName(provider?.display_name || 'Provider')
+          // Blocking is between PEOPLE, not businesses, so the provider row id
+          // in `conversation.provider_id` has to be resolved to its owner.
+          // `conversation.client_id` already IS a user id, which is why the
+          // other branch needs no lookup.
+          setOtherUserId((provider as { user_id?: string } | null)?.user_id ?? null)
+          setOtherProviderId(otherPartyId ?? null)
+        }
       } else {
+        // THE OTHER SIDE IS NOT NECESSARILY A CLIENT.
+        //
+        // `viewerRole` is derived from which COLUMN you occupy, and a barter
+        // thread is provider-to-provider: one provider sits in `client_id` and
+        // the other in `provider_id`. So the provider on the `provider_id` side
+        // was filing `report_type: 'client'` with a null provider reference
+        // about a fellow provider — a trade dispute arriving in the operator
+        // queue typed as a client report, with no route from the case to the
+        // business, its trades or its eligibility. The sheet header called their
+        // trading counterpart a client, which is wrong in the product's own
+        // vocabulary (PD-069).
+        //
+        // The column says where you sit. It does not say what the other person
+        // IS, so that is looked up rather than assumed.
+        const { data: theirProvider } = await supabase
+          .from('providers')
+          .select('id, display_name')
+          .eq('user_id', otherPartyId)
+          .maybeSingle()
         const { data: client } = await supabase
           .from('clients_provider')
           .select('name')
           .eq('id', otherPartyId)
           .maybeSingle()
-        if (!cancelled) setOtherPartyName(client?.name || 'Client')
+        if (!cancelled) {
+          const p = theirProvider as { id: string; display_name: string } | null
+          setOtherPartyName(client?.name || p?.display_name || 'Client')
+          setOtherUserId(otherPartyId ?? null)
+          setOtherProviderId(p?.id ?? null)
+        }
       }
 
       if (convo.booking_id) {
@@ -111,6 +173,18 @@ export default function ChatScreen() {
       cancelled = true
     }
   }, [id, user])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!user || !otherUserId || otherUserId === user.id) return
+    ;(async () => {
+      const mine = await iBlocked(user.id, otherUserId)
+      if (!cancelled) setBlockedByMe(mine)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user, otherUserId])
 
   // Live-update this thread's request status: when the provider accepts/declines,
   // the composer/notice reacts without the client having to leave and reopen.
@@ -150,6 +224,54 @@ export default function ChatScreen() {
     setInputText('')
     const ok = await sendMessage(text)
     if (!ok) setInputText(text)
+  }
+
+  // One flow, shared with the provider profile (lib/safetyMenu.ts). A provider
+  // blocking a client and a client blocking a provider are the same act against
+  // the same table, and the copy never names a role.
+  function safetyMenu() {
+    if (!user || !otherUserId) return
+    void openSafetyMenu({
+      userId: user.id,
+      otherUserId,
+      title: otherPartyName || 'This person',
+      blocked: blockedByMe,
+      onBlockedChange: setBlockedByMe,
+      onReport: () => setReportOpen(true),
+    })
+  }
+
+  function unblockFromThread() {
+    if (!user || !otherUserId) return
+    confirmUnblock({
+      userId: user.id,
+      otherUserId,
+      title: otherPartyName || 'This person',
+      blocked: true,
+      onBlockedChange: setBlockedByMe,
+      onReport: () => setReportOpen(true),
+    })
+  }
+
+  async function handleReport(reason: ReportReason, notes: string | null) {
+    if (!user || !otherUserId) return
+    setReporting(true)
+    // Typed by WHAT the other party is, not by which column they occupy. If they
+    // have a provider row, the report is about a provider and names it; if they
+    // do not, it is about a client. This is still the only path in the product
+    // that can produce `report_type = 'client'`.
+    const ok = await submitReport({
+      reporterUserId: user.id,
+      type: otherProviderId ? 'provider' : 'client',
+      reason,
+      notes,
+      reportedUserId: otherUserId,
+      reportedProviderId: otherProviderId,
+    })
+    setReporting(false)
+    setReportOpen(false)
+    const copy = ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+    Alert.alert(copy.title, copy.body)
   }
 
   // Provider accepts/declines a pending incoming request.
@@ -235,13 +357,28 @@ export default function ChatScreen() {
               </Text>
             ) : null}
           </View>
-          <TouchableOpacity activeOpacity={0.7}>
-            <Ionicons
-              name="information-circle-outline"
-              size={22}
-              color="rgba(240,232,213,0.4)"
-            />
-          </TouchableOpacity>
+          {/* This slot held an `information-circle-outline` icon with NO
+              `onPress` — a dead button that had been sitting in the thread
+              header doing nothing. It is now the safety control, which is the
+              one thing this screen was missing and the one place a provider can
+              reach it at all. Withheld only while we do not yet know who the
+              other party is, so it never opens onto an unresolved target. */}
+          {otherUserId && otherUserId !== user?.id ? (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={safetyMenu}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityLabel="Safety options"
+            >
+              <Ionicons
+                name="ellipsis-horizontal"
+                size={22}
+                color="rgba(240,232,213,0.4)"
+              />
+            </TouchableOpacity>
+          ) : (
+            <View style={{ width: 22 }} />
+          )}
         </View>
 
         {loading && messages.length === 0 ? (
@@ -334,6 +471,31 @@ export default function ChatScreen() {
             }}
           />
         )}
+
+        {/* THE BLOCKER'S NOTICE, AND ONLY THE BLOCKER'S.
+            `blockedByMe` is true for exactly one person — the one who made the
+            block — so this cannot leak to the person blocked (PD-082).
+
+            It does NOT close the composer, and that is deliberate rather than
+            lazy: a pair with a live booking keeps a working thread by design,
+            and the client cannot evaluate that condition, because
+            `has_live_transaction` is not callable by design either. Hiding the
+            composer would be a guess, and half the time the wrong one. So the
+            screen states the fact and the remedy, and lets the send answer for
+            itself — which it now does out loud (MESSAGE_REFUSED_COPY) instead
+            of silently.
+
+            Without this the blocker got a cause-free "This conversation is not
+            available right now" on a thread that still looked writable, having
+            forgotten they were the one who closed it. */}
+        {blockedByMe === true ? (
+          <View style={styles.blockedNotice}>
+            <Text style={styles.blockedNoticeText}>{BLOCKED_THREAD_COPY.notice}</Text>
+            <TouchableOpacity onPress={unblockFromThread} activeOpacity={0.7}>
+              <Text style={styles.blockedNoticeAction}>{BLOCKED_THREAD_COPY.action}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* Composer / request controls, gated by the request status. */}
         {gate.canCompose ? (
@@ -446,6 +608,15 @@ export default function ChatScreen() {
           </View>
         </InputAccessoryView>
       )}
+
+      <ReportSheet
+        visible={reportOpen}
+        title={otherProviderId ? 'Report this provider' : 'Report this client'}
+        options={REPORT_REASONS}
+        submitting={reporting}
+        onCancel={() => setReportOpen(false)}
+        onSubmit={handleReport}
+      />
     </>
   )
 }
@@ -661,6 +832,28 @@ const styles = StyleSheet.create({
   },
   acceptText: { fontSize: 15, color: '#080808', fontFamily: 'Manrope_700Bold' },
   btnBusy: { opacity: 0.6 },
+  blockedNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(200,146,42,0.10)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(200,146,42,0.25)',
+  },
+  blockedNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    color: 'rgba(240,232,213,0.7)',
+    fontFamily: 'Manrope_400Regular',
+  },
+  blockedNoticeAction: {
+    fontSize: 13,
+    color: '#C8922A',
+    fontFamily: 'Manrope_700Bold',
+  },
   noticeBar: {
     paddingHorizontal: 20,
     paddingTop: 14,

@@ -40,6 +40,31 @@ export const BLOCK_COPY = {
   cancelLabel: 'Cancel',
 }
 
+/**
+ * What a person is told AFTER blocking. QA-TRUTH-001.
+ *
+ * This used to be written at the call site as *"They can no longer message you
+ * or send you booking requests."* — which **contradicted the dialog the person
+ * had just agreed to** two taps earlier. `BLOCK_COPY.body` states the live
+ * transaction exception plainly; the confirmation then denied it, and the
+ * confirmation is the sentence someone remembers.
+ *
+ * That is the worse direction for a safety feature to be wrong in: it
+ * overstates protection. Someone who blocks a provider mid-booking and reads
+ * "they can no longer message you" has been told the thread is closed. It is
+ * not, deliberately — closing it would strand both of them inside an obligation
+ * neither could finish. So the confirmation repeats the exception rather than
+ * quietly dropping it, and a test pins the two strings to each other.
+ */
+export const BLOCK_DONE_COPY = {
+  title: 'Blocked',
+  body:
+    "They can't message you, send you booking requests, or respond to your barter"
+    + " offers, and you can't do those things with them either. Anything already in"
+    + ' progress stays open so you can both finish it, and your bookings, messages'
+    + ' and history are unchanged.',
+}
+
 export const UNBLOCK_COPY = {
   title: 'Unblock this person?',
   body: 'They will be able to message you and send booking requests again.',
@@ -51,8 +76,10 @@ export const UNBLOCK_COPY = {
  * Block someone.
  *
  * `blockedUserId` is the USER behind a provider, not the provider row — a person
- * is blocked, not a business. Callers holding a provider id resolve it first with
- * `userIdForProvider`.
+ * is blocked, not a business. Callers holding only a provider id read `user_id`
+ * from the provider row they already have; there is deliberately no helper for
+ * it, because a helper meant a second round trip for data every caller had
+ * already fetched.
  *
  * A duplicate is success, not an error: the block already exists and the caller
  * got what they asked for.
@@ -108,17 +135,6 @@ export async function iBlocked(
   return !!data
 }
 
-/** The user behind a provider row. Blocking is between people, not businesses. */
-export async function userIdForProvider(providerId: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('providers')
-    .select('user_id')
-    .eq('id', providerId)
-    .maybeSingle()
-  if (error || !data) return null
-  return (data as { user_id: string }).user_id
-}
-
 // ── REPORTING ──────────────────────────────────────────────────────────────
 
 /**
@@ -148,10 +164,38 @@ export const REPORT_REASONS = [
 export type ReportReason = typeof REPORT_REASONS[number]['value']
 export type ReportTarget = 'provider' | 'client' | 'booking' | 'content'
 
+/**
+ * The post-booking issue slugs, which are OLDER and more specific than the list
+ * above and are kept exactly as they are.
+ *
+ * `app/post-booking/issue.tsx` asks a different question — "what went wrong with
+ * this appointment" rather than "what is the problem with this person" — and
+ * rows filed under these slugs already exist. Folding them into `ReportReason`
+ * would relabel history; leaving that screen writing its own INSERT, which is
+ * what it did, meant TWO client paths into `reports` and only one of them aware
+ * of the column boundary in 20261052000000.
+ *
+ * So the taxonomy stays separate and the WRITE is shared. `billing_dispute` is
+ * listed although the category is no longer offered (Correction 3, item E):
+ * rows carrying it exist, and this type describes what may be in the column.
+ */
+export const BOOKING_ISSUE_REASONS = [
+  'provider_late',
+  'provider_cancelled',
+  'results_unsatisfactory',
+  'unprofessional_conduct',
+  'location_issue',
+  'safety_concern',
+  'billing_dispute',
+  'other',
+] as const
+
+export type BookingIssueReason = typeof BOOKING_ISSUE_REASONS[number]
+
 export interface ReportInput {
   reporterUserId: string
   type: ReportTarget
-  reason: ReportReason
+  reason: ReportReason | BookingIssueReason
   notes?: string | null
   reportedUserId?: string | null
   reportedProviderId?: string | null
@@ -186,13 +230,25 @@ export async function submitReport(input: ReportInput): Promise<boolean> {
 /**
  * What a reporter is told afterwards.
  *
- * Says the report was recorded and stops. It does NOT say "we'll review it",
- * "we'll get back to you", or name any timeframe: PD-068 is explicit that there
- * is no SLA, and there is no channel through which anyone could be got back to.
+ * **This constant and this docstring disagreed.** The doc said it does NOT say
+ * "we'll review it"; the string said "will be reviewed by The Book". The string
+ * had been changed on the reasoning that a queue now exists, so the promise was
+ * finally safe to make.
+ *
+ * It is not. A case row is created, which is a FACT — but there is no operator
+ * UI, the operator RPCs are `service_role`-only, and PD-068 promises no SLA. So
+ * the copy states the mechanism that actually happened and stops. "Sent to The
+ * Book" is true the moment the row exists; "will be reviewed" is a commitment by
+ * people who have no surface to review it on.
+ *
+ * The last sentence is borrowed verbatim from the eligibility-review copy, so
+ * the two places The Book is asked to look at something say the same thing about
+ * what happens next: nothing is promised.
  */
 export const REPORT_SUBMITTED_COPY = {
   title: 'Report submitted',
-  body: 'Thanks — your report has been recorded and will be reviewed by The Book.',
+  body: 'Thanks — your report has been recorded and sent to The Book. There is no set'
+    + ' response time.',
 }
 
 export const REPORT_FAILED_COPY = {
@@ -268,7 +324,13 @@ export function providerReviewCopy(status: ReviewCaseStatus | null): string | nu
   }
 }
 
-export const REQUEST_REVIEW_COPY = {
+/**
+ * Renamed from `REQUEST_REVIEW_COPY`, which lib/obligationState.ts also exports
+ * for a completely different act — asking The Book to look at a barter
+ * obligation. Two constants with one name, both reading "Ask The Book to review
+ * this?", is a mis-import that typechecks.
+ */
+export const REQUEST_ELIGIBILITY_REVIEW_COPY = {
   title: 'Ask The Book to review this?',
   body:
     'This asks The Book to look at why your business is not currently available for new'
@@ -276,4 +338,183 @@ export const REQUEST_REVIEW_COPY = {
     + ' set response time.',
   confirmLabel: 'Request review',
   cancelLabel: 'Not now',
+}
+
+
+// ── WHAT A BLOCKED PERSON'S PROFILE SAYS ──────────────────────────────────
+
+/**
+ * The booking bar on the profile of someone YOU have blocked. QA-JOURNEY-002.
+ *
+ * Book Now stayed on the bar after a block, so the one act a block is FOR — not
+ * being able to start something new with that person — was still offered, and
+ * would have failed at the end of the flow as a raw `PT427`. Correction 3 fixed
+ * exactly this shape for de-approved providers (item H) and the block path was
+ * built without inheriting it.
+ *
+ * Worded as YOUR OWN action rather than as availability. "Not currently
+ * available for new bookings" is the de-approval line, and reusing it here would
+ * tell you the business had been removed from the marketplace when what actually
+ * happened is that you blocked them — and would leave you no way to understand
+ * why Unblock was the control on offer.
+ */
+export const BLOCKED_PROFILE_COPY = {
+  bookBar: 'You blocked this person',
+  hint: 'Unblock them to book or message again.',
+}
+
+// ── WHEN A MESSAGE DOES NOT SEND ──────────────────────────────────────────
+
+/**
+ * QA-UX-001. A failed send restored the draft text and said NOTHING — no toast,
+ * no alert, no error state. The message simply did not appear.
+ *
+ * That was survivable while every refusal was transient. Session 8 added a
+ * PERMANENT one: a blocked pair with no live transaction is refused every time,
+ * so the silent path became "type, tap, watch nothing happen, repeat forever."
+ *
+ * The copy is deliberately the same for a block and for any other refusal the
+ * server states, and names no cause. PD-082: a blocked person is never told they
+ * were blocked, so this may not say "you were blocked" — and must not say
+ * "try again" either, because for the block case that is false.
+ */
+export const MESSAGE_REFUSED_COPY = {
+  title: 'Message not sent',
+  body: 'This conversation is not available right now.',
+}
+
+export const MESSAGE_FAILED_COPY = {
+  title: 'Message not sent',
+  body: 'Please check your connection and try again.',
+}
+
+
+// ── THE FAILURE SENTENCES ─────────────────────────────────────────────────
+//
+// These were written inline at five call sites across three screens. That put
+// them OUTSIDE `__tests__/lib/safety.test.ts`, which can only see what this
+// module exports — and the copy guard is the whole reason this module exists.
+// It is also how QA-TRUTH-001 happened: the post-block confirmation was written
+// at a call site and contradicted the dialog the user had just agreed to.
+//
+// None of them says "try again" for a refusal that will not change on a retry.
+
+export const BLOCK_FAILED_COPY = {
+  title: 'Could not block',
+  body: 'Please check your connection and try again.',
+}
+
+export const UNBLOCK_FAILED_COPY = {
+  title: 'Could not unblock',
+  body: 'Please check your connection and try again.',
+}
+
+/**
+ * Shown when we could not determine the block state, so the menu is withheld.
+ *
+ * Withholding is deliberate: a control reading "Block" for someone you have
+ * already blocked, or "Unblock" for someone you have not, is worse than a
+ * moment's wait — it makes a safety action look like it did not take.
+ */
+export const SAFETY_UNAVAILABLE_COPY = {
+  title: 'Not available right now',
+  body: 'Please check your connection and try again.',
+}
+
+/**
+ * What a thread tells the BLOCKER, and only them.
+ *
+ * The blocked party sees nothing (PD-082). The blocker is the one person
+ * entitled to know why their own messages are being refused, and without this
+ * they get a cause-free "This conversation is not available right now" on a
+ * thread that still looks writable.
+ *
+ * It does NOT say the composer is closed, because sometimes it is not: a pair
+ * with a live booking keeps a working thread by design, and the client cannot
+ * evaluate that condition (`has_live_transaction` is deliberately not callable).
+ * So this states the fact and the remedy, and lets the send answer for itself.
+ */
+export const BLOCKED_THREAD_COPY = {
+  notice: 'You blocked this person. Unblock them to message freely again.',
+  action: 'Unblock',
+}
+
+
+// ── THE LIST OF PEOPLE YOU HAVE BLOCKED ───────────────────────────────────
+
+export interface BlockedPerson {
+  userId: string
+  name: string
+  /** Their provider row, when they have one — so the list can link to it. */
+  providerId: string | null
+  blockedAt: string
+}
+
+/**
+ * Everyone the caller has blocked.
+ *
+ * **Why this exists at all.** Blocking shipped with no inventory: the only way
+ * to unblock was to find the person's profile or an existing thread, and
+ * Settings → Blocked Accounts was a `stub()` reading "Coming soon" — a dead
+ * button in front of a live feature, which is the exact thing Correction 3
+ * refused to ship on the de-approval card.
+ *
+ * It was also a genuine dead end rather than an inconvenience. Discovery and
+ * search filter on `is_approved`, so a client who blocked a provider they had
+ * never messaged, and who was later de-approved, lost every route to that
+ * profile — and with it the only control that could undo their own block.
+ *
+ * Reads only the caller's own rows (that is all the RLS policy shows) and
+ * resolves names in two batched lookups rather than one per row. A block whose
+ * counterparty cannot be named still appears, under a neutral label: the row is
+ * the fact, and being unable to render a name must never hide it.
+ */
+export async function myBlocks(blockerUserId: string): Promise<BlockedPerson[] | null> {
+  const { data, error } = await supabase
+    .from('user_blocks')
+    .select('blocked_user_id, created_at')
+    .eq('blocker_user_id', blockerUserId)
+    .order('created_at', { ascending: false })
+  if (error) {
+    Sentry.captureException(error)
+    return null
+  }
+  const rows = (data as { blocked_user_id: string; created_at: string }[] | null) ?? []
+  if (rows.length === 0) return []
+
+  const ids = rows.map((r) => r.blocked_user_id)
+  const [{ data: providers }, { data: clients }] = await Promise.all([
+    supabase.from('providers').select('id, user_id, display_name').in('user_id', ids),
+    supabase.from('clients_provider').select('id, name').in('id', ids),
+  ])
+  const byProvider = new Map(
+    ((providers as { id: string; user_id: string; display_name: string }[] | null) ?? [])
+      .map((p) => [p.user_id, p]),
+  )
+  const byClient = new Map(
+    ((clients as { id: string; name: string }[] | null) ?? []).map((c) => [c.id, c.name]),
+  )
+
+  return rows.map((r) => {
+    const p = byProvider.get(r.blocked_user_id)
+    return {
+      userId: r.blocked_user_id,
+      // A name we cannot resolve is not a reason to drop the row.
+      name: p?.display_name || byClient.get(r.blocked_user_id) || 'Blocked account',
+      providerId: p?.id ?? null,
+      blockedAt: r.created_at,
+    }
+  })
+}
+
+export const BLOCKED_LIST_COPY = {
+  title: 'Blocked Accounts',
+  empty: "You haven't blocked anyone.",
+  // States what a block does, in the same terms as the dialog that made it, so
+  // this screen and BLOCK_COPY cannot drift apart.
+  hint:
+    "Blocked people can't message you, send you booking requests, or respond to your"
+    + " barter offers, and you can't do those things with them. Anything already in"
+    + ' progress stays open so you can both finish it.',
+  failed: 'Could not load your blocked accounts. Please check your connection and try again.',
 }

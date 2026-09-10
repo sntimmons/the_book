@@ -2307,7 +2307,16 @@ begin
     -- zx (no release after agreement) sorts between write_integrity and the zy post guard, so
     -- an illegal transition is still refused by the rule that owns it first, and "this trade
     -- is confirmed" is said before "this post is closed" -- the more specific fact wins.
-    'barter_interests_write_integrity,barter_interests_zx_no_release_after_agreement,'
+    --
+    -- `zw_not_blocked` joined in Session 8 (20261055000000 / 20261056000000), and its position
+    -- is the reason this assertion pins NAMES rather than a count. It runs AFTER
+    -- write_integrity, so it reads clamped values, and BEFORE zz_rate_limit, so a blocked
+    -- attempt does not consume the responder's daily budget -- an attempt the platform
+    -- refuses never happened, and charging it against a limit would punish someone for an act
+    -- they were not permitted to perform. It was first named `barter_interests_not_blocked`,
+    -- which sorted FIRST and broke this assertion; the guard caught it the same minute.
+    'barter_interests_write_integrity,barter_interests_zw_not_blocked,'
+      || 'barter_interests_zx_no_release_after_agreement,'
       || 'barter_interests_zy_answer_open_offer,barter_interests_zz_rate_limit', v_order);
 
   select string_agg(t.tgname, ',' order by t.tgname) into v_order

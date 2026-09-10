@@ -191,10 +191,16 @@ export default function SettingsScreen() {
             label="Identity Verification"
             onPress={() => stub('Identity Verification')}
           />
+          {/* NO LONGER A STUB. Blocking is live as of Session 8, and this row
+              was the only place in the product a person would look for the list
+              — reading "Coming soon" while their blocks were real. It was also
+              the only exit from a genuine dead end: discovery filters on
+              `is_approved`, so a block against a provider who is later
+              de-approved had no other surface that could undo it. */}
           <NavRow
             icon="ban-outline"
             label="Blocked Accounts"
-            onPress={() => stub('Blocked Accounts')}
+            onPress={() => router.push('/settings/blocked' as never)}
             isLast
           />
         </View>

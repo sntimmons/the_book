@@ -1,8 +1,19 @@
 import {
   BLOCK_COPY,
+  BLOCK_DONE_COPY,
+  BLOCKED_PROFILE_COPY,
+  MESSAGE_REFUSED_COPY,
+  MESSAGE_FAILED_COPY,
+  BLOCK_FAILED_COPY,
+  UNBLOCK_FAILED_COPY,
+  SAFETY_UNAVAILABLE_COPY,
+  BLOCKED_THREAD_COPY,
+  BLOCKED_LIST_COPY,
+  UNBLOCK_COPY,
+  REPORT_FAILED_COPY,
   REPORT_REASONS,
   REPORT_SUBMITTED_COPY,
-  REQUEST_REVIEW_COPY,
+  REQUEST_ELIGIBILITY_REVIEW_COPY,
   providerReviewCopy,
   blockUser,
   unblockUser,
@@ -122,15 +133,31 @@ describe('reporting', () => {
 })
 
 describe('safety copy promises nothing it cannot deliver', () => {
-  const ALL = [
-    BLOCK_COPY.title, BLOCK_COPY.body,
-    REPORT_SUBMITTED_COPY.title, REPORT_SUBMITTED_COPY.body,
-    REQUEST_REVIEW_COPY.title, REQUEST_REVIEW_COPY.body,
-    providerReviewCopy('open') ?? '',
-    providerReviewCopy('under_review') ?? '',
-    providerReviewCopy('resolved') ?? '',
-    providerReviewCopy('dismissed') ?? '',
-  ].join(' ').toLowerCase()
+  // DERIVED, NOT LISTED. This was a hand-maintained array, and by the time it
+  // was reviewed it had already fallen behind by three exports — a guard you
+  // have to remember to extend is a guard that will be forgotten. Every string
+  // this module exports is now covered automatically, so a new constant is
+  // inside the guard the moment it exists.
+  const EVERY_STRING: string[] = []
+  ;(function collect(v: unknown) {
+    if (typeof v === 'string') EVERY_STRING.push(v)
+    else if (Array.isArray(v)) v.forEach(collect)
+    else if (v && typeof v === 'object') Object.values(v).forEach(collect)
+  })([
+    BLOCK_COPY, BLOCK_DONE_COPY, BLOCK_FAILED_COPY, UNBLOCK_COPY, UNBLOCK_FAILED_COPY,
+    SAFETY_UNAVAILABLE_COPY, BLOCKED_PROFILE_COPY, BLOCKED_THREAD_COPY, BLOCKED_LIST_COPY,
+    REPORT_SUBMITTED_COPY, REPORT_FAILED_COPY, REPORT_REASONS,
+    REQUEST_ELIGIBILITY_REVIEW_COPY, MESSAGE_REFUSED_COPY, MESSAGE_FAILED_COPY,
+    providerReviewCopy('open'), providerReviewCopy('under_review'),
+    providerReviewCopy('resolved'), providerReviewCopy('dismissed'),
+  ])
+
+  const ALL = EVERY_STRING.join(' ').toLowerCase()
+
+  it('covers every string this module exports', () => {
+    // If this number falls, something stopped being checked.
+    expect(EVERY_STRING.length).toBeGreaterThan(30)
+  })
 
   it('names no timeframe', () => {
     // PD-068: there is no SLA, and no copy may imply one.
@@ -177,5 +204,124 @@ describe('safety copy promises nothing it cannot deliver', () => {
     // they actually need to know — whether their business is available again — is
     // shown by the availability state itself.
     expect(providerReviewCopy('resolved')).toBe(providerReviewCopy('dismissed'))
+  })
+})
+
+describe('the block confirmation agrees with the block dialog (QA-TRUTH-001)', () => {
+  // The confirmation used to read "They can no longer message you or send you
+  // booking requests." — which contradicted, two taps later, the dialog the
+  // person had just agreed to. And it contradicted it in the DANGEROUS
+  // direction: it overstated the protection. Someone who blocks a provider
+  // mid-booking and reads that sentence believes the thread is closed. It is
+  // not, deliberately, because closing it would strand them both inside an
+  // obligation neither could finish.
+  it('does not deny the exception the dialog promised', () => {
+    const body = BLOCK_DONE_COPY.body.toLowerCase()
+    expect(body).toContain('in progress')
+    expect(body).toContain('stays open')
+  })
+
+  it('repeats what a block leaves untouched', () => {
+    const body = BLOCK_DONE_COPY.body.toLowerCase()
+    expect(body).toContain('bookings')
+    expect(body).toContain('history')
+    expect(body).toContain('unchanged')
+  })
+
+  it('makes no unqualified claim that contact has stopped', () => {
+    // The specific sentence that was wrong. Any absolute phrasing is the same
+    // defect wearing different words.
+    for (const p of ['no longer message you', 'cannot contact you', 'will not be able to reach you']) {
+      expect([p, BLOCK_DONE_COPY.body.toLowerCase().includes(p)]).toEqual([p, false])
+    }
+  })
+})
+
+describe('a blocked provider profile (QA-JOURNEY-002)', () => {
+  it('names the viewer\'s own action, not the provider\'s availability', () => {
+    // Reusing the de-approval line — "Not currently available for new bookings"
+    // — would tell someone a business had been removed from the marketplace
+    // because THEY blocked it, and would leave Unblock looking unrelated.
+    expect(BLOCKED_PROFILE_COPY.bookBar.toLowerCase()).toContain('you blocked')
+    expect(BLOCKED_PROFILE_COPY.bookBar.toLowerCase()).not.toContain('available for new bookings')
+  })
+
+  it('says what to do about it', () => {
+    expect(BLOCKED_PROFILE_COPY.hint.toLowerCase()).toContain('unblock')
+  })
+})
+
+describe('a refused message (QA-UX-001)', () => {
+  it('does not invite a retry that cannot work', () => {
+    // A refusal the server STATED — a block above all — is permanent. Telling
+    // that person to try again is telling them to do a thing that will fail
+    // every time, forever.
+    expect(MESSAGE_REFUSED_COPY.body.toLowerCase()).not.toContain('try again')
+  })
+
+  it('never names a block, or the other person at all', () => {
+    // PD-082: a blocked person is never told they were blocked.
+    const all = `${MESSAGE_REFUSED_COPY.title} ${MESSAGE_REFUSED_COPY.body}`.toLowerCase()
+    for (const p of ['block', 'blocked', 'they ', 'this person']) {
+      expect([p, all.includes(p)]).toEqual([p, false])
+    }
+  })
+
+  it('keeps a transient failure retryable, which is the whole point of having two', () => {
+    expect(MESSAGE_FAILED_COPY.body.toLowerCase()).toContain('try again')
+    expect(MESSAGE_REFUSED_COPY.body).not.toBe(MESSAGE_FAILED_COPY.body)
+  })
+})
+
+describe('the two block dialogs agree in BOTH directions', () => {
+  // QA-TRUTH-001 fixed one clause of this sentence; the other was still wrong.
+  // BLOCK_COPY says "and you won't be able to do those things with them" —
+  // PD-082 restricts the pair, not just the person blocked. BLOCK_DONE_COPY
+  // stated only the one-directional half, so the sentence someone actually
+  // remembers implied the restriction ran one way. Combined with a cause-free
+  // refusal on their own next message, that reads as the product being broken.
+  it('the confirmation states the reciprocal restriction too', () => {
+    const body = BLOCK_DONE_COPY.body.toLowerCase()
+    expect(body).toMatch(/you can't do those things with them|you (also )?can't/)
+  })
+
+  it('and the dialog it confirms says the same', () => {
+    expect(BLOCK_COPY.body.toLowerCase()).toContain("you won't be able to do those things")
+  })
+})
+
+describe('the report confirmation states a fact, not a commitment', () => {
+  // The constant and its own docstring disagreed: the doc said it does NOT say
+  // "we'll review it", and the string said "will be reviewed by The Book". A
+  // case row is created, which is a fact — but there is no operator UI, the
+  // operator RPCs are service_role-only, and PD-068 promises no SLA.
+  it('does not promise a review', () => {
+    const body = REPORT_SUBMITTED_COPY.body.toLowerCase()
+    for (const p of ['will be reviewed', "we'll review", 'we will review', 'will look at']) {
+      expect([p, body.includes(p)]).toEqual([p, false])
+    }
+  })
+
+  it('says what actually happened, and that nothing is promised', () => {
+    const body = REPORT_SUBMITTED_COPY.body.toLowerCase()
+    expect(body).toContain('recorded')
+    expect(body).toContain('no set response time')
+  })
+})
+
+describe('the blocked-thread notice', () => {
+  it('is written for the blocker, and offers the remedy', () => {
+    expect(BLOCKED_THREAD_COPY.notice.toLowerCase()).toContain('you blocked')
+    expect(BLOCKED_THREAD_COPY.action.toLowerCase()).toContain('unblock')
+  })
+
+  it('does not claim the conversation is closed, because sometimes it is not', () => {
+    // A pair with a live booking keeps a working thread by design, and the
+    // client cannot evaluate that condition. Saying "you can no longer message
+    // them" would be wrong half the time.
+    const n = BLOCKED_THREAD_COPY.notice.toLowerCase()
+    for (const p of ['can no longer', 'cannot message', 'closed', 'ended']) {
+      expect([p, n.includes(p)]).toEqual([p, false])
+    }
   })
 })

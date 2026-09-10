@@ -18,7 +18,7 @@ import { supabase } from '@/lib/supabase'
 import { useNotifications } from '@/hooks/useNotifications'
 import { getOrCreateConversation } from '@/hooks/useMessaging'
 import {
-  REQUEST_REVIEW_COPY,
+  REQUEST_ELIGIBILITY_REVIEW_COPY,
   requestProviderReview,
   myProviderReviewStatus,
   providerReviewCopy,
@@ -402,10 +402,10 @@ export default function ProviderDashboard() {
   const greeting =
     hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'
   function askForReview() {
-    Alert.alert(REQUEST_REVIEW_COPY.title, REQUEST_REVIEW_COPY.body, [
-      { text: REQUEST_REVIEW_COPY.cancelLabel, style: 'cancel' },
+    Alert.alert(REQUEST_ELIGIBILITY_REVIEW_COPY.title, REQUEST_ELIGIBILITY_REVIEW_COPY.body, [
+      { text: REQUEST_ELIGIBILITY_REVIEW_COPY.cancelLabel, style: 'cancel' },
       {
-        text: REQUEST_REVIEW_COPY.confirmLabel,
+        text: REQUEST_ELIGIBILITY_REVIEW_COPY.confirmLabel,
         onPress: async () => {
           setReviewBusy(true)
           const caseId = await requestProviderReview()
@@ -493,17 +493,19 @@ export default function ProviderDashboard() {
             imply an identity-verification failure**, because that is not the
             reason and there is no such check to fail.
 
-            NO "CONTACT SUPPORT" BUTTON, and its absence is the decision rather
-            than an omission. A provider in a state they cannot change should
-            have a route to ask about it — the Founder ruling on this PR says so
-            — but the only support entry that exists today is
-            `app/settings/index.tsx`'s `stub('Contact Support')`, which opens an
-            alert reading "Coming soon". Pointing a de-approved provider at that
-            would be a dead button on the one screen where they most need a live
-            one, which is worse than the honest silence. The provider
-            review/appeal action is recorded as a **Session 8 requirement**
-            alongside the operator Review Queue (PD-068, PD-072), and the button
-            arrives with the path behind it. */}
+            STILL NO "CONTACT SUPPORT" BUTTON, and that is deliberate. The only
+            support entry in the product remains `app/settings/index.tsx`'s
+            `stub('Contact Support')`, which opens an alert reading "Coming
+            soon"; pointing a de-approved provider at it would be a dead button
+            on the one screen where they most need a live one.
+
+            What HAS changed is that the honest silence is no longer the whole
+            answer. Correction 3 recorded the provider review/appeal action as a
+            Session 8 requirement (PD-081) precisely so the control could arrive
+            WITH A PATH BEHIND IT, and it now has one: "Request review" below
+            opens a `provider_appeal` case in `operator_cases` (PD-086). It is
+            not a support inbox and does not pretend to be — it asks about ONE
+            thing, the eligibility state this card is describing. */}
         {acceptingBookings === false && (
           <View style={styles.notAcceptingCard}>
             <Feather name="pause-circle" size={18} color="#C8922A" />

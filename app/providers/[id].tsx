@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   View,
   Text,
@@ -7,21 +7,20 @@ import {
   StyleSheet,
   Alert,
 } from 'react-native'
-import { useLocalSearchParams, router } from 'expo-router'
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile, { ProviderData, ProviderService } from '@/components/ProviderProfile'
 import { startBooking } from '@/lib/startBooking'
 import {
-  BLOCK_COPY,
-  UNBLOCK_COPY,
   REPORT_REASONS,
   REPORT_SUBMITTED_COPY,
   REPORT_FAILED_COPY,
-  blockUser,
-  unblockUser,
   iBlocked,
   submitReport,
+  type ReportReason,
 } from '@/lib/safety'
+import { openSafetyMenu } from '@/lib/safetyMenu'
+import ReportSheet from '@/components/ReportSheet'
 import { useProvider, useCategories } from '../../hooks/useProviders'
 import { useAuth } from '@/context/AuthContext'
 import { supabase } from '@/lib/supabase'
@@ -41,6 +40,11 @@ export default function ProviderProfilePage() {
   const [saveBusy, setSaveBusy] = useState(false)
   const [portfolioImages, setPortfolioImages] = useState<string[]>([])
   const [reelVideos, setReelVideos] = useState<string[]>([])
+  // Session 8. `null` = not known yet, and every control that depends on it
+  // reads `=== true` so an unknown never hides a live provider's Book Now.
+  const [blockedByMe, setBlockedByMe] = useState<boolean | null>(null)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reporting, setReporting] = useState(false)
 
   // Load real follow state + a live follower count once the provider (and, for
   // the per-user state, the auth user) resolve. Without this the button always
@@ -207,6 +211,35 @@ export default function ProviderProfilePage() {
     }
   }, [provider?.id])
 
+  // Is this someone I have blocked? The answer changes what the PROFILE offers,
+  // not just what the safety sheet says — see BLOCKED_PROFILE_COPY.
+  //
+  // ON FOCUS, not on mount. A plain `useEffect` keyed on [user, provider.user_id]
+  // never re-runs, because neither value changes while the screen is in the
+  // stack — so the single most likely path through this feature left it stale:
+  //
+  //     profile -> Message -> block from the thread -> back
+  //
+  // and the profile, still mounted, went on offering Book Now to someone the
+  // user had just blocked. `useProvider` already refetches on focus, so the
+  // screen was deliberately refreshing everything about this provider EXCEPT
+  // this. The reverse was equally wrong: unblock from the thread, come back, and
+  // it still read "You blocked this person".
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false
+      const otherUserId = provider?.user_id
+      if (!user || !otherUserId || otherUserId === user.id) return
+      ;(async () => {
+        const mine = await iBlocked(user.id, otherUserId)
+        if (!cancelled) setBlockedByMe(mine)
+      })()
+      return () => {
+        cancelled = true
+      }
+    }, [user, provider?.user_id]),
+  )
+
   if (loading) {
     return (
       <View style={[s.loadingRoot, { paddingTop: insets.top }]}>
@@ -304,90 +337,40 @@ export default function ProviderProfilePage() {
   // `blocked` is null until known, and the sheet is not offered until it is: a
   // control that says "Block" to someone who has already blocked, or "Unblock"
   // to someone who has not, is worse than a moment's wait.
-  async function openSafetyMenu() {
+  function safetyMenu() {
     if (!user || !provider) return
-    const mine = await iBlocked(user.id, provider.user_id)
-    if (mine === null) {
-      Alert.alert('Not available right now', 'Please check your connection and try again.')
-      return
-    }
-    Alert.alert(
-      provider.display_name,
-      undefined,
-      [
-        {
-          text: mine ? UNBLOCK_COPY.confirmLabel : BLOCK_COPY.confirmLabel,
-          style: mine ? 'default' : 'destructive',
-          onPress: () => (mine ? confirmUnblock() : confirmBlock()),
-        },
-        { text: 'Report', style: 'destructive', onPress: openReportMenu },
-        { text: 'Cancel', style: 'cancel' },
-      ],
-    )
+    void openSafetyMenu({
+      userId: user.id,
+      otherUserId: provider.user_id,
+      title: provider.display_name,
+      blocked: blockedByMe,
+      onBlockedChange: setBlockedByMe,
+      onReport: () => setReportOpen(true),
+    })
   }
 
-  function confirmBlock() {
+  // The nine reasons are drawn in a sheet, NOT an Alert: Android renders at most
+  // three Alert buttons and silently drops the rest, which on that platform hid
+  // six categories and the Cancel control.
+  async function handleReport(reason: ReportReason, notes: string | null) {
     if (!user || !provider) return
-    Alert.alert(BLOCK_COPY.title, BLOCK_COPY.body, [
-      { text: BLOCK_COPY.cancelLabel, style: 'cancel' },
-      {
-        text: BLOCK_COPY.confirmLabel,
-        style: 'destructive',
-        onPress: async () => {
-          const ok = await blockUser(user.id, provider.user_id)
-          Alert.alert(
-            ok ? 'Blocked' : 'Could not block',
-            ok
-              ? 'They can no longer message you or send you booking requests.'
-              : 'Please check your connection and try again.',
-          )
-        },
-      },
-    ])
-  }
-
-  function confirmUnblock() {
-    if (!user || !provider) return
-    Alert.alert(UNBLOCK_COPY.title, UNBLOCK_COPY.body, [
-      { text: UNBLOCK_COPY.cancelLabel, style: 'cancel' },
-      {
-        text: UNBLOCK_COPY.confirmLabel,
-        onPress: async () => {
-          const ok = await unblockUser(user.id, provider.user_id)
-          if (!ok) {
-            Alert.alert('Could not unblock', 'Please check your connection and try again.')
-          }
-        },
-      },
-    ])
-  }
-
-  function openReportMenu() {
-    if (!user || !provider) return
-    Alert.alert(
-      'Report this provider',
-      'What is the problem?',
-      [
-        ...REPORT_REASONS.map((r) => ({
-          text: r.label,
-          onPress: async () => {
-            const ok = await submitReport({
-              reporterUserId: user.id,
-              type: 'provider',
-              reason: r.value,
-              reportedProviderId: provider.id,
-              reportedUserId: provider.user_id,
-            })
-            const copy = ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
-            Alert.alert(copy.title, copy.body)
-          },
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ],
-    )
+    setReporting(true)
+    const ok = await submitReport({
+      reporterUserId: user.id,
+      type: 'provider',
+      reason,
+      notes,
+      reportedProviderId: provider.id,
+      reportedUserId: provider.user_id,
+    })
+    setReporting(false)
+    setReportOpen(false)
+    const copy = ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+    Alert.alert(copy.title, copy.body)
   }
 
   return (
+    <>
     <ProviderProfile
       previewMode={false}
       provider={providerData}
@@ -401,7 +384,13 @@ export default function ProviderProfilePage() {
       // would be offered Book Now and only discover the refusal at the end of
       // the flow, as a database error.
       acceptingBookings={provider.is_approved !== false}
-      onSafetyMenu={isOwnProfile ? undefined : openSafetyMenu}
+      // QA-JOURNEY-002. A block must withdraw the act it exists to prevent.
+      // Before this, Book Now stayed on the bar of someone you had blocked and
+      // the refusal arrived at the END of the booking flow as a raw PT427.
+      // `=== true` on purpose: an unread block state must never hide the
+      // control.
+      blockedByMe={blockedByMe === true}
+      onSafetyMenu={isOwnProfile ? undefined : safetyMenu}
       onBookNow={handleBookNow}
       onFollow={handleToggleFollow}
       onSave={handleToggleSave}
@@ -411,6 +400,15 @@ export default function ProviderProfilePage() {
         await openMessageEntry(user.id, provider.id, provider.display_name)
       }}
     />
+    <ReportSheet
+      visible={reportOpen}
+      title="Report this provider"
+      options={REPORT_REASONS}
+      submitting={reporting}
+      onCancel={() => setReportOpen(false)}
+      onSubmit={handleReport}
+    />
+    </>
   )
 }
 
