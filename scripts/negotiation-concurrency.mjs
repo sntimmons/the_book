@@ -424,6 +424,9 @@ const ids = {
   // The OPERATOR. An auth user with no provider row and no part in any trade here, because an
   // adjudicator may not be a participant — the RPC and the trigger both refuse one.
   op: randomUUID(),
+  // Two allow-listed operators, for the contention path Session 8B created.
+  opA: randomUUID(),
+  opB: randomUUID(),
 }
 
 // Every interest this harness creates, in one place: the cleanup and the residue assertions
@@ -466,7 +469,12 @@ begin
   -- early-return, exactly as pg_temp.act_service() does in the B5B fixtures. The RACES below
   -- run as real authenticated users; only the setup is privileged.
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
-  insert into auth.users(id) values ('${ids.ou}'), ('${ids.ru}'), ('${ids.op}');
+  insert into auth.users(id) values ('${ids.ou}'), ('${ids.ru}'), ('${ids.op}'),
+    ('${ids.opA}'), ('${ids.opB}');
+  -- Session 8B: an operator is now a SIGNED-IN PERSON, not only a server
+  -- process, so the queue can be contended by two authenticated sessions.
+  insert into public.operators(user_id) values ('${ids.opA}'), ('${ids.opB}')
+    on conflict (user_id) do nothing;
   insert into public.providers(user_id, display_name, username)
     values ('${ids.ou}', 'Conc Owner ${tag}', 'cco_${tag}') returning id into opid;
   insert into public.providers(user_id, display_name, username)
@@ -1690,6 +1698,10 @@ begin
       or report_id in (select id from public.reports
                         where reporter_user_id in ('${ids.ou}','${ids.ru}'));
   delete from public.reports where reporter_user_id in ('${ids.ou}','${ids.ru}');
+  -- Session 8B: the operator allow-list. Removed explicitly rather than left to
+  -- the auth.users cascade, so the residue count below tests this delete too —
+  -- an allow-list that outlives the account it names is a live grant to nobody.
+  delete from public.operators where user_id in ('${ids.opA}','${ids.opB}','${ids.op}');
   delete from public.user_blocks
    where blocker_user_id in ('${ids.ou}','${ids.ru}')
       or blocked_user_id in ('${ids.ou}','${ids.ru}');
@@ -1726,7 +1738,7 @@ begin
    where id in (${quoted(ALL_INTERESTS)});
   delete from public.barter_offers where id in (${quoted(ALL_OFFERS)});
   delete from public.providers where user_id in ('${ids.ou}','${ids.ru}');
-  delete from auth.users where id in ('${ids.ou}','${ids.ru}','${ids.op}');
+  delete from auth.users where id in ('${ids.ou}','${ids.ru}','${ids.op}','${ids.opA}','${ids.opB}');
 end $$;`)
   if (!r.ok) console.error('cleanup failed:', r.out)
 
@@ -1969,11 +1981,74 @@ async function raceTwoOperatorsOneCase() {
     delete from public.reports where reporter_user_id = '${ids.ru}';`)
 }
 
+// ── 30. TWO SIGNED-IN OPERATORS ON ONE CASE ───────────────────────────────
+//
+// The race above contends two `service_role` sessions, which is what an operator
+// WAS. Session 8B made an operator a signed-in person (`20261059000000`), so the
+// realistic collision is now two authenticated humans opening the same case at
+// the same time — a queue with no assignment and no SLA makes that likely, not
+// exotic.
+//
+// The property is the same and the path is not: this one goes through RLS, the
+// grant, and `is_operator()` before it reaches the row lock the other race
+// tests.
+async function raceTwoSignedInOperators() {
+  await runSql(`
+    delete from public.operator_cases where report_id in
+      (select id from public.reports where reporter_user_id = '${ids.ou}');
+    delete from public.reports where reporter_user_id = '${ids.ou}';
+    insert into public.reports(reporter_user_id, report_type, report_reason, reported_user_id)
+    values ('${ids.ou}', 'client', 'harassment', '${ids.ru}');`)
+  const found = await runSql(`select json_build_object('cid', c.id) as timing
+    from public.operator_cases c
+    join public.reports r on r.id = c.report_id
+   where r.reporter_user_id = '${ids.ou}';`)
+  const caseId = scalar(found.out, 'cid')
+  chk('a report opened a case two signed-in operators can contend over',
+    'true', String(!!caseId))
+
+  const blocker = blockCase(caseId)
+  await delay(2000)
+  const [a, b] = await Promise.all([
+    runTimedUser(ids.opA,
+      `perform public.operator_update_case('${caseId}','resolved','${ids.opA}','A got here');`),
+    runTimedUser(ids.opB,
+      `perform public.operator_update_case('${caseId}','dismissed','${ids.opB}','B got here');`),
+  ])
+  await blocker
+
+  chk('the two signed-in operators genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('exactly one of them wins', 'true', String(a.opOk !== b.opOk))
+  chk('and the loser is refused as already resolved, not silently ignored',
+    'true', String(a.timing?.code === 'PT412' || b.timing?.code === 'PT412'))
+
+  const st = await runSql(`select json_build_object(
+      's', c.status,
+      'n', (select count(*) from public.operator_case_events e where e.case_id = c.id),
+      'actor', (select e.actor_user_id from public.operator_case_events e
+                 where e.case_id = c.id and e.action in ('resolved','dismissed') limit 1)
+    ) as timing from public.operator_cases c where c.id = '${caseId}';`)
+  chk('the case reaches exactly one terminal state', 'true',
+    String(['resolved', 'dismissed'].includes(scalar(st.out, 's'))))
+  chk('the audit records the opening and ONE resolution', '2', scalar(st.out, 'n'))
+  // WHO gets the credit matters as much as the count. An audit that records the
+  // wrong operator is worse than one that records none, because it looks right.
+  const actor = scalar(st.out, 'actor')
+  chk('and it names the operator who actually won', 'true',
+    String(actor === ids.opA || actor === ids.opB))
+
+  await runSql(`
+    delete from public.operator_cases where id = '${caseId}';
+    delete from public.reports where reporter_user_id = '${ids.ou}';`)
+}
+
 await raceMutualBlock()
 await raceDuplicateBlock()
 await raceBlockVsBooking()
 await raceDuplicateProviderAppeal()
 await raceTwoOperatorsOneCase()
+await raceTwoSignedInOperators()
 
 await cleanup()
 

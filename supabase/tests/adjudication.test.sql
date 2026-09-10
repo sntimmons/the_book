@@ -762,9 +762,21 @@ begin
   perform pg_temp.chk('adjudication', 'service_role may execute it',
     'true', has_function_privilege('service_role',
       'public.adjudicate_barter_obligation(uuid, text, uuid, text)', 'execute')::text);
-  perform pg_temp.chk('adjudication', 'authenticated may NOT',
-    'false', has_function_privilege('authenticated',
-      'public.adjudicate_barter_obligation(uuid, text, uuid, text)', 'execute')::text);
+  -- WAS: `authenticated` holds no EXECUTE. Session 8B granted it, because an
+  -- operator is now a signed-in person rather than only a server process
+  -- (20261059000000). The grant is NOT the gate and never was — the function
+  -- refuses any caller `is_operator()` rejects — so this now pins the gate
+  -- itself. `operator_surface.test.sql` § 6 asserts the refusal end-to-end as a
+  -- real non-operator user, which is the check that would actually catch a
+  -- regression here.
+  perform pg_temp.chk('adjudication', 'it gates on is_operator(), not on the grant',
+    '1', (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'adjudicate_barter_obligation'
+             and p.prosrc like '%is_operator()%'));
+  perform pg_temp.chk('adjudication', 'and still refuses a participant outright',
+    '1', (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public' and p.proname = 'adjudicate_barter_obligation'
+             and p.prosrc like '%A participant cannot adjudicate their own trade%'));
   perform pg_temp.chk('adjudication', 'anon may NOT',
     'false', has_function_privilege('anon',
       'public.adjudicate_barter_obligation(uuid, text, uuid, text)', 'execute')::text);

@@ -70,11 +70,19 @@ select pg_temp.chk('reviewrequest', 'authenticated CAN EXECUTE the RPC', 'true',
 -- The most important pin in this file. A participant gained an ACTION; they did
 -- not gain the ability to decide an OUTCOME. PD-068 is unchanged by item X, and
 -- the absence assertion aged from adjudication.test.sql still holds afterwards.
-select pg_temp.chk('reviewrequest', 'no participant may adjudicate, after item X as before', 'false',
-  (has_function_privilege('authenticated',
-     'public.adjudicate_barter_obligation(uuid,text,uuid,text)', 'EXECUTE')
-   or has_function_privilege('anon',
-     'public.adjudicate_barter_obligation(uuid,text,uuid,text)', 'EXECUTE'))::text);
+-- Session 8B made an operator a signed-in person, so `authenticated` now holds
+-- EXECUTE and the old privilege check would fail for a correct change. The
+-- CLAIM is unchanged and still true — a participant may not decide an outcome —
+-- so it is pinned where it is actually enforced: `is_operator()` refuses a
+-- non-operator, and a second check refuses an operator who is a party to the
+-- trade. `anon` still holds nothing at all.
+select pg_temp.chk('reviewrequest', 'anon may never adjudicate', 'false',
+  has_function_privilege('anon',
+    'public.adjudicate_barter_obligation(uuid,text,uuid,text)', 'EXECUTE')::text);
+select pg_temp.chk('reviewrequest', 'no participant may adjudicate, after item X as before', '1',
+  (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'adjudicate_barter_obligation'
+      and p.prosrc like '%A participant cannot adjudicate their own trade%'));
 -- One uuid in, a timestamp out. There is no outcome parameter because asking for
 -- a review is not deciding one, and no `p_as_of` because the deadline is the
 -- server's to evaluate.

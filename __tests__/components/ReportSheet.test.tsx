@@ -9,6 +9,19 @@ import { REPORT_REASONS } from '@/lib/safety'
 // sheet itself touches none of it.
 jest.mock('@/lib/supabase', () => ({ supabase: { from: jest.fn(), rpc: jest.fn() } }))
 
+// `@expo/vector-icons` loads its font asynchronously and sets state when it
+// lands, which fires AFTER the test body has finished — the "update to Icon
+// inside a test was not wrapped in act(...)" warning. That update is a race
+// against teardown, and a race against teardown is a suite that fails once in
+// every several dozen runs for reasons unrelated to what it asserts.
+//
+// Mocked out rather than waited on: no assertion here is about an icon, and a
+// test that is flaky is worse than a test that is narrow.
+jest.mock('@expo/vector-icons', () => ({
+  Feather: 'Feather',
+  Ionicons: 'Ionicons',
+}))
+
 // ── WHAT THIS CAN AND CANNOT PROVE ────────────────────────────────────────
 //
 // This component replaced three `Alert.alert` pickers because Android draws at
