@@ -170,7 +170,7 @@ select json_build_object(
 ) as timing from _rpc_timing;`)
   const timing = parseTiming(r.out)
   const opOk = r.ok && timing?.code === '00000'
-  recordOp('user', timing, opOk)
+  recordOp('user', timing, opOk, r.out)
   return { ...r, timing, result: scalar(r.out, 'result'), opOk }
 }
 
@@ -201,7 +201,7 @@ select json_build_object(
 ) as timing from _rpc_timing;`)
   const timing = parseTiming(r.out)
   const opOk = r.ok && timing?.code === '00000'
-  recordOp('maintenance', timing, opOk)
+  recordOp('maintenance', timing, opOk, r.out)
   return { ...r, timing, opOk }
 }
 
@@ -296,9 +296,14 @@ const results = []
 // actual=false` and nothing else, and diagnosing it meant editing the harness
 // and re-running a ten-minute suite. Now the evidence is already there.
 const recentOps = []
-function recordOp(kind, timing, opOk) {
+function recordOp(kind, timing, opOk, raw) {
+  // `code: null` means the STATEMENT never ran — the timing row was never
+  // written — which is a different failure from "the RPC refused", and the two
+  // are indistinguishable without the server's own message. Kept only for a
+  // failed call, and truncated, so a passing run prints nothing extra.
+  const err = timing ? null : String(raw ?? '').replace(/\s+/g, ' ').slice(0, 300)
   recentOps.push({ kind, ok: opOk, code: timing?.code ?? null,
-    startedAt: timing?.startedAt ?? null, endedAt: timing?.endedAt ?? null })
+    startedAt: timing?.startedAt ?? null, endedAt: timing?.endedAt ?? null, err })
   if (recentOps.length > 4) recentOps.shift()
 }
 
@@ -310,6 +315,7 @@ const chk = (name, expected, actual) => {
     for (const o of recentOps) {
       console.log(`     op ${o.kind} ok=${o.ok} code=${o.code} `
         + `window=[${o.startedAt}, ${o.endedAt}]`)
+      if (o.err) console.log(`        error: ${o.err}`)
     }
   }
 }
