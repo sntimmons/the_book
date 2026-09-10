@@ -16,6 +16,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { BLOCKED_PROFILE_COPY } from '@/lib/safety'
 import ProviderReviewsSection from './ProviderReviewsSection'
 
 export interface ProviderService {
@@ -71,10 +72,30 @@ export interface ProviderProfileProps {
    * live provider's Book Now.
    */
   acceptingBookings?: boolean
+  /**
+   * Session 8 (QA-JOURNEY-002). True when the VIEWER has blocked the person
+   * behind this provider.
+   *
+   * Distinct from `acceptingBookings`, and never folded into it. That flag says
+   * something about the PROVIDER — they are not taking new bookings, and every
+   * client sees the same line. This says something about the VIEWER'S OWN
+   * ACTION, is true for exactly one person, and has a different remedy: unblock
+   * them. Reusing the de-approval line here would tell you a business had been
+   * removed from the marketplace because you blocked it.
+   */
+  blockedByMe?: boolean
   onBookNow?: () => void
   onFollow?: () => void
   onSave?: () => void
   onMessage?: () => void
+  /**
+   * Session 8. Opens the safety sheet (Block / Report) for this provider.
+   *
+   * Optional and absent on the go-live preview and on your own profile — you
+   * cannot block or report yourself, and a provider previewing their own listing
+   * is not looking at a person they might need to act against.
+   */
+  onSafetyMenu?: () => void
 }
 
 const MOCK_PROVIDER: ProviderData = {
@@ -98,10 +119,12 @@ export default function ProviderProfile({
   isSaved = false,
   isOwnProfile = false,
   acceptingBookings = true,
+  blockedByMe = false,
   onBookNow,
   onFollow,
   onSave,
   onMessage,
+  onSafetyMenu,
 }: ProviderProfileProps) {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
@@ -236,13 +259,38 @@ export default function ProviderProfile({
                   color={isSaved ? '#C8922A' : '#F0E8D5'}
                 />
               </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.messageBtn}
-                onPress={onMessage}
-                activeOpacity={0.8}
-              >
-                <Feather name="message-circle" size={16} color="#F0E8D5" />
-              </TouchableOpacity>
+              {/* Gated for the SAME reason the sticky bar's message button is
+                  (see the note there): a blocked pair has no new-contact path,
+                  so this could only fail. It was missed the first time, which
+                  left two message controls on one screen for the same blocked
+                  provider — one withdrawn, one live — and the live one walked
+                  the user into a compose screen to be refused on send. */}
+              {blockedByMe ? null : (
+                <TouchableOpacity
+                  style={styles.messageBtn}
+                  onPress={onMessage}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="message-circle" size={16} color="#F0E8D5" />
+                </TouchableOpacity>
+              )}
+              {/* SESSION 8: the safety control.
+
+                  Quiet and last, deliberately. Block and Report are the two most
+                  consequential things a person can do from this screen and the
+                  two they will need fastest if something goes wrong — so they are
+                  always in the same place, never buried in a submenu of a submenu,
+                  and never styled to invite a curious tap. */}
+              {onSafetyMenu ? (
+                <TouchableOpacity
+                  style={styles.messageBtn}
+                  onPress={onSafetyMenu}
+                  activeOpacity={0.8}
+                  accessibilityLabel="Block or report this provider"
+                >
+                  <Feather name="more-horizontal" size={16} color="rgba(240,232,213,0.7)" />
+                </TouchableOpacity>
+              ) : null}
             </View>
           )}
         </View>
@@ -492,14 +540,29 @@ export default function ProviderProfile({
       {/* ── STICKY BOOK NOW ── hidden on your own profile */}
       {!previewMode && !isOwnProfile && (
         <View style={[styles.bookBar, { paddingBottom: insets.bottom + 12 }]}>
-          <TouchableOpacity
-            style={styles.messageBarBtn}
-            onPress={onMessage}
-            activeOpacity={0.8}
-          >
-            <Feather name="message-circle" size={20} color="#F0E8D5" />
-          </TouchableOpacity>
-          {acceptingBookings ? (
+          {/* The message control is withdrawn for someone you have blocked, and
+              ONLY for that case. A de-approved provider keeps it — a client who
+              already knows them can still reach them, which is the whole point
+              of item H. A blocked pair has no new-contact path at all, so the
+              button could only fail; an existing live thread is still reachable
+              from Messages, where it belongs. */}
+          {blockedByMe ? null : (
+            <TouchableOpacity
+              style={styles.messageBarBtn}
+              onPress={onMessage}
+              activeOpacity={0.8}
+            >
+              <Feather name="message-circle" size={20} color="#F0E8D5" />
+            </TouchableOpacity>
+          )}
+          {blockedByMe ? (
+            <View style={[styles.bookNowBtn, styles.bookNowBtnClosed]}>
+              <Text style={styles.bookNowClosedText}>
+                {BLOCKED_PROFILE_COPY.bookBar}
+              </Text>
+              <Text style={styles.bookNowClosedHint}>{BLOCKED_PROFILE_COPY.hint}</Text>
+            </View>
+          ) : acceptingBookings ? (
             <Pressable style={styles.bookNowBtn} onPress={onBookNow}>
               <Text style={styles.bookNowText}>Book Now</Text>
             </Pressable>
@@ -1003,6 +1066,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#C8922A',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  bookNowClosedHint: {
+    fontSize: 11,
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_400Regular',
+    marginTop: 2,
+    textAlign: 'center',
   },
   bookNowBtnClosed: {
     backgroundColor: 'rgba(240,232,213,0.06)',

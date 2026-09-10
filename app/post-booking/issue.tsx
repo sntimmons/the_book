@@ -13,8 +13,12 @@ import {
 import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
+import {
+  REPORT_FAILED_COPY,
+  submitReport,
+  type BookingIssueReason,
+} from '@/lib/safety'
 
 // ITEM E (Correction 3): 'Billing issue' is gone. The Book takes no payment in
 // this beta (PD-042) — there is no charge, no hold and no refund path — so
@@ -22,37 +26,40 @@ import { useAuth } from '../../context/AuthContext'
 // made and had no way to resolve. Payment is arranged directly with the provider,
 // and a dispute about it is between those two people. 'Other' still accepts
 // anything this list does not name.
-const ISSUES = [
-  'Provider was late',
-  'Provider cancelled last minute',
-  'Results were not as expected',
-  'Provider was unprofessional',
-  'Location issues',
-  'Safety concern',
-  'Other',
+// ONE DECLARATION, LABEL AND SLUG TOGETHER.
+//
+// These were two structures: a `string[]` of labels and a
+// `Record<string, BookingIssueReason>` keyed by the label text, with a silent
+// `?? 'other'` fallback at the call site. `Record<string, …>` cannot notice a
+// key that no longer matches any label — so REWORDING A CHIP, the most ordinary
+// edit on this screen and a pure copy change, silently reclassified every report
+// filed under it as `other` in the durable record an operator reads.
+//
+// The slug is the identity and the label is presentation, so they are declared
+// on the same line and the label is derived from the list rather than matched
+// against it.
+const ISSUES: { label: string; slug: BookingIssueReason }[] = [
+  { label: 'Provider was late', slug: 'provider_late' },
+  { label: 'Provider cancelled last minute', slug: 'provider_cancelled' },
+  { label: 'Results were not as expected', slug: 'results_unsatisfactory' },
+  { label: 'Provider was unprofessional', slug: 'unprofessional_conduct' },
+  { label: 'Location issues', slug: 'location_issue' },
+  { label: 'Safety concern', slug: 'safety_concern' },
+  { label: 'Other', slug: 'other' },
 ]
 
-// Compact slug per category (reports.report_reason is capped at 80 chars).
-// The full selected list + free text goes into reports.notes instead.
-const REASON_SLUG: Record<string, string> = {
-  'Provider was late': 'provider_late',
-  'Provider cancelled last minute': 'provider_cancelled',
-  'Results were not as expected': 'results_unsatisfactory',
-  'Provider was unprofessional': 'unprofessional_conduct',
-  'Location issues': 'location_issue',
-  'Safety concern': 'safety_concern',
-  // Retained deliberately although the category is no longer offered: reports
-  // filed before item E already carry this slug, and removing the mapping would
-  // leave those rows unlabelled.
-  'Billing issue': 'billing_dispute',
-  Other: 'other',
-}
+// `billing_dispute` is NOT offered — item E (Correction 3) removed it, because
+// The Book takes no payment in this beta (PD-042): there is no charge, no hold
+// and no refund path, so the category invited a report about a transaction the
+// product never made and had no way to resolve. It survives in
+// `BookingIssueReason` because rows filed before item E carry the slug, and a
+// type that cannot describe existing data is not describing the column.
 
 export default function IssueReport() {
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id?: string }>()
   const { user } = useAuth()
-  const [selectedIssues, setSelectedIssues] = useState<string[]>([])
+  const [selectedIssues, setSelectedIssues] = useState<BookingIssueReason[]>([])
   const [description, setDescription] = useState('')
   const [focused, setFocused] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -65,7 +72,7 @@ export default function IssueReport() {
     }
   }, [])
 
-  function toggleIssue(issue: string) {
+  function toggleIssue(issue: BookingIssueReason) {
     setSelectedIssues((prev) =>
       prev.includes(issue) ? prev.filter((i) => i !== issue) : [...prev, issue],
     )
@@ -89,34 +96,34 @@ export default function IssueReport() {
     }
 
     setSubmitting(true)
-    const primary = selectedIssues[0]
-    const reason = REASON_SLUG[primary] ?? 'other'
+    // The selection IS the slug now, so there is no lookup to fall out of and no
+    // silent `?? 'other'`. The operator still reads the labels in the notes.
+    const reason: BookingIssueReason = selectedIssues[0] ?? 'other'
+    const labels = ISSUES.filter((i) => selectedIssues.includes(i.slug)).map((i) => i.label)
     const notes =
-      [selectedIssues.join(', '), description.trim()]
+      [labels.join(', '), description.trim()]
         .filter(Boolean)
         .join(' — ')
         .slice(0, 2000) || null
 
-    const { error } = await supabase.from('reports').insert({
-      report_type: 'booking',
-      report_reason: reason,
+    // Goes through the shared write in lib/safety.ts rather than its own
+    // INSERT. This screen hand-rolled the statement, so it was a SECOND client
+    // path into `reports` — and the one that did not know about the column
+    // boundary added in 20261052000000, or about the trigger that opens the
+    // operator case. Its TAXONOMY stays its own (see BOOKING_ISSUE_REASONS);
+    // only the write is shared.
+    const ok = await submitReport({
+      reporterUserId: user.id,
+      type: 'booking',
+      reason,
       notes,
-      reporter_user_id: user.id,
-      booking_id: id,
+      bookingId: id,
     })
 
-    if (error) {
+    if (!ok) {
       // Do NOT show success on failure — surface an error, keep the user here.
       setSubmitting(false)
-      if (error.code === '42501') {
-        console.log(
-          'REPORT RLS gap (42501) — reports INSERT policy not live:',
-          error.message,
-        )
-      } else {
-        console.log('Report insert error:', error)
-      }
-      Alert.alert('Could not submit', 'Something went wrong. Please try again.')
+      Alert.alert(REPORT_FAILED_COPY.title, REPORT_FAILED_COPY.body)
       return
     }
 
@@ -168,16 +175,16 @@ export default function IssueReport() {
           <Text style={styles.sectionLabel}>SELECT ALL THAT APPLY</Text>
           <View style={styles.chipWrap}>
             {ISSUES.map((issue) => {
-              const selected = selectedIssues.includes(issue)
+              const selected = selectedIssues.includes(issue.slug)
               return (
                 <TouchableOpacity
-                  key={issue}
+                  key={issue.slug}
                   style={[styles.chip, selected ? styles.chipSelected : styles.chipUnselected]}
                   activeOpacity={0.7}
-                  onPress={() => toggleIssue(issue)}
+                  onPress={() => toggleIssue(issue.slug)}
                 >
                   <Text style={selected ? styles.chipTextSelected : styles.chipTextUnselected}>
-                    {issue}
+                    {issue.label}
                   </Text>
                 </TouchableOpacity>
               )

@@ -55,6 +55,7 @@ const SUITES = [
   'supabase/tests/barter_review_request.test.sql',
   'supabase/tests/booking_lifecycle.test.sql',
   'supabase/tests/authorization_boundaries.test.sql',
+  'supabase/tests/safety_operator.test.sql',
   'supabase/tests/_report.sql',
 ]
 

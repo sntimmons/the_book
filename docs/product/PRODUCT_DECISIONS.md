@@ -1,14 +1,30 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** **PR #74** (Pre-Session-8 Correction 3), which recorded **PD-071 … PD-081** —
+**Last edited by:** the **Session 8** branch (safety, trust and operator handling), which recorded
+**PD-082 … PD-089**. The last three are **Founder rulings on the finished branch**, closing the
+three questions Session 8 filed rather than answered: **PD-087** (a block is never announced, but
+need not be undiscoverable — no code change), **PD-088** (report intake gets a bounded abuse
+control before broad beta — **not implemented**), and **PD-089** (a blocked person disappears from
+ordinary discovery and community surfaces — **not implemented**, and explicitly not Session 8B).
+The same rulings amended **PD-068** to **PARTIALLY SATISFIED**: the queue's backend exists and its
+operator SURFACE does not, and a backend with no surface does not satisfy that decision.
+
+Session 8's own five were **PD-082 … PD-086** — user blocking and its live-transaction exception, one reporting path that
+opens an operator case, provider eligibility gating writes but never cleanup, the operator Review
+Queue and its narrow authority, and the de-approved provider's real appeal route. **PD-086 closes
+the Session 8 appeal route PD-081 recorded as owed**, and PD-085 closes the queue PD-068 and PD-072
+were waiting on — with the limit stated plainly in both: *the data model, the intake and the
+operator RPCs exist; there is no operator UI, the RPCs are `service_role`-only, and there is still
+no SLA.*
+
+Before it, **PR #74** (Pre-Session-8 Correction 3) recorded **PD-071 … PD-081** —
 the booking-request lifecycle and its 72-hour server expiry, the deliverer's review request
 (closing OQ-071), the beta discovery lanes and their content-neutrality rule, the "Houston Beta
 Provider" trust signal (closing the claims half of OQ-035), provider-owned no-show policy and
 de-approval wording, provider media deletion and the required onboarding review page, the client's
 72-hour expectation, telling a de-approved provider, no placebo preference data, and the barter
-happy-path shape as a future requirement. **PD-080 is the only one of the eleven not implemented, and deliberately so** —
-PD-081 is implemented apart from the Session 8 appeal route it records. Before it, the post-Session-7 state reconciliation changed **no decision** — only
+happy-path shape as a future requirement. **PD-080 is the only one of the eleven not implemented, and deliberately so.** Before it, the post-Session-7 state reconciliation changed **no decision** — only
 this preamble's indexing — and before that, the derived-agreement-presentation branch (**PR #70**,
 `f5fd197`) recorded **PD-070** and removed the last live barter dollar-value UX under PD-069, and
 before that the manual-adjudication branch (**PR #68**, `5c24e8f`) recorded **PD-064** through
@@ -982,8 +998,18 @@ as locked decisions.
   refuses participants, unrelated users and `anon` at each layer independently. The Review Queue
   and the SLA silence are **requirements recorded here, not code**: nothing in this repository
   implements either, and this entry is the reason the first is not an omission.
-- **Status:** Locked; **authority implemented**, operator surface **required pre-beta and not
-  built**, SLA **deliberately absent**
+- **Status:** Locked; **PARTIALLY SATISFIED — do not mark complete.** Founder ruling,
+  Session 8 final PM rulings, 2026-09-09.
+  - **Authority: implemented.** `is_operator()`, the `service_role`-only adjudication and case
+    RPCs, and the four independent refusal layers all exist and are asserted.
+  - **The queue's BACKEND: implemented** (Session 8, PD-085) — `operator_cases`,
+    `operator_case_events`, intake triggers for all three sources, and the operator RPCs.
+  - **The operator SURFACE: NOT BUILT.** There is no usable operator UI, and the RPCs are
+    reachable only as `service_role`. **A backend queue with no surface does not satisfy this
+    decision**, because the requirement was that an authorized operator can actually work a case
+    — which today requires a psql session. This entry stays PARTIALLY SATISFIED until an
+    authorized operator surface exists (**Session 8B**).
+  - **SLA: deliberately absent**, and unaffected by any of the above.
 
 ---
 
@@ -1217,12 +1243,14 @@ as locked decisions.
   - **Idempotent, append-only, deliverer-only.** A repeat returns the original timestamp rather
     than erroring; the record cannot be withdrawn or re-attributed; the receiver is refused
     because they already have two routes and do not need a third.
-  - **NOTHING PROCESSES THESE YET, and no copy may pretend otherwise.** A requested review
-    reaches Under Review and waits, exactly as a receiver-reported one does. **Session 8 owes:** a
-    surface where an authorised operator sees requested reviews; triage between a requested review
-    and a receiver-reported one, which are different evidence; and whatever response policy exists
-    — there is still **no SLA** (PD-068), and participant-facing language stays "This trade is
-    under review."
+  - **QUEUED, NOT PROCESSED — and no copy may pretend otherwise.** A requested review reaches
+    Under Review and waits, exactly as a receiver-reported one does. **Session 8 (PD-085) delivered
+    the queue half**: a trigger now opens a `barter_review` case, so the request lands somewhere a
+    person can find rather than only in a timestamp. **It delivered no operator UI**, the operator
+    RPCs are `service_role`-only, and there is still **no SLA** (PD-068). *Still owed:* triage
+    between a requested review and a receiver-reported one, which are different evidence, and
+    whatever response policy exists. Participant-facing language stays "This trade is under
+    review." **A queue existing is not permission for any surface to start promising a response."
 - **Evidence.** Founder ruling, Pre-Session-8 Correction 3 (item X), 2026-09-09.
   `supabase/migrations/20261039000000_barter_review_request.sql`, plus its forward correction
   `20261042000000_adjudication_consistency_review_request.sql` — eligibility is enforced in TWO
@@ -1472,16 +1500,236 @@ as locked decisions.
     persists it. It remains what the Near You lane reads (PD-073).
   - **A dead button is worse than honest silence**, and most so on the one screen where a provider
     needs a live one. The notice keeps its approved wording and gains nothing that cannot act.
-  - **Session 8 owes, together:** the operator Review Queue that PD-068 makes a pre-beta
-    requirement and that PD-072's review requests wait on, AND a real operator-backed route for a
-    de-approved provider to ask for review. The support control ships with the path behind it.
+  - **Session 8 delivered both, together (PD-085, PD-086):** the operator Review Queue that
+    PD-068 makes a pre-beta requirement and that PD-072's review requests wait on, AND a real
+    operator-backed route for a de-approved provider to ask for review. The control shipped with
+    the path behind it, as this decision required. **What did NOT ship is a support inbox**: there
+    is still no "Contact Support" button, because the only support entry in the product remains a
+    "Coming soon" stub, and the new control asks about ONE thing — the eligibility state the card
+    describes.
   - **Nothing about de-approval may imply an identity-verification failure**, because that is not
     the reason and there is no such check to fail (PD-074).
 - **Evidence.** Founder rulings on PR #74, 2026-09-09. `app/onboarding/client/index.tsx`,
   `app/onboarding/client/uploads.tsx`, `app/(tabs)/business/index.tsx`,
   `__tests__/guards/betaClaimsAbsent.test.ts`.
-- **Status:** Locked; **implemented**, except the Session 8 appeal route, which is a recorded
-  requirement.
+- **Status:** Locked; **implemented in full.** The appeal route this decision recorded as owed
+  shipped in Session 8 — see **PD-086**.
+
+---
+
+### PD-082 — Blocking stops new contact and never deletes history
+
+- **Decision.** A person may block another. While the block exists neither may start a new
+  conversation, booking or barter interaction with the other. **A block never deletes or hides
+  anything**, and it never closes a conversation attached to a LIVE booking or barter agreement.
+- **Context.** Session 8. No blocking existed at all before it.
+- **Consequences.**
+  - **Directional row, symmetric effect.** Only the blocker may create or remove it and only they
+    can see it — the blocked party is never told, because announcing a block to the person it was
+    taken against is itself a safety event. But the EFFECT runs both ways: a one-way block would
+    stop only the person who asked for it.
+  - **THE ACTIVE-TRANSACTION EXCEPTION.** A blocked pair with a submitted, non-terminal booking or
+    a confirmed, uncancelled agreement holding an unresolved obligation keeps that conversation
+    open until the transaction is terminal. Two providers in a confirmed trade owe each other
+    delivery, confirmation and — when it goes wrong — a no-show report or a review request; a
+    client with an accepted booking has someone coming to their address. Severing those threads
+    would trap both people inside an obligation while removing the only means of completing,
+    cancelling or resolving it. **The exception is what makes blocking safe to offer at all.**
+  - It is bounded three ways: only a conversation that ALREADY exists (opening a new one is
+    refused outright, with no exception), only while the transaction is live, and it grants
+    nothing else. **A DRAFT booking is not a live transaction** — otherwise a blocked party could
+    manufacture their own exception by opening a booking flow.
+  - `PT427` is the block refusal and is deliberately distinct from `PT426` (de-approved provider).
+    Similar copy, different facts; conflating them would tell a blocked user that a provider had
+    been removed from the marketplace.
+- **Evidence.** `20261046000000`, `20261047000000`, `20261051000000`; `lib/safety.ts`. Proven by
+  `supabase/tests/safety_operator.test.sql` and three concurrency races.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-083 — One report system, one operator queue, and operator notes are private
+
+- **Decision.** Reporting writes to `public.reports`, which opens a case in the operator queue.
+  The community feed's separate `community_reports` path is retired. **Operator notes are never
+  readable by any ordinary user.**
+- **Context.** Two report systems existed and neither reached an operator. Worse, `reports`'
+  only SELECT policy is `auth.uid() = reporter_user_id` with no column restriction — so **a
+  reporter could read the operator's private notes on their own report.**
+- **Consequences.**
+  - Categories are grounded in what the product does, and there is **no billing or payment
+    category**: The Book processes no payment (PD-042), and Correction 3 removed exactly that
+    option for the same reason. Nine entries including `other`, because a taxonomy a reporter must
+    study is one that gets the wrong answer.
+  - `admin_notes` and `resolved_by` are withheld by **column grant**, and `my_reports` is the
+    supported read. A column-level REVOKE against a table-level grant does not work — see PD-084.
+  - Fixing the grants also closed an unrelated hole: the baseline handed `authenticated`
+    table-level UPDATE and DELETE on `reports` with **no policy constraining them**, unreachable
+    only because RLS denies by default when no policy matches. One added policy away from a
+    reporter editing or deleting a report an operator was working.
+- **Evidence.** `20261050000000`, `20261052000000`; `lib/safety.ts`, `app/community/index.tsx`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-084 — A column-level REVOKE cannot narrow a table-level GRANT
+
+- **Decision.** To withhold a column, revoke the TABLE-level privilege and re-grant the columns
+  you intend to expose. A column-level `REVOKE` against a table-level grant is a **no-op**.
+- **Context.** **This repo has now shipped that mistake twice.** Correction 3's `20261037000000`
+  § 7 shipped `revoke update (expires_at) … from authenticated` believing it did something; the
+  security review found it inert. Session 8's `20261050000000` § 5 then did the same thing to
+  close the `admin_notes` leak, and B5B caught it within minutes.
+- **Consequences.** Recorded as a decision rather than a comment because it has cost two
+  migrations and will cost a third otherwise. The working pattern is Correction 2's
+  `20261030000000`: no table-level SELECT, 28 named columns. **A migration that adds a
+  column-level REVOKE without removing the table-level grant has not done what it says.**
+- **Evidence.** `20261052000000` and its header; `20261030000000`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-085 — Operator authority is the service key, and every case action is auditable
+
+- **Decision.** Operator power is `service_role` (or a no-claims/no-subject privileged session),
+  exposed through RPCs granted to `service_role` alone. **There is no operator role table and no
+  `is_admin` column.** Every case state change writes an append-only event.
+- **Context.** PD-068 makes a minimal Review Queue a pre-beta requirement, and three things wait
+  on it: PD-072's barter review requests, PD-081's provider appeals, and user reports.
+- **Consequences.**
+  - `is_operator()` is the single definition, extracted from the predicate
+    `adjudicate_barter_obligation` already used — `20261023000000` narrowed that exact predicate
+    because a looser form admitted a no-`sub` `anon` request, and **both conjuncts are
+    load-bearing**.
+  - **No role table, deliberately.** A row granting operator power is a client-reachable path to
+    operator power. The authority here is "holds the service key", which is an infrastructure fact
+    rather than a row a compromised session could flip.
+  - `authenticated` holds **no grant at all** on `operator_cases` or `operator_case_events`, and
+    RLS is on with no policy for that role — two independent refusals.
+  - The actor id is a PARAMETER because a `service_role` session has no `auth.uid()`. It RECORDS
+    who acted and is **never trusted as authority**; `is_operator()` decides that.
+  - **One live case per subject**, so a duplicate appeal or duplicate barter review cannot fill
+    the queue with the same question.
+  - **Resolving a barter case does not adjudicate it.** Terminal outcomes remain reachable only
+    through `adjudicate_barter_obligation` (PD-064, PD-068). No second adjudication path exists,
+    and **no case field asks what a trade was worth** — asserted in B5B.
+  - No SLA field, no priority, no assignment. PD-068 says there is no SLA; a field inviting one
+    would be the first step to promising it.
+- **Evidence.** `20261049000000`, `20261050000000`. Proven by `supabase/tests/safety_operator.test.sql`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-086 — A de-approved provider can ask for review, and eligibility gates writes only
+
+- **Decision.** A provider whose business is not currently available for new bookings sees
+  **Request Review**, which opens a real case in the operator queue. Eligibility gates what a
+  provider may **start**; it never gates what they may finish, cancel, read or clean up.
+- **Context.** PD-081 recorded this as owed and deliberately shipped no button, because the only
+  support path was a stub reading "Coming soon". The queue exists now, so the control ships with
+  the path behind it.
+- **Consequences.**
+  - **The lockout that was designed against.** `20260906000000` warned that gating
+    `caller_provider_id()` on `is_approved` would also stop a de-approved provider closing their
+    own live offers, and that gating the interest READ policy would be *actively wrong* — they
+    would lose sight of responses already sent to them. So a **separate**
+    `caller_eligible_provider_id()` gates the two INSERT policies and nothing else. B5B asserts
+    both halves: they cannot post a new offer, and they CAN still close an existing one.
+  - Idempotent per unresolved eligibility state — no duplicate appeals.
+  - The provider sees **that** a review is under way and nothing more: never operator notes, never
+    the event log, never a timeframe. `resolved` and `dismissed` read identically to them, because
+    "dismissed" is a word chosen for an operator's filing system and what a provider needs to know
+    — whether their business is available again — is shown by the availability state itself.
+  - Appealing grants nothing: **no participant path can restore eligibility.**
+- **Evidence.** `20261048000000`, `20261050000000`; `lib/safety.ts`, `app/(tabs)/business/index.tsx`.
+- **Status:** Locked; **implemented**
+
+---
+
+### PD-087 — A block is never announced; it does not have to be undiscoverable
+- **Decided:** 2026-09-09
+- **Decision.** Blocking **must not be explicitly announced** to the blocked person. It does
+  **not** need to be perfectly non-determinable. **Shadow-ban complexity must not be built merely
+  to prevent inference**, and the existing live-transaction exceptions are preserved unchanged.
+- **Why this needed deciding.** Session 8 closed the two routes that let a caller ask about a
+  **stranger** — the `/rpc/`-callable predicates (`20261055000000`) and a conversation gate that
+  read identity from `NEW` (`20261058000000`). What remained was narrower and structural: a person
+  acting on their **own** relationship can still infer a block from a distinct SQLSTATE, because a
+  blocked booking raises `PT427` where an unblocked one succeeds. Closing that gap does not mean
+  writing better code — it means **accepting the write, showing success, and discarding it**,
+  which `20261046000000` rejected in writing on the grounds that a product which lies to one user
+  to protect another has chosen to lie to a user.
+- **What this settles.** The first reading is correct: **PD-082 is a rule about SURFACES.** No
+  screen, message, error string or absence of one may name a block or reveal who made it, and
+  every refusal stays worded identically in both directions. Inference from an error code by
+  someone deliberately probing the API is **out of scope and will not be engineered against**.
+- **What it does NOT license.** It is not permission to relax any surface. It is not permission to
+  narrow the live-transaction exception, which is what keeps a block from stranding two people
+  inside an obligation neither can finish.
+- **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-073**.
+- **Status:** Locked; **satisfied by current behaviour** — no code change required.
+
+---
+
+### PD-088 — Report intake is bounded, because a report now creates real operator work
+- **Decided:** 2026-09-09
+- **Decision.** Report creation gets **rate limiting and duplicate protection before broad beta**.
+  The bound must be **an abuse control, never a barrier to legitimate safety reporting**, and its
+  exact limits and rationale must be written down.
+- **Why.** Before Session 8 a report was an inert row. Now every `reports` INSERT opens an
+  `operator_cases` row through a trigger, so filing a report **creates work in the queue PD-068
+  makes a pre-beta requirement**. Two bounds that exist elsewhere do not exist here: messaging is
+  limited to 30/min, and appeals and barter reviews are idempotent per subject — reporting is
+  neither, so N reports produce N live cases from one ordinary account.
+- **The limits, recorded here so they are decided rather than discovered.** These are the proposed
+  numbers; **none is implemented yet.**
+  - **Duplicate protection (the primary control).** At most **one OPEN case per
+    (reporter, target) pair**. A second report about the same person while the first is unresolved
+    **appends to the existing case** rather than opening another. This is the control that
+    actually protects the queue, and it costs a legitimate reporter nothing — reporting the same
+    person twice is not a second problem, and their words are still recorded.
+  - **Rate limit (the backstop).** **5 reports per hour** and **20 per day** per reporter, across
+    all targets, enforced server-side through the existing `rate-limit` seam.
+  - **Why these numbers.** A person in a genuinely bad situation reports one or two people, not
+    six an hour. Twenty a day is far beyond any honest use and far below what makes flooding
+    worthwhile. **The limits are deliberately loose**: the cost of refusing a real safety report
+    is not comparable to the cost of an operator reading a few junk ones, so when in doubt the
+    bound gives way.
+  - **What is NOT added.** **No standing requirement.** A reporter need not have transacted with
+    the person they report — a bystander who sees something in the community feed must be able to
+    say so, and requiring a prior booking would silence exactly the reports with no other route in.
+  - **What a refused report must do.** Say the limit was reached in plain words, keep the text the
+    person wrote, and never discard it silently.
+- **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-074**.
+- **Status:** Locked; **NOT IMPLEMENTED.** Required before broad beta.
+
+---
+
+### PD-089 — A blocked person disappears from your ordinary surfaces
+- **Decided:** 2026-09-09
+- **Decision.** Blocked users **disappear from each other's normal discovery, content and
+  community surfaces**. Their provider cards, posts and reels are **not** surfaced in ordinary
+  feeds or search where the block relationship applies. **Only the narrow access required for
+  existing booking or barter history, logistics, cancellation, completion or review is
+  preserved.**
+- **Why.** Session 8 stopped at CONTACT: a block prevented messages, booking requests and barter
+  responses, but neither the feed nor the barter board filtered the blocked person's content. So a
+  blocker kept seeing them, could still tap Respond, and got a refusal whose copy — necessarily
+  saying nothing about a block — pointed them at their **own** eligibility, which for them was a
+  false lead about themselves.
+- **The line this draws.** It is the difference between *"you cannot reach me"* and *"you do not
+  exist to me"*, and the ruling chooses the second **for ordinary surfaces only**. The exception
+  is not a courtesy: two people inside a live obligation must still see each other's names, terms,
+  appointment and controls, or a block would strand a trade — the same principle as the
+  live-transaction messaging exception (PD-082), applied to visibility.
+- **Consequences to design for, not to decide here.** Discovery results become viewer-dependent
+  for the first time, which interacts with **PD-073**'s content-neutrality rule for the beta
+  lanes; the filter is **symmetric**, so it must not become a channel that tells the blocked
+  person anything; and it must not be implemented with a client-callable block predicate, which
+  `20261055000000` established as an oracle.
+- **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-075**.
+- **Status:** Locked; **NOT IMPLEMENTED.** Not in Session 8, and explicitly **not** Session 8B,
+  which is the operator surface only.
 
 ---
 

@@ -84,8 +84,16 @@ describe('ordinary negative feedback is NOT routed into incident reporting', () 
     expect(stripTs(satisfaction)).toMatch(/Report a problem/)
   })
 
-  it('the report path is separate: it writes reports, never a review', () => {
-    expect(issue).toMatch(/from\('reports'\)/)
+  it('the report path is separate: it files a report, never a review', () => {
+    // Was pinned to a literal `from('reports')` in this file. Session 8 routed
+    // the write through `submitReport` in lib/safety.ts — one client path into
+    // that table, so a single place knows about the column boundary in
+    // 20261052000000 and about the trigger that opens the operator case. The
+    // assertion follows the write to where it now lives; the PROPERTY it
+    // guards, that this screen files a report and never touches a review table,
+    // is unchanged.
+    expect(issue).toMatch(/submitReport\(/)
+    expect(issue).toMatch(/type: 'booking'/)
     expect(issue).not.toMatch(/provider_reviews|client_reviews/)
   })
 

@@ -94,6 +94,46 @@ async function runSql(sql) {
 }
 
 /**
+ * A SHARED START INSTANT, so two sessions genuinely contend.
+ *
+ * Every race here launches its two operations with `Promise.all`, and each one
+ * spawns its own `supabase db query` process. Those are genuinely parallel at
+ * the OS level — but the CLI's startup ("Initialising login role... Connecting
+ * to remote database...") is SECONDS long and VARIES between the two, so the
+ * moment each session actually reaches its statement was never synchronized.
+ *
+ * The old mechanism was a flat `pg_sleep(2)` in each session before the clock
+ * started, which absorbs startup skew only while the skew is under two seconds.
+ * Observed skew against a loaded non-production API was **four**:
+ *
+ *     op maintenance window=[...555607, ...559304]   3.7s
+ *     op maintenance window=[...559684, ...559686]   2ms   <- started AFTER
+ *
+ * The second session began 380ms after the first had committed, so the two
+ * never overlapped, the scenario proved nothing, and the assertions downstream
+ * of it failed as collateral. Nondeterministically — a different race lost the
+ * coin toss on each run, which is exactly the shape that gets written off as a
+ * flake and left alone.
+ *
+ * The fix is a barrier rather than a longer guess. `Promise.all` calls both
+ * helpers within microseconds, so both compute the same target instant, and
+ * each session sleeps until IT rather than for a fixed duration. Startup skew
+ * up to LEAD is absorbed completely, and the cost is bounded by LEAD instead of
+ * being added to it — a session that took four seconds to connect sleeps four,
+ * not eight.
+ *
+ * If a session is so slow that the barrier has already passed, it starts
+ * immediately and the overlap assertion catches it honestly. That assertion is
+ * the point: a race that did not race must fail loudly, not pass quietly.
+ */
+const START_BARRIER_MS = 8000
+const barrierSql = () => {
+  const at = new Date(Date.now() + START_BARRIER_MS).toISOString()
+  return `perform pg_sleep(greatest(0, extract(epoch from `
+    + `('${at}'::timestamptz - clock_timestamp()))));`
+}
+
+/**
  * `rpcStatement` is a plpgsql STATEMENT, so a caller that needs the RPC's return value writes
  * `v_result := f(...);` instead of `perform f(...);`. Most scenarios assert on end STATE rather
  * than on what the call returned — the client re-reads the views anyway — but where the return
@@ -112,7 +152,7 @@ declare
 begin
   perform set_config('request.jwt.claims',
     json_build_object('sub', '${uid}', 'role', 'authenticated')::text, true);
-  perform pg_sleep(2);
+  ${barrierSql()}
   v_started := clock_timestamp();
   begin
     ${rpcStatement}
@@ -129,7 +169,9 @@ select json_build_object(
   'result', coalesce(result, '')
 ) as timing from _rpc_timing;`)
   const timing = parseTiming(r.out)
-  return { ...r, timing, result: scalar(r.out, 'result'), opOk: r.ok && timing?.code === '00000' }
+  const opOk = r.ok && timing?.code === '00000'
+  recordOp('user', timing, opOk)
+  return { ...r, timing, result: scalar(r.out, 'result'), opOk }
 }
 
 async function runTimedMaintenance(statement) {
@@ -142,7 +184,7 @@ declare
   v_code text := '00000';
 begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
-  perform pg_sleep(2);
+  ${barrierSql()}
   v_started := clock_timestamp();
   begin
     ${statement}
@@ -158,7 +200,9 @@ select json_build_object(
   'code', code
 ) as timing from _rpc_timing;`)
   const timing = parseTiming(r.out)
-  return { ...r, timing, opOk: r.ok && timing?.code === '00000' }
+  const opOk = r.ok && timing?.code === '00000'
+  recordOp('maintenance', timing, opOk)
+  return { ...r, timing, opOk }
 }
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -242,10 +286,32 @@ const SCHEDULED_TERMS = (a, b) =>
   + `'${b}', clock_timestamp() + interval '30 days', null`
 
 const results = []
+// The last few timed operations, so a FAILURE can say WHY rather than only
+// that it happened.
+//
+// Every assertion here is about two sessions contending, and when one fails the
+// question is always the same: what did each session actually do — did it
+// commit, what SQLSTATE did it raise, and did the two intervals really overlap?
+// None of that was printed, so a failing race reported `expected=true
+// actual=false` and nothing else, and diagnosing it meant editing the harness
+// and re-running a ten-minute suite. Now the evidence is already there.
+const recentOps = []
+function recordOp(kind, timing, opOk) {
+  recentOps.push({ kind, ok: opOk, code: timing?.code ?? null,
+    startedAt: timing?.startedAt ?? null, endedAt: timing?.endedAt ?? null })
+  if (recentOps.length > 4) recentOps.shift()
+}
+
 const chk = (name, expected, actual) => {
   const ok = String(expected) === String(actual)
   results.push({ ok, name })
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name} :: expected=${expected} actual=${actual}`)
+  if (!ok && recentOps.length) {
+    for (const o of recentOps) {
+      console.log(`     op ${o.kind} ok=${o.ok} code=${o.code} `
+        + `window=[${o.startedAt}, ${o.endedAt}]`)
+    }
+  }
 }
 
 function scalar(out, key) {
@@ -1614,6 +1680,22 @@ begin
   perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
   -- Obligations cascade with their agreement, and the immutability trigger early-returns for
   -- service_role, so the agreement delete is what removes them.
+  -- Session 8 rows first: operator_cases cascades from providers, and its event
+  -- log refuses DELETE to anyone but a privileged caller, so removing them here
+  -- keeps the residue counts below testing the delete rather than the cascade.
+  delete from public.operator_cases
+   where requested_by_user_id in ('${ids.ou}','${ids.ru}','${ids.op}')
+      or provider_id in (select id from public.providers
+                          where user_id in ('${ids.ou}','${ids.ru}'))
+      or report_id in (select id from public.reports
+                        where reporter_user_id in ('${ids.ou}','${ids.ru}'));
+  delete from public.reports where reporter_user_id in ('${ids.ou}','${ids.ru}');
+  delete from public.user_blocks
+   where blocker_user_id in ('${ids.ou}','${ids.ru}')
+      or blocked_user_id in ('${ids.ou}','${ids.ru}');
+  delete from public.bookings where user_id in ('${ids.ou}','${ids.ru}')
+     or provider_id in (select id from public.providers
+                         where user_id in ('${ids.ou}','${ids.ru}'));
   delete from public.messages where conversation_id = '${ids.conv}';
   delete from public.conversation where id = '${ids.conv}';
   delete from public.barter_agreement_cancellations c
@@ -1715,6 +1797,184 @@ await raceAdjudicateVsMarkDelivered()
 await raceTwoOperatorsDifferentOutcomes()
 await raceDuplicateAdjudication()
 await raceParticipantVsOperator()
+
+// ══ SESSION 8 — SAFETY AND OPERATOR RACES ═════════════════════════════════
+//
+// These are the combinations the Session 8 brief names. Each is two people acting
+// at the same moment about the same relationship, where the wrong resolution
+// either traps somebody in an obligation or lets somebody past a boundary.
+//
+// ── A NOTE ON "GENUINELY OVERLAPPED" ──────────────────────────────────────
+//
+// Most races in this file assert that the two RPC intervals overlapped, because
+// otherwise the scenario proves nothing — a "race" that ran sequentially only
+// tested the happy path twice. They can assert it because they have a CONTENTION
+// POINT: a third session holds a row lock (`blockObligation`) and both racers
+// block on it, so overlap is forced rather than hoped for.
+//
+// **Three of the scenarios below have no such point, and saying so is more honest
+// than manufacturing one.** Two blocks in opposite directions are two different
+// rows; a block and a booking are two different tables; two appeals contend only
+// on a unique index, which cannot be held open from outside. For those, the
+// interesting property was never the overlap — it is the END STATE, which is
+// asserted directly and is what a duplicate or a lost write would corrupt.
+//
+// Where a contention point DOES exist — `operator_update_case` takes
+// `select … for update` on the case row — it is used, and overlap is asserted.
+
+/** Hold the case row so two operator calls must contend on it. */
+async function blockCase(caseId) {
+  return runSql(`
+begin;
+select id from public.operator_cases where id = '${caseId}' for update;
+select pg_sleep(15);
+commit;`)
+}
+
+// ── S8-1. Two people block each other at the same instant ──────────────────
+//
+// Both must succeed. A block is one person's own decision about their own
+// contact, and there is no version of "they blocked you first" that should make
+// your block fail. No contention point: these are two different rows, which is
+// exactly why both must land.
+async function raceMutualBlock() {
+  await runSql(`delete from public.user_blocks where blocker_user_id in ('${ids.ou}','${ids.ru}');`)
+  const a = `insert into public.user_blocks(blocker_user_id, blocked_user_id) values ('${ids.ou}','${ids.ru}');`
+  const b = `insert into public.user_blocks(blocker_user_id, blocked_user_id) values ('${ids.ru}','${ids.ou}');`
+  const [x, y] = await Promise.all([runTimedUser(ids.ou, a), runTimedUser(ids.ru, b)])
+  chk('two people can block each other simultaneously; both succeed',
+    'true', String(x.opOk && y.opOk))
+  const n = await runSql(`select json_build_object('n', count(*)) as timing
+    from public.user_blocks where blocker_user_id in ('${ids.ou}','${ids.ru}');`)
+  chk('and each owns their own block row', '2', scalar(n.out, 'n'))
+  const both = await runSql(`select json_build_object('n',
+    public.contact_blocked('${ids.ou}','${ids.ru}')::text) as timing;`)
+  chk('the pair reads as blocked from either side', 'true', scalar(both.out, 'n'))
+}
+
+// ── S8-2. The same person blocks twice at once ─────────────────────────────
+//
+// The unique constraint is the contract. One row, whichever attempt wins.
+async function raceDuplicateBlock() {
+  await runSql(`delete from public.user_blocks where blocker_user_id = '${ids.ou}' and blocked_user_id = '${ids.ru}';`)
+  const stmt = `insert into public.user_blocks(blocker_user_id, blocked_user_id) values ('${ids.ou}','${ids.ru}');`
+  const [x, y] = await Promise.all([runTimedUser(ids.ou, stmt), runTimedUser(ids.ou, stmt)])
+  chk('a concurrent double block is safe for at least one caller',
+    'true', String(x.opOk || y.opOk))
+  const n = await runSql(`select json_build_object('n', count(*)) as timing
+    from public.user_blocks where blocker_user_id = '${ids.ou}' and blocked_user_id = '${ids.ru}';`)
+  chk('and leaves exactly one block row, never two', '1', scalar(n.out, 'n'))
+}
+
+// ── S8-3. A block landing alongside a new booking ──────────────────────────
+//
+// The one that decides whether blocking is real. Either order is acceptable;
+// what is NOT acceptable is a block that fails because a booking was in flight,
+// or a booking that survives a block that beat it.
+async function raceBlockVsBooking() {
+  await runSql(`
+    delete from public.user_blocks where blocker_user_id = '${ids.ru}' and blocked_user_id = '${ids.ou}';
+    delete from public.bookings where user_id = '${ids.ru}'
+      and provider_id = (select id from public.providers where user_id = '${ids.ou}');`)
+  const block = `insert into public.user_blocks(blocker_user_id, blocked_user_id) values ('${ids.ru}','${ids.ou}');`
+  const book = `insert into public.bookings(user_id, provider_id, service_name, requested_date)
+    values ('${ids.ru}', (select id from public.providers where user_id = '${ids.ou}'), 'race svc', current_date);`
+  const [x, y] = await Promise.all([runTimedUser(ids.ru, block), runTimedUser(ids.ru, book)])
+  chk('the block always succeeds — it is the actor\'s own decision', 'true', String(x.opOk))
+  const n = await runSql(`select json_build_object('n', count(*)) as timing
+    from public.bookings where user_id = '${ids.ru}'
+      and provider_id = (select id from public.providers where user_id = '${ids.ou}');`)
+  chk('the outcome is consistent: the booking either landed first or was refused',
+    'true', String(['0','1'].includes(scalar(n.out, 'n'))))
+  chk('and when refused it is the BLOCK code, never the eligibility one',
+    'true', String(y.opOk || y.timing?.code === 'PT427'))
+  // A block AFTER the fact must not retroactively remove a booking that landed.
+  chk('a booking that won the race still exists — a block never deletes history',
+    'true', String(!y.opOk || scalar(n.out, 'n') === '1'))
+  await runSql(`
+    delete from public.bookings where user_id = '${ids.ru}'
+      and provider_id = (select id from public.providers where user_id = '${ids.ou}');
+    delete from public.user_blocks where blocker_user_id = '${ids.ru}' and blocked_user_id = '${ids.ou}';`)
+}
+
+// ── S8-4. Two duplicate provider appeals at once ───────────────────────────
+//
+// The brief names duplicate appeals specifically: one live case, or an operator
+// answers the same question twice.
+async function raceDuplicateProviderAppeal() {
+  await runSql(`
+    update public.providers set is_approved = false where user_id = '${ids.ou}';
+    delete from public.operator_cases
+     where provider_id = (select id from public.providers where user_id = '${ids.ou}');`)
+  const stmt = `perform public.request_provider_review('please look');`
+  const [x, y] = await Promise.all([runTimedUser(ids.ou, stmt), runTimedUser(ids.ou, stmt)])
+  chk('both appeal calls succeed — the RPC is idempotent, not first-wins',
+    'true', String(x.opOk && y.opOk))
+  const n = await runSql(`select json_build_object('n', count(*)) as timing
+    from public.operator_cases
+   where provider_id = (select id from public.providers where user_id = '${ids.ou}')
+     and status in ('open','under_review');`)
+  chk('and exactly ONE live appeal case exists', '1', scalar(n.out, 'n'))
+  await runSql(`
+    delete from public.operator_cases
+     where provider_id = (select id from public.providers where user_id = '${ids.ou}');
+    update public.providers set is_approved = true where user_id = '${ids.ou}';`)
+}
+
+// ── S8-5. Two operators resolving the same case at once ────────────────────
+//
+// This one HAS a contention point — `operator_update_case` takes the case row
+// `for update` — so a third session holds it and the overlap is forced.
+async function raceTwoOperatorsOneCase() {
+  await runSql(`
+    delete from public.operator_cases where report_id in
+      (select id from public.reports where reporter_user_id = '${ids.ru}');
+    delete from public.reports where reporter_user_id = '${ids.ru}';
+    insert into public.reports(reporter_user_id, report_type, report_reason, reported_user_id)
+    values ('${ids.ru}', 'client', 'safety_concern', '${ids.ou}');`)
+  // Read the case in a SEPARATE statement: the trigger that opens it is AFTER
+  // INSERT, so a CTE in the same statement cannot see its effect. The first
+  // version of this race did exactly that, got a null case id, and every
+  // assertion below it failed for a reason that had nothing to do with the race.
+  const found = await runSql(`select json_build_object('cid', c.id) as timing
+    from public.operator_cases c
+    join public.reports r on r.id = c.report_id
+   where r.reporter_user_id = '${ids.ru}';`)
+  const caseId = scalar(found.out, 'cid')
+  chk('the report opened a case the race can contend over', 'true', String(!!caseId))
+
+  const resolve = `perform public.operator_update_case('${caseId}','resolved','${ids.op}','first');`
+  const dismiss = `perform public.operator_update_case('${caseId}','dismissed','${ids.op}','second');`
+  const blocker = blockCase(caseId)
+  await delay(2000)
+  const [x, y] = await Promise.all([
+    runTimedMaintenance(resolve), runTimedMaintenance(dismiss),
+  ])
+  await blocker
+  chk('the two operator resolutions genuinely overlapped',
+    'true', String(intervalsOverlap(x.timing, y.timing)))
+  chk('exactly one operator resolution wins', 'true', String(x.opOk !== y.opOk))
+  const st = await runSql(`select json_build_object('s', status, 'n',
+      (select count(*) from public.operator_case_events where case_id = '${caseId}')) as timing
+    from public.operator_cases where id = '${caseId}';`)
+  chk('the case reaches exactly one terminal state', 'true',
+    String(['resolved','dismissed'].includes(scalar(st.out, 's'))))
+  chk('the loser is refused rather than silently overwriting the winner',
+    'true', String(x.timing?.code === 'PT412' || y.timing?.code === 'PT412'))
+  // Audit: the opening plus exactly one accepted resolution.
+  chk('and the audit log records the opening and one resolution, not two',
+    '2', scalar(st.out, 'n'))
+  await runSql(`
+    delete from public.operator_cases where id = '${caseId}';
+    delete from public.reports where reporter_user_id = '${ids.ru}';`)
+}
+
+await raceMutualBlock()
+await raceDuplicateBlock()
+await raceBlockVsBooking()
+await raceDuplicateProviderAppeal()
+await raceTwoOperatorsOneCase()
+
 await cleanup()
 
 const failed = results.filter((r) => !r.ok).length

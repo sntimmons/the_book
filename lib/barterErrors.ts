@@ -312,6 +312,31 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       title: 'Already sent',
       body: 'You have already responded to this offer.',
     },
+    // SESSION 8. Responding gained TWO permanent refusals and neither was
+    // listed, so both fell through to the retryable default — "Could not send.
+    // Please try again." — in front of a person for whom trying again could
+    // never work, on a composer that stayed open holding their message.
+    //
+    // The two are: the responder is BLOCKED by the offer's owner (a definer
+    // trigger, 20261055000000), and the responder's own business is NOT
+    // ELIGIBLE, so `caller_eligible_provider_id()` returns null and the INSERT
+    // policy refuses (20261048000000). Both surface as 42501 and the client
+    // cannot tell them apart.
+    //
+    // ONE MESSAGE, TRUE UNDER BOTH, and it must stay that way. PD-082 forbids
+    // telling someone they were blocked, so this may not name the owner or
+    // their decision at all. What it CAN do is point at a state the reader can
+    // check about THEMSELVES — which helps the de-approved provider, who
+    // otherwise has no way to connect a refused barter response to their own
+    // eligibility, and tells a blocked reader nothing they did not already
+    // know about their own account.
+    [INSUFFICIENT_PRIVILEGE]: {
+      terminal: true,
+      title: 'Cannot respond to this offer',
+      body:
+        'You are not able to respond to this offer. If your business is not currently'
+        + ' available for new bookings, that also pauses new barter responses.',
+    },
   },
   accept: {
     [UNIQUE_VIOLATION]: {

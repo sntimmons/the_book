@@ -41,6 +41,13 @@ import {
   BarterOfferWithProvider,
 } from '@/lib/barter'
 import { barterWriteFailure, interpretWrite } from '@/lib/barterErrors'
+import {
+  submitReport,
+  REPORT_SUBMITTED_COPY,
+  REPORT_FAILED_COPY,
+  ReportReason,
+} from '@/lib/safety'
+import ReportSheet from '@/components/ReportSheet'
 import { confirmCopy, responderFeedState } from '@/lib/tradeActivity'
 
 type FeedPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
@@ -91,11 +98,19 @@ function matchesServiceType(category: string, selected: string): boolean {
   return cat.includes(selected.toLowerCase())
 }
 
-const REPORT_REASONS: { label: string; value: string }[] = [
-  { label: 'Inappropriate content', value: 'inappropriate' },
-  { label: 'Spam', value: 'spam' },
-  { label: 'Misinformation', value: 'misinformation' },
-  { label: 'Other', value: 'other' },
+// SESSION 8: reporting a post goes to the SAME place every other report goes.
+//
+// This screen used to write to `community_reports` — a table with a reporter, a
+// post id, a reason and a timestamp, and no status, no operator path and nothing
+// reading it. A second reporting system is a second place to forget to look, so
+// the four local reasons below are mapped onto the product-wide vocabulary in
+// lib/safety.ts and the write goes to `reports`, which opens an operator case.
+const POST_REPORT_REASONS: { label: string; value: ReportReason }[] = [
+  { label: 'Inappropriate content', value: 'profile_or_content' },
+  { label: 'Harassment', value: 'harassment' },
+  { label: 'Scam or fraud', value: 'scam_or_fraud' },
+  { label: 'Safety concern', value: 'safety_concern' },
+  { label: 'Something else', value: 'other' },
 ]
 
 export default function CommunityFeed() {
@@ -127,6 +142,8 @@ export default function CommunityFeed() {
   const [interestOffer, setInterestOffer] = useState<BarterOfferWithProvider | null>(null)
   const [interestNote, setInterestNote] = useState('')
   const [sendingInterest, setSendingInterest] = useState(false)
+  const [reportPostTarget, setReportPostTarget] = useState<CommunityPostView | null>(null)
+  const [reportingPost, setReportingPost] = useState(false)
 
   const isSavedTab = activeCategory === SAVED_KEY
 
@@ -315,20 +332,31 @@ export default function CommunityFeed() {
     }
   }
 
-  async function reportPost(postId: string, reason: string) {
+  async function reportPost(
+    post: CommunityPostView,
+    reason: ReportReason,
+    notes: string | null,
+  ) {
     if (!user) return
-    const { error } = await supabase
-      .from('community_reports')
-      .insert({ reporter_user_id: user.id, post_id: postId, reason })
-    if (error) {
-      console.log('Report error:', error)
-      Alert.alert('Could not report', 'Please try again.', [{ text: 'OK' }])
-      return
-    }
-    // PRODUCT TRUTH: this said "We'll review it." No operator review surface
-    // exists yet (a minimal internal queue is pre-beta work), so the promise was
-    // not one the product could keep. It says what actually happened instead.
-    Alert.alert('Reported', 'Thanks — this report has been recorded.', [{ text: 'OK' }])
+    // The post's AUTHOR is the target, and the post id goes in the notes so the
+    // operator can find the content. `reports` has no post column; adding one
+    // would be a schema change for a beta whose content surface is small, and the
+    // note carries the reference without it.
+    const ok = await submitReport({
+      reporterUserId: user.id,
+      type: 'content',
+      reason,
+      reportedUserId: post.userId,
+      // The post reference goes in the notes either way; a reporter's own words
+      // are appended to it rather than replacing it.
+      notes: notes ? `community post ${post.id}\n\n${notes}` : `community post ${post.id}`,
+    })
+    const copy = ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+    // PRODUCT TRUTH: this once said "We'll review it", then — correctly, while no
+    // operator surface existed — "this report has been recorded". A queue exists
+    // now, so the copy can say it will be reviewed. It still names NO timeframe:
+    // PD-068 is explicit that there is no SLA.
+    Alert.alert(copy.title, copy.body, [{ text: 'OK' }])
   }
 
   function openMenu(post: FeedPost) {
@@ -338,13 +366,11 @@ export default function CommunityFeed() {
         { text: 'Delete', style: 'destructive', onPress: () => deletePost(post.id) },
       ])
     } else {
-      Alert.alert('Report post', 'Why are you reporting this?', [
-        ...REPORT_REASONS.map((r) => ({
-          text: r.label,
-          onPress: () => reportPost(post.id, r.value),
-        })),
-        { text: 'Cancel', style: 'cancel' as const },
-      ])
+      // A sheet, not an Alert: this list is five reasons plus Cancel, and
+      // Android's Alert.alert renders at most THREE buttons and silently drops
+      // the rest — so on that platform two reasons AND the Cancel control did
+      // not exist. See components/ReportSheet.tsx.
+      setReportPostTarget(post)
     }
   }
 
@@ -369,6 +395,16 @@ export default function CommunityFeed() {
       console.log('Express interest error:', error)
       const f = barterWriteFailure('respond', error)
       Alert.alert(f.title, f.body, [{ text: 'OK' }])
+      // A terminal refusal will not succeed on a retry, so the composer closes
+      // and the board is re-read. Leaving it open — which is what happened
+      // before, for every terminal outcome including the two 42501s Session 8
+      // added — parked the user in front of a Send button that could only fail,
+      // holding a message they had written.
+      if (f.terminal) {
+        setInterestOffer(null)
+        setInterestNote('')
+        loadBarter()
+      }
       return
     }
     // Mark this offer as interested and bump its local count.
@@ -857,6 +893,22 @@ export default function CommunityFeed() {
           </View>
         </View>
       </Modal>
+
+      <ReportSheet
+        visible={reportPostTarget !== null}
+        title="Report this post"
+        options={POST_REPORT_REASONS}
+        submitting={reportingPost}
+        onCancel={() => setReportPostTarget(null)}
+        onSubmit={async (reason, notes) => {
+          const target = reportPostTarget
+          if (!target) return
+          setReportingPost(true)
+          await reportPost(target, reason, notes)
+          setReportingPost(false)
+          setReportPostTarget(null)
+        }}
+      />
     </View>
   )
 }
