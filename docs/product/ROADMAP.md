@@ -512,7 +512,7 @@ which is the whole point of the row.**
 
 | Pre-beta requirement | Status | Note |
 |---|---|---|
-| Minimal internal **Review Queue** / operator surface | **BACKEND BUILT — SURFACE NOT BUILT** | **PD-068 is PARTIALLY SATISFIED, not complete.** Session 8 (PD-085) delivered `operator_cases`, `operator_case_events`, `is_operator()`, intake from all three sources and the operator RPCs. **There is no operator UI**, the RPCs are `service_role`-only, and working a case takes a `psql` session — so no obligation can still reach a terminal outcome in the running product. This is the requirement **Session 8B** exists to finish. |
+| Minimal internal **Review Queue** / operator surface | **BUILT** (Session 8B, `c4afee5`) | **PD-068 is SATISFIED.** An allow-listed operator (`public.operators`) can see the queue, filter by type and status, open a case, read the immutable facts behind it, write an internal note, take the supported resolution action, and see a durable history — without a `psql` session. **The authority change is the part to know about:** `is_operator()` gained a third arm, because an operator opening a screen is `authenticated` and neither original arm admitted them. The allow-list has **no client privilege of any kind** — including SELECT — so operators can neither promote anyone nor enumerate each other, and making one is a `service_role` act. **There is still NO SLA** and the queue's order (oldest open first) is not configurable, because with no SLA the order is the only fairness guarantee a waiting person has. |
 | **Blocking and reporting** | **BUILT** | PD-082 and PD-083, barter contract § 9. Blocking carries the live-transaction exception and `PT427`; reporting is one path into `public.reports` that opens an operator case, and `community_reports` is retired. |
 | **Operator handling** of a reported provider | **BACKEND BUILT — SURFACE NOT BUILT** | The intake and the case model exist (PD-085); the triage, response and restriction path a human would use does not. `operator_set_provider_eligibility` exists and nothing calls it. |
 | **Report intake bounds** | **NOT BUILT** | **PD-088**, locked 2026-09-09, required **before broad beta**. Every report now opens a case, so an ordinary account can create N live cases. The limits are decided and written down; none is implemented. **Assigned to Session 8C** (2026-09-10). |
@@ -778,7 +778,7 @@ The themes this section listed before the session ran, with what actually happen
 - **Pre-beta placement of the minimal internal Review Queue** (PD-068) — **half-answered.** It
   landed inside Session 8 as a backend; the surface did not land at all.
 
-### Session 8B — the operator surface — **NOT STARTED**
+### Session 8B — the operator surface — **MERGED** (`c4afee5`, 2026-09-10)
 
 **The only thing that closes PD-068.** Named in
 [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md):1011 as the session that must deliver an authorized
@@ -875,11 +875,19 @@ for the beta lanes. And it must **not** be implemented with a client-callable bl
 `20261055000000` established that as an oracle, and a discovery filter is exactly the shape that
 would tempt someone to re-grant one.
 
-**One outstanding QA item, recorded as SUPPLIED and not found in this repository.** The invocation
-states that manual small-device QA of `components/ReportSheet.tsx` was **removed as a merge gate by
-the Founder and moved to the later device/UX QA list** — so it is **outstanding, not done**. No
-artifact on `main` records it, and this document cannot verify a manual test in any case; it is
-written down here so it is not lost.
+### Physical-device / UX QA list — **OUTSTANDING, NOT OBSERVED**
+
+Standing list. Nothing here has been run on a device; **no automated result may be read as having
+observed any of it**, and none of it has been.
+
+| Item | Why it is on this list | Status |
+|---|---|---|
+| `components/ReportSheet.tsx` on the smallest supported device, **with the keyboard open**, using the 9-reason provider taxonomy | The component exists because Android's `Alert.alert` silently drops buttons past the third — it once showed 3 of 9 reasons and **no Cancel**. It then nearly reproduced that by a different mechanism: React Native's Yoga defaults `flexShrink` to **0**, so a non-shrinking list pushed the notes field and the Submit button past the sheet's 85% cap, where a `View` clips them. Fixed and guarded by an arithmetic height-budget test plus a `flexShrink: 1` pin — **but jsdom does not run Yoga**, so nothing has measured a rendered layout. The failure mode is a report picker whose Submit control does not exist, which looks identical to the bug the component was built to fix. | **Outstanding.** Removed as a merge gate for PR #76 by Founder ruling, 2026-09-09, and moved here. |
+| The operator queue and case detail on a small device | Session 8B's screens have unit and B5B coverage and no device pass. The case-detail screen renders a variable-length facts blob and a history list inside one scroll view. | **Outstanding**, never gated. |
+
+**Why this is a list rather than a sentence.** An automated suite can prove a control EXISTS in the
+tree; only a device can prove a person can REACH it. Those are different claims, and this repository
+has already shipped one control that existed and could not be reached.
 
 ### Sessions 9–10 — Reviews Phase 2 / reputation
 Structured signals (PD-028) and the conduct/reliability layer that `no_show` feeds (PD-027).

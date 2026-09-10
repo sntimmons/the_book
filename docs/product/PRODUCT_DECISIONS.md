@@ -7,8 +7,10 @@ three questions Session 8 filed rather than answered: **PD-087** (a block is nev
 need not be undiscoverable — no code change), **PD-088** (report intake gets a bounded abuse
 control before broad beta — **not implemented**), and **PD-089** (a blocked person disappears from
 ordinary discovery and community surfaces — **not implemented**, and explicitly not Session 8B).
-The same rulings amended **PD-068** to **PARTIALLY SATISFIED**: the queue's backend exists and its
-operator SURFACE does not, and a backend with no surface does not satisfy that decision.
+The same rulings amended **PD-068** to **PARTIALLY SATISFIED**, because the queue's backend existed
+and its operator SURFACE did not — and a backend with no surface does not satisfy that decision.
+**Session 8B then built the surface** (`c4afee5`, 2026-09-10) and PD-068 is now **SATISFIED**; the
+earlier status is kept in the entry because the reason it was withheld is the useful part.
 
 Session 8's own five were **PD-082 … PD-086** — user blocking and its live-transaction exception, one reporting path that
 opens an operator case, provider eligibility gating writes but never cleanup, the operator Review
@@ -998,8 +1000,8 @@ as locked decisions.
   refuses participants, unrelated users and `anon` at each layer independently. The Review Queue
   and the SLA silence are **requirements recorded here, not code**: nothing in this repository
   implements either, and this entry is the reason the first is not an omission.
-- **Status:** Locked; **SATISFIED as of Session 8B (2026-09-10), pending review of that
-  branch.** The surface exists: an allow-listed operator can see the queue, filter it, open a
+- **Status:** Locked; **SATISFIED.** Session 8B merged to `main` as `c4afee5` on 2026-09-10,
+  after a focused security review of the authority change and a full validation pass. The surface exists: an allow-listed operator can see the queue, filter it, open a
   case, read the immutable facts behind it, write an internal note, take the supported
   resolution action, and see a durable history — without a `psql` session. The **SLA remains
   deliberately absent** and nothing in the surface implies one; the queue is ordered oldest-open
