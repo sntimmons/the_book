@@ -2,7 +2,15 @@
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
 **Last edited by:** the **Session 8** branch (safety, trust and operator handling), which recorded
-**PD-082 … PD-086** — user blocking and its live-transaction exception, one reporting path that
+**PD-082 … PD-089**. The last three are **Founder rulings on the finished branch**, closing the
+three questions Session 8 filed rather than answered: **PD-087** (a block is never announced, but
+need not be undiscoverable — no code change), **PD-088** (report intake gets a bounded abuse
+control before broad beta — **not implemented**), and **PD-089** (a blocked person disappears from
+ordinary discovery and community surfaces — **not implemented**, and explicitly not Session 8B).
+The same rulings amended **PD-068** to **PARTIALLY SATISFIED**: the queue's backend exists and its
+operator SURFACE does not, and a backend with no surface does not satisfy that decision.
+
+Session 8's own five were **PD-082 … PD-086** — user blocking and its live-transaction exception, one reporting path that
 opens an operator case, provider eligibility gating writes but never cleanup, the operator Review
 Queue and its narrow authority, and the de-approved provider's real appeal route. **PD-086 closes
 the Session 8 appeal route PD-081 recorded as owed**, and PD-085 closes the queue PD-068 and PD-072
@@ -990,8 +998,18 @@ as locked decisions.
   refuses participants, unrelated users and `anon` at each layer independently. The Review Queue
   and the SLA silence are **requirements recorded here, not code**: nothing in this repository
   implements either, and this entry is the reason the first is not an omission.
-- **Status:** Locked; **authority implemented**, operator surface **required pre-beta and not
-  built**, SLA **deliberately absent**
+- **Status:** Locked; **PARTIALLY SATISFIED — do not mark complete.** Founder ruling,
+  Session 8 final PM rulings, 2026-09-09.
+  - **Authority: implemented.** `is_operator()`, the `service_role`-only adjudication and case
+    RPCs, and the four independent refusal layers all exist and are asserted.
+  - **The queue's BACKEND: implemented** (Session 8, PD-085) — `operator_cases`,
+    `operator_case_events`, intake triggers for all three sources, and the operator RPCs.
+  - **The operator SURFACE: NOT BUILT.** There is no usable operator UI, and the RPCs are
+    reachable only as `service_role`. **A backend queue with no surface does not satisfy this
+    decision**, because the requirement was that an authorized operator can actually work a case
+    — which today requires a psql session. This entry stays PARTIALLY SATISFIED until an
+    authorized operator surface exists (**Session 8B**).
+  - **SLA: deliberately absent**, and unaffected by any of the above.
 
 ---
 
@@ -1625,6 +1643,93 @@ as locked decisions.
   - Appealing grants nothing: **no participant path can restore eligibility.**
 - **Evidence.** `20261048000000`, `20261050000000`; `lib/safety.ts`, `app/(tabs)/business/index.tsx`.
 - **Status:** Locked; **implemented**
+
+---
+
+### PD-087 — A block is never announced; it does not have to be undiscoverable
+- **Decided:** 2026-09-09
+- **Decision.** Blocking **must not be explicitly announced** to the blocked person. It does
+  **not** need to be perfectly non-determinable. **Shadow-ban complexity must not be built merely
+  to prevent inference**, and the existing live-transaction exceptions are preserved unchanged.
+- **Why this needed deciding.** Session 8 closed the two routes that let a caller ask about a
+  **stranger** — the `/rpc/`-callable predicates (`20261055000000`) and a conversation gate that
+  read identity from `NEW` (`20261058000000`). What remained was narrower and structural: a person
+  acting on their **own** relationship can still infer a block from a distinct SQLSTATE, because a
+  blocked booking raises `PT427` where an unblocked one succeeds. Closing that gap does not mean
+  writing better code — it means **accepting the write, showing success, and discarding it**,
+  which `20261046000000` rejected in writing on the grounds that a product which lies to one user
+  to protect another has chosen to lie to a user.
+- **What this settles.** The first reading is correct: **PD-082 is a rule about SURFACES.** No
+  screen, message, error string or absence of one may name a block or reveal who made it, and
+  every refusal stays worded identically in both directions. Inference from an error code by
+  someone deliberately probing the API is **out of scope and will not be engineered against**.
+- **What it does NOT license.** It is not permission to relax any surface. It is not permission to
+  narrow the live-transaction exception, which is what keeps a block from stranding two people
+  inside an obligation neither can finish.
+- **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-073**.
+- **Status:** Locked; **satisfied by current behaviour** — no code change required.
+
+---
+
+### PD-088 — Report intake is bounded, because a report now creates real operator work
+- **Decided:** 2026-09-09
+- **Decision.** Report creation gets **rate limiting and duplicate protection before broad beta**.
+  The bound must be **an abuse control, never a barrier to legitimate safety reporting**, and its
+  exact limits and rationale must be written down.
+- **Why.** Before Session 8 a report was an inert row. Now every `reports` INSERT opens an
+  `operator_cases` row through a trigger, so filing a report **creates work in the queue PD-068
+  makes a pre-beta requirement**. Two bounds that exist elsewhere do not exist here: messaging is
+  limited to 30/min, and appeals and barter reviews are idempotent per subject — reporting is
+  neither, so N reports produce N live cases from one ordinary account.
+- **The limits, recorded here so they are decided rather than discovered.** These are the proposed
+  numbers; **none is implemented yet.**
+  - **Duplicate protection (the primary control).** At most **one OPEN case per
+    (reporter, target) pair**. A second report about the same person while the first is unresolved
+    **appends to the existing case** rather than opening another. This is the control that
+    actually protects the queue, and it costs a legitimate reporter nothing — reporting the same
+    person twice is not a second problem, and their words are still recorded.
+  - **Rate limit (the backstop).** **5 reports per hour** and **20 per day** per reporter, across
+    all targets, enforced server-side through the existing `rate-limit` seam.
+  - **Why these numbers.** A person in a genuinely bad situation reports one or two people, not
+    six an hour. Twenty a day is far beyond any honest use and far below what makes flooding
+    worthwhile. **The limits are deliberately loose**: the cost of refusing a real safety report
+    is not comparable to the cost of an operator reading a few junk ones, so when in doubt the
+    bound gives way.
+  - **What is NOT added.** **No standing requirement.** A reporter need not have transacted with
+    the person they report — a bystander who sees something in the community feed must be able to
+    say so, and requiring a prior booking would silence exactly the reports with no other route in.
+  - **What a refused report must do.** Say the limit was reached in plain words, keep the text the
+    person wrote, and never discard it silently.
+- **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-074**.
+- **Status:** Locked; **NOT IMPLEMENTED.** Required before broad beta.
+
+---
+
+### PD-089 — A blocked person disappears from your ordinary surfaces
+- **Decided:** 2026-09-09
+- **Decision.** Blocked users **disappear from each other's normal discovery, content and
+  community surfaces**. Their provider cards, posts and reels are **not** surfaced in ordinary
+  feeds or search where the block relationship applies. **Only the narrow access required for
+  existing booking or barter history, logistics, cancellation, completion or review is
+  preserved.**
+- **Why.** Session 8 stopped at CONTACT: a block prevented messages, booking requests and barter
+  responses, but neither the feed nor the barter board filtered the blocked person's content. So a
+  blocker kept seeing them, could still tap Respond, and got a refusal whose copy — necessarily
+  saying nothing about a block — pointed them at their **own** eligibility, which for them was a
+  false lead about themselves.
+- **The line this draws.** It is the difference between *"you cannot reach me"* and *"you do not
+  exist to me"*, and the ruling chooses the second **for ordinary surfaces only**. The exception
+  is not a courtesy: two people inside a live obligation must still see each other's names, terms,
+  appointment and controls, or a block would strand a trade — the same principle as the
+  live-transaction messaging exception (PD-082), applied to visibility.
+- **Consequences to design for, not to decide here.** Discovery results become viewer-dependent
+  for the first time, which interacts with **PD-073**'s content-neutrality rule for the beta
+  lanes; the filter is **symmetric**, so it must not become a channel that tells the blocked
+  person anything; and it must not be implemented with a client-callable block predicate, which
+  `20261055000000` established as an oracle.
+- **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-075**.
+- **Status:** Locked; **NOT IMPLEMENTED.** Not in Session 8, and explicitly **not** Session 8B,
+  which is the operator surface only.
 
 ---
 

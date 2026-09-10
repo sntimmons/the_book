@@ -497,20 +497,34 @@ schema; the product rules around them do not. Each question below is separately 
 ### OQ-073 — Does PD-082 mean a block is never ANNOUNCED, or that it is never DETERMINABLE?
 - **Area:** Schema / data
 - **Why it matters:** PD-082 says a blocked person "is never told". Session 8 read that as a rule about SURFACES and enforced it there: every refusal message is identical in both directions, and `20261058000000` closed the two routes that let a caller ask about a **stranger** (the `/rpc/` predicates, and a conversation gate that read identity from `NEW`). What remains is narrower and structural: a blocked person acting on their **own** relationship can still infer the block from a **distinct SQLSTATE**. A booking INSERT naming a provider whose `is_approved` is publicly `true` returns `PT427` only when a block exists; a barter response returns `42501`. Both are ordinary writes the shipped client makes. **Making these indistinguishable is not a bug fix — it requires shadow-banning**, i.e. accepting the write, showing success, and discarding it, which `20261046000000:45-49` deliberately rejected on the grounds that a product which lies to one user to protect another has chosen to lie to a user. The two answers lead to genuinely different products, so this is recorded rather than decided. **(a)** PD-082 is a copy rule: no surface names a block, and a determined client can still infer one — accepted, and PD-082 is narrowed in writing. **(b)** PD-082 is an information rule: every block refusal must be indistinguishable from a plausible non-block refusal, which reopens shadow-banning. **This entry proposes neither, and Session 8 implemented neither.**
-- **Blocks:** nothing shipped — the surfaces already comply under reading (a).
-- **Status:** Open
+- **CLOSED 2026-09-09 by PD-087** (Founder ruling, Session 8 final PM rulings). **Reading (a).**
+  A block must never be explicitly ANNOUNCED; it does not need to be perfectly DETERMINABLE, and
+  shadow-ban complexity must not be built merely to prevent inference. The live-transaction
+  exceptions are preserved. No code change follows: the surfaces already comply, and the ruling
+  makes that compliance the standard rather than an interim position.
+- **Status:** CLOSED — resolved by PD-087, 2026-09-09
 
 ### OQ-074 — What bounds report intake, now that a report creates operator work?
 - **Area:** Schema / data
 - **Why it matters:** Before Session 8 a report was an inert row. Now every `reports` INSERT opens an `operator_cases` row through a trigger, so filing a report **creates work in the queue PD-068 makes a pre-beta requirement**. Two bounds that exist elsewhere do not exist here. **(a) No rate limit:** messaging is limited to 30/min through the `rate-limit` Edge Function, and provider appeals and barter reviews are idempotent per subject — reporting is neither, so N reports produce N live cases. **(b) No standing requirement:** `reported_user_id`, `reported_provider_id` and `booking_id` are validated by foreign key alone, never against the reporter's relationship to them, so a report may name a booking or a person the reporter has never transacted with. Neither is exploitable for data access; both are queue-flooding and fabricated-moderation-record vectors from a single ordinary account. **What makes this a question rather than a defect:** a safety report is exactly the thing you least want to throttle, and a standing requirement would refuse a bystander reporting content they saw in the feed. The right bound depends on whether The Book wants reports from people outside a transaction at all. **This entry records the gap; Session 8 added no limit and no standing check.**
-- **Blocks:** nothing today; a bound should exist before the queue is staffed.
-- **Status:** Open
+- **CLOSED 2026-09-09 by PD-088** (Founder ruling, Session 8 final PM rulings). A bounded abuse
+  control is required **before broad beta**: one open case per (reporter, target) pair with
+  subsequent reports appended rather than opening new cases, plus a loose server-side rate limit
+  (5/hour, 20/day per reporter). **No standing requirement** — a bystander must be able to report
+  what they saw. PD-088 records the exact limits and why they are deliberately loose.
+- **Blocks:** broad beta. **NOT IMPLEMENTED** — no home assigned; explicitly not Session 8B.
+- **Status:** CLOSED — resolved by PD-088, 2026-09-09; implementation outstanding
 
 ### OQ-075 — Should someone you have blocked disappear from your feeds, or only be unable to reach you?
 - **Area:** Discovery
 - **Why it matters:** A block stops CONTACT — messages, booking requests, barter responses — and Session 8 deliberately stopped there. Neither the community feed nor the barter board filters out a blocked person's posts and offers, so a blocker keeps seeing them and can still tap Respond, which is refused. The refusal is terminal and correctly worded, but it points the reader at their **own** eligibility (the one thing true under both causes without naming a block), and for a blocker that is a false lead about themselves. Filtering the feed would fix it and is a bigger change than it looks: it is the difference between "you cannot reach me" and "you do not exist to me", it makes discovery results depend on viewer identity, and it interacts with PD-073's content-neutrality rule for the beta lanes. **This entry records the choice. Session 8 implemented neither, and the current behaviour is the smaller of the two.**
-- **Blocks:** nothing.
-- **Status:** Open
+- **CLOSED 2026-09-09 by PD-089** (Founder ruling, Session 8 final PM rulings). Blocked users
+  **disappear from each other's ordinary discovery, content and community surfaces**; only the
+  narrow access required for existing booking or barter history, logistics, cancellation,
+  completion or review is preserved. The larger of the two options, and the one Session 8 did not
+  implement.
+- **Blocks:** nothing shipped. **NOT IMPLEMENTED** — not Session 8, and explicitly not Session 8B.
+- **Status:** CLOSED — resolved by PD-089, 2026-09-09; implementation outstanding
 
 ---
 
