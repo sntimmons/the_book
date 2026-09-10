@@ -800,6 +800,54 @@ call the RPC (§ Standing constraints); and if it adds a write action to the neg
 **`busy`/re-entrancy guard must be centralized first** (§ Standing constraints, § Next → Session 7
 item 1).
 
+### Engineering task — a MECHANICAL check for stale ledger rows — **NOT STARTED**
+
+**Recorded 2026-09-10. Bounded investigation, not a documentation framework.**
+
+**The problem, stated as evidence rather than as a worry.** Three stale rows were found in the
+supersession table of [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) within two days:
+
+| Object | Ledger said | Actually was | What a copy-forward would have deleted |
+|---|---|---|---|
+| `public.my_barter_obligations` | `20261027000000` | `20261039000000` | PD-072's third route into Under Review |
+| `public.adjudicate_barter_obligation` | `20261023000000` | `20261039000000` | the same route, in the only writer of a terminal outcome |
+| `public.enforce_no_change_after_agreement` | `20260928000000` | `20260930000000` | the fail-closed proposal-id branch **and** `PT409` |
+
+The first two were found by a person reading carefully at the moment they were about to rewrite
+those bodies. **The third was found mechanically**, by a throwaway script, and nobody had been
+looking for it.
+
+**Why this is worth a task rather than more care.** That table is the repository's only defence
+against `create or replace function` silently deleting a rule, and it has already failed with real
+cost at least twice in this repo's history (`20261041000000`'s header, `20261042000000`'s header).
+Its correctness currently depends on every author remembering to update a row in a 1750-line
+document. **Three misses in two days is the measurement**, and the conclusion it supports is that
+discipline is not the right mechanism for this.
+
+**The check that found the third one, in full**, so this does not have to be re-derived: for every
+`create [or replace] function|view public.<name>` across `supabase/migrations/*.sql`, take the
+newest defining filename; find the ledger rows naming that object; and flag the object when no row
+mentions that file's timestamp. It ran in under a second over 118 objects and reported two
+candidates, one of which was a genuine defect. It needs no database.
+
+**What to decide when this is picked up** — none of it is decided here:
+- Whether it belongs in **CI** (a check that fails a PR) or in **B5B** (an assertion beside the
+  other schema pins). CI is the better fit: this is a repository-consistency property, not a
+  database one, and it needs no connection.
+- How to handle the ~73 defined objects **not tracked in the table at all**. Most are deliberately
+  untracked because they were defined once and never redefined; a check that demanded a row for
+  every object would be noise. A defensible rule: **an object defined more than once MUST have a
+  row**, since redefinition is precisely the hazard.
+- Whether to also verify against the LIVE database (`pg_get_functiondef`) rather than the migration
+  chain. Stronger, but needs a connection and would make the check unavailable to a contributor
+  without one.
+- Whether the same idea should cover **trigger firing order**, which failed the same way in Session
+  8: `20261055000000` asserted in a comment that its triggers sorted last, and they sorted first.
+
+**Explicitly out of scope:** rewriting the ledger's format, generating it from the schema, or
+building any general documentation-verification framework. The task is one check, for one property,
+that has now been wrong three times.
+
 ### Session 8C — safety hardening / enforcement cleanup — **NOT STARTED**
 
 **Founder assignment, 2026-09-10.** PD-088 and PD-089 were locked on the finished Session 8 branch
