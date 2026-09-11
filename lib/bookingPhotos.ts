@@ -66,11 +66,23 @@ export async function attachBookingPhotos(
   if (requested === 0) return { attached: 0, requested: 0, failed: false }
 
   // What is already attached — a retry must not re-upload what landed last time.
+  //
+  // MATCHED BY SOURCE FILE, NOT BY COUNT. The first version resumed at
+  // `i = already`, using a COUNT as an INDEX — which is only the same thing when
+  // the failures happen to be at the END of the list. Photos [A,B,C] where B
+  // failed gave `already = 2`, so the retry skipped B forever and re-uploaded C
+  // under a fresh path, producing A, C, C while telling the client everything
+  // landed. The storage path carries the source's identity so a retry can tell
+  // which file is which.
   const { data: existing } = await supabase
     .from('booking_reference_photos')
-    .select('id')
+    .select('storage_path')
     .eq('booking_id', bookingId)
-  const already = ((existing as { id: string }[] | null) ?? []).length
+  const rows = (existing as { storage_path: string }[] | null) ?? []
+  const already = rows.length
+  const done = new Set(
+    rows.map((r) => (r.storage_path ?? '').split('/').pop()?.split('.')[0] ?? ''),
+  )
   if (already >= MAX_BOOKING_PHOTOS) {
     return { attached: already, requested, failed: false }
   }
@@ -78,14 +90,18 @@ export async function attachBookingPhotos(
   let attached = already
   let failed = false
 
-  for (let i = already; i < localUris.length && attached < MAX_BOOKING_PHOTOS; i++) {
+  for (let i = 0; i < localUris.length && attached < MAX_BOOKING_PHOTOS; i++) {
+    if (done.has(String(i))) continue
     const uri = localUris[i]
     try {
       const ext = extensionFor(uri)
       // Folder is the uploader's id: the storage INSERT policy is folder-scoped,
       // and the booking id in the name keeps objects from one client's separate
       // requests distinguishable without a second lookup.
-      const path = `${userId}/${bookingId}/${Date.now()}_${i}.${ext}`
+      // DETERMINISTIC per source index, not timestamped: a retry must be able to
+      // recognise which of the client's files already landed. A fresh timestamp
+      // each attempt made every retry look like a new photo.
+      const path = `${userId}/${bookingId}/${i}.${ext}`
       const base64 = await new File(uri).base64()
       const { error: upErr } = await supabase.storage
         .from(BOOKING_PHOTO_BUCKET)

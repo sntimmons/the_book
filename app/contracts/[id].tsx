@@ -94,30 +94,52 @@ export default function SignedContractViewer() {
           {/* Parties + timestamp */}
           <View style={styles.metaCard}>
             <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Signed by</Text>
+              <Text style={styles.metaLabel}>Accepted by</Text>
               <Text style={styles.metaValue}>{detail.clientName}</Text>
             </View>
             <View style={styles.metaDivider} />
             <View style={styles.metaRow}>
-              <Text style={styles.metaLabel}>Signed at</Text>
+              <Text style={styles.metaLabel}>Accepted at</Text>
               <Text style={styles.metaValue}>{formatDateTime(sig?.signedAt ?? null) || '—'}</Text>
             </View>
           </View>
 
-          {/* Signature */}
-          <Text style={styles.sectionLabel}>SIGNATURE</Text>
-          {sig?.signatureUrl ? (
-            <Image source={{ uri: sig.signatureUrl }} style={styles.sigImage} resizeMode="contain" />
-          ) : (
-            <View style={styles.sigPlaceholder}>
-              <Feather name="edit-3" size={18} color="rgba(240,232,213,0.25)" />
-              <Text style={styles.sigPlaceholderText}>
-                Signature on file (image pending development build)
+          {/* WHAT THIS RECORD IS — and the word "signature" is not in it.
+              This section used to read "Signature on file (image pending
+              development build)". No image was ever on file: `signature_url` has
+              always been null, and the canvas that might one day have produced
+              one was removed from the flow in this same change — so the claim
+              went from usually false to permanently false.
+
+              What the record actually holds is stated instead, with its limits,
+              because this is the screen someone would open if they ever had to
+              rely on it. */}
+          <Text style={styles.sectionLabel}>WHAT WAS RECORDED</Text>
+          <View style={styles.sigPlaceholder}>
+            <Feather name="file-text" size={18} color="rgba(240,232,213,0.25)" />
+            <Text style={styles.sigPlaceholderText}>
+              {detail.contract?.currentVersionNo
+                ? `Accepted version ${detail.contract.currentVersionNo} of this agreement.`
+                : 'Accepted version of this agreement.'}
+              {' '}The Book records who accepted it, which version, and when. It is not a
+              witnessed or legally certified signature.
+            </Text>
+          </View>
+
+          {/* AUDITABILITY. If the provider has edited their agreement since,
+              both parties are told here rather than being left to compare two
+              documents and notice. The text below is still the ACCEPTED one. */}
+          {detail.providerChangedSince ? (
+            <View style={styles.changedNotice}>
+              <Feather name="alert-circle" size={15} color="#C8922A" />
+              <Text style={styles.changedNoticeText}>
+                This provider has changed their agreement since this was accepted. The
+                version below is the one that was accepted, and it has not changed.
               </Text>
             </View>
-          )}
+          ) : null}
 
-          {/* Agreement text */}
+          {/* Agreement text — THE ACCEPTED VERSION, from booking_contract_record. */}
           <Text style={styles.sectionLabel}>AGREEMENT</Text>
           <Text style={styles.bodyText}>{detail.contract?.body ?? 'Contract text unavailable.'}</Text>
         </ScrollView>
@@ -181,6 +203,24 @@ const styles = StyleSheet.create({
     height: 140,
     borderRadius: 14,
     backgroundColor: 'rgba(240,232,213,0.06)',
+  },
+  changedNotice: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: 'rgba(200,146,42,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.25)',
+    marginBottom: 16,
+  },
+  changedNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+    color: 'rgba(240,232,213,0.75)',
+    fontFamily: 'Manrope_400Regular',
   },
   sigPlaceholder: {
     minHeight: 100,

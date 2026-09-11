@@ -60,6 +60,11 @@ export interface SignedContractDetail {
   contract: Contract | null
   clientName: string
   providerName: string
+  /**
+   * True when the provider has edited their agreement SINCE this acceptance.
+   * Surfaced so neither party has to diff two documents to notice.
+   */
+  providerChangedSince: boolean
 }
 
 interface RawContractRow {
@@ -285,12 +290,37 @@ export async function fetchSignedContract(
   }
   const signature = mapSignature(data as RawSignatureRow)
 
-  const { data: contractData } = await supabase
-    .from('contracts')
-    .select(CONTRACT_COLUMNS)
-    .eq('id', signature.contractId)
-    .maybeSingle()
-  const contract = contractData ? mapContract(contractData as RawContractRow) : null
+  // THE ACCEPTED VERSION, NOT TODAY'S CONTRACT.
+  //
+  // This read `public.contracts` — the MUTABLE row — so a provider who edited
+  // their agreement had this screen show the NEW terms under the original
+  // acceptance timestamp and a "Signed" check. That is the exact defect
+  // 20261068000000 was written to fix, and it survived on the one screen in the
+  // product that displays a past acceptance.
+  //
+  // `booking_contract_record` returns what was actually accepted, to both
+  // parties, and reports whether the provider has changed their agreement since.
+  const { data: recordRows } = await supabase.rpc('booking_contract_record', {
+    p_booking_id: signature.bookingId,
+  })
+  const rec = ((recordRows as Record<string, unknown>[] | null) ?? [])[0] ?? null
+  const contract = rec
+    ? {
+        id: rec.contract_id as string,
+        providerId: '',
+        title: (rec.title as string) ?? 'Service Agreement',
+        body: (rec.body as string) ?? '',
+        contractType: (rec.contract_type as ContractType) ?? 'text',
+        pdfUrl: (rec.pdf_url as string | null) ?? null,
+        pdfFilename: (rec.pdf_filename as string | null) ?? null,
+        isActive: true,
+        createdAt: '',
+        updatedAt: null,
+        currentVersionId: (rec.contract_version_id as string | null) ?? null,
+        currentVersionNo: (rec.version_no as number | null) ?? null,
+      }
+    : null
+  const providerChangedSince = rec ? rec.provider_contract_changed_since === true : false
 
   let clientName = 'Client'
   if (signature.clientUserId) {
@@ -312,7 +342,7 @@ export async function fetchSignedContract(
     providerName = (provider as { display_name: string | null } | null)?.display_name || 'Provider'
   }
 
-  return { signature, contract, clientName, providerName }
+  return { signature, contract, clientName, providerName, providerChangedSince }
 }
 
 // ── PDF upload + viewing ────────────────────────────────────────────────────

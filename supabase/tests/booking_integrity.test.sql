@@ -259,3 +259,142 @@ begin
     public.provider_is_bookable(pid)::text);
 end $$;
 select pg_temp.act_service();
+
+-- ══ 6. THE CORRECTIONS THE SECURITY REVIEW OF THIS BRANCH FOUND ═══════════
+--
+-- All four were introduced by this branch, and two sat inside the requirement
+-- it is named for.
+
+-- 6a. THE "WHEN" IS THE SERVER'S. It was `new Date().toISOString()` from the
+-- phone — the one field in a record whose stated purpose is to say what was true
+-- at a moment that the client could choose. A backdated acceptance can be made
+-- to look older than the version it actually post-dates, which is exactly the
+-- comparison the record exists to support.
+do $$
+declare
+  cu uuid := current_setting('b5b.bi_c')::uuid;
+  pid uuid := current_setting('b5b.bi_pid')::uuid;
+  cid uuid := current_setting('b5b.bi_cid')::uuid;
+  v_bk uuid; v_when timestamptz; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, expires_at)
+  values (cu, pid, 'stamped', current_date + 11, 'pending', now(), now() + interval '71 hours')
+  returning id into v_bk;
+
+  perform pg_temp.act(cu);
+  insert into public.contract_signatures(contract_id, contract_version_id, booking_id,
+                                         client_user_id, signed_at, status)
+  values (cid, current_setting('b5b.bi_v1')::uuid, v_bk, cu,
+          now() - interval '30 days', 'signed');
+  select signed_at into v_when from public.contract_signatures where booking_id = v_bk;
+  perform pg_temp.chk('bookingintegrity',
+    'a client-supplied acceptance time does not survive', 'true',
+    (v_when > now() - interval '1 minute')::text);
+
+  begin
+    update public.contract_signatures set signed_at = now() - interval '5 days'
+     where booking_id = v_bk;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookingintegrity', 'and it cannot be changed afterwards',
+    '23514', v_code);
+  perform pg_temp.act_service();
+end $$;
+
+-- 6b. A DRAFT'S PHOTOS AND CONTRACT RECORD ARE NOT THE PROVIDER'S TO SEE.
+-- Photos upload BEFORE the request is sent, so a send refused by a block, a
+-- de-approval or a write failure leaves them on a draft that never went. The
+-- definer helper bypassed the `submitted_at is not null` rule the bookings
+-- policy already applies to providers: the TABLE said no and the BUCKET said yes.
+do $$
+declare
+  cu uuid := current_setting('b5b.bi_c')::uuid;
+  pu uuid := current_setting('b5b.bi_p')::uuid;
+  pid uuid := current_setting('b5b.bi_pid')::uuid;
+  v_draft uuid; v_path text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  delete from public.bookings where user_id = cu and provider_id = pid and submitted_at is null;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (cu, pid, 'never sent', current_date + 13) returning id into v_draft;
+  v_path := cu::text || '/' || v_draft::text || '/0.jpg';
+  insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
+  values (v_draft, v_path, cu);
+
+  -- The client still sees their own draft's attachments: they chose them.
+  perform pg_temp.act(cu);
+  perform pg_temp.chk('bookingintegrity',
+    'the client can still read photos on their own unsent draft', 'true',
+    public.can_read_booking_photo(v_path)::text);
+
+  -- The provider cannot, because the request was never sent to them.
+  perform pg_temp.act(pu);
+  perform pg_temp.chk('bookingintegrity',
+    'the provider cannot read photos on a draft that was never sent', 'false',
+    public.can_read_booking_photo(v_path)::text);
+  select count(*) into v_n from public.booking_contract_record(v_draft);
+  perform pg_temp.chk('bookingintegrity',
+    'nor its contract record', '0', v_n::text);
+  perform pg_temp.act_service();
+end $$;
+
+-- 6c. AN ACCEPTED AGREEMENT CANNOT BE DELETED OUT FROM UNDER THE CLIENT.
+-- Before this branch, a provider deleting their contract cascaded away every
+-- client's acceptance row. The version trigger started refusing it by accident,
+-- with a message naming the wrong object; now it is deliberate and says so.
+do $$
+declare
+  pu uuid := current_setting('b5b.bi_p')::uuid;
+  cid uuid := current_setting('b5b.bi_cid')::uuid;
+  pid uuid := current_setting('b5b.bi_pid')::uuid;
+  v_code text; v_msg text; v_spare uuid;
+begin
+  perform pg_temp.act(pu);
+  begin
+    delete from public.contracts where id = cid;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate; v_msg := sqlerrm;
+  end;
+  perform pg_temp.chk('bookingintegrity',
+    'a provider cannot delete an agreement a client has accepted', '23514', v_code);
+  perform pg_temp.chk('bookingintegrity', 'and the message says why', 'true',
+    (v_msg like '%accepted by a client%')::text);
+
+  -- An agreement nobody has accepted is still freely deletable: the rule
+  -- protects evidence, it does not trap providers.
+  --
+  -- A SECOND PROVIDER, because `contracts_provider_id_key` allows one contract
+  -- per provider — which is also why the refusal above matters so much: editing
+  -- is a provider's ONLY path once a client has accepted, and the error message
+  -- says exactly that.
+  perform pg_temp.act_service();
+  declare
+    v_su uuid := gen_random_uuid(); v_sp uuid;
+  begin
+    insert into auth.users(id) values (v_su);
+    insert into public.providers(user_id, display_name, username)
+      values (v_su, 'BI Spare', 'bis_'||substr(v_su::text,1,8)) returning id into v_sp;
+    insert into public.contracts(provider_id, user_id, title, body, contract_type)
+    values (v_sp, v_su, 'Unused', 'nobody accepted this', 'text') returning id into v_spare;
+    perform pg_temp.act(v_su);
+  end;
+  begin
+    delete from public.contracts where id = v_spare;
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookingintegrity',
+    'but an agreement nobody accepted can still be deleted', 'OK', v_code);
+  perform pg_temp.act_service();
+end $$;
+
+-- 6d. The service_role escape that 20261069000000 removed without saying so.
+select pg_temp.chk('bookingintegrity',
+  'the signature immutability trigger keeps its service_role escape', '1',
+  (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'enforce_signature_target_immutable'
+      and p.prosrc like '%service_role%'));
+select pg_temp.act_service();

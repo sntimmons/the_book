@@ -42,7 +42,11 @@ describe('attaching reference photos', () => {
     // caps at three, so a retry that re-sent everything would be refused
     // outright and the client would lose the photos that had not landed yet.
     ;(supabase.from as jest.Mock).mockReturnValue(
-      chainSelect([{ id: 'a' }, { id: 'b' }, { id: 'c' }]),
+      chainSelect([
+        { storage_path: 'u1/b1/0.jpg' },
+        { storage_path: 'u1/b1/1.jpg' },
+        { storage_path: 'u1/b1/2.jpg' },
+      ]),
     )
     const r = await attachBookingPhotos('b1', 'u1', ['x', 'y', 'z'])
     expect(r.attached).toBe(MAX_BOOKING_PHOTOS)
@@ -77,5 +81,33 @@ describe('what the client is told when photos do not attach', () => {
     const body = PHOTO_PARTIAL_COPY.body.toLowerCase()
     expect(body).toContain('can see the ones that did')
     expect(body).toContain('message')
+  })
+})
+
+describe('a retry resumes the file that failed, not the next index', () => {
+  it('uploads the MIDDLE failure and does not duplicate the one that landed', async () => {
+    // The bug this replaced: the resume point was the row COUNT used as an
+    // INDEX, which is only correct when failures are a suffix. Photos [A,B,C]
+    // with B failing gave `already = 2`, so the retry skipped B forever and
+    // re-uploaded C under a fresh timestamped path — producing A, C, C while
+    // `attached === requested` suppressed the partial-attach warning. The client
+    // was told everything landed, the provider saw a duplicate, and the photo
+    // that actually failed was unreachable.
+    //
+    // Paths are now deterministic per source index, so a retry can tell which
+    // of the client's files is already there.
+    ;(supabase.from as jest.Mock).mockReturnValue(
+      chainSelect([{ storage_path: 'u1/b1/0.jpg' }, { storage_path: 'u1/b1/2.jpg' }]),
+    )
+    const upload = jest.fn((_path: string, _body: unknown, _opts?: unknown) =>
+      Promise.resolve({ error: null }),
+    )
+    ;(supabase.storage.from as jest.Mock).mockReturnValue({ upload })
+
+    await attachBookingPhotos('b1', 'u1', ['A', 'B', 'C'])
+
+    // Exactly one upload, and it is index 1 — the one that failed before.
+    expect(upload).toHaveBeenCalledTimes(1)
+    expect(upload.mock.calls[0]?.[0]).toBe('u1/b1/1.jpg')
   })
 })
