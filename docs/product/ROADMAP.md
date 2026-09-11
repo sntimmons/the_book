@@ -905,8 +905,44 @@ step and the invented "3x more profile views" claim are all gone.
 **best available historical record and not proof of exact original wording**; erasure and retention
 for booking photos, contract evidence and booking records stay open (**OQ-077**).
 
-### Sessions 9–10 — Reviews Phase 2 / reputation
+### Reviews Phase 2 — **MERGED** (`a253c3f`, PR #81, 2026-09-11)
+
+Eleven migrations, `20261077000000` … `20261087000000`, and four locked decisions.
+
+**PD-091 — reputation counts client relationships, not receipts.** The rating is the mean of the
+latest revealed review from each **distinct client**; every review is still stored, shown and
+counted, and `rating_client_count` is published and labelled wherever the rating appears. Twenty
+reviews from one loyal client are one voice.
+
+**PD-092 — "latest" is the latest SERVICE** (`bookings.completed_at`), not the latest receipt, so a
+late review of an old service cannot replace a newer one. Closes **OQ-078**. The rule is written
+**once**, in `provider_reputation_canonical()`; a B5B assertion pins that exactly one function in
+the schema contains it, and a Jest guard pins the TypeScript half after the profile was found
+rendering a second, receipts-based average beside the canonical one.
+
+**PD-093 — filing a dispute is not a reputation lever.** Reveal latches at `under_review_at`: a
+published review stays published and keeps counting, an unpublished one stays held. This
+**reverses** `20261079000000`, which had made the rating drop the moment a hold opened — an
+unreviewed veto over the other side's public record, against PD-068.
+
+**PD-094 — a public rating nobody can pin.** Closes **OQ-079**, and found a larger pin than the one
+filed: `providers.rating` was written by no recompute yet ranked and filtered provider **search**.
+It is now a derived mirror, and an invariant refuses to store any reputation value the canonical
+query does not produce — with no role carve-out.
+
+**Filed, not settled: OQ-080.** `service_role` can still move a rating by mutating review ROWS.
+Unreachable by any client role; an append-only guard would sit on top of **OQ-077**, which has not
+decided what deletion does to transaction evidence.
+
+**Validation at merge:** B5B **1791/1791**, Jest **949/949**, concurrency **224/224**, typecheck
+clean, lint 0 errors, migrations local == non-production with no drift, production untouched.
+
+### Sessions 9–10 — Reviews, remaining
 Structured signals (PD-028) and the conduct/reliability layer that `no_show` feeds (PD-027).
+**Phase 2 above did NOT build either** — it closed the anti-gaming and display-truth work. What
+remains is the structured-signal vocabulary and the provider→client conduct reputation, which
+Phase 0 built the tables and reveal rules for (`client_reviews`, `client_review_revealed`) and
+which no read path exposes yet.
 
 **Phase 0 (`20260902000000`) already established more than the name suggests**, and a Phase 2
 plan should start from it rather than from this line: a **7-day blind window** from the

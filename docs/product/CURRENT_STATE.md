@@ -1,5 +1,29 @@
 # Current State — what is true on `main` today
 
+**Reviews Phase 2 merged 2026-09-11 (`a253c3f`, PR #81).** A provider's public rating is the mean
+of the **latest revealed review from each distinct client** (PD-091), where *latest* is the review
+tied to the **most recently COMPLETED service** — `bookings.completed_at`, not review submission
+time (**PD-092**). Every review is still stored, still displayed and still counted; a second
+published number, `rating_client_count`, says how many clients the rating rests on and is labelled
+beside the rating on the profile, the search card, Top Rated and the provider's own Me tab.
+
+**Two rules that are easy to get backwards, and both are now enforced:**
+- **Filing a dispute changes nothing about a published review** (**PD-093**). Reveal latches at the
+  instant a hold opens: a review not yet public stays held, a review already public stays public
+  and keeps counting. A hold still blocks a *new* review on that booking. Only an operator
+  resolution could change that, and **no resolution rule does so today** — support must not imply a
+  review can be taken down.
+- **There is no manual rating** (**PD-094**, closing OQ-079). The rating is derived from eligible
+  review data and the database refuses to store a value it cannot reproduce, for every role
+  including `service_role`. No operator rating-editing surface exists and none is to be built.
+  `providers.rating` — which no recompute had ever written, yet ranked and filtered provider
+  **search** — is now a derived mirror of `average_rating`.
+
+**What travels with it:** **OQ-080** is open — `service_role` can still move a rating by mutating
+the review ROWS the canonical query reads, one layer behind PD-094, unreachable by any client role
+and not decided here. The rule counts distinct client *accounts*; many accounts each leaving one
+review is still unbounded, and bounding it needs identity the beta does not have.
+
 **Booking & Onboarding Integrity merged 2026-09-11 (`2da313a`).** Contract acceptance is a durable
 record bound to an immutable version; reference photos reach the provider and settle when the
 request is sent; a provider presented as bookable is bookable. **Two limits travel with it:**
@@ -9,7 +33,16 @@ records is **deliberately unresolved** (OQ-077) — support must not promise del
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `e5b9125` (2026-09-10) — squash-merge of **PR #76**, Session 8
+**Reconciled against:** `main` @ `a253c3f` (2026-09-11) — squash-merge of **PR #81**, Reviews
+Phase 2. The migration chain is now **126** files, `20260829000000` … `20261087000000`, applied to
+non-production `wcoyjeklscuqsumpjpfo` with local and remote in step and **no drift**. Production
+`kxregomuawwcqvisuhtr` remains **untouched and never reconciled** — see
+[MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) § Production application policy.
+
+**The header block below this line predates that merge** and is retained because its content is
+still true; only the anchor moved.
+
+**Previously reconciled against:** `main` @ `e5b9125` (2026-09-10) — squash-merge of **PR #76**, Session 8
 (safety, trust and operator handling). The anchor moves because this document's own asserted facts
 moved, and by more than one merge: the migration chain went from the **75** files this document
 last counted to **97**; **user blocking**, **one client reporting path into `public.reports`**,

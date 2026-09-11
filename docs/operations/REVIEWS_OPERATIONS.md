@@ -1,7 +1,7 @@
 # Reviews — Operations and support note
 
-**Status:** Authoritative for the branch `feat/reviews-phase-2`. **Not merged.**
-**Anchor:** `main` @ `2da313a` plus that branch.
+**Status:** Authoritative. Describes `main`.
+**Anchor:** `main` @ `a253c3f` (2026-09-11) — squash-merge of PR #81, Reviews Phase 2.
 
 Written for whoever answers a user asking *"where is my review?"* or *"why did
 my rating not move?"*. Limits sit beside behaviour, because a support note that
