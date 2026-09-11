@@ -226,6 +226,14 @@ if (row.total === 0) {
   process.exit(1)
 }
 if (row.failed > 0) {
+  // REPEATED LAST, ON PURPOSE. The full report is ~1800 lines and CI log viewers
+  // truncate a long step — which has already happened here, hiding every failing
+  // assertion behind whichever suites ran last. These lines are the ones somebody
+  // actually needs, so they go where truncation cannot reach them.
+  if (row.failures) {
+    console.error('\nFAILING ASSERTIONS:')
+    console.error(row.failures)
+  }
   console.error(`\nB5B FAILED: ${row.failed} DB security assertion(s) failed.`)
   process.exit(1)
 }
