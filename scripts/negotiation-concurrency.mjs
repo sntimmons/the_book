@@ -2010,8 +2010,23 @@ async function raceBlockVsVisibility() {
     runTimedUser(ids.ou, block),
     runTimedUser(ids.ru, read),
   ])
-  chk('a block and a feed read genuinely overlapped',
-    'true', String(intervalsOverlap(a.timing, b.timing)))
+  // NO OVERLAP ASSERTION, AND THAT IS THE POINT OF THIS SCENARIO.
+  //
+  // There is no contention point to force. A feed SELECT does not block on a
+  // concurrent INSERT into `user_blocks` under READ COMMITTED, so both finish in
+  // single-digit milliseconds — measured at 4ms and 8ms, ending 1ms apart — and
+  // whether their windows happen to touch is decided by scheduler jitter rather
+  // than by anything about the product.
+  //
+  // Asserting overlap here would be asserting something unachievable, which is a
+  // test that fails at random and teaches everyone to re-run. Three other races
+  // in this file carry the same note for the same reason; **this one was written
+  // with the assertion anyway and failed on its second run**, which is a fair
+  // measure of how easy the mistake is to repeat.
+  //
+  // What IS worth asserting is below: neither side deadlocks, BOTH complete —
+  // a feed read must never wait on someone else blocking you — and the end state
+  // is correct from both directions afterwards.
   chk('neither the block nor the read deadlocked', 'true',
     String(a.timing?.code !== '40P01' && b.timing?.code !== '40P01'))
   chk('both complete — a feed read never blocks on someone else blocking you',

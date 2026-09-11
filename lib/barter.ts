@@ -90,7 +90,7 @@ const OFFER_COLUMNS =
 // how many providers have expressed interest.
 export async function fetchBarterFeed(): Promise<BarterOfferWithProvider[]> {
   const { data, error } = await supabase
-    .from('barter_offers')
+    .from('barter_offers_visible')
     .select(OFFER_COLUMNS)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
@@ -222,7 +222,10 @@ export async function fetchOfferInterests(offerId: string): Promise<BarterIntere
   // without this fact the screen would offer End negotiation on a trade the server refuses to
   // release.
   const [infoMap, activityRes] = await Promise.all([
-    fetchProviderInfoMap(rows.map((r) => r.interested_provider_id)),
+    // TRANSACTION scope: a response to your own offer is a live negotiation,
+    // and PD-089 keeps names on those. Filtering here would leave a responder
+    // you can still accept or decline rendered as a nameless "Provider".
+    fetchProviderInfoMap(rows.map((r) => r.interested_provider_id), 'transaction'),
     supabase
       .from('my_trade_activity')
       .select('interest_id, agreement_id, i_cancelled, they_cancelled')
@@ -390,7 +393,11 @@ export async function fetchTradeActivity(): Promise<{
           their_terminal_outcome: TerminalOutcome | null
         }[]
       | null) ?? []
-  const infoMap = await fetchProviderInfoMap(rows.map((r) => r.counterparty_provider_id))
+  // TRANSACTION scope: these are live agreements with unresolved obligations, and
+  // PD-089 preserves the names on them. A blocked counterparty stays named here.
+  const infoMap = await fetchProviderInfoMap(
+    rows.map((r) => r.counterparty_provider_id), 'transaction',
+  )
   return {
     ok: true,
     rows: rows.map((r) => ({

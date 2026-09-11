@@ -541,6 +541,12 @@ schema; the product rules around them do not. Each question below is separately 
 - **Blocks:** nothing shipped. **NOT IMPLEMENTED** — **assigned to Session 8C** (2026-09-10); not Session 8, and explicitly not Session 8B.
 - **Status:** CLOSED — resolved by PD-089, 2026-09-09; implementation outstanding
 
+### OQ-076 — PD-089's filtered views are diffable against their base tables. Is that the inference PD-087 permits, or the oracle it forbids?
+- **Area:** Schema / data
+- **Why it matters:** PD-089 was implemented as `SECURITY DEFINER` views returning already-filtered content, chosen by Founder ruling over an RLS policy precisely because the policy design would have required re-granting the per-target block predicate `20261055000000` removed. The ruling rested on a stated premise: *"there is no question to ask."* **That premise does not hold as shipped.** Each `_visible` view differs from its base table by the block predicate and nothing else, and the base table is readable by the same caller — `providers_public_read` is `USING (true)`. So two requests (`providers?id=eq.X` and `providers_visible?id=eq.X`) answer *"is there a block between me and X"* deterministically; combined with `iBlocked()`, which shows only the caller's OWN blocks, an absent row there means **they blocked me** — the one fact PD-082 says a person may never be told. **PD-087 excuses "inference from an error code by someone deliberately probing the API"; a clean set-difference is a stronger thing than an error code**, which is why this is filed rather than assumed settled. **Closing it is not a wording change.** Making the diff indistinguishable requires the base tables to stop being readable for the same rows — narrowing `providers_public_read` and routing every remaining read through a view — which touches bookings, threads, reviews and contracts and is materially larger than PD-089's scope. The alternatives: **(a)** accept it, and correct the "no question to ask" wording in PD-089, `20261064000000` and the ledger so the architecture is described truthfully; **(b)** require a second row-eliminating predicate in the views, which weakens but does not remove the signal; **(c)** narrow the base-table read policies, which is a separate slice. **This entry proposes none of them.**
+- **Blocks:** nothing shipped. The views work; the claim made about them does not.
+- **Status:** Open
+
 ---
 
 ## Closed — index

@@ -176,7 +176,8 @@ select pg_temp.chk('blockedsurfaces', 'all three views are definer, which is wha
   '0',
   (select count(*)::text from pg_class c
     where c.relname in ('providers_visible','community_posts_visible',
-                        'community_replies_visible','posts_visible','post_comments_visible')
+                        'community_replies_visible','posts_visible','post_comments_visible',
+                        'barter_offers_visible')
       and c.relkind = 'v'
       and coalesce(array_to_string(c.reloptions, ','), '') like '%security_invoker=true%'));
 -- A simple view over one table is auto-updatable, which would make each of these
@@ -210,10 +211,133 @@ select pg_temp.chk('blockedsurfaces', 'the provider view publishes no private co
       and column_name in ('phone', 'email', 'stripe_account_id', 'is_admin',
                           'onboarding_step', 'push_token')));
 
-select pg_temp.chk('blockedsurfaces', 'all five PD-089 views exist', '5',
+select pg_temp.chk('blockedsurfaces', 'all six PD-089 views exist', '6',
   (select count(*)::text from pg_class c where c.relkind = 'v'
      and c.relname in ('providers_visible','community_posts_visible',
-                       'community_replies_visible','posts_visible','post_comments_visible')));
+                       'community_replies_visible','posts_visible','post_comments_visible',
+                       'barter_offers_visible')));
+
+-- ══ 3b. THE ONE PROPERTY THAT CATCHES THIS WHOLE CLASS ════════════════════
+--
+-- `security_invoker = false` drops the base table's RLS as well as its column
+-- grants. The first version of these views paid the COLUMN half of that bill and
+-- not the POLICY half, so three views silently discarded their base table's read
+-- predicate — and two of them were granted to `anon`, which made the
+-- provider-only community hub world-readable to anyone holding the public key.
+--
+-- Every assertion in this file was about BLOCKS, so none of them could see it.
+-- The property below is not about blocks at all:
+--
+--     for every `_visible` view and every role, the rows it returns must be a
+--     SUBSET of the rows that role could read from the base table.
+--
+-- One check, and it catches a dropped policy, a widened grant and a future view
+-- that forgets both.
+do $$
+declare
+  nonprov uuid := gen_random_uuid();
+  v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (nonprov);
+  insert into public.clients(id, name) values (nonprov, 'Not A Provider')
+    on conflict (id) do nothing;
+
+  -- THE COMMUNITY HUB IS PROVIDER-ONLY, and the view must say so too.
+  perform pg_temp.act(nonprov);
+  select count(*) into v_n from public.community_posts_visible;
+  perform pg_temp.chk('blockedsurfaces',
+    'a non-provider reads NOTHING from the community post view', '0', v_n::text);
+  select count(*) into v_n from public.community_replies_visible;
+  perform pg_temp.chk('blockedsurfaces', 'nor from the reply view', '0', v_n::text);
+  select count(*) into v_n from public.barter_offers_visible;
+  perform pg_temp.chk('blockedsurfaces', 'nor from the barter board view', '0', v_n::text);
+
+  -- AND NEITHER DOES ANON. The gate above already refuses them; the grant is
+  -- removed as well, because two refusals are the standard here and the first
+  -- version of these views is why.
+  perform pg_temp.act(null, 'anon');
+  begin
+    select count(*) into v_n from public.community_posts_visible;
+  exception when others then v_n := -1;
+  end;
+  perform pg_temp.chk('blockedsurfaces',
+    'anon cannot read the provider-only hub through the view', 'true',
+    (v_n <= 0)::text);
+  perform pg_temp.act_service();
+end $$;
+
+select pg_temp.chk('blockedsurfaces', 'no provider-only view is granted to anon', 'false',
+  (has_table_privilege('anon','public.community_posts_visible','SELECT')
+   or has_table_privilege('anon','public.community_replies_visible','SELECT')
+   or has_table_privilege('anon','public.barter_offers_visible','SELECT'))::text);
+
+-- `posts_public_read` is `USING (is_active = true)`, and the view must carry it.
+-- Deactivated media was readable through `posts_visible` until 20261066000000.
+do $$
+declare
+  pa uuid := current_setting('b5c.pa')::uuid;
+  v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into public.posts(provider_id, media_url, media_type, is_active, is_demo)
+  values (pa, 'https://example.invalid/hidden.mp4', 'video', false, false);
+  perform pg_temp.act(null, 'anon');
+  select count(*) into v_n from public.posts_visible where is_active = false;
+  perform pg_temp.chk('blockedsurfaces',
+    'a deactivated post is not readable through the media view', '0', v_n::text);
+  perform pg_temp.act_service();
+end $$;
+
+-- EVERY view refuses a write, not just the two that were checked first.
+do $$
+declare
+  au uuid := current_setting('b5c.a')::uuid;
+  v_bad integer := 0;
+  v_rel text;
+begin
+  perform pg_temp.act(au);
+  foreach v_rel in array array['providers_visible','community_posts_visible',
+                               'community_replies_visible','posts_visible',
+                               'post_comments_visible','barter_offers_visible'] loop
+    begin
+      execute format('delete from public.%I where false', v_rel);
+      v_bad := v_bad + 1;   -- a DELETE that is PERMITTED is the failure
+    exception when others then null;
+    end;
+  end loop;
+  perform pg_temp.chk('blockedsurfaces', 'not one of the six views is a write path',
+    '0', v_bad::text);
+  perform pg_temp.act_service();
+end $$;
+
+-- The private-column check, pointed at the columns 20261030000000 ACTUALLY
+-- withholds. The first version listed `phone`, `email`, `push_token` and
+-- `onboarding_step` — of which only one is even a `providers` column — so it
+-- passed for the wrong reason.
+select pg_temp.chk('blockedsurfaces', 'the provider view publishes no withheld column', '0',
+  (select count(*)::text from information_schema.columns
+    where table_schema = 'public' and table_name = 'providers_visible'
+      and column_name in ('verification_notes','verification_status','identity_verified',
+                          'business_verified','no_show_count','late_count','payment_mode',
+                          'stripe_account_id','issue_window_hours')));
+-- And it publishes every column a shipped surface filters or orders on. A column
+-- that is GRANTED on the table but ABSENT from the view is a query that fails
+-- closed — which is how the "Mobile only" filter died silently.
+select pg_temp.chk('blockedsurfaces', 'the provider view carries the columns the app filters on',
+  '0',
+  (select count(*)::text from (values ('is_mobile'),('completed_count'),('is_approved'),
+                                      ('average_rating'),('is_featured'),('neighborhood')) as w(c)
+    where not exists (select 1 from information_schema.columns
+                       where table_schema='public' and table_name='providers_visible'
+                         and column_name = w.c)));
+select pg_temp.chk('blockedsurfaces', 'and the media view carries the ones content search uses',
+  '0',
+  (select count(*)::text from (values ('thumbnail_url'),('service_type'),('caption'),
+                                      ('media_type')) as w(c)
+    where not exists (select 1 from information_schema.columns
+                       where table_schema='public' and table_name='posts_visible'
+                         and column_name = w.c)));
 
 -- ══ 4. WHAT THE FILTER MUST NOT TAKE AWAY ═════════════════════════════════
 --

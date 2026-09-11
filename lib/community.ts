@@ -107,15 +107,32 @@ export function timeAgo(iso: string): string {
 
 // Batch-fetch provider display info (name, photo, category name) keyed by
 // providers.id, resolving category_id -> category name in a second query.
+/**
+ * PD-089 — WHICH TABLE THIS READS IS A PRODUCT DECISION, NOT A DETAIL.
+ *
+ * `scope: 'feed'` filters blocked parties out; `scope: 'transaction'` does not.
+ * The helper is shared by the community feed AND by barter Trade Activity, and
+ * pointing all of it at the filtered view broke the live-transaction exception:
+ * a counterparty on a CONFIRMED agreement with an unresolved obligation rendered
+ * as "Provider" with no photo, because the view returned no row for them.
+ *
+ * PD-089 preserves exactly that access — two people inside a live obligation
+ * must still see each other's names, terms and controls, or the block strands
+ * the trade. It is also the same failure in miniature as the block oracle: a
+ * counterparty who is nameless ONLY when blocked is itself a signal.
+ *
+ * Default is `'feed'`, so a new caller is filtered unless it says otherwise.
+ */
 export async function fetchProviderInfoMap(
   providerIds: string[],
+  scope: 'feed' | 'transaction' = 'feed',
 ): Promise<Map<string, CommunityProviderInfo>> {
   const map = new Map<string, CommunityProviderInfo>()
   const ids = Array.from(new Set(providerIds.filter(Boolean)))
   if (ids.length === 0) return map
 
   const { data: provs } = await supabase
-    .from('providers_visible')
+    .from(scope === 'feed' ? 'providers_visible' : 'providers')
     .select('id, display_name, profile_photo_url, category_id, neighborhood')
     .in('id', ids)
 

@@ -144,7 +144,9 @@ export default function CareHub() {
       ...upRows.map((r) => r.provider_id),
       ...compRows.map((r) => r.provider_id),
     ]
-    const infoMap = await fetchProviderInfoMap(providerIds)
+    // TRANSACTION scope: these are providers the client SAVED and has history
+    // with. PD-089 filters ordinary discovery, not your own saved list.
+    const infoMap = await fetchProviderInfoMap(providerIds, 'transaction')
 
     setReminders(
       remRows.map((r) => ({
