@@ -503,15 +503,106 @@ begin
   select p.prosrc into v_src from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public' and p.proname = 'recompute_provider_rating_for';
+  -- PIN THE PROPERTY, NOT THE PHRASE. This first asserted the literal `for
+  -- update`, which would have FAILED the moment 20261081000000 replaced it with
+  -- the safer `for no key update`. A pin that reports a fix as a regression is
+  -- worse than no pin, because the reflex is to relax it. What matters is that a
+  -- row lock is taken, that it is taken BEFORE the counting, and that it is not
+  -- the one mode that deadlocks against the foreign key's own key share.
   perform pg_temp.chk('reviews2',
-    'the recompute still locks the provider row before counting', 'true',
-    (v_src ~* 'for\s+update')::text);
+    'the recompute still takes a row lock on the provider', 'true',
+    (v_src ~* 'for\s+(no\s+key\s+)?update\s*;')::text);
+  perform pg_temp.chk('reviews2',
+    'and takes it BEFORE the counting update, which is the whole fix', 'true',
+    (strpos(v_src, 'for no key update') > 0
+     and strpos(v_src, 'for no key update')
+         < strpos(v_src, 'update public.providers'))::text);
+  perform pg_temp.chk('reviews2',
+    'and no harder than it needs to be — bare FOR UPDATE deadlocks the FK', 'false',
+    (v_src ~* 'for\s+update\s*;')::text);
   perform pg_temp.chk('reviews2',
     'and it still counts only REVEALED reviews', 'true',
     (v_src like '%provider_review_revealed%')::text);
   perform pg_temp.chk('reviews2',
     'and the average is still latest-per-distinct-client (PD-091)', 'true',
     (v_src ~* 'distinct\s+on\s*\(\s*pr\.reviewer_user_id')::text);
+end $$;
+
+-- ══ 6c. NOBODY BUT AN OPERATOR CAN PUT A BOOKING UNDER REVIEW ════════════
+--
+-- § 5c gave `bookings` a trigger that recomputes a provider's public reputation.
+-- That is a SECURITY DEFINER write to someone else's reputation row, fired by an
+-- UPDATE on a booking — so its entire safety rests on a rule enforced somewhere
+-- else: `under_review` and `completed_at` are refused to every non-service_role
+-- writer. Nothing in the reviews suite pinned that, which means the reviews
+-- feature depended on a guarantee it never checked.
+--
+-- **ASSERTED ON THE STORED VALUE, NOT ON AN EXCEPTION.** Two different mechanisms
+-- refuse these writes and only one of them raises: `enforce_booking_write_integrity`
+-- throws `check_violation` when it is reached, but on a COMPLETED booking RLS has
+-- already filtered the row out of the client's UPDATE scope, so the statement
+-- affects zero rows and raises nothing at all. An error-shaped assertion scores
+-- that silent, stronger refusal as a pass-through. The property that actually
+-- matters is that the column does not move.
+do $$
+declare
+  pu uuid := current_setting('b5b.r2_pu')::uuid;
+  c3 uuid := current_setting('b5b.r2_c3')::uuid;
+  v_bk uuid; v_draft uuid; v_when timestamptz; v_raised text;
+begin
+  perform pg_temp.act_service();
+  v_bk := pg_temp.r2_booking(c3, 1);
+  select completed_at into v_when from public.bookings where id = v_bk;
+
+  -- The client cannot suppress a review by disputing their own booking, and
+  -- cannot move the anchor the whole blind window is measured from.
+  perform pg_temp.act(c3);
+  begin
+    update public.bookings set under_review = true where id = v_bk;
+  exception when others then null;
+  end;
+  begin
+    update public.bookings set completed_at = now() - interval '30 days' where id = v_bk;
+  exception when others then null;
+  end;
+
+  -- The provider is the one that matters: a provider who could set this at will
+  -- could hold every bad review they ever received, indefinitely.
+  perform pg_temp.act(pu);
+  begin
+    update public.bookings set under_review = true where id = v_bk;
+  exception when others then null;
+  end;
+
+  perform pg_temp.act_service();
+  perform pg_temp.chk('reviews2',
+    'neither party can put a booking under review', 'false',
+    (select under_review::text from public.bookings where id = v_bk));
+  perform pg_temp.chk('reviews2',
+    'and neither can move completed_at, which anchors the blind window', 'true',
+    (select (completed_at = v_when)::text from public.bookings where id = v_bk));
+
+  -- And where RLS DOES let the row through, the trigger is the refusal. A draft
+  -- is genuinely updatable by its owner, so this reaches the write gate and pins
+  -- the gate itself rather than only the policy in front of it.
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (c3, current_setting('b5b.r2_pid')::uuid, 'draft svc', current_date + 3)
+  returning id into v_draft;
+
+  perform pg_temp.act(c3);
+  begin
+    update public.bookings set under_review = true where id = v_draft;
+    v_raised := 'NONE';
+  exception when others then v_raised := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('reviews2',
+    'on a row the client CAN update, the write gate raises rather than ignoring',
+    '23514', v_raised);
+  perform pg_temp.chk('reviews2', 'and the draft is not under review either', 'false',
+    (select under_review::text from public.bookings where id = v_draft));
+
+  delete from public.bookings where id in (v_bk, v_draft);
 end $$;
 
 -- ══ 7. THE REPUTATION SURFACE DISCLOSES NOTHING EXTRA ═════════════════════

@@ -1867,6 +1867,12 @@ as locked decisions.
   each leaving one review is still unbounded — identity is what would bound it, and this session
   does not take on third-party identity. Recorded in `REVIEWS_OPERATIONS.md` under what the
   system does not promise.
+- **Two nuances the implementation chose and Product has not ruled on**, filed rather than
+  quietly settled: **OQ-078** — "latest" currently means latest review *written*, not latest
+  service *received*; the two differ only when one client holds two open review windows at once.
+  **OQ-079** — `service_role` may still supply a review's `created_at`, which under this rule means
+  pinning a public rating permanently; reachable by nothing today, recorded because a future
+  server-side writer would inherit it invisibly.
 - **Status:** Locked; **implemented**, pending review of the Reviews Phase 2 branch.
 
 ---

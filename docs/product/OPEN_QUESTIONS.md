@@ -562,6 +562,22 @@ schema; the product rules around them do not. Each question below is separately 
 - **Blocks:** nothing shipped. It blocks any claim about deletion, and it blocks answering a user who asks for their data to be removed.
 - **Status:** Open
 
+### OQ-078 — Does "latest" mean the latest review WRITTEN or the latest service RECEIVED?
+- **Area:** Reviews / reputation
+- **Why it matters:** PD-091 makes a provider's rating the mean of each client's **latest** review, and justifies that rule with *"a loyal client who is disappointed today moves the rating today."* The implementation orders by `provider_reviews.created_at` — **latest written**. The other reading is **latest service received**, which `bookings.completed_at` already expresses, is equally server-stamped and equally immutable. The two diverge whenever a client holds more than one open review window at a time: a client who visits on the 1st and the 5th, then writes the 5th visit's review first and the 1st visit's second, currently has their **older visit** decide the rating. Neither reading is a defect and neither amplifies one client past one voice, so this is a product nuance rather than a gaming channel — but they are different products, and only one was chosen, by me, while implementing something else.
+- **What is NOT at stake:** one client still contributes exactly one value under either reading. The blind window, eligibility and reveal are all anchored on `completed_at` already and do not move.
+- **This entry deliberately proposes nothing.** Changing the ordering key is a one-line change in `recompute_provider_rating_for`; which line is correct is a decision about what a rating is supposed to mean, not about SQL.
+- **Blocks:** nothing shipped. PD-091 is implemented and internally consistent under the written-order reading. It blocks describing the rule to providers in any words more precise than what the code does.
+- **Status:** Open
+
+---
+
+### OQ-079 — Is `service_role`'s ability to pin a review's `created_at` an accepted posture?
+- **Area:** Reviews / schema
+- **Why it matters:** `20261079000000` server-stamps `provider_reviews.created_at` for every ordinary caller and keeps the standard `service_role` / no-claims carve-out, which every neighbouring timestamp stamp in this repo has, and which backfills and erasure genuinely need. But PD-091 changed what that column **means**: it now decides which of a repeat client's reviews is the authoritative one, **permanently**, because reviews can never be edited or deleted. So any future server-side writer inherits the power to fix a public rating in place. **Reachable by nobody today** — both review write paths are anon-key client code (`app/post-booking/review.tsx`, `app/post-booking/provider-review.tsx`) and the one Edge Function touches no review table. It is recorded now because it is free to record now and invisible later.
+- **Blocks:** nothing shipped. It is a constraint on future server-side code, noted in the function's own comment so the next author meets it there.
+- **Status:** Open
+
 ---
 
 ## Closed — index

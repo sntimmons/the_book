@@ -2154,22 +2154,41 @@ await raceBlockVsVisibility()
 // A lost update is only visible to a harness that commits, which is this one.
 async function raceTwoReviewsOneProvider() {
   const pid = `(select id from public.providers where user_id = '${ids.ou}')`
-  const mk = (days) => `insert into public.bookings(user_id, provider_id, service_name,
-      requested_date, status, submitted_at, completed_at)
-    values ('${ids.ru}', ${pid}, 'review race', current_date - ${days}, 'completed',
-            now() - interval '${days} days', now() - interval '${days} days')
-    returning id`
-  await runSql(`
-    delete from public.provider_reviews where provider_id = ${pid};
-    delete from public.bookings where user_id = '${ids.ru}' and provider_id = ${pid};`)
 
-  // Completed well outside the 7-day blind window, so both reviews are REVEALED
-  // the moment they land and both must reach the stored aggregate.
-  const b = await runSql(`
-    with a as (${mk(40)}), b as (${mk(39)})
-    select json_build_object('a', (select id from a), 'b', (select id from b)) as timing;`)
-  const bookA = scalar(b.out, 'a')
-  const bookB = scalar(b.out, 'b')
+  // Seeded inside a service_role block: `enforce_booking_write_integrity` refuses
+  // a directly-supplied `status`/`completed_at` to anyone else, and the plain
+  // owner session this harness otherwise uses is NOT that role — the first
+  // version of this fixture was silently refused and handed the race two null
+  // booking ids.
+  const seeded = await runSql(`
+do $$
+declare v_a uuid; v_b uuid; v_p uuid;
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  select id into v_p from public.providers where user_id = '${ids.ou}';
+  delete from public.provider_reviews where provider_id = v_p;
+  delete from public.bookings where user_id = '${ids.ru}' and provider_id = v_p;
+  -- Completed well outside the 7-day blind window, so both reviews are REVEALED
+  -- the moment they land and both must reach the stored aggregate.
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values ('${ids.ru}', v_p, 'review race', current_date - 40, 'completed',
+          now() - interval '40 days', now() - interval '40 days') returning id into v_a;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values ('${ids.ru}', v_p, 'review race', current_date - 39, 'completed',
+          now() - interval '39 days', now() - interval '39 days') returning id into v_b;
+  perform set_config('conc.book_a', v_a::text, false);
+  perform set_config('conc.book_b', v_b::text, false);
+end $$;
+select json_build_object('a', current_setting('conc.book_a'),
+                         'b', current_setting('conc.book_b')) as timing;`)
+  const bookA = scalar(seeded.out, 'a')
+  const bookB = scalar(seeded.out, 'b')
+  // Fail loudly rather than racing two nulls and blaming the lock.
+  chk('the two completed bookings were seeded', 'true',
+    String(seeded.ok && !!bookA && !!bookB && bookA !== bookB))
+  if (!bookA || !bookB || bookA === bookB) return
 
   const review = (bk, rating) => `insert into public.provider_reviews
       (booking_id, provider_id, reviewer_user_id, rating)
@@ -2178,7 +2197,10 @@ async function raceTwoReviewsOneProvider() {
     runTimedMaintenance(review(bookA, 5)),
     runTimedMaintenance(review(bookB, 1)),
   ])
-  chk('both concurrent reviews are accepted', 'true', String(x.opOk && y.opOk))
+  // A 40P01 here is the deadlock 20261081000000 exists to prevent: `for update`
+  // conflicts with the for-key-share the review foreign key already holds.
+  chk('both concurrent reviews are accepted — neither deadlocks', 'true',
+    String(x.opOk && y.opOk))
   chk('the two review writes genuinely overlapped (else this scenario proves nothing)',
     'true', String(intervalsOverlap(x.timing, y.timing)))
 
@@ -2196,9 +2218,53 @@ async function raceTwoReviewsOneProvider() {
   chk('and the rating is that client\'s latest review, not an average of both',
     'true', String(['5.00', '1.00'].includes(scalar(got.out, 'avg'))))
 
+  // The other new edge 20261081000000 has to survive: a booking UPDATE now
+  // recomputes too, so a dispute landing at the same instant as a review takes
+  // the same provider row from a second direction.
+  const third = await runSql(`
+do $$
+declare v_c uuid; v_p uuid;
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  select id into v_p from public.providers where user_id = '${ids.ou}';
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values ('${ids.ru}', v_p, 'review race 3', current_date - 38, 'completed',
+          now() - interval '38 days', now() - interval '38 days') returning id into v_c;
+  perform set_config('conc.book_c', v_c::text, false);
+end $$;
+select json_build_object('c', current_setting('conc.book_c')) as timing;`)
+  const bookC = scalar(third.out, 'c')
+  chk('a third completed booking was seeded for the dispute race', 'true', String(!!bookC))
+  if (bookC) {
+    const [d1, d2] = await Promise.all([
+      runTimedMaintenance(`update public.bookings set under_review = true where id = '${bookA}';`),
+      runTimedMaintenance(review(bookC, 3)),
+    ])
+    chk('a dispute and a review landing together do not deadlock', 'true',
+      String(d1.opOk && d2.opOk))
+    chk('the dispute and the review genuinely overlapped', 'true',
+      String(intervalsOverlap(d1.timing, d2.timing)))
+    // bookA is held, bookC just landed: two revealed reviews remain (bookB, bookC).
+    const after = await runSql(`select json_build_object(
+        'stored', p.review_count,
+        'live', (select review_count from public.provider_reputation(p.id))
+      ) as timing from public.providers p where p.id = ${pid};`)
+    chk('the held review is dropped and the new one counted, with nothing lost',
+      '2', scalar(after.out, 'stored'))
+    chk('and the stored value still agrees with a fresh computation',
+      scalar(after.out, 'live'), scalar(after.out, 'stored'))
+  }
+
   await runSql(`
-    delete from public.provider_reviews where provider_id = ${pid};
-    delete from public.bookings where user_id = '${ids.ru}' and provider_id = ${pid};`)
+do $$
+declare v_p uuid;
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  select id into v_p from public.providers where user_id = '${ids.ou}';
+  delete from public.provider_reviews where provider_id = v_p;
+  delete from public.bookings where user_id = '${ids.ru}' and provider_id = v_p;
+end $$;`)
 }
 
 await raceTwoReviewsOneProvider()
