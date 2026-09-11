@@ -339,9 +339,20 @@ begin
 
   perform pg_temp.act_service();
   select created_at into v_when from public.provider_reviews where booking_id = v_b1;
+  -- COMPARED AGAINST `clock_timestamp()`, NOT `now() + 1 minute`.
+  --
+  -- This whole suite runs in ONE transaction, so `now()` is fixed at the moment
+  -- it began — while the value under test is stamped with `clock_timestamp()`,
+  -- the wall clock at insert time. The original margin therefore held only while
+  -- the suite REACHED THIS SECTION within sixty seconds of starting, and it
+  -- stopped holding the moment the suite grew past that. The assertion was
+  -- measuring the harness's runtime, not the product.
+  --
+  -- The stamp can never be later than the wall clock when it is read, and
+  -- `2999-01-01` always is. Exact, and independent of how long anything takes.
   perform pg_temp.chk('reviews2',
     'a client-supplied review timestamp does not survive the insert', 'true',
-    (v_when < now() + interval '1 minute')::text);
+    (v_when <= clock_timestamp())::text);
 
   -- Then they get round to the OLDER service. This review is written LATER — it
   -- is the "latest receipt" — and under PD-092 it must NOT take over the rating,
@@ -381,7 +392,7 @@ begin
   end;
   perform pg_temp.act_service();
   perform pg_temp.chk('reviews2', 'and the timestamp cannot be moved afterwards', 'true',
-    (select (created_at < now() + interval '1 minute')::text
+    (select (created_at <= clock_timestamp())::text
        from public.provider_reviews where booking_id = v_b1));
 end $$;
 

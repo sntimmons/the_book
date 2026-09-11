@@ -250,7 +250,14 @@ begin
    where a.obligation_id = v_ob
      and a.adjudicator_user_id = xu
      and a.agreement_id = o.agreement_id
-     and a.adjudicated_at between now() - interval '1 minute' and now() + interval '1 minute';
+     -- Bounded by `now()` BELOW and `clock_timestamp()` ABOVE, not by a fixed
+     -- margin either side of `now()`. The suite runs in ONE transaction, so
+     -- `now()` is the moment it began and a server stamp taken later in the run
+     -- can be arbitrarily far past `now() + 1 minute` — the old margin was
+     -- measuring how long the harness takes, and it began failing the moment the
+     -- suite grew. A value stamped during this transaction cannot precede its
+     -- start, and cannot be later than the wall clock when it is read.
+     and a.adjudicated_at between now() and clock_timestamp();
   perform pg_temp.chk('adjudication',
     'the adjudicator, agreement and timestamp are all derived and consistent', '1', v_n::text);
 

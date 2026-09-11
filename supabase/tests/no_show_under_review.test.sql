@@ -104,7 +104,14 @@ begin
   select count(*) into v_n from public.barter_obligation_no_show_reports
    where obligation_id = v_ob
      and reporter_user_id = ru
-     and created_at between now() - interval '1 minute' and now() + interval '1 minute';
+     -- Bounded by `now()` BELOW and `clock_timestamp()` ABOVE, not by a fixed
+     -- margin either side of `now()`. The suite runs in ONE transaction, so
+     -- `now()` is the moment it began and a server stamp taken later in the run
+     -- can be arbitrarily far past `now() + 1 minute` — the old margin was
+     -- measuring how long the harness takes, and it began failing the moment the
+     -- suite grew. A value stamped during this transaction cannot precede its
+     -- start, and cannot be later than the wall clock when it is read.
+     and created_at between now() and clock_timestamp();
   perform pg_temp.chk('no_show',
     'the report time is the server''s own clock, not a client value', '1', v_n::text);
   select count(*) into v_n from public.barter_obligation_no_show_reports r
