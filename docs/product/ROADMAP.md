@@ -937,6 +937,38 @@ decided what deletion does to transaction evidence.
 **Validation at merge:** B5B **1791/1791**, Jest **949/949**, concurrency **224/224**, typecheck
 clean, lint 0 errors, migrations local == non-production with no drift, production untouched.
 
+### Community Reshape — **IMPLEMENTED, pending merge** (`feat/community-reshape`)
+
+Four migrations, `20261088000000` … `20261091000000`, and three locked decisions
+(**PD-095**, **PD-096**, **PD-097**).
+
+Community stops being provider-only — which it was by **table shape**, not by policy choice — and
+becomes a service community for clients and providers: four client intents (looking for someone,
+need advice, who does this style, recommend a provider), three provider ones (open today, update,
+announcement), and answering as a **reply** rather than a fourth post type. Discover gains a small
+capped Community module and keeps being the marketplace; there is no sixth tab. The provider's side
+— creating and managing posts, and the barter trade board — moves to **Business**, where
+`NAVIGATION.md` always said it belonged and where it had never been.
+
+**Open Today rides on published availability** and cannot outlive the day or contradict the hours.
+**A shoutout names a real approved provider and moves nothing** in reviews, reputation or ranking.
+
+**Fixed on the way through, because the reshape builds on them:** the like and reply counters had
+**never worked** (SECURITY INVOKER against a table whose only UPDATE policy is the author's own, so
+every count on anyone else's post silently updated zero rows); a blocked party could still reply
+under a post they held a link to; a **deapproved provider could still post**, the eligibility gate
+barter writes have had since `20261048000000`; the community tables had no index beyond their
+primary keys; and the post model had **zero test coverage**.
+
+**Filed, not settled:** **OQ-081** (should a shoutout require a completed booking — optional for
+beta, and why), **OQ-082** (a Community report creates a real operator case and there is **no
+take-down**; `is_active` has no writer and is now documented as reserved).
+
+**Not done here, deliberately:** no client media or gallery, no Follow expansion, no trending or
+engagement ranking, no operator content take-down, no barter redesign (PD-080's Find → Talk →
+Propose → Agree → Do it → Confirm simplification remains a later requirement), and no change to
+discovery or provider search.
+
 ### Sessions 9–10 — Reviews, remaining
 Structured signals (PD-028) and the conduct/reliability layer that `no_show` feeds (PD-027).
 **Phase 2 above did NOT build either** — it closed the anti-gaming and display-truth work. What
