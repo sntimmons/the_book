@@ -2152,6 +2152,24 @@ await raceBlockVsVisibility()
 // **B5B cannot reach this.** It runs every suite inside one transaction that is
 // always rolled back, so there is never a second session to lose an update to.
 // A lost update is only visible to a harness that commits, which is this one.
+async function seedOneCompletedBooking(daysAgo) {
+  const r = await runSql(`
+do $$
+declare v_id uuid; v_p uuid;
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  select id into v_p from public.providers where user_id = '${ids.ou}';
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values ('${ids.ru}', v_p, 'review race retry', current_date - ${daysAgo}, 'completed',
+          now() - interval '${daysAgo} days', now() - interval '${daysAgo} days')
+  returning id into v_id;
+  perform set_config('conc.book_retry', v_id::text, false);
+end $$;
+select json_build_object('c', current_setting('conc.book_retry')) as timing;`)
+  return scalar(r.out, 'c')
+}
+
 async function raceTwoReviewsOneProvider() {
   const pid = `(select id from public.providers where user_id = '${ids.ou}')`
 
@@ -2204,10 +2222,13 @@ select json_build_object('a', current_setting('conc.book_a'),
   chk('the two review writes genuinely overlapped (else this scenario proves nothing)',
     'true', String(intervalsOverlap(x.timing, y.timing)))
 
+  // `avg` is cast to TEXT deliberately: json_build_object renders numeric(3,2)
+  // 1.00 as bare 1, so comparing against '1.00' fails for a CORRECT value — the
+  // kind of mismatch that gets "fixed" by relaxing the expectation.
   const got = await runSql(`select json_build_object(
       'stored', p.review_count, 'clients', p.rating_client_count,
       'live', (select review_count from public.provider_reputation(p.id)),
-      'avg', p.average_rating
+      'avg', p.average_rating::text
     ) as timing from public.providers p where p.id = ${pid};`)
   // The lost update showed up here as 1: each writer counted only its own.
   chk('neither review is lost from the stored count', '2', scalar(got.out, 'stored'))
@@ -2234,24 +2255,50 @@ begin
   perform set_config('conc.book_c', v_c::text, false);
 end $$;
 select json_build_object('c', current_setting('conc.book_c')) as timing;`)
-  const bookC = scalar(third.out, 'c')
+  let bookC = scalar(third.out, 'c')
   chk('a third completed booking was seeded for the dispute race', 'true', String(!!bookC))
   if (bookC) {
-    const [d1, d2] = await Promise.all([
-      runTimedMaintenance(`update public.bookings set under_review = true where id = '${bookA}';`),
-      runTimedMaintenance(review(bookC, 3)),
-    ])
+    // RETRY UNTIL THEY ACTUALLY CONTEND. Process spawn time occasionally pushes
+    // the two sessions apart despite the barrier, and a non-overlapping run of
+    // this scenario proves nothing rather than proving something good. Each
+    // attempt gets a FRESH booking: reusing one would hit the per-booking unique
+    // constraint and turn the retry into a 23505 that looks like contention.
+    let d1, d2, overlapped = false
+    for (let attempt = 0; attempt < 3 && !overlapped; attempt++) {
+      if (attempt > 0) bookC = await seedOneCompletedBooking(37 - attempt)
+      if (!bookC) break
+      ;[d1, d2] = await Promise.all([
+        runTimedMaintenance(`update public.bookings set under_review = ${attempt % 2 === 0} where id = '${bookA}';`),
+        runTimedMaintenance(review(bookC, 3)),
+      ])
+      overlapped = intervalsOverlap(d1.timing, d2.timing)
+    }
+    // Leave the dispute ON, whatever the attempt parity ended at, so the counts
+    // below describe a held booking.
+    await runSql(`
+do $$
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  update public.bookings set under_review = true where id = '${bookA}';
+end $$;`)
     chk('a dispute and a review landing together do not deadlock', 'true',
-      String(d1.opOk && d2.opOk))
-    chk('the dispute and the review genuinely overlapped', 'true',
-      String(intervalsOverlap(d1.timing, d2.timing)))
-    // bookA is held, bookC just landed: two revealed reviews remain (bookB, bookC).
+      String(!!d1?.opOk && !!d2?.opOk))
+    chk('the dispute and the review genuinely overlapped', 'true', String(overlapped))
+    // bookA is held; every other review written above is revealed. Derived rather
+    // than hard-coded, because the retry loop above may have written more than one.
     const after = await runSql(`select json_build_object(
         'stored', p.review_count,
-        'live', (select review_count from public.provider_reputation(p.id))
+        'live', (select review_count from public.provider_reputation(p.id)),
+        'written', (select count(*) from public.provider_reviews r where r.provider_id = p.id),
+        'held', (select count(*) from public.provider_reviews r
+                   join public.bookings b on b.id = r.booking_id
+                  where r.provider_id = p.id and b.under_review)
       ) as timing from public.providers p where p.id = ${pid};`)
-    chk('the held review is dropped and the new one counted, with nothing lost',
-      '2', scalar(after.out, 'stored'))
+    const written = Number(scalar(after.out, 'written'))
+    const held = Number(scalar(after.out, 'held'))
+    chk('the dispute actually holds a review that was written', 'true', String(held > 0))
+    chk('every review except the held one still counts — nothing lost to the dispute',
+      String(written - held), scalar(after.out, 'stored'))
     chk('and the stored value still agrees with a fresh computation',
       scalar(after.out, 'live'), scalar(after.out, 'stored'))
   }
