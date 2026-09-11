@@ -26,6 +26,7 @@ import {
 import { cacheBustedPhoto } from '../../lib/image'
 import { supabase } from '../../lib/supabase'
 import DiscoveryLanes from '../../components/DiscoveryLanes'
+import DiscoverCommunity from '../../components/DiscoverCommunity'
 import { useAuth } from '../../context/AuthContext'
 import { fetchDueReminder, CareReminder } from '../../lib/care'
 import { displayRating } from '../../lib/reputationLabel'
@@ -514,6 +515,19 @@ export default function DiscoveryFeed() {
             </View>
           </View>
         )}
+
+        {/* ── Community ───────────────────────────────────────────────────── */}
+        {/* BELOW the grid, and capped. Community is a doorway onto the
+            marketplace, not a replacement for it: provider discovery is the
+            page, and this is four short rows near the end of it. It reorders
+            nothing above it — no lane, no tile, no search result — because
+            social engagement is not a marketplace ranking input anywhere in
+            this product (lib/discovery.ts). Hidden inside a category filter for
+            the same reason the lanes are: the viewer has already said what they
+            want. */}
+        {!loading && activeCategoryId === null && !showEmptyState ? (
+          <DiscoverCommunity />
+        ) : null}
 
         {/* ── Philosophy ──────────────────────────────────────────────────── */}
         {!loading && !showEmptyState && (
