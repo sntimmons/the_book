@@ -50,6 +50,20 @@ const NAV_SECTIONS = [
     ],
   },
   {
+    // NAVIGATION.md puts Community under GROW and requires it "reachable within
+    // one tap of Discover". Neither existed: the ONLY entry point in the whole
+    // app was a card two scrolls into the Me tab — for the surface that document
+    // calls "the primary reason a provider with no clients opens the app".
+    // Community itself is now open to everyone and reached from Discover; what
+    // lives HERE is the provider's side of it, because Business owns provider
+    // content creation and management.
+    label: 'GROW',
+    items: [
+      { icon: 'users',  label: 'Community', route: '/(tabs)/business/community', badge: null },
+      { icon: 'repeat', label: 'Trades',    route: '/community/barter',          badge: null },
+    ],
+  },
+  {
     label: 'MONEY',
     items: [
       { icon: 'dollar-sign', label: 'Payouts', route: '/(tabs)/business/payouts',  badge: null },

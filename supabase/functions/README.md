@@ -12,7 +12,16 @@ message on a `429`.
 | Action | Limit | Wired into |
 |---|---|---|
 | `booking_create` | 3 / hour / client | `app/book/payment.tsx` |
-| `community_post` | 10 / hour / provider | `app/community/compose.tsx` |
+| `community_post` | 10 / hour / **user** | `app/community/compose.tsx` |
+| `community_reply` | 30 / hour / **user** | `app/community/[id].tsx` |
+
+**`community_post` is per USER, not per provider**, and always was — the bucket
+key is the caller's JWT subject. The table said "per provider" because Community
+was provider-only until `20261088000000`; it now admits clients, so the same
+limit applies to every account. The number has NOT been retuned for the wider
+audience: 10 posts an hour was sized for a provider posting updates, and whether
+it is the right ceiling for a client asking questions is an open sizing
+question, not a decided one.
 | `barter_offer` | 5 / day / provider | `app/community/barter-compose.tsx` |
 | `message_send` | 30 / min / user | *not wired yet* (deferred — generous enough pre-launch) |
 

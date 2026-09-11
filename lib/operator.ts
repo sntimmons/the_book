@@ -21,6 +21,38 @@ export type CaseType = 'barter_review' | 'provider_appeal' | 'user_report'
 export type CaseStatus = 'open' | 'under_review' | 'resolved' | 'dismissed'
 export type CaseAction = 'claimed' | 'resolved' | 'dismissed' | 'noted'
 
+/**
+ * A Community post or reply a report is about, with the two things an operator
+ * has to know before deciding: whether it is hidden RIGHT NOW, and whether it
+ * has been hidden before. A boolean alone cannot tell "visible" from "restored
+ * after being hidden", and those call for different decisions.
+ */
+export interface ModerationAction {
+  id: string
+  action: 'hidden' | 'restored'
+  actor_user_id: string | null
+  case_id: string | null
+  note: string | null
+  created_at: string
+}
+
+export interface ReportedContent {
+  kind: 'post' | 'reply' | 'community_post' | 'community_reply'
+  id: string
+  /** True when the content is gone — the author removed it, or it cascaded. */
+  missing?: boolean
+  content?: string
+  intent?: string | null
+  author_kind?: 'client' | 'provider'
+  author_user_id?: string
+  provider_id?: string | null
+  created_at?: string
+  is_hidden?: boolean
+  reply_count?: number
+  post_id?: string
+  history?: ModerationAction[]
+}
+
 export interface QueueCase {
   caseId: string
   caseType: CaseType
@@ -129,6 +161,55 @@ export async function updateCase(
   return { ok: true, status: (data as string | null) ?? null, error: null }
 }
 
+/**
+ * The Community content a case is about, or null when it is about none.
+ *
+ * Null is the ordinary answer: every non-Community report, and every report
+ * filed before the content reference became a column, has nothing to return.
+ * The screen must render that as "no content attached", not as an error.
+ */
+export async function communityContentForCase(
+  caseId: string,
+): Promise<ReportedContent | null> {
+  const { data, error } = await supabase.rpc('operator_community_content', {
+    p_case_id: caseId,
+  })
+  if (error) {
+    Sentry.captureException(error)
+    return null
+  }
+  return (data as ReportedContent | null) ?? null
+}
+
+/**
+ * Hide or restore Community content.
+ *
+ * HIDING IS NOT DELETION. The row, the report, the case and every previous
+ * moderation action survive it, and the same call with `hidden: false` puts the
+ * content back. That is deliberate: a moderation decision has to be reviewable,
+ * reversible and attributable, and a deleted row is none of those.
+ *
+ * It also does exactly this and nothing else — it does not resolve the case,
+ * suspend anyone or restrict a provider. Those are separate actions with their
+ * own audit rows, and bundling them would hide three decisions behind one click.
+ */
+export async function setCommunityVisibility(
+  target: { kind: 'post' | 'reply'; id: string },
+  hidden: boolean,
+  actorUserId: string,
+  opts: { caseId?: string | null; note?: string | null } = {},
+): Promise<{ ok: boolean; error: unknown }> {
+  const { error } = await supabase.rpc('operator_set_community_visibility', {
+    p_target_kind: target.kind,
+    p_target_id: target.id,
+    p_hidden: hidden,
+    p_actor_user_id: actorUserId,
+    p_case_id: opts.caseId ?? null,
+    p_note: opts.note?.trim() || null,
+  })
+  return { ok: !error, error: error ?? null }
+}
+
 export async function setProviderEligibility(
   providerId: string,
   approved: boolean,
@@ -203,6 +284,23 @@ export const OUTCOME_HELP: Record<string, string> = {
     'The evidence supports NEITHER finding. Not a softer "unfulfilled", not a '
     + 'finding of fault, and it carries no reputation effect.',
 }
+
+/**
+ * What the three visibility states mean, in operator words. Written here rather
+ * than in the screen because the distinction is a product rule: hiding removes
+ * content from ordinary surfaces and keeps everything; it is not a deletion and
+ * it is not a punishment applied to the person.
+ */
+export const MODERATION_STATE_LABEL = {
+  visible: 'Visible',
+  hidden: 'Hidden by operator',
+  restored: 'Restored',
+} as const
+
+export const MODERATION_HELP =
+  'Hiding removes this from the feed, threads and Discover. The post, the report ' +
+  'and this case are all kept, and it can be restored. It does not suspend anyone ' +
+  'or restrict a provider — those are separate actions.'
 
 export const NO_SLA_NOTE =
   'The Book promises no response time for any of this (PD-068). Nothing here tells '

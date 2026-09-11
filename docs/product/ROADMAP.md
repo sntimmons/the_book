@@ -937,6 +937,99 @@ decided what deletion does to transaction evidence.
 **Validation at merge:** B5B **1791/1791**, Jest **949/949**, concurrency **224/224**, typecheck
 clean, lint 0 errors, migrations local == non-production with no drift, production untouched.
 
+### Community Reshape — **IMPLEMENTED, pending merge** (`feat/community-reshape`)
+
+Four migrations, `20261088000000` … `20261091000000`, and three locked decisions
+(**PD-095**, **PD-096**, **PD-097**).
+
+Community stops being provider-only — which it was by **table shape**, not by policy choice — and
+becomes a service community for clients and providers: four client intents (looking for someone,
+need advice, who does this style, recommend a provider), three provider ones (open today, update,
+announcement), and answering as a **reply** rather than a fourth post type. Discover gains a small
+capped Community module and keeps being the marketplace; there is no sixth tab. The provider's side
+— creating and managing posts, and the barter trade board — moves to **Business**, where
+`NAVIGATION.md` always said it belonged and where it had never been.
+
+**Open Today rides on published availability** and cannot outlive the day or contradict the hours.
+**A shoutout names a real approved provider and moves nothing** in reviews, reputation or ranking.
+
+**Fixed on the way through, because the reshape builds on them:** the like and reply counters had
+**never worked** (SECURITY INVOKER against a table whose only UPDATE policy is the author's own, so
+every count on anyone else's post silently updated zero rows); a blocked party could still reply
+under a post they held a link to; a **deapproved provider could still post**, the eligibility gate
+barter writes have had since `20261048000000`; the community tables had no index beyond their
+primary keys; and the post model had **zero test coverage**.
+
+**Filed, not settled:** **OQ-081** (should a shoutout require a completed booking — optional for
+beta, and why), **OQ-082** (a Community report creates a real operator case and there is **no
+take-down**; `is_active` has no writer and is now documented as reserved).
+
+**Not done here, deliberately:** no client media or gallery, no Follow expansion, no trending or
+engagement ranking, no operator content take-down, no barter redesign (PD-080's Find → Talk →
+Propose → Agree → Do it → Confirm simplification remains a later requirement), and no change to
+discovery or provider search.
+
+### NEXT DEDICATED WORKSTREAM — Account Erasure & Retention Integrity
+
+**Status: RECORDED, NOT STARTED. Blocked on policy, not on engineering.**
+
+**Why it is next.** The product now retains several durable classes of evidence,
+each accumulated for a good reason and none of them with a decided deletion
+story:
+
+- booking history
+- contract acceptance and version evidence
+- booking reference photos (storage objects, which do **not** cascade)
+- reviews
+- reports
+- operator case history and, since PD-099, Community moderation history
+- barter agreements, obligations and adjudications
+- messages
+
+**Known technical defects, both already recorded under OQ-077 and both
+reproducible today:**
+
+1. **Deleting a user who is the target of a report can fail** — the report
+   retains a reference the erasure path does not resolve.
+2. **Deleting an operator can fail** because append-only actor history conflicts
+   with the foreign-key cleanup. Pinned precisely by
+   `supabase/tests/community.test.sql` § 6h-ii: the case-event append-only guard
+   carves out `DELETE` and **not** `UPDATE`, while the column that needs it is
+   `ON DELETE SET NULL` — and a set-null is an UPDATE. The carve-out has the
+   right shape and the wrong verb. Pinned as a SOURCE fact rather than as a
+   behavioural expectation, so the eventual fix does not read as a test failure.
+
+**This workstream requires POLICY INPUT BEFORE IMPLEMENTATION.** The engineering
+is tractable; what is not decided is what deletion is supposed to MEAN for each
+class above, and that is not an engineering call. **Business Operations, legal
+and Founder need to decide:**
+
+- whether self-service deletion is required for beta at all
+- immediate deletion vs delayed
+- anonymisation vs deletion, per class
+- treatment of completed bookings
+- contract evidence retention (an accepted version is currently immutable *by
+  design*, which directly conflicts with a request that its text go)
+- booking-photo retention (the storage objects outlive the rows today)
+- reviews
+- reports and moderation records
+- barter history
+- messages
+- the operator audit trail
+- any legally required retention
+- a restoration window, if any
+
+**Do not invent retention periods.** Recording a number nobody decided is worse
+than recording none: it becomes the answer support gives.
+
+**GATE:** if account deletion is exposed to beta users, this is a
+**pre-external-beta policy AND technical gate**. Until it lands, **nothing in the
+product may promise a user that their account can be deleted**, and
+`COMMUNITY_OPERATIONS.md` § 10 says so.
+
+**Not authorised to start.** Recorded here so the next session inherits the
+question rather than the surprise.
+
 ### Sessions 9–10 — Reviews, remaining
 Structured signals (PD-028) and the conduct/reliability layer that `no_show` feeds (PD-027).
 **Phase 2 above did NOT build either** — it closed the anti-gaming and display-truth work. What

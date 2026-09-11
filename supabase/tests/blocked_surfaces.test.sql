@@ -24,12 +24,17 @@ begin
     values (bu, 'S8C Bravo', 's8cb_'||substr(bu::text,1,8), true) returning id into pb;
   insert into public.providers(user_id, display_name, username, is_approved)
     values (cu, 'S8C Charlie', 's8cc_'||substr(cu::text,1,8), true) returning id into pc;
-  insert into public.community_posts(provider_id, user_id, content, category, is_active)
-    values (pa, au, 'alpha post', 'general', true),
-           (pb, bu, 'bravo post', 'general', true),
-           (pc, cu, 'charlie post', 'general', true);
-  insert into public.community_replies(post_id, provider_id, user_id, content)
-    select id, pb, bu, 'bravo reply' from public.community_posts where user_id = cu;
+  -- Community Reshape (20261088000000) added the actor and intent columns. These
+  -- fixtures stay PROVIDER posts, because that is what they were when the block
+  -- rule was written and the block rule does not care who is speaking.
+  insert into public.community_posts(provider_id, user_id, author_kind, intent,
+                                     content, category, is_active)
+    values (pa, au, 'provider', 'update', 'alpha post', 'general', true),
+           (pb, bu, 'provider', 'update', 'bravo post', 'general', true),
+           (pc, cu, 'provider', 'update', 'charlie post', 'general', true);
+  insert into public.community_replies(post_id, provider_id, user_id, author_kind, kind, content)
+    select id, pb, bu, 'provider', 'reply', 'bravo reply'
+      from public.community_posts where user_id = cu;
   perform set_config('b5c.a', au::text, true);
   perform set_config('b5c.b', bu::text, true);
   perform set_config('b5c.c', cu::text, true);
@@ -243,15 +248,24 @@ begin
   insert into public.clients(id, name) values (nonprov, 'Not A Provider')
     on conflict (id) do nothing;
 
-  -- THE COMMUNITY HUB IS PROVIDER-ONLY, and the view must say so too.
+  -- COMMUNITY IS NO LONGER PROVIDER-ONLY (20261088000000). This assertion used
+  -- to read "a non-provider reads NOTHING from the community post view", and it
+  -- is INVERTED here deliberately rather than deleted: a client asking "who does
+  -- braids in the Heights" is the reason the surface exists, and the rule change
+  -- should be visible in the diff of the test that guarded the old one.
   perform pg_temp.act(nonprov);
   select count(*) into v_n from public.community_posts_visible;
   perform pg_temp.chk('blockedsurfaces',
-    'a non-provider reads NOTHING from the community post view', '0', v_n::text);
+    'a non-provider now READS community — that is the reshape', 'true',
+    (v_n > 0)::text);
   select count(*) into v_n from public.community_replies_visible;
-  perform pg_temp.chk('blockedsurfaces', 'nor from the reply view', '0', v_n::text);
+  perform pg_temp.chk('blockedsurfaces', 'and the replies under it', 'true', (v_n > 0)::text);
+
+  -- BARTER DID NOT CHANGE. It is a provider-to-provider trade board and remains
+  -- provider-only; sharing a route with Community never made it the same product.
   select count(*) into v_n from public.barter_offers_visible;
-  perform pg_temp.chk('blockedsurfaces', 'nor from the barter board view', '0', v_n::text);
+  perform pg_temp.chk('blockedsurfaces',
+    'but the barter board is still provider-only', '0', v_n::text);
 
   -- AND NEITHER DOES ANON. The gate above already refuses them; the grant is
   -- removed as well, because two refusals are the standard here and the first
@@ -262,7 +276,7 @@ begin
   exception when others then v_n := -1;
   end;
   perform pg_temp.chk('blockedsurfaces',
-    'anon cannot read the provider-only hub through the view', 'true',
+    'anon still cannot read community through the view', 'true',
     (v_n <= 0)::text);
   perform pg_temp.act_service();
 end $$;

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
   View,
   Text,
@@ -19,7 +19,15 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
-import { supabase } from '@/lib/supabase'
+import { checkRateLimit } from '@/lib/rateLimit'
+import {
+  submitReport,
+  REPORT_SUBMITTED_COPY,
+  REPORT_FAILED_COPY,
+  REPORT_LIMITED_COPY,
+  ReportReason,
+} from '@/lib/safety'
+import ReportSheet from '@/components/ReportSheet'
 import { cacheBustedPhoto } from '@/lib/image'
 import {
   fetchCommunityPost,
@@ -27,7 +35,11 @@ import {
   fetchLikedPostIds,
   fetchBookmarkedPostIds,
   fetchProviderInfoMap,
-  categoryLabel,
+  createCommunityReply,
+  deleteOwnReply,
+  setPostLiked,
+  setPostBookmarked,
+  intentLabel,
   timeAgo,
   initials,
   CommunityPostView,
@@ -40,10 +52,21 @@ const REPLY_ACCESSORY_ID = 'communityReplyInput'
 
 type ThreadPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
 
+// The same five reasons the feed offers, mapped onto the product-wide
+// vocabulary in lib/safety.ts. A second reporting vocabulary would be a second
+// thing to keep in step.
+const REPLY_REPORT_REASONS: { label: string; value: ReportReason }[] = [
+  { label: 'Inappropriate content', value: 'profile_or_content' },
+  { label: 'Harassment', value: 'harassment' },
+  { label: 'Scam or fraud', value: 'scam_or_fraud' },
+  { label: 'Safety concern', value: 'safety_concern' },
+  { label: 'Something else', value: 'other' },
+]
+
 export default function CommunityThread() {
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
-  const { user, providerId, isProvider, roleLoading } = useAuth()
+  const { user, providerId, isProvider } = useAuth()
   const currentUserId = user?.id ?? null
 
   const [post, setPost] = useState<ThreadPost | null>(null)
@@ -51,10 +74,12 @@ export default function CommunityThread() {
   const [myInfo, setMyInfo] = useState<CommunityProviderInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [replyInput, setReplyInput] = useState('')
+  const [reportReplyTarget, setReportReplyTarget] = useState<CommunityReplyView | null>(null)
+  const [reportingReply, setReportingReply] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const load = useCallback(async () => {
-    if (!id || !isProvider) {
+    if (!id) {
       setLoading(false)
       return
     }
@@ -76,7 +101,7 @@ export default function CommunityThread() {
     setPost(p ? { ...p, isLiked: liked, isBookmarked: bookmarked } : null)
     setReplies(r)
     setLoading(false)
-  }, [id, isProvider, user, providerId])
+  }, [id, user, providerId])
 
   useFocusEffect(
     useCallback(() => {
@@ -93,19 +118,11 @@ export default function CommunityThread() {
         ? { ...prev, isLiked: !wasLiked, likeCount: Math.max(0, prev.likeCount + (wasLiked ? -1 : 1)) }
         : prev,
     )
-    try {
-      const { error } = wasLiked
-        ? await supabase
-            .from('community_post_likes')
-            .delete()
-            .eq('user_id', user.id)
-            .eq('post_id', post.id)
-        : await supabase
-            .from('community_post_likes')
-            .insert({ user_id: user.id, post_id: post.id })
-      if (error) throw error
-    } catch (err) {
-      console.log('Community like error:', err)
+    // One copy of this write, in lib/community.ts, called identically from here
+    // and from the feed. The two screens used to spell it inline in shapes that
+    // had already diverged.
+    const res = await setPostLiked(user.id, post.id, !wasLiked)
+    if (!res.ok) {
       setPost((prev) =>
         prev
           ? { ...prev, isLiked: wasLiked, likeCount: Math.max(0, prev.likeCount + (wasLiked ? 1 : -1)) }
@@ -118,19 +135,8 @@ export default function CommunityThread() {
     if (!post || !user) return
     const was = post.isBookmarked
     setPost((prev) => (prev ? { ...prev, isBookmarked: !was } : prev))
-    try {
-      const { error } = was
-        ? await supabase
-            .from('community_bookmarks')
-            .delete()
-            .eq('user_id', user.id)
-            .eq('post_id', post.id)
-        : await supabase
-            .from('community_bookmarks')
-            .insert({ user_id: user.id, post_id: post.id })
-      if (error) throw error
-    } catch (err) {
-      console.log('Community bookmark error:', err)
+    const res = await setPostBookmarked(user.id, post.id, !was)
+    if (!res.ok) {
       setPost((prev) => (prev ? { ...prev, isBookmarked: was } : prev))
     }
   }
@@ -141,16 +147,18 @@ export default function CommunityThread() {
     const removed = replies[idx]
     setReplies((prev) => prev.filter((r) => r.id !== replyId))
     setPost((prev) => (prev ? { ...prev, replyCount: Math.max(0, prev.replyCount - 1) } : prev))
-    const { error } = await supabase.from('community_replies').delete().eq('id', replyId)
-    if (error) {
-      console.log('Delete reply error:', error)
+    // ASSERTED ON THE ROW COUNT. RLS FILTERS someone else's reply out of the
+    // caller's DELETE scope, so the statement affects zero rows and raises
+    // nothing — a check on `error` alone reports it as deleted.
+    const res = await deleteOwnReply(replyId)
+    if (!res.ok) {
       setReplies((prev) => {
         const next = [...prev]
         next.splice(Math.min(idx, next.length), 0, removed)
         return next
       })
       setPost((prev) => (prev ? { ...prev, replyCount: prev.replyCount + 1 } : prev))
-      Alert.alert('Could not delete', 'Please try again.', [{ text: 'OK' }])
+      Alert.alert('Could not remove', res.message ?? 'Please try again.', [{ text: 'OK' }])
     }
   }
 
@@ -161,44 +169,87 @@ export default function CommunityThread() {
     ])
   }
 
-  async function submitReply() {
-    const text = replyInput.trim()
-    if (!text || !user || !providerId || !post || submitting) return
+  // A REPLY CAN BE REPORTED, because a reply can now be HIDDEN. An operator
+  // capability with no intake would be a control nobody can reach: the ruling
+  // covers posts AND replies, so the report path has to cover both.
+  async function reportReply(
+    reply: CommunityReplyView,
+    reason: ReportReason,
+    notes: string | null,
+  ) {
+    if (!user) return
+    const res = await submitReport({
+      reporterUserId: user.id,
+      type: 'content',
+      reason,
+      reportedUserId: reply.userId,
+      contentKind: 'community_reply',
+      contentId: reply.id,
+      notes: notes?.trim() || null,
+    })
+    if (res.limited) {
+      Alert.alert(REPORT_LIMITED_COPY.title, REPORT_LIMITED_COPY.body, [{ text: 'OK' }])
+      return
+    }
+    const copy = res.ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+    Alert.alert(copy.title, copy.body, [{ text: 'OK' }])
+  }
+
+  async function submitReply(kind: 'reply' | 'can_help' = 'reply') {
+    const text =
+      kind === 'can_help' && replyInput.trim().length === 0
+        ? 'I can help with this.'
+        : replyInput.trim()
+    if (!text || !user || !post || submitting) return
+    if (kind === 'can_help' && !replyAsProvider) return
     setSubmitting(true)
 
+    // Replies are the contact surface here, and open to every account since the
+    // reshape. Same limiter as the composer, not an error — a wait.
+    const rl = await checkRateLimit(user.id, 'community_reply')
+    if (!rl.allowed) {
+      setSubmitting(false)
+      Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')
+      return
+    }
+
     const tempId = `temp-${Date.now()}`
+    const asProvider = replyAsProvider
     const optimistic: CommunityReplyView = {
       id: tempId,
-      providerId,
+      providerId: asProvider ? providerId : null,
       userId: user.id,
+      authorKind: asProvider ? 'provider' : 'client',
+      kind,
       content: text,
       createdAt: new Date().toISOString(),
-      provider: myInfo ?? { name: 'You', photo: null, category: '', neighborhood: null },
+      author: {
+        kind: asProvider ? 'provider' : 'client',
+        name: asProvider ? myInfo?.name ?? 'Your business' : 'You',
+        photo: asProvider ? myInfo?.photo ?? null : null,
+        providerId: asProvider ? providerId : null,
+        category: myInfo?.category ?? '',
+        neighborhood: myInfo?.neighborhood ?? null,
+      },
     }
     setReplies((prev) => [...prev, optimistic])
     setReplyInput('')
     setPost((prev) => (prev ? { ...prev, replyCount: prev.replyCount + 1 } : prev))
 
-    try {
-      const { data, error } = await supabase
-        .from('community_replies')
-        .insert({ post_id: post.id, provider_id: providerId, user_id: user.id, content: text })
-        .select('id, created_at')
-        .single()
-      if (error) throw error
-      const row = data as { id: string; created_at: string }
-      setReplies((prev) =>
-        prev.map((r) => (r.id === tempId ? { ...r, id: row.id, createdAt: row.created_at } : r)),
-      )
-    } catch (err) {
-      console.log('Community reply error:', err)
-      Sentry.captureException(err)
+    const res = await createCommunityReply(user.id, post.id, text, { asProvider, kind })
+    if (!res.ok) {
+      Sentry.addBreadcrumb({ message: 'Community reply refused', category: 'community' })
       setReplies((prev) => prev.filter((r) => r.id !== tempId))
       setPost((prev) => (prev ? { ...prev, replyCount: Math.max(0, prev.replyCount - 1) } : prev))
-      Alert.alert('Could not send reply', 'Could not send reply. Please try again.', [{ text: 'OK' }])
-    } finally {
+      Alert.alert('Not sent', res.message ?? 'Please try again.', [{ text: 'OK' }])
       setSubmitting(false)
+      return
     }
+    // Re-read rather than patching the optimistic row: the server assigns the id
+    // and the timestamp, and a reply that shows as sent while the thread does
+    // not contain it is the shape of bug this screen used to have.
+    await load()
+    setSubmitting(false)
   }
 
   const header = (
@@ -211,19 +262,24 @@ export default function CommunityThread() {
     </View>
   )
 
-  if (!roleLoading && !isProvider) {
-    return (
-      <View style={styles.root}>
-        {header}
-        <View style={styles.centerBody}>
-          <Feather name="users" size={36} color="rgba(240,232,213,0.12)" />
-          <Text style={styles.gateTitle}>This space is for providers</Text>
-        </View>
-      </View>
-    )
-  }
 
-  const canSend = replyInput.trim().length > 0 && !!providerId && !submitting
+  // WHO YOU ARE REPLYING AS. A provider can answer as their business — which is
+  // what makes an answer actionable, because the surface can then offer their
+  // profile — or as a person. A client has only one option and is never shown a
+  // choice that does not exist for them.
+  const canReplyAsProvider = isProvider && !!providerId
+  const [replyAsProvider, setReplyAsProvider] = useState(false)
+  useEffect(() => {
+    if (canReplyAsProvider) setReplyAsProvider(true)
+  }, [canReplyAsProvider])
+
+  // "I can help" is only offered where it means something: a provider, on a post
+  // that is someone LOOKING for a provider. Offering it on an announcement would
+  // be a button with no referent.
+  const canOfferHelp =
+    canReplyAsProvider && post?.intent === 'looking_for' && post?.userId !== currentUserId
+
+  const canSend = replyInput.trim().length > 0 && !!user && !submitting
 
   return (
     <KeyboardAvoidingView
@@ -252,25 +308,27 @@ export default function CommunityThread() {
               {/* Original post */}
               <View style={styles.postCard}>
                 <View style={styles.rowTop}>
-                  {post.provider.photo ? (
+                  {post.author.photo ? (
                     <Image
-                      source={{ uri: cacheBustedPhoto(post.provider.photo) }}
+                      source={{ uri: cacheBustedPhoto(post.author.photo) }}
                       style={styles.avatar}
                     />
                   ) : (
                     <View style={[styles.avatar, styles.avatarFallback]}>
-                      <Text style={styles.avatarText}>{initials(post.provider.name)}</Text>
+                      <Text style={styles.avatarText}>{initials(post.author.name)}</Text>
                     </View>
                   )}
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.authorName}>{post.provider.name}</Text>
+                    <Text style={styles.authorName}>{post.author.name}</Text>
                     <Text style={styles.authorMeta}>
-                      {post.provider.category ? `${post.provider.category} · ` : ''}
+                      {post.author.kind === 'provider' && post.author.category
+                        ? `${post.author.category} · `
+                        : ''}
                       {timeAgo(post.createdAt)}
                     </Text>
                   </View>
                   <View style={styles.categoryBadge}>
-                    <Text style={styles.categoryBadgeText}>{categoryLabel(post.category)}</Text>
+                    <Text style={styles.categoryBadgeText}>{intentLabel(post.intent)}</Text>
                   </View>
                 </View>
 
@@ -294,7 +352,13 @@ export default function CommunityThread() {
                   </TouchableOpacity>
                   <View style={styles.actionBtn}>
                     <Feather name="message-circle" size={17} color="rgba(240,232,213,0.5)" />
-                    <Text style={styles.actionText}>{post.replyCount}</Text>
+                    {/* THE COUNT THIS VIEWER CAN SEE, not the stored total.
+                        `community_posts.reply_count` counts every reply, while
+                        `community_replies_visible` hides replies from anyone this
+                        viewer is blocked with — so the two disagreed on the same
+                        screen at the same moment, and the difference told the
+                        viewer a hidden reply existed. */}
+                    <Text style={styles.actionText}>{replies.length}</Text>
                   </View>
                   <View style={{ flex: 1 }} />
                   <TouchableOpacity
@@ -323,32 +387,57 @@ export default function CommunityThread() {
           }
           renderItem={({ item }) => (
             <View style={styles.replyRow}>
-              {item.provider.photo ? (
+              {item.author.photo ? (
                 <Image
-                  source={{ uri: cacheBustedPhoto(item.provider.photo) }}
+                  source={{ uri: cacheBustedPhoto(item.author.photo) }}
                   style={styles.replyAvatar}
                 />
               ) : (
                 <View style={[styles.replyAvatar, styles.avatarFallback]}>
-                  <Text style={styles.replyAvatarText}>{initials(item.provider.name)}</Text>
+                  <Text style={styles.replyAvatarText}>{initials(item.author.name)}</Text>
                 </View>
               )}
               <View style={styles.replyBody}>
                 <Text style={styles.replyAuthor}>
-                  {item.provider.name}
+                  {item.author.name}
                   <Text style={styles.replyTime}>{'  '}{timeAgo(item.createdAt)}</Text>
                 </Text>
                 <Text style={styles.replyContent}>{item.content}</Text>
+                {/* A provider who answered is REACHABLE from the answer. That is
+                    the whole point of a service community: the reply is not the
+                    end of the journey, the provider is. */}
+                {item.authorKind === 'provider' && item.author.providerId ? (
+                  <TouchableOpacity
+                    style={styles.answerActions}
+                    activeOpacity={0.8}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/providers/[id]',
+                        params: { id: item.author.providerId as string },
+                      })
+                    }
+                  >
+                    {item.kind === 'can_help' ? (
+                      <View style={styles.helpChip}>
+                        <Text style={styles.helpChipText}>Can help</Text>
+                      </View>
+                    ) : null}
+                    <Text style={styles.viewProfile}>View profile</Text>
+                    <Feather name="chevron-right" size={13} color="#C8922A" />
+                  </TouchableOpacity>
+                ) : null}
               </View>
-              {item.userId === currentUserId ? (
-                <TouchableOpacity
-                  onPress={() => confirmDeleteReply(item.id)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  activeOpacity={0.7}
-                >
-                  <Feather name="more-vertical" size={16} color="rgba(240,232,213,0.35)" />
-                </TouchableOpacity>
-              ) : null}
+              <TouchableOpacity
+                onPress={() =>
+                  item.userId === currentUserId
+                    ? confirmDeleteReply(item.id)
+                    : setReportReplyTarget(item)
+                }
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <Feather name="more-vertical" size={16} color="rgba(240,232,213,0.35)" />
+              </TouchableOpacity>
             </View>
           )}
         />
@@ -356,7 +445,41 @@ export default function CommunityThread() {
 
       {/* Reply composer */}
       {!loading && post ? (
-        <View style={[styles.inputRow, { paddingBottom: insets.bottom + 10 }]}>
+        <View style={{ paddingBottom: insets.bottom + 10 }}>
+          {canReplyAsProvider ? (
+            <View style={styles.replyAsRow}>
+              <TouchableOpacity
+                style={[styles.replyAsChip, replyAsProvider && styles.replyAsChipActive]}
+                activeOpacity={0.8}
+                onPress={() => setReplyAsProvider(true)}
+              >
+                <Text style={replyAsProvider ? styles.replyAsTextActive : styles.replyAsText}>
+                  {myInfo?.name ?? 'Your business'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.replyAsChip, !replyAsProvider && styles.replyAsChipActive]}
+                activeOpacity={0.8}
+                onPress={() => setReplyAsProvider(false)}
+              >
+                <Text style={!replyAsProvider ? styles.replyAsTextActive : styles.replyAsText}>
+                  You
+                </Text>
+              </TouchableOpacity>
+              {canOfferHelp ? (
+                <TouchableOpacity
+                  style={styles.canHelpBtn}
+                  activeOpacity={0.85}
+                  disabled={submitting}
+                  onPress={() => submitReply('can_help')}
+                >
+                  <Feather name="check" size={13} color="#080808" />
+                  <Text style={styles.canHelpText}>I can help</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+        <View style={styles.inputRow}>
           <TextInput
             style={styles.input}
             placeholder="Add a reply…"
@@ -369,7 +492,7 @@ export default function CommunityThread() {
           />
           <TouchableOpacity
             style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
-            onPress={submitReply}
+            onPress={() => submitReply('reply')}
             disabled={!canSend}
             activeOpacity={0.8}
           >
@@ -380,7 +503,24 @@ export default function CommunityThread() {
             )}
           </TouchableOpacity>
         </View>
+        </View>
       ) : null}
+
+      <ReportSheet
+        visible={reportReplyTarget !== null}
+        title="Report this reply"
+        options={REPLY_REPORT_REASONS}
+        submitting={reportingReply}
+        onCancel={() => setReportReplyTarget(null)}
+        onSubmit={async (reason, notes) => {
+          const target = reportReplyTarget
+          if (!target) return
+          setReportingReply(true)
+          await reportReply(target, reason, notes)
+          setReportingReply(false)
+          setReportReplyTarget(null)
+        }}
+      />
 
       {/* iOS: a Done bar above the keyboard so a multiline reply can be
           dismissed (mirrors the message composer's accessory bar). */}
@@ -401,6 +541,42 @@ export default function CommunityThread() {
 }
 
 const styles = StyleSheet.create({
+  replyAsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingBottom: 8,
+  },
+  replyAsChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: 'rgba(240,232,213,0.05)',
+  },
+  replyAsChipActive: { backgroundColor: 'rgba(200,146,42,0.18)' },
+  replyAsText: { color: 'rgba(240,232,213,0.45)', fontSize: 11 },
+  replyAsTextActive: { color: '#C8922A', fontSize: 11, fontWeight: '600' },
+  canHelpBtn: {
+    marginLeft: 'auto',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#C8922A',
+  },
+  canHelpText: { color: '#080808', fontSize: 11, fontWeight: '700' },
+  answerActions: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  helpChip: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    backgroundColor: 'rgba(200,146,42,0.15)',
+  },
+  helpChipText: { color: '#C8922A', fontSize: 9, fontWeight: '700' },
+  viewProfile: { color: '#C8922A', fontSize: 11, fontWeight: '600' },
   accessoryBar: {
     flexDirection: 'row',
     alignItems: 'center',

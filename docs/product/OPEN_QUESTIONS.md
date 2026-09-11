@@ -591,7 +591,73 @@ schema; the product rules around them do not. Each question below is separately 
 - **What an answer would have to weigh:** an append-only guard on the review tables would need an explicit erasure-cascade exemption (the shape `20261053000000` already uses, which exists because that exemption was forgotten once), and it would sit directly on top of **OQ-077**, which has not decided what deletion is supposed to do to transaction evidence at all. Deciding this before OQ-077 risks locking in a retention posture by accident.
 - **This entry deliberately proposes nothing.** Whether operator power over review rows is accepted, bounded, or removed is a product and operations decision with legal exposure attached, not a trigger to write.
 - **Blocks:** nothing shipped. It blocks any absolute phrasing — a support script, a provider-facing claim or a PD — saying reviews cannot be edited or deleted by **anyone**, as opposed to by any client role. `REVIEWS_OPERATIONS.md` § 5 is worded to the narrower, true claim.
-- **Status:** Open
+- **Status:** CLOSED — `service_role` is accepted trusted infrastructure; the guarantee is that no client, provider or operator path exposes rating mutation and canonical recomputation remains the source of truth. Resolved by **PD-101**, 2026-09-11
+
+---
+
+### OQ-081 — Should a Community shoutout require a completed booking?
+- **Area:** Community / reputation boundary
+- **Why it matters:** **PD-097** ships shoutouts with booking linkage **optional and verified when
+  offered**. The alternative — requiring the author's own completed booking with the provider they
+  name — is the stricter product and was not chosen, for a reason worth stating plainly: in a
+  **25-30 person beta almost nobody has a completed booking with the provider they want to
+  recommend**, so the requirement would make the feature unusable on the day it shipped. It would
+  also rebuild the review system's evidence bar on a surface that is deliberately not a review —
+  and if a shoutout needs a completed booking, the honest question is why it is not simply a review.
+- **What is at stake either way.** Optional linkage means an unbacked recommendation is possible,
+  including one written by a friend who has never booked. That is **not** a reputation attack — a
+  shoutout moves no rating, no review count and no marketplace position, and nothing in discovery
+  reads it — but it is a **trust signal a reader may over-weight**, which is why the "Worked
+  together" badge exists and appears **only** where the server verified a booking. Requiring
+  linkage would remove that ambiguity and most of the feature with it.
+- **What would change the answer:** evidence of astroturfing once the cohort is larger; a decision
+  to let shoutouts influence anything at all (which would make verification mandatory rather than
+  optional); or a reading that an unbacked recommendation on a provider's profile is itself a
+  misleading claim regardless of what it moves.
+- **This entry deliberately proposes nothing.** The requirement is a one-line change in
+  `enforce_community_post_integrity`; which line is right is a product decision about what a
+  recommendation is supposed to mean.
+- **Blocks:** nothing shipped. It blocks describing a shoutout to a user in any words stronger than
+  what the badge says.
+- **Status:** CLOSED — a completed booking is NOT required; a verified link may show a factual "Booked on The Book" indicator that changes no rating and whose absence implies nothing. Resolved by **PD-098**, 2026-09-11
+
+---
+
+### OQ-082 — What happens to Community content when an operator needs it gone?
+- **Area:** Community / moderation
+- **Why it matters:** Reporting a Community post creates a **real operator case** through the same
+  `public.reports` intake every other report uses (PD-088's bounds apply). What does not exist is
+  an **outcome**: `community_posts.is_active` has **no writer anywhere** — not the app, not an
+  operator RPC, not a migration — and the only removal path is the author's own delete. So an
+  operator can read a case, claim it, resolve it and note it, and **cannot take the content down**.
+  The column reads like a working take-down mechanism and is not one; it is now commented as
+  reserved and unused so the next reader meets that fact rather than discovering it by wiring a
+  button that fails silently through PostgREST row filtering.
+- **Why this matters more than it did last week:** the reportable surface just grew from ~30
+  providers to everyone with an account, and a client-facing community without a take-down path is
+  a different risk posture from a provider-only one.
+- **What an answer needs:** whether operator take-down is in scope pre-beta; if so, an operator-only
+  RPC with a case event recording who and why (the shape `20261050000000` already uses), and an
+  UPDATE policy that admits it without widening what an author may edit. **PD-068 already says the
+  operator is the only adjudicator** — this is about giving that adjudicator an action.
+- **This entry deliberately proposes nothing**, and specifically does not propose automatic or
+  volume-triggered removal, which would be exactly the participant-driven adjudication PD-068
+  forbids, wearing a threshold.
+- **Blocks:** nothing shipped. It blocks telling a reporter that content will be removed, and it
+  blocks any Operations copy implying a take-down outcome exists.
+- **Status:** CLOSED — an operator can hide and restore Community posts and replies; hiding preserves the row, the report, the case and the action history, and is never a delete. Resolved by **PD-099**, 2026-09-11
+
+---
+
+### OQ-083 — Does PD-090's accepted `_visible`-vs-base-table diff survive Community opening to everyone?
+- **Area:** Safety / privacy
+- **Why it matters:** **PD-090** (closing OQ-076, 2026-09-10) ruled that a determined person being able to diff a `_visible` view against its base table — and infer a block from the difference — is an **accepted limitation for the Houston closed beta**, and deliberately did NOT narrow the base-table read policies, because that is a large, high-risk change to the most transaction-sensitive authorization surface in the product traded against defeating a two-request diff run by someone who already suspects the answer. That reasoning stands on its own terms and is not reopened here.
+- **What changed underneath it.** The Community reshape did two things to the premise. First, the population who can run the diff went from **accounts holding a `providers` row (~30)** to **every account**, because the base-table read policy is now `using (true)` for any signed-in caller. Second, Community is the surface PD-089's hiding rule was written FOR — it is the harassment-adjacent, many-to-many content surface, not a transaction record. A blocked party can read `community_posts` and `community_replies` directly and see everything the view hides from them, including posts and replies by the person who blocked them.
+- **Also newly diffable through the same door, and worth naming separately:** deactivated posts (`is_active = false`) and **expired Open Today notes**, both of which the view filters and the base table does not.
+- **PD-090's own text says "Revisit on safety, abuse, privacy, legal or broader launch grounds."** This is that ground, and it is recorded rather than acted on — narrowing the base-table read for `community_posts`/`community_replies` is a much smaller change than the bookings/threads/reviews narrowing PD-090 declined, but it is still a rule change on a shipped surface and it is not this session's to make.
+- **What is NOT at stake:** nothing is exposed to a stranger. Both tables remain closed to `anon` twice over (a `TO authenticated` policy and a revoked grant), and no private provider column rides in. The ordinary app path reads only the views. The current posture is pinned by `supabase/tests/community.test.sql` § 7 so that narrowing it later is a visible change rather than a silent one.
+- **Blocks:** nothing shipped. It blocks describing Community's block filter to a user as concealment rather than as absence from their ordinary surfaces.
+- **Status:** CLOSED — PD-090 stands for the closed beta; revisit before broader or public launch if safety, privacy, abuse evidence or legal review requires stronger concealment. Resolved by **PD-100**, 2026-09-11
 
 ---
 
@@ -619,6 +685,10 @@ say that was false.
 | **OQ-075** — Should someone you blocked disappear from your feeds, or only be unable to reach you? | 2026-09-09 | **PD-089** — they disappear from **ordinary** discovery, content and community surfaces; only the narrow access required for existing booking or barter history, logistics, cancellation, completion or review is preserved. **Locked but NOT IMPLEMENTED**, and explicitly not Session 8B. |
 | **OQ-078** — Does "latest" mean the latest review WRITTEN or the latest service RECEIVED? | 2026-09-11 | **PD-092** — the latest service, on `bookings.completed_at` |
 | **OQ-079** — Is `service_role`'s ability to pin a review's `created_at` an accepted posture? | 2026-09-11 | **PD-094** — no, and no rating pin of any kind |
+| **OQ-080** — Is privileged mutation of review ROWS an accepted operator power? | 2026-09-11 | **PD-101** — accepted trusted infrastructure; no client/provider/operator path exposes it |
+| **OQ-081** — Should a Community shoutout require a completed booking? | 2026-09-11 | **PD-098** — no; a verified link may show a factual indicator that changes no rating |
+| **OQ-082** — What happens to Community content when an operator needs it gone? | 2026-09-11 | **PD-099** — hide and restore, audited; never a delete |
+| **OQ-083** — Does PD-090 survive Community opening to everyone? | 2026-09-11 | **PD-100** — yes for the closed beta; revisit before broader launch |
 
 **Three of those four closures are decisions the product has not yet built**, and the index says so
 in each row rather than letting "Closed" read as "done". A question is closed by a decision; the
