@@ -3,11 +3,18 @@ import { supabase } from './supabase'
 // ── Blind reveal read layer (DB is authoritative — Phase 0) ──────────────────
 //
 // The DATABASE owns review reveal and eligibility. The canonical rule lives once
-// in SQL (migration 20260902000000): a review is revealed when the booking is
-// eligible (status='completed' AND under_review=false) AND (the counterpart
-// review exists OR the 7-day window from the server-stamped completed_at has
-// closed). One 7-day definition, one `<=` boundary. TypeScript no longer decides
-// whether hidden reviews are visible.
+// in SQL and TypeScript no longer decides whether hidden reviews are visible.
+//
+// The rule, as of 20261082000000 (PD-093): a review is revealed when the booking
+// has a server-stamped `completed_at` AND (the counterpart review exists OR the
+// 7-day window has closed) — with one twist. **Reveal LATCHES.** While a booking
+// is `under_review` (a dispute hold), that same rule is evaluated as of
+// `bookings.under_review_at`, the instant the hold opened. So a review that was
+// already public when someone filed stays public and keeps counting, and a review
+// that had not revealed yet stays held. Filing a dispute is not a way to remove a
+// review. Phase 0's flat `under_review = false` requirement is GONE; do not
+// restore it from this comment's previous wording. One 7-day definition, one `<=`
+// boundary, three immutable server-stamped facts and no cached verdict.
 //
 // provider_reviews: reveal is enforced by a single SECURITY DEFINER-gated SELECT
 // policy (public.provider_review_revealed). The DB returns only revealed rows plus
@@ -41,9 +48,18 @@ export interface RevealedReview {
   followedPolicy?: boolean | null
 }
 
-export interface ReviewAggregate {
+/**
+ * A provider's public reputation as the DATABASE computes it. `average` is the
+ * mean over distinct clients of each client's review of their most recently
+ * completed service (PD-091 + PD-092); `reviewCount` is every revealed review;
+ * `clientCount` is how many clients the average rests on. The last two are NOT
+ * interchangeable and a surface showing one without the other is misleading in
+ * whichever direction it chose — which is why they are one object.
+ */
+export interface ProviderReputation {
   average: number
-  count: number
+  reviewCount: number
+  clientCount: number
 }
 
 export function isRevealed(
@@ -87,13 +103,43 @@ export async function fetchRevealedProviderReviews(
   }>
   if (reviews.length === 0) return []
 
-  // The DB SELECT policy on provider_reviews is the single source of truth for
-  // reveal (SECURITY DEFINER-gated): every row returned here is already revealed
-  // or authored by the reader. No client-side re-filter — doing so previously
-  // dropped approved rows for non-participants whose RLS-blocked reads of
-  // client_reviews/bookings made the reveal support sets empty.
+  // THE POLICY ANSWERS A DIFFERENT QUESTION THAN THIS LIST ASKS.
+  //
+  // `provider_reviews_read` is `auth.uid() = reviewer_user_id OR
+  // provider_review_revealed(booking_id)` — correct as a privacy boundary,
+  // because a reviewer must be able to read back what they wrote. But this is
+  // the PUBLIC list, and "may I read this row" is not "is this row public": the
+  // author's own blind review satisfies the first and fails the second. Without
+  // this filter a reviewer opened the provider's profile from the screen that
+  // had just promised their review stays private, and found it listed.
+  //
+  // The filter is the DATABASE's answer, not a recomputation of reveal here. An
+  // earlier client-side re-filter was removed for good reason: it rebuilt reveal
+  // from `bookings`/`client_reviews` reads that RLS blocks for non-participants,
+  // so it silently dropped real reviews for exactly the readers the list is for.
+  // `revealed_provider_review_ids` is SECURITY DEFINER and uses the same
+  // predicate the policy does, so it cannot disagree with it.
+  //
+  // FAILS CLOSED, and that direction is deliberate: if the call fails we show no
+  // reviews rather than a list that might contain an unrevealed one.
+  const { data: revealedIds, error: revealedErr } = await supabase.rpc(
+    'revealed_provider_review_ids',
+    { p_provider_id: providerId },
+  )
+  if (revealedErr) {
+    console.log('revealed_provider_review_ids error:', revealedErr.message)
+    return []
+  }
+  const publicIds = new Set(
+    ((revealedIds ?? []) as Array<string | { revealed_provider_review_ids: string }>).map((v) =>
+      typeof v === 'string' ? v : v.revealed_provider_review_ids,
+    ),
+  )
+  const publicReviews = reviews.filter((r) => publicIds.has(r.id))
+  if (publicReviews.length === 0) return []
+
   const reviewerIds = Array.from(
-    new Set(reviews.map((r) => r.reviewer_user_id).filter(Boolean)),
+    new Set(publicReviews.map((r) => r.reviewer_user_id).filter(Boolean)),
   ) as string[]
   const nameById = new Map<string, string>()
   if (reviewerIds.length > 0) {
@@ -106,7 +152,7 @@ export async function fetchRevealedProviderReviews(
     )
   }
 
-  return reviews.map((r) => ({
+  return publicReviews.map((r) => ({
     id: r.id,
     bookingId: r.booking_id,
     rating: r.rating,
@@ -353,10 +399,44 @@ export function aggregateClientDimensions(
   return { showedUp, onTime, followedPolicy, hasAny }
 }
 
-export function aggregateFromRevealed(reviews: { rating: number }[]): ReviewAggregate {
-  if (reviews.length === 0) return { average: 0, count: 0 }
-  const sum = reviews.reduce((s, r) => s + (r.rating || 0), 0)
-  return { average: sum / reviews.length, count: reviews.length }
+/**
+ * The provider's PUBLIC REPUTATION, computed by the database and nowhere else.
+ *
+ * THIS REPLACES `aggregateFromRevealed`, which averaged the fetched review rows
+ * in TypeScript. That was a second definition of the rating, and after PD-091 it
+ * was a DIFFERENT rating: the rule is the mean of each distinct client's review
+ * of their most recently completed service (PD-092), not the mean of every
+ * receipt. The two agree only until someone books the same provider twice — the
+ * exact case the rule exists to govern — so the provider profile was rendering
+ * the canonical value in its header and the receipts mean, larger and in 40pt,
+ * a few rows below it. Both labelled "Rating".
+ *
+ * `provider_reputation_canonical()` says "DO NOT restate this query anywhere",
+ * and `reviews_phase2.test.sql` § 6b asserts exactly one function in the schema
+ * contains it. This is the TypeScript side of that same rule:
+ * `__tests__/guards/oneRatingDefinition.test.ts` fails if any module averages
+ * review ratings again.
+ *
+ * Returns null when the reputation cannot be read — callers must render "New" or
+ * nothing, never 0, which would be a false one-star-shaped claim.
+ */
+export async function fetchProviderReputation(
+  providerId: string,
+): Promise<ProviderReputation | null> {
+  const { data, error } = await supabase.rpc('provider_reputation', {
+    p_provider_id: providerId,
+  })
+  if (error) {
+    console.log('provider_reputation error:', error.message)
+    return null
+  }
+  const row = Array.isArray(data) ? data[0] : data
+  if (!row) return null
+  return {
+    average: Number(row.average_rating ?? 0),
+    reviewCount: Number(row.review_count ?? 0),
+    clientCount: Number(row.rating_client_count ?? 0),
+  }
 }
 
 // Completion rate for a client, from their bookings. Real and exact:
@@ -602,9 +682,17 @@ export function reviewOpportunityCopy(
       return {
         actionable: false,
         terminal: true,
-        label: 'Under review',
+          label: 'Under review',
         title: 'Under review',
-        body: 'This booking is currently under review. Review activity is temporarily paused.',
+        // PD-093 + PD-068. Two words were wrong here. "temporarily" promised an
+        // end the product does not back — a hold clears only when an operator
+        // acts, with no timeout and no notification, and this repo already
+        // stripped "within 48 hours"-class copy elsewhere for the same reason.
+        // And "review activity is paused" was wrong for the common case: a
+        // review that had already revealed stays public and keeps counting.
+        // Filing changes nothing about it. Only SUBMISSION is blocked, so that
+        // is the only thing this says.
+        body: 'A new review can\u2019t be added to this booking while it is under review.',
       }
     // not_completed covers any booking that never became a completed service —
     // including no_show. A no-show is a real, recorded booking event, but it is

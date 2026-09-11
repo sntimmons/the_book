@@ -21,6 +21,9 @@ export interface Provider {
   rating: number | null
   average_rating: number | null
   review_count: number | null
+  // PD-091: how many distinct clients the rating averages. Selected in
+  // PUBLIC_PROVIDER_FIELDS and granted on providers_visible.
+  rating_client_count: number | null
   total_bookings: number | null
   repeat_client_rate: number | null
   follower_count: number | null
@@ -99,6 +102,7 @@ const PUBLIC_PROVIDER_FIELDS = [
   'cover_image_url',
   'rating',
   'average_rating',
+  'rating_client_count',
   'review_count',
   'total_bookings',
   'repeat_client_rate',
@@ -451,8 +455,12 @@ export function useProviderSearch(
         dbQuery = dbQuery.eq('category_id', categoryId)
       }
 
+      // OQ-079 ruling: the rating this filters on must be the DERIVED one.
+      // `rating` is a mirror of `average_rating` from 20261084000000 forward, but
+      // the canonical column is the one to name — a surface that filters on the
+      // mirror is one rename away from filtering on a number nothing computes.
       if (minRating) {
-        dbQuery = dbQuery.gte('rating', minRating)
+        dbQuery = dbQuery.gte('average_rating', minRating)
       }
 
       // `is_mobile` is the provider's own published service mode and is already
@@ -489,7 +497,12 @@ export function useProviderSearch(
         dbQuery = dbQuery.in('id', Array.from(openToday))
       }
 
-      dbQuery = dbQuery.order('rating', { ascending: false }).limit(20)
+      // Ranked on the canonical derived rating, for the same reason. Before
+      // 20261084000000 this ordered search on `providers.rating` — a column no
+      // recompute has ever written, and which only service_role could set. Every
+      // display surface read `average_rating`, so search was ranking on a number
+      // that no review could move and a hand-edit could fix in place.
+      dbQuery = dbQuery.order('average_rating', { ascending: false }).limit(20)
 
       const { data, error } = await dbQuery
       if (error) throw error

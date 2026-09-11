@@ -14,11 +14,13 @@ import { supabase } from '../../../lib/supabase'
 import { startBooking } from '@/lib/startBooking'
 import {
   fetchRevealedProviderReviews,
-  aggregateFromRevealed,
+  fetchProviderReputation,
+  ProviderReputation,
   sortAndFilter,
   ReviewSort,
   RevealedReview,
 } from '../../../lib/reviews'
+import { ratingClientLabel, reviewTotalLabel } from '../../../lib/reputationLabel'
 import ReviewCard from '../../../components/ReviewCard'
 
 const CHIPS: { key: ReviewSort; label: string }[] = [
@@ -38,14 +40,19 @@ export default function SeeAllReviews() {
   const [providerLocation, setProviderLocation] = useState('')
   const [loading, setLoading] = useState(true)
   const [sort, setSort] = useState<ReviewSort>('top')
+  const [rep, setRep] = useState<ProviderReputation | null>(null)
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       if (!id) return
       setLoading(true)
-      const [list, provRes] = await Promise.all([
+      const [list, reputation, provRes] = await Promise.all([
         fetchRevealedProviderReviews(id as string),
+        // PD-091/092: the header rating is the DATABASE's. Averaging the rows on
+        // this page would give a receipts mean — a second, different rating on a
+        // screen the reader reached FROM the profile's canonical one.
+        fetchProviderReputation(id as string),
         supabase
           .from('providers')
           .select('display_name, neighborhood, location, category_id')
@@ -54,6 +61,7 @@ export default function SeeAllReviews() {
       ])
       if (cancelled) return
       setReviews(list)
+      setRep(reputation)
       const prov = provRes.data as {
         display_name: string | null
         neighborhood: string | null
@@ -79,9 +87,9 @@ export default function SeeAllReviews() {
     }
   }, [id])
 
-  const agg = useMemo(() => aggregateFromRevealed(reviews), [reviews])
   const visible = useMemo(() => sortAndFilter(reviews, sort), [reviews, sort])
-  const stars = Math.round(agg.average)
+  const reviewCount = rep?.reviewCount ?? reviews.length
+  const stars = Math.round(rep?.average ?? 0)
 
   function handleBookNow() {
     if (!id) return
@@ -111,10 +119,20 @@ export default function SeeAllReviews() {
         <Text style={s.headerTitle}>Reviews</Text>
         <View style={s.headerAgg}>
           <Ionicons name="star" size={14} color="#C8922A" />
-          <Text style={s.headerAggValue}>{agg.average.toFixed(1)}</Text>
+          <Text style={s.headerAggValue}>
+            {rep != null && rep.average > 0 ? rep.average.toFixed(1) : 'New'}
+          </Text>
         </View>
       </View>
-      <Text style={s.totalLabel}>{agg.count} TOTAL</Text>
+      {/* Two numbers, each labelled with what it counts. The rating above rests
+          on CLIENTS; the list below is every revealed review. PD-091 makes that
+          distinction load-bearing wherever a rating appears. */}
+      <Text style={s.totalLabel}>
+        {[ratingClientLabel(rep?.clientCount), reviewTotalLabel(reviewCount)]
+          .filter(Boolean)
+          .join(' · ')
+          .toUpperCase() || `${reviewCount} TOTAL`}
+      </Text>
 
       {/* Filter / sort chips */}
       <ScrollView
@@ -153,10 +171,10 @@ export default function SeeAllReviews() {
             <View style={s.empty}>
               <Ionicons name="star-outline" size={30} color="rgba(240,232,213,0.2)" />
               <Text style={s.emptyTitle}>
-                {agg.count === 0 ? 'No more reviews to show' : 'No reviews match this filter'}
+                {reviewCount === 0 ? 'No more reviews to show' : 'No reviews match this filter'}
               </Text>
               <Text style={s.emptySub}>
-                {agg.count === 0
+                {reviewCount === 0
                   ? 'Be the first to share your experience with this provider for your most recent booking.'
                   : 'Try a different filter to see more reviews.'}
               </Text>

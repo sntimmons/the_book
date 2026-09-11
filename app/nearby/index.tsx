@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useProviders, useCategories, Provider, Category } from '../../hooks/useProviders'
+import { displayRating } from '../../lib/reputationLabel'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,8 @@ function firstName(name: string): string {
 }
 
 function ratingValue(p: Provider): number | null {
-  return p.average_rating ?? p.rating
+  // Unrated is NOT zero-rated. average_rating is NOT NULL DEFAULT 0.
+  return displayRating(p)
 }
 
 function providerHood(p: Provider): string {

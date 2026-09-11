@@ -722,10 +722,42 @@ begin
                            -- a fourth adjudication-shaped function still has to be deliberate.
                            'adjudicate_barter_obligation',
                            'enforce_barter_adjudication_append_only',
-                           'enforce_barter_adjudication_consistent');
+                           'enforce_barter_adjudication_consistent',
+                           -- Reviews Phase 2: `provider_reputation` matches
+                           -- `reputation` but is a BOOKING-review aggregate, not
+                           -- a barter object. Exempted by name like the rest, and
+                           -- the check below proves it reads no barter table so
+                           -- the exemption cannot become the hole this pin exists
+                           -- to prevent.
+                           'provider_reputation',
+                           'recompute_provider_rating_for',
+                           -- The PM rulings on the Reviews Phase 2 branch added three
+                           -- more that trip this sweep on `reputation` and
+                           -- `under_review`, and none of them is barter machinery:
+                           -- `provider_reputation_canonical` is the single definition
+                           -- of the BOOKING-review aggregate the two above delegate
+                           -- to; `reputation_is_derived` refuses a stored provider
+                           -- rating that the canonical query does not produce
+                           -- (OQ-079); `stamp_under_review_at` stamps
+                           -- `bookings.under_review_at`, which is the BOOKING dispute
+                           -- hold, not `barter_obligation_under_review`. The
+                           -- assertion below keeps all five exemptions honest by
+                           -- proving they touch no barter object.
+                           'provider_reputation_canonical',
+                           'reputation_is_derived',
+                           'stamp_under_review_at');
   perform pg_temp.chk('cancellation',
     'no completion, escalation or timeout function beyond the ruled no-show and adjudication',
     '0', v_n::text);
+  select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('provider_reputation', 'recompute_provider_rating_for',
+                       'provider_reputation_canonical', 'reputation_is_derived',
+                       'stamp_under_review_at')
+     and p.prosrc ~* 'barter';
+  perform pg_temp.chk('cancellation',
+    'and the exempted reputation functions read no barter object', '0', v_n::text);
+
   -- Cancelling produces no review opportunity and touches no reputation surface.
   select count(*) into v_n from information_schema.columns
    where table_schema = 'public' and table_name = 'barter_agreement_cancellations'

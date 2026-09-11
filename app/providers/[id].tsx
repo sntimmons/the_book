@@ -321,6 +321,7 @@ export default function ProviderProfilePage() {
     portfolio: portfolioImages,
     reels: reelVideos,
     rating: ratingValue,
+    ratingClientCount: (provider as { rating_client_count?: number }).rating_client_count ?? 0,
     bookingCount: provider.total_bookings ?? 0,
     followerCount: followerCount,
     followingCount: 0,

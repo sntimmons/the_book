@@ -1813,6 +1813,192 @@ as locked decisions.
 
 ---
 
+### PD-091 — Reputation counts client relationships, not receipts
+- **Decided:** 2026-09-11
+- **Decision.** A provider's public rating is the **mean of the LATEST revealed review from each
+  DISTINCT client**. Every review is still stored, still displayed, and still counted in the
+  review count. A third number — how many distinct clients the rating rests on — is published and
+  **must be labelled** wherever the rating appears.
+- **The problem.** Phase 0 correctly let every completed booking create its own review
+  opportunity, because service quality changes and a client's fifth visit is real information.
+  But the aggregate averaged every revealed review, so twenty reviews from one client counted as
+  twenty independent customer relationships. Two people booking each other could manufacture a
+  reputation; a genuinely loyal client could manufacture one by accident.
+- **Why not the alternatives**, recorded so the analysis is not redone:
+  - **Blocking repeat reviews** fixes the arithmetic by destroying the signal — a provider whose
+    quality dropped last month would keep a rating built on a review from a year ago.
+  - **A cap** ("at most N from one client") needs an arbitrary N and still permits N-fold
+    inflation.
+  - **Diminishing weight** is hard to explain to a provider asking why their rating moved, and
+    hard to pin in a test without encoding the curve twice.
+  - **Deleting repeat reviews** destroys legitimate feedback.
+- **Why this one.** It is one sentence; it is deterministic with no constant to tune; it is kind
+  to repeat clients, whose voice counts fully and whose **latest** opinion is the one that counts,
+  so a loyal client who is disappointed today moves the rating today; and it is useless for
+  farming, because twenty reviews from one pair contribute exactly one value.
+- **The trade-off, stated because it is real.** A provider with three loyal clients and twenty
+  reviews has a rating built on **three** values while displaying twenty reviews. That is
+  intended — three relationships is what they have — but it makes the display obligation
+  load-bearing. The two numbers mean different things and a surface showing one without the other
+  is misleading in whichever direction it chose.
+- **What this does NOT do.** No trust score, no decay, no social or content signal, no Reel or
+  post influence, and **no barter influence** — barter remains entirely outside reviews and
+  reputation for beta. Review edit and delete remain impossible for every client role, which is
+  what stops a write-observe-rewrite loop.
+- **Where the two numbers appear.** The obligation above is discharged, not merely stated:
+  the provider profile reads `Rating · N clients`; the search card and the Top Rated rows and
+  hero show `★ 4.8 · N clients` instead of a bare review total; and Top Rated **ranks ties on
+  client count, not review count**. That last one is not cosmetic — leaving the tiebreak on
+  receipts would have let one repeat client push a provider up the leaderboard even though the
+  rating itself was protected, which moves the gaming one column over rather than closing it.
+  Phrasing lives in `lib/reputationLabel.ts` so it is one decision in one place.
+- **What decides "latest" is the server's.** `provider_reviews.created_at` was client-settable,
+  which would have let one review be pinned as "latest" forever — uncorrectable, because reviews
+  can never be edited or deleted. It is now server-stamped and immutable (`20261079000000`).
+  This rule is only as trustworthy as its ordering key.
+- **A dispute does NOT change a published review.** `20261079000000` made the stored rating drop
+  the instant a booking was placed `under_review`, and this entry previously recorded that as
+  correct. It was reversed by ruling before merge: see **PD-093**. Reveal now latches
+  (`20261082000000`) — a review already public when a hold opens stays public and keeps counting;
+  a review not yet revealed stays held.
+- **Evidence.** `20261077000000`, `20261078000000`, `20261079000000`, `20261080000000`;
+  `supabase/tests/reviews_phase2.test.sql`; `__tests__/lib/reputationLabel.test.ts`;
+  `scripts/negotiation-concurrency.mjs` (`raceTwoReviewsOneProvider`);
+  `docs/operations/REVIEWS_OPERATIONS.md`.
+- **Known limit, not solved here.** The rule counts distinct client *accounts*. Many accounts
+  each leaving one review is still unbounded — identity is what would bound it, and this session
+  does not take on third-party identity. Recorded in `REVIEWS_OPERATIONS.md` under what the
+  system does not promise.
+- **Two nuances the implementation chose and Product had not ruled on** were filed rather than
+  quietly settled, and both have since been ruled: **OQ-078** → **PD-092** ("latest" is the latest
+  SERVICE, ordered on `bookings.completed_at`), **OQ-079** → **PD-094** (no manual or service_role
+  rating pin; the stored rating must be reproducible from the review data).
+- **Status:** Locked; **implemented on `feat/reviews-phase-2`**, pending merge, as amended by PD-092, PD-093 and PD-094.
+
+---
+
+### PD-092 — "Latest" is the latest SERVICE, not the latest receipt
+- **Decided:** 2026-09-11 (closes **OQ-078**)
+- **Decision.** For a repeat client/provider pair, the reputation-contributing review is the
+  revealed review tied to the **most recently completed eligible service**, ordered by the
+  authoritative booking chronology `bookings.completed_at` — **not** by review submission time.
+  All legitimate revealed reviews still display in history; this rule decides only which single
+  review from a given client feeds the provider's aggregate rating.
+- **The tie-breaker, which is reachable and therefore documented.** `completed_at` is stamped
+  `now()` — the transaction timestamp — so a provider who marks two of the same client's bookings
+  complete in ONE action gives both the identical instant. When services tie, the tie is broken by
+  the review's server-stamped `created_at` (descending), then by review `id` (descending). The
+  first is "among services that ended at the same moment, the client's later statement stands";
+  the second exists because `distinct on` without a total order returns an implementation-defined
+  row, and a rating that changes between two recomputes with identical inputs is worse than a
+  rating that is merely debatable.
+- **The problem.** PD-091 ordered on `provider_reviews.created_at` — the latest review *written*.
+  A client who visits on the 1st and the 5th, reviews the 5th visit first and the 1st visit a week
+  later, had their **older** visit decide the rating. PD-091's whole justification is that a
+  rating reflects the most recent relationship; a late review of an old service silently replacing
+  a newer one breaks that for no gain.
+- **Why `completed_at`.** It is server-stamped, immutable (SEC-DATA-101), and already the anchor
+  for eligibility, the 7-day blind window and reveal. Ordering on it means ONE authoritative
+  chronology governs the whole review system rather than two that can disagree. It also removes
+  submission timing from the answer **wherever the services differ**: two concurrent reviews on two
+  differently-completed bookings now produce the same rating regardless of which commits first.
+  Submission order still decides the tie above, and only that tie.
+- **What this does NOT change.** One client still contributes exactly one value. `review_count` is
+  still every revealed review. `rating_client_count` is still distinct contributing clients. The
+  blind window, one-sided validity, one-review-per-reviewer-per-booking, no client UPDATE/DELETE,
+  and barter's total exclusion from reviews and reputation are all untouched.
+- **Evidence.** `20261083000000` (`provider_reputation_canonical()` — now the ONLY definition of
+  the rule, delegated to by `recompute_provider_rating_for` and `provider_reputation`);
+  `supabase/tests/reviews_phase2.test.sql` §§ 5b, 5b-ii, 6b; `scripts/negotiation-concurrency.mjs`
+  (`raceTwoReviewsOneProvider`, now asserting a deterministic rating).
+- **Status:** Locked; **implemented on `feat/reviews-phase-2`**, pending merge.
+
+---
+
+### PD-093 — Filing a dispute is not a reputation lever
+- **Decided:** 2026-09-11
+- **Decision.** Opening a dispute must **not** suppress or change the public reputation effect of
+  an **already revealed** review.
+  - A review **not yet revealed** when a booking enters `under_review` **may remain held** while
+    the dispute is pending.
+  - A review **already revealed** when the dispute opens **remains visible and continues
+    counting**.
+  - Merely opening a dispute **never** changes the rating.
+  - An operator **resolution** may later change a review's eligibility or invalidate it **only if
+    an approved resolution rule says so**. No such rule exists, and none is created here.
+- **The problem.** `20261079000000` recomputed the stored rating on the hold, so a provider's
+  public rating fell the instant a dispute was filed. Filing is an act by a participant with no
+  adjudication behind it, so that made the dispute button an unreviewed veto over the other
+  side's public record — reachable by the provider who dislikes a 1-star and by the client who
+  wants leverage, with the same click. **PD-068** is explicit that participants never
+  self-adjudicate; this handed them an adjudication outcome for free.
+- **How "already revealed" is known.** Not by storing a verdict. Reveal is partly time-based — the
+  7-day window closing with no counterpart review reveals a review with no write anywhere — so a
+  `revealed_at` stamp would be wrong whenever nobody happened to be writing. Following **PD-070**,
+  it is **derived from immutable facts**: the counterpart review's server-stamped `created_at`,
+  the booking's `completed_at`, and one new server-stamped instant, `bookings.under_review_at`.
+  While a hold is open, reveal is the ordinary rule evaluated as of `under_review_at`.
+- **`under_review_at` has no `service_role` carve-out**, deliberately and against the local
+  convention for timestamp stamps. It decides which already-public reviews a dispute suppresses,
+  and `under_review` is already a `service_role`-only field — a carve-out would hand the only role
+  that can open a hold the ability to choose its retroactive effect. Holds that predate the column
+  are anchored at `completed_at`, which makes the latch evaluate false for every one of them: this
+  publishes nothing retroactively.
+- **What a hold still does.** It still blocks a NEW review on that booking. That takes nothing
+  away from anyone; it only stops a statement being added to a contested record.
+- **Operational consequence, stated because it creates work.** A complaint about an
+  already-visible review can no longer be handled by opening a hold. It has to be handled as a
+  case, and today's outcome is that the review stays. Support must not imply removal is possible.
+- **Evidence.** `20261082000000`, `20261085000000`; `supabase/tests/reviews_phase2.test.sql`
+  §§ 5c, 5d; `scripts/negotiation-concurrency.mjs`; `docs/operations/REVIEWS_OPERATIONS.md` § 6b.
+- **Status:** Locked; **implemented on `feat/reviews-phase-2`**, pending merge.
+
+---
+
+### PD-094 — A public rating nobody can pin
+- **Decided:** 2026-09-11 (closes **OQ-079**)
+- **Decision.** A provider's public rating is **derived from canonical eligible review data**.
+  There is **no** manual or `service_role` rating override, and **no** permanent rating pin. No
+  operator rating-editing surface is to be built.
+- **Two pins existed, and the one that was filed was the smaller one.**
+  - **(a) The filed one.** `service_role` may supply a review's `created_at`, which under PD-091
+    chose which of a repeat client's reviews was authoritative — permanently, since reviews can
+    never be edited or deleted. **PD-092 mostly dissolves this**: the ordering key is now
+    `bookings.completed_at`, and `created_at` only breaks ties between services completed in the
+    same transaction. It was never reachable — no server-side review writer exists.
+  - **(b) The one nobody filed, and the one that was live.** `public.providers.rating` — a second
+    numeric column that **no recompute has ever written**, yet is SELECT-granted to `anon` and
+    `authenticated`, published by both public provider views, and used by `hooks/useProviders.ts`
+    as the **ranking and min-rating filter key for provider search**, while every display surface
+    read `average_rating`. Every row held 0, so nothing looked wrong; the moment real reviews
+    landed, search would have ranked everyone on a stale zero, and any value written there would
+    have been a permanent, invisible, hand-set marketplace position. One UPDATE from existing.
+- **The fix, enforced rather than documented.** `rating` becomes a derived mirror of
+  `average_rating`, written only by the recompute; and an invariant refuses to STORE any provider
+  reputation value that `provider_reputation_canonical()` does not produce — **including a write
+  by `service_role`**, which is the role the ruling is about. It is an equality check against the
+  canonical computation, not a permission check, because the ruling is about *what may be stored*,
+  not *who is writing*: there is no role for which a fabricated rating is acceptable, so there is
+  no carve-out to find. Derived data is reproducible by definition, so nothing is lost when a raw
+  load is corrected by the next recompute.
+- **What was deliberately NOT done.** No operator rating editing, and none should be built — an
+  override surface would be the pin this forbids, wearing a UI. If a rating is wrong, the eligible
+  review data is what is wrong, and that is an adjudication question (**PD-068**).
+- **SCOPE, stated exactly, because the prose invites a wider reading than the implementation.** This
+  decision governs **what may be STORED in the derived columns**. It does not constrain the review
+  ROWS the canonical query reads: `service_role` retains full INSERT/UPDATE/DELETE on both review
+  tables (there is no append-only guard on either), so a holder of the service key can still move a
+  rating by fabricating or removing reviews — and the resulting aggregate passes the invariant,
+  because it *is* canonical for the altered data. That is one layer further back than OQ-079 looked
+  and it is **not decided here**; it is filed as **OQ-080**. Nothing reachable by any client role
+  changes either way.
+- **Evidence.** `20261084000000` (`reputation_is_derived()`, `providers.rating` mirror);
+  `hooks/useProviders.ts` (search now ranks and filters on `average_rating`);
+  `supabase/tests/reviews_phase2.test.sql` § 8; `docs/operations/REVIEWS_OPERATIONS.md` §§ 4, 7.
+- **Status:** Locked; **implemented on `feat/reviews-phase-2`**, pending merge.
+
+---
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

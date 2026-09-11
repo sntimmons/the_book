@@ -5,10 +5,12 @@ import { router } from 'expo-router'
 import {
   fetchRevealedProviderReviews,
   fetchProviderTrustStats,
-  aggregateFromRevealed,
+  fetchProviderReputation,
   sortAndFilter,
   RevealedReview,
+  ProviderReputation,
 } from '../lib/reviews'
+import { ratingClientLabel, reviewTotalLabel } from '../lib/reputationLabel'
 import ReviewCard from './ReviewCard'
 
 // Screen 1: the Client Reviews section embedded in the provider profile.
@@ -16,6 +18,7 @@ import ReviewCard from './ReviewCard'
 // routes to the real see-all page for this provider.
 export default function ProviderReviewsSection({ providerId }: { providerId: string }) {
   const [reviews, setReviews] = useState<RevealedReview[]>([])
+  const [rep, setRep] = useState<ProviderReputation | null>(null)
   const [rebookedPct, setRebookedPct] = useState<number | null>(null)
   const [avgResponseMins, setAvgResponseMins] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -24,12 +27,16 @@ export default function ProviderReviewsSection({ providerId }: { providerId: str
     let cancelled = false
     ;(async () => {
       setLoading(true)
-      const [list, stats] = await Promise.all([
+      const [list, stats, reputation] = await Promise.all([
         fetchRevealedProviderReviews(providerId),
         fetchProviderTrustStats(providerId),
+        // PD-091/092: the rating is the DATABASE's, not an average of the rows
+        // fetched beside it. See fetchProviderReputation.
+        fetchProviderReputation(providerId),
       ])
       if (cancelled) return
       setReviews(list)
+      setRep(reputation)
       setRebookedPct(stats.rebookedPct)
       setAvgResponseMins(stats.avgResponseMins)
       setLoading(false)
@@ -39,9 +46,13 @@ export default function ProviderReviewsSection({ providerId }: { providerId: str
     }
   }, [providerId])
 
-  const agg = aggregateFromRevealed(reviews)
+  // ONE rating on this screen, and it is the one the profile header shows. This
+  // section used to average `reviews` in TypeScript — a second rule, and after
+  // PD-091 a different number: twenty receipts from one loyal client averaged as
+  // twenty voices, right below a header that correctly counted them as one.
   const preview = sortAndFilter(reviews, 'top').slice(0, 3)
-  const stars = Math.round(agg.average)
+  const reviewCount = rep?.reviewCount ?? reviews.length
+  const stars = Math.round(rep?.average ?? 0)
 
   if (loading) {
     return (
@@ -53,7 +64,7 @@ export default function ProviderReviewsSection({ providerId }: { providerId: str
   }
 
   // Honest empty state when no revealed reviews exist yet.
-  if (agg.count === 0) {
+  if (reviewCount === 0) {
     return (
       <View style={s.section}>
         <View style={s.statRow}>
@@ -81,7 +92,14 @@ export default function ProviderReviewsSection({ providerId }: { providerId: str
     <View style={s.section}>
       {/* Trust stats triple (rating shown in the aggregate block below) */}
       <View style={s.statRow}>
-        <Stat icon="star" value={agg.average.toFixed(1)} label="Rating" />
+        {/* PD-091's display obligation: the denominator beside a rating is
+            CLIENTS. A bare rating here invites the reader to assume it rests on
+            however many reviews the list below shows. */}
+        <Stat
+          icon="star"
+          value={rep != null && rep.average > 0 ? rep.average.toFixed(1) : 'New'}
+          label={ratingClientLabel(rep?.clientCount) ?? 'Rating'}
+        />
         {rebookedPct != null && (
           <>
             <View style={s.statDivider} />
@@ -103,7 +121,9 @@ export default function ProviderReviewsSection({ providerId }: { providerId: str
       {/* Aggregate */}
       <Text style={s.heading}>Client Reviews</Text>
       <View style={s.aggRow}>
-        <Text style={s.aggValue}>{agg.average.toFixed(1)}</Text>
+        <Text style={s.aggValue}>
+          {rep != null && rep.average > 0 ? rep.average.toFixed(1) : 'New'}
+        </Text>
         <View style={s.aggRight}>
           <View style={s.aggStars}>
             {[0, 1, 2, 3, 4].map((i) => (
@@ -115,8 +135,14 @@ export default function ProviderReviewsSection({ providerId }: { providerId: str
               />
             ))}
           </View>
+          {/* "Based on N reviews" was the misleading half: the rating is not
+              based on N reviews, it is based on N clients. Both numbers are
+              true and they answer different questions, so both are shown and
+              each is labelled with what it actually counts. */}
           <Text style={s.aggCount}>
-            Based on {agg.count} {agg.count === 1 ? 'review' : 'reviews'}
+            {[ratingClientLabel(rep?.clientCount), reviewTotalLabel(reviewCount)]
+              .filter(Boolean)
+              .join(' · ')}
           </Text>
         </View>
       </View>
@@ -127,14 +153,14 @@ export default function ProviderReviewsSection({ providerId }: { providerId: str
       ))}
 
       {/* See all */}
-      {agg.count > preview.length && (
+      {reviewCount > preview.length && (
         <TouchableOpacity
           style={s.seeAll}
           activeOpacity={0.7}
           onPress={() => router.push(`/reviews/all/${providerId}` as any)}
         >
           <Text style={s.seeAllText}>
-            See all {agg.count} {agg.count === 1 ? 'review' : 'reviews'}
+            See all {reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}
           </Text>
           <Ionicons name="chevron-forward" size={14} color="#C8922A" />
         </TouchableOpacity>

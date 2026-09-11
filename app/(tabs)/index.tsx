@@ -28,6 +28,7 @@ import { supabase } from '../../lib/supabase'
 import DiscoveryLanes from '../../components/DiscoveryLanes'
 import { useAuth } from '../../context/AuthContext'
 import { fetchDueReminder, CareReminder } from '../../lib/care'
+import { displayRating } from '../../lib/reputationLabel'
 
 // ── Shimmer skeleton ──────────────────────────────────────────────────────────
 
@@ -80,7 +81,9 @@ function categoryName(categoryId: number | null | undefined, categories: Categor
 }
 
 function ratingLabel(p: Provider): string {
-  const r = p.average_rating ?? p.rating
+  // `> 0`, not `!= null`: average_rating is NOT NULL DEFAULT 0, so an unrated
+  // provider was being advertised here as ★ 0.0. See displayRating.
+  const r = displayRating(p)
   return r != null ? r.toFixed(1) : 'New'
 }
 

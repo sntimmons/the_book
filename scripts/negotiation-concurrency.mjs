@@ -2141,6 +2141,204 @@ await raceTwoOperatorsOneCase()
 await raceTwoSignedInOperators()
 await raceBlockVsVisibility()
 
+// ── REVIEWS PHASE 2 (PD-091) ────────────────────────────────────────────────
+//
+// The stored reputation on `providers` is recomputed by a trigger on every
+// review write. That recompute counts the reviews and THEN updates the row, so
+// before 20261080000000 two reviews committing concurrently each wrote a total
+// computed from a snapshot that did not contain the other — a silent lost
+// update, permanent until some unrelated review happened to recompute again.
+//
+// **B5B cannot reach this.** It runs every suite inside one transaction that is
+// always rolled back, so there is never a second session to lose an update to.
+// A lost update is only visible to a harness that commits, which is this one.
+async function seedOneCompletedBooking(daysAgo) {
+  const r = await runSql(`
+do $$
+declare v_id uuid; v_p uuid;
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  select id into v_p from public.providers where user_id = '${ids.ou}';
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values ('${ids.ru}', v_p, 'review race retry', current_date - ${daysAgo}, 'completed',
+          now() - interval '${daysAgo} days', now() - interval '${daysAgo} days')
+  returning id into v_id;
+  perform set_config('conc.book_retry', v_id::text, false);
+end $$;
+select json_build_object('c', current_setting('conc.book_retry')) as timing;`)
+  return scalar(r.out, 'c')
+}
+
+async function raceTwoReviewsOneProvider() {
+  const pid = `(select id from public.providers where user_id = '${ids.ou}')`
+
+  // Seeded inside a service_role block: `enforce_booking_write_integrity` refuses
+  // a directly-supplied `status`/`completed_at` to anyone else, and the plain
+  // owner session this harness otherwise uses is NOT that role — the first
+  // version of this fixture was silently refused and handed the race two null
+  // booking ids.
+  const seeded = await runSql(`
+do $$
+declare v_a uuid; v_b uuid; v_p uuid;
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  select id into v_p from public.providers where user_id = '${ids.ou}';
+  delete from public.provider_reviews where provider_id = v_p;
+  delete from public.bookings where user_id = '${ids.ru}' and provider_id = v_p;
+  -- Completed well outside the 7-day blind window, so both reviews are REVEALED
+  -- the moment they land and both must reach the stored aggregate.
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values ('${ids.ru}', v_p, 'review race', current_date - 40, 'completed',
+          now() - interval '40 days', now() - interval '40 days') returning id into v_a;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values ('${ids.ru}', v_p, 'review race', current_date - 39, 'completed',
+          now() - interval '39 days', now() - interval '39 days') returning id into v_b;
+  perform set_config('conc.book_a', v_a::text, false);
+  perform set_config('conc.book_b', v_b::text, false);
+end $$;
+select json_build_object('a', current_setting('conc.book_a'),
+                         'b', current_setting('conc.book_b')) as timing;`)
+  const bookA = scalar(seeded.out, 'a')
+  const bookB = scalar(seeded.out, 'b')
+  // Fail loudly rather than racing two nulls and blaming the lock.
+  chk('the two completed bookings were seeded', 'true',
+    String(seeded.ok && !!bookA && !!bookB && bookA !== bookB))
+  if (!bookA || !bookB || bookA === bookB) return
+
+  const review = (bk, rating) => `insert into public.provider_reviews
+      (booking_id, provider_id, reviewer_user_id, rating)
+    values ('${bk}', ${pid}, '${ids.ru}', ${rating});`
+  const [x, y] = await Promise.all([
+    runTimedMaintenance(review(bookA, 5)),
+    runTimedMaintenance(review(bookB, 1)),
+  ])
+  // A 40P01 here is the deadlock 20261081000000 exists to prevent: `for update`
+  // conflicts with the for-key-share the review foreign key already holds.
+  chk('both concurrent reviews are accepted — neither deadlocks', 'true',
+    String(x.opOk && y.opOk))
+  // PD-094's invariant re-evaluates the canonical query INSIDE the recompute's own
+  // UPDATE, so if a reveal-affecting transaction could commit between the
+  // recompute's read and the trigger's re-read, an honest reviewer would be
+  // refused with 23514. It cannot: every writer that can change the canonical
+  // answer takes the same `providers` row lock before it can commit, and
+  // `review_window_closed` uses now() rather than clock_timestamp() so time cannot
+  // drift between the two evaluations inside one transaction. This is the
+  // assertion that says so at runtime rather than on paper.
+  chk('and neither trips the derived-rating invariant it now runs inside', 'true',
+    String(x.timing?.code !== '23514' && y.timing?.code !== '23514'))
+  chk('the two review writes genuinely overlapped (else this scenario proves nothing)',
+    'true', String(intervalsOverlap(x.timing, y.timing)))
+
+  // `avg` is cast to TEXT deliberately: json_build_object renders numeric(3,2)
+  // 1.00 as bare 1, so comparing against '1.00' fails for a CORRECT value — the
+  // kind of mismatch that gets "fixed" by relaxing the expectation.
+  const got = await runSql(`select json_build_object(
+      'stored', p.review_count, 'clients', p.rating_client_count,
+      'live', (select review_count from public.provider_reputation(p.id)),
+      'avg', p.average_rating::text
+    ) as timing from public.providers p where p.id = ${pid};`)
+  // The lost update showed up here as 1: each writer counted only its own.
+  chk('neither review is lost from the stored count', '2', scalar(got.out, 'stored'))
+  chk('and the stored count agrees with a fresh computation', '2', scalar(got.out, 'live'))
+  // PD-091 under concurrency: two receipts, one relationship, and the rating is
+  // the LATEST of the two — not the mean of both.
+  chk('two bookings by one client are still one voice', '1', scalar(got.out, 'clients'))
+  // PD-092 MAKES THIS DETERMINISTIC, and that is the assertion worth having.
+  // This previously accepted EITHER value, because under review-order the winner
+  // was whichever review happened to land second — so the rating of a provider
+  // depended on the scheduling of two concurrent HTTP requests. Ordering on
+  // `bookings.completed_at` removes the race from the answer entirely: bookB is
+  // the more recently completed service (39 days vs 40), so its 1★ is the
+  // contributing review no matter which insert won the lock.
+  chk('and the rating is the review of the more recent SERVICE, whoever committed first',
+    '1.00', scalar(got.out, 'avg'))
+
+  // The other new edge 20261081000000 has to survive: a booking UPDATE now
+  // recomputes too, so a dispute landing at the same instant as a review takes
+  // the same provider row from a second direction.
+  const third = await runSql(`
+do $$
+declare v_c uuid; v_p uuid;
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  select id into v_p from public.providers where user_id = '${ids.ou}';
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values ('${ids.ru}', v_p, 'review race 3', current_date - 38, 'completed',
+          now() - interval '38 days', now() - interval '38 days') returning id into v_c;
+  perform set_config('conc.book_c', v_c::text, false);
+end $$;
+select json_build_object('c', current_setting('conc.book_c')) as timing;`)
+  let bookC = scalar(third.out, 'c')
+  chk('a third completed booking was seeded for the dispute race', 'true', String(!!bookC))
+  if (bookC) {
+    // RETRY UNTIL THEY ACTUALLY CONTEND. Process spawn time occasionally pushes
+    // the two sessions apart despite the barrier, and a non-overlapping run of
+    // this scenario proves nothing rather than proving something good. Each
+    // attempt gets a FRESH booking: reusing one would hit the per-booking unique
+    // constraint and turn the retry into a 23505 that looks like contention.
+    let d1, d2, overlapped = false
+    for (let attempt = 0; attempt < 3 && !overlapped; attempt++) {
+      if (attempt > 0) bookC = await seedOneCompletedBooking(37 - attempt)
+      if (!bookC) break
+      ;[d1, d2] = await Promise.all([
+        runTimedMaintenance(`update public.bookings set under_review = ${attempt % 2 === 0} where id = '${bookA}';`),
+        runTimedMaintenance(review(bookC, 3)),
+      ])
+      overlapped = intervalsOverlap(d1.timing, d2.timing)
+    }
+    // Leave the dispute ON, whatever the attempt parity ended at, so the counts
+    // below describe a held booking.
+    await runSql(`
+do $$
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  update public.bookings set under_review = true where id = '${bookA}';
+end $$;`)
+    chk('a dispute and a review landing together do not deadlock', 'true',
+      String(!!d1?.opOk && !!d2?.opOk))
+    chk('the dispute and the review genuinely overlapped', 'true', String(overlapped))
+    // bookA is held; every other review written above is revealed. Derived rather
+    // than hard-coded, because the retry loop above may have written more than one.
+    const after = await runSql(`select json_build_object(
+        'stored', p.review_count,
+        'live', (select review_count from public.provider_reputation(p.id)),
+        'written', (select count(*) from public.provider_reviews r where r.provider_id = p.id),
+        'held', (select count(*) from public.provider_reviews r
+                   join public.bookings b on b.id = r.booking_id
+                  where r.provider_id = p.id and b.under_review)
+      ) as timing from public.providers p where p.id = ${pid};`)
+    const written = Number(scalar(after.out, 'written'))
+    const held = Number(scalar(after.out, 'held'))
+    chk('the dispute actually lands on a review that was written', 'true', String(held > 0))
+    // THE PM RULING, UNDER CONCURRENCY. Every booking in this scenario completed
+    // 37-40 days ago, so every review was REVEALED by the closed window before any
+    // dispute was filed. Filing must therefore change nothing at all — not the
+    // count, not the rating, not even when the filing and a fresh review contend
+    // for the same provider row at the same instant. This assertion previously
+    // read `written - held`, which pinned the opposite behaviour.
+    chk('filing a dispute removes nothing from the public count, even mid-race',
+      String(written), scalar(after.out, 'stored'))
+    chk('and the stored value still agrees with a fresh computation',
+      scalar(after.out, 'live'), scalar(after.out, 'stored'))
+  }
+
+  await runSql(`
+do $$
+declare v_p uuid;
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  select id into v_p from public.providers where user_id = '${ids.ou}';
+  delete from public.provider_reviews where provider_id = v_p;
+  delete from public.bookings where user_id = '${ids.ru}' and provider_id = v_p;
+end $$;`)
+}
+
+await raceTwoReviewsOneProvider()
+
 await cleanup()
 
 const failed = results.filter((r) => !r.ok).length

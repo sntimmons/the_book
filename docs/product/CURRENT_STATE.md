@@ -1,5 +1,12 @@
 # Current State — what is true on `main` today
 
+**Booking & Onboarding Integrity merged 2026-09-11 (`2da313a`).** Contract acceptance is a durable
+record bound to an immutable version; reference photos reach the provider and settle when the
+request is sent; a provider presented as bookable is bookable. **Two limits travel with it:**
+acceptances predating `20261068000000` are the best available historical record and **not proof of
+exact original wording**, and erasure/retention for booking photos, contract evidence and booking
+records is **deliberately unresolved** (OQ-077) — support must not promise deletion of any of them.
+
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 
 **Reconciled against:** `main` @ `e5b9125` (2026-09-10) — squash-merge of **PR #76**, Session 8

@@ -892,10 +892,26 @@ begin
                            -- a fourth adjudication-shaped function still has to be deliberate.
                            'adjudicate_barter_obligation',
                            'enforce_barter_adjudication_append_only',
-                           'enforce_barter_adjudication_consistent');
+                           'enforce_barter_adjudication_consistent',
+                           -- Reviews Phase 2, PM ruling on disputes:
+                           -- `stamp_under_review_at` trips the `%under_review%`
+                           -- sweep and is not barter machinery — it stamps
+                           -- `bookings.under_review_at`, the instant a BOOKING
+                           -- dispute hold opened, which is what stops filing a
+                           -- dispute from retracting an already-public review.
+                           -- The assertion below proves it reads no barter object.
+                           'stamp_under_review_at');
   perform pg_temp.chk('receiver_window',
     'no fulfilment, expiry, timeout or dispute function beyond the ruled no-show and adjudication',
     '0', v_n::text);
+  -- The exemption above is only safe if the function it names really does live in
+  -- the booking domain. Asserted rather than asserted-in-a-comment, so a later
+  -- rewrite that reached into a barter table under the same name fails here.
+  select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'stamp_under_review_at'
+     and p.prosrc ~* 'barter';
+  perform pg_temp.chk('receiver_window',
+    'and the exempted booking dispute-hold stamp reads no barter object', '0', v_n::text);
 
   -- No trigger and no scheduled job to flip rows at a deadline. The state is derived; a job
   -- would be a second source of truth that could disagree with the timestamps.

@@ -42,6 +42,13 @@ const GRANTED = new Set([
   'completed_count', 'repeat_client_rate', 'follower_count', 'next_available',
   'is_trending', 'is_featured', 'is_approved', 'is_demo', 'is_mobile',
   'years_experience', 'specialties', 'created_at',
+  // Reviews Phase 2 (20261078000000). How many DISTINCT clients the rating rests
+  // on — public because the rating is, and because displaying a rating without
+  // it is misleading: the rating counts each client once while the review list
+  // shows every review. This guard caught it BEFORE it shipped, in the same
+  // shape as the `is_mobile` defect it was written for: a column read by the app
+  // and granted to nobody fails closed, so the feature quietly does nothing.
+  'rating_client_count',
 ])
 
 // COMPUTED COLUMNS ARE NOT USABLE ON THIS TABLE, and the empty set is the
