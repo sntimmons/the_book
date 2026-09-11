@@ -515,8 +515,8 @@ which is the whole point of the row.**
 | Minimal internal **Review Queue** / operator surface | **BUILT** (Session 8B, `c4afee5`) | **PD-068 is SATISFIED.** An allow-listed operator (`public.operators`) can see the queue, filter by type and status, open a case, read the immutable facts behind it, write an internal note, take the supported resolution action, and see a durable history — without a `psql` session. **The authority change is the part to know about:** `is_operator()` gained a third arm, because an operator opening a screen is `authenticated` and neither original arm admitted them. The allow-list has **no client privilege of any kind** — including SELECT — so operators can neither promote anyone nor enumerate each other, and making one is a `service_role` act. **There is still NO SLA** and the queue's order (oldest open first) is not configurable, because with no SLA the order is the only fairness guarantee a waiting person has. |
 | **Blocking and reporting** | **BUILT** | PD-082 and PD-083, barter contract § 9. Blocking carries the live-transaction exception and `PT427`; reporting is one path into `public.reports` that opens an operator case, and `community_reports` is retired. |
 | **Operator handling** of a reported provider | **BACKEND BUILT — SURFACE NOT BUILT** | The intake and the case model exist (PD-085); the triage, response and restriction path a human would use does not. `operator_set_provider_eligibility` exists and nothing calls it. |
-| **Report intake bounds** | **NOT BUILT** | **PD-088**, locked 2026-09-09, required **before broad beta**. Every report now opens a case, so an ordinary account can create N live cases. The limits are decided and written down; none is implemented. **Assigned to Session 8C** (2026-09-10). |
-| **Blocked users hidden from ordinary discovery / community** | **NOT BUILT** | **PD-089**, locked 2026-09-09. **Assigned to Session 8C** (2026-09-10); explicitly **not** Session 8 and **not** Session 8B. |
+| **Report intake bounds** | **BUILT** (Session 8C, `0b1f563`) | **PD-088**, locked 2026-09-09, required **before broad beta**. Every report now opens a case, so an ordinary account can create N live cases. The limits are decided and written down; none is implemented. **Assigned to Session 8C** (2026-09-10). |
+| **Blocked users hidden from ordinary discovery / community** | **BUILT** (Session 8C, `0b1f563`) | **PD-089**, locked 2026-09-09. **Assigned to Session 8C** (2026-09-10); explicitly **not** Session 8 and **not** Session 8B. |
 | Broader **safety and trust readiness** | **PARTIAL** | OQ-020 … OQ-026; address disclosure remains the highest-risk open surface, and is untouched by Session 8. |
 
 **4. What is OPEN or FUTURE, and therefore exploratory — none of it is committed work, and
@@ -848,7 +848,7 @@ candidates, one of which was a genuine defect. It needs no database.
 building any general documentation-verification framework. The task is one check, for one property,
 that has now been wrong three times.
 
-### Session 8C — safety hardening / enforcement cleanup — **NOT STARTED**
+### Session 8C — safety hardening / enforcement cleanup — **MERGED** (`0b1f563`, 2026-09-10)
 
 **Founder assignment, 2026-09-10.** PD-088 and PD-089 were locked on the finished Session 8 branch
 with no session to land in; this is the one. The Steward that reconciled this document correctly

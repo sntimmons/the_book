@@ -1727,8 +1727,7 @@ as locked decisions.
   - **What a refused report must do.** Say the limit was reached in plain words, keep the text the
     person wrote, and never discard it silently.
 - **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-074**.
-- **Status:** Locked; **IMPLEMENTED** in Session 8C (`20261063000000`), pending review of that
-  branch. Duplicate protection appends to the live case; the 5/hour and 20/day backstop raises
+- **Status:** Locked; **SATISFIED.** Session 8C merged to `main` as `0b1f563` on 2026-09-10. Duplicate protection appends to the live case; the 5/hour and 20/day backstop raises
   `PT428`, which all four report surfaces handle by naming the limit and KEEPING the text. No
   standing requirement was added, and that is asserted as a test rather than intended.
 
@@ -1757,8 +1756,9 @@ as locked decisions.
   person anything; and it must not be implemented with a client-callable block predicate, which
   `20261055000000` established as an oracle.
 - **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-075**.
-- **Status:** Locked; **IMPLEMENTED** in Session 8C (`20261064000000`, `20261065000000`),
-  pending review of that branch.
+- **Status:** Locked; **SATISFIED.** Session 8C merged to `main` as `0b1f563` on 2026-09-10
+  (`20261064000000` … `20261067000000`, including the forward correction that restored three base
+  tables' own read predicates inside the views).
   - **Architecture: five `SECURITY DEFINER` views that return already-filtered content**, not a
     predicate a client can call. Founder ruling, 2026-09-10, rejecting the RLS-policy design
     because it would have required re-granting the per-target block predicate `20261055000000`
