@@ -291,14 +291,25 @@ begin
     (select review_count::text from public.providers where id = pid));
 end $$;
 
--- ══ 5b. THE ORDERING KEY IS THE SERVER'S ══════════════════════════════════
+-- ══ 5b. THE ORDERING KEY IS THE SERVICE, AND IT IS THE SERVER'S ══════════
 --
--- PD-091's whole justification for allowing repeat reviews is that a client's
--- LATEST opinion counts — so whatever decides "latest" is as load-bearing as the
--- rating itself. `created_at` was `DEFAULT now()` with INSERT granted on every
--- column and no stamping trigger: the reviewer picked it.
+-- Two properties, and they fail in different ways.
 --
--- **THE SUITE ABOVE COULD NOT HAVE CAUGHT THIS**, and the reason is worth
+-- **(a) PD-092 — "latest" is the latest SERVICE, not the latest receipt.**
+-- `20261077000000` ordered on `provider_reviews.created_at`: the latest review
+-- WRITTEN. A client who visits on the 1st and the 5th, then reviews the 5th visit
+-- first and the 1st visit second, had their OLDER visit decide the rating. A late
+-- review of an old service must not replace the reputation contribution of a more
+-- recent one, so the key is `bookings.completed_at` — the same server-stamped,
+-- immutable chronology eligibility, the blind window and reveal already use.
+--
+-- **(b) The key must not be reviewer-settable.** `created_at` was `DEFAULT now()`
+-- with INSERT granted on every column: the reviewer picked it, and could pin one
+-- review as "latest" forever in a record that can never be edited or deleted.
+-- `20261079000000` stamps it. It now only breaks ties, but a tie-break a reviewer
+-- controls is still a channel.
+--
+-- **THE SUITE ABOVE COULD NOT HAVE CAUGHT EITHER**, and the reason is worth
 -- recording. Every review in § 5 is seeded as `service_role` on a 40-day-old
 -- booking, because `review_eligible` requires the 7-day window to still be open
 -- and a client simply cannot write that history. So § 5 demonstrated the ordering
@@ -316,11 +327,11 @@ begin
   delete from public.provider_reviews where provider_id = pid;
   delete from public.client_reviews where reviewer_provider_id = pid;
   delete from public.bookings where provider_id = pid;
-  v_b1 := pg_temp.r2_booking(c3, 1);
-  v_b2 := pg_temp.r2_booking(c3, 2);
+  v_b1 := pg_temp.r2_booking(c3, 1);   -- the RECENT service (yesterday)
+  v_b2 := pg_temp.r2_booking(c3, 2);   -- the OLDER service (the day before)
 
-  -- The client posts a real, eligible, fully-authorized review — and tries to pin
-  -- their own voice as "latest" in the year 2999.
+  -- The client reviews the RECENT service first, and tries to pin their own voice
+  -- as "latest" in the year 2999 while they are at it.
   perform pg_temp.act(c3);
   insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating,
                                       created_at)
@@ -332,8 +343,9 @@ begin
     'a client-supplied review timestamp does not survive the insert', 'true',
     (v_when < now() + interval '1 minute')::text);
 
-  -- Their next, honest review is genuinely later, so it is the one that counts —
-  -- the property PD-091 rests on. Backdating it must not resurrect the first.
+  -- Then they get round to the OLDER service. This review is written LATER — it
+  -- is the "latest receipt" — and under PD-092 it must NOT take over the rating,
+  -- because the service it describes happened first.
   perform pg_temp.act(c3);
   insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating,
                                       created_at)
@@ -346,14 +358,21 @@ begin
 
   perform pg_temp.act_service();
   select * into v_rep from public.provider_reputation(pid);
+  -- 5.00 is the review of the MOST RECENTLY COMPLETED service. 1.00 would be the
+  -- last review written — the pre-PD-092 answer, and the defect the ruling names.
   perform pg_temp.chk('reviews2',
-    'the LAST review written wins, whatever timestamps were supplied', '1.00',
-    v_rep.average_rating::text);
+    'PD-092: the review of the most recently COMPLETED service is the one that counts',
+    '5.00', v_rep.average_rating::text);
+  perform pg_temp.chk('reviews2',
+    'a late review of an older service does not replace it', 'true',
+    (v_rep.average_rating <> 1.00)::text);
   perform pg_temp.chk('reviews2',
     'and both still display — one voice, two reviews', '2',
     v_rep.review_count::text);
+  perform pg_temp.chk('reviews2', 'still one client behind the rating', '1',
+    v_rep.rating_client_count::text);
 
-  -- And it cannot be rewritten after the fact either.
+  -- And the timestamp cannot be rewritten after the fact either.
   perform pg_temp.act(c3);
   begin
     update public.provider_reviews set created_at = timestamptz '2999-01-01'
@@ -366,38 +385,207 @@ begin
        from public.provider_reviews where booking_id = v_b1));
 end $$;
 
--- ══ 5c. A DISPUTED REVIEW STOPS COUNTING, IN THE NUMBER PEOPLE SEE ════════
+-- ══ 5b-ii. THE TIE-BREAK IS DETERMINISTIC, BECAUSE IT IS REACHABLE ════════
 --
--- `under_review` held the ROW from reads immediately, because the read policy is
--- evaluated live. The STORED aggregate on `providers` — which is what every
--- display surface actually reads — was only recomputed by triggers on the review
--- tables, so a disputed review kept counting in the visible rating until some
--- unrelated review happened to land. The row vanishing while the number does not
--- move is the gap.
+-- `completed_at` is stamped `now()` — the TRANSACTION timestamp. A provider who
+-- marks two of the same client's bookings complete in ONE transaction gives both
+-- the identical instant, which is one screen with two buttons, not a thought
+-- experiment. `distinct on` without a total order returns an
+-- implementation-defined row, and a rating that changes between two recomputes
+-- with identical inputs is the worst possible failure mode: unreproducible.
 do $$
 declare
+  pu uuid := current_setting('b5b.r2_pu')::uuid;
+  c2 uuid := current_setting('b5b.r2_c2')::uuid;
   pid uuid := current_setting('b5b.r2_pid')::uuid;
-  v_bk uuid; v_before integer;
+  v_same timestamptz := now() - interval '40 days';
+  v_b1 uuid; v_b2 uuid; v_first numeric; v_i integer;
 begin
   perform pg_temp.act_service();
-  select review_count into v_before from public.providers where id = pid;
-  perform pg_temp.chk('reviews2', 'the provider has reviews counted before the dispute', '2',
-    v_before::text);
+  delete from public.provider_reviews where provider_id = pid;
+  delete from public.client_reviews where reviewer_provider_id = pid;
+  delete from public.bookings where provider_id = pid;
 
-  select booking_id into v_bk from public.provider_reviews
-   where provider_id = pid order by created_at desc limit 1;
-  update public.bookings set under_review = true where id = v_bk;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values (c2, pid, 'tied a', current_date - 40, 'completed', v_same, v_same)
+  returning id into v_b1;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values (c2, pid, 'tied b', current_date - 40, 'completed', v_same, v_same)
+  returning id into v_b2;
 
+  -- Both revealed by the closed window. The reviews differ only in when they were
+  -- written, which is the documented tie-break: the client's later statement stands.
+  insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating,
+                                      created_at)
+  values (v_b1, pid, c2, 1, v_same + interval '1 day'),
+         (v_b2, pid, c2, 4, v_same + interval '2 days');
+
+  select average_rating into v_first from public.provider_reputation(pid);
   perform pg_temp.chk('reviews2',
-    'placing a booking under review drops it from the STORED rating too', '1',
+    'services completed at the SAME instant tie-break on the later review', '4.00',
+    v_first::text);
+
+  -- Repeat it. Identical inputs must give an identical answer every time, or the
+  -- ordering is not total and the rating is a coin-flip nobody can reproduce.
+  for v_i in 1..5 loop
+    perform pg_temp.chk('reviews2',
+      'and the tie-break is stable across repeated computation',
+      v_first::text,
+      (select average_rating::text from public.provider_reputation(pid)));
+  end loop;
+end $$;
+
+-- ══ 5c. FILING A DISPUTE IS NOT A WAY TO DELETE A REVIEW ══════════════════
+--
+-- `20261079000000` made the STORED rating drop the instant a booking was placed
+-- `under_review`, and this section previously pinned that as correct. Product
+-- reversed it, and the reason is the whole of PD-068: filing is an ACT BY A
+-- PARTICIPANT, with no adjudication behind it. A rating that falls when someone
+-- files a complaint hands either side an unreviewed veto over the other's public
+-- record — the provider who dislikes a 1-star, and the client who wants leverage,
+-- reach for exactly the same button.
+--
+--   * NOT YET REVEALED when the dispute opens  → stays held. Nothing public is
+--     being retracted, because nothing was public.
+--   * ALREADY REVEALED when the dispute opens  → stays revealed, keeps counting.
+--   * Only an operator RESOLUTION may change that, under a rule that does not yet
+--     exist and is not invented here.
+do $$
+declare
+  pu uuid := current_setting('b5b.r2_pu')::uuid;
+  c1 uuid := current_setting('b5b.r2_c1')::uuid;
+  c2 uuid := current_setting('b5b.r2_c2')::uuid;
+  pid uuid := current_setting('b5b.r2_pid')::uuid;
+  v_pub uuid; v_blind uuid; v_rep record; v_code text;
+begin
+  perform pg_temp.act_service();
+  delete from public.provider_reviews where provider_id = pid;
+  delete from public.client_reviews where reviewer_provider_id = pid;
+  delete from public.bookings where provider_id = pid;
+
+  -- ── A published review, revealed by the window closing ──────────────────
+  v_pub := pg_temp.r2_booking(c1, 40);
+  insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating,
+                                      created_at)
+  values (v_pub, pid, c1, 1, now() - interval '39 days');
+  perform public.recompute_provider_rating_for(pid);
+  perform pg_temp.chk('reviews2', 'the review is public before anyone disputes it', '1',
     (select review_count::text from public.providers where id = pid));
-  perform pg_temp.chk('reviews2', 'and the stored value agrees with the live one', 'true',
+
+  -- ── Someone files. Nothing about the public record may move. ────────────
+  update public.bookings set under_review = true where id = v_pub;
+  select * into v_rep from public.provider_reputation(pid);
+  perform pg_temp.chk('reviews2',
+    'filing a dispute does not hide an ALREADY REVEALED review', '1',
+    v_rep.review_count::text);
+  perform pg_temp.chk('reviews2', 'nor drop it out of the rating', '1.00',
+    v_rep.average_rating::text);
+  perform pg_temp.chk('reviews2',
+    'and the STORED number every surface displays does not move either', '1.00',
+    (select average_rating::text from public.providers where id = pid));
+  perform pg_temp.chk('reviews2', 'nor the stored count', '1',
+    (select review_count::text from public.providers where id = pid));
+  -- The reviewer can still see their own row, and the read policy still resolves —
+  -- this is a reveal question, not a row-visibility trick.
+  perform pg_temp.act(pu);
+  perform pg_temp.chk('reviews2',
+    'and the provider still sees the review they disputed', '1',
+    (select count(*)::text from public.provider_reviews where booking_id = v_pub));
+
+  -- ── A review still inside the blind window IS held by a dispute ─────────
+  perform pg_temp.act_service();
+  v_blind := pg_temp.r2_booking(c2, 1);       -- completed yesterday: window OPEN
+  perform pg_temp.act(c2);
+  insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating)
+  values (v_blind, pid, c2, 5);
+
+  perform pg_temp.act_service();
+  perform pg_temp.chk('reviews2', 'a blind review counts for nothing to begin with', '1',
+    (select review_count::text from public.provider_reputation(pid)));
+  update public.bookings set under_review = true where id = v_blind;
+  perform pg_temp.chk('reviews2',
+    'and a dispute on a never-public review keeps it held', '1',
+    (select review_count::text from public.provider_reputation(pid)));
+
+  -- A counterpart review cannot be used to force reveal DURING a hold: eligibility
+  -- refuses the write outright, so the hold is not routed around.
+  perform pg_temp.act(pu);
+  begin
+    insert into public.client_reviews(booking_id, reviewer_provider_id, client_user_id, rating)
+    values (v_blind, pid, c2, 5);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('reviews2',
+    'and no counterpart review can be written to force it open', '42501', v_code);
+
+  -- ── Lifting the hold returns it to the ordinary rule, nothing more ──────
+  perform pg_temp.act_service();
+  update public.bookings set under_review = false where id = v_blind;
+  perform pg_temp.chk('reviews2',
+    'lifting the hold does not itself reveal a review still inside its window', '1',
+    (select review_count::text from public.provider_reputation(pid)));
+
+  perform pg_temp.act(pu);
+  insert into public.client_reviews(booking_id, reviewer_provider_id, client_user_id, rating)
+  values (v_blind, pid, c2, 5);
+
+  perform pg_temp.act_service();
+  select * into v_rep from public.provider_reputation(pid);
+  perform pg_temp.chk('reviews2',
+    'and the ordinary counterpart reveal then works as it always did', '2',
+    v_rep.review_count::text);
+  -- c1 (1★, still disputed and still counting) and c2 (5★): two voices.
+  perform pg_temp.chk('reviews2', 'the disputed review is still one of the two voices',
+    '2', v_rep.rating_client_count::text);
+  perform pg_temp.chk('reviews2', 'and still in the mean', '3.00',
+    v_rep.average_rating::text);
+  perform pg_temp.chk('reviews2', 'stored and live agree throughout', 'true',
     (select (p.review_count = r.review_count and p.average_rating = r.average_rating)::text
        from public.providers p, public.provider_reputation(pid) r where p.id = pid));
+end $$;
+
+-- ══ 5d. THE HOLD INSTANT IS THE SERVER'S, AND SURVIVES OTHER WRITES ══════
+--
+-- The latch above is only as trustworthy as `under_review_at`. If a disputant
+-- could choose it, they would choose which already-public reviews their dispute
+-- suppresses — the exact power the ruling removes, one column over.
+do $$
+declare
+  c1 uuid := current_setting('b5b.r2_c1')::uuid;
+  pid uuid := current_setting('b5b.r2_pid')::uuid;
+  v_bk uuid; v_at timestamptz;
+begin
+  perform pg_temp.act_service();
+  v_bk := pg_temp.r2_booking(c1, 40);
+
+  perform pg_temp.chk('reviews2', 'a booking with no dispute has no hold instant', 'true',
+    (select (under_review_at is null)::text from public.bookings where id = v_bk));
+
+  -- service_role opens the hold AND supplies a backdated instant. Only one of
+  -- those is honoured, and it is not the supplied one: no carve-out here.
+  update public.bookings
+     set under_review = true, under_review_at = timestamptz '1999-01-01'
+   where id = v_bk;
+  select under_review_at into v_at from public.bookings where id = v_bk;
+  perform pg_temp.chk('reviews2',
+    'the hold instant is stamped by the server, not supplied', 'true',
+    (v_at > now() - interval '1 hour')::text);
+
+  -- An unrelated booking write must not move it, or every later edit would
+  -- re-date the dispute and re-decide what it suppresses.
+  update public.bookings set service_name = 'renamed' where id = v_bk;
+  perform pg_temp.chk('reviews2', 'and an unrelated booking write does not re-date it',
+    'true',
+    (select (under_review_at = v_at)::text from public.bookings where id = v_bk));
 
   update public.bookings set under_review = false where id = v_bk;
-  perform pg_temp.chk('reviews2', 'and it returns when the dispute is lifted', '2',
-    (select review_count::text from public.providers where id = pid));
+  perform pg_temp.chk('reviews2', 'lifting the hold clears it', 'true',
+    (select (under_review_at is null)::text from public.bookings where id = v_bk));
+
+  delete from public.bookings where id = v_bk;
 end $$;
 
 -- ══ 6. WHAT CANNOT BE REVIEWED ════════════════════════════════════════════
@@ -520,12 +708,49 @@ begin
   perform pg_temp.chk('reviews2',
     'and no harder than it needs to be — bare FOR UPDATE deadlocks the FK', 'false',
     (v_src ~* 'for\s+update\s*;')::text);
+  -- The rule itself moved OUT of this function in 20261083000000 and into
+  -- `provider_reputation_canonical`, which is the point: it used to be written
+  -- twice — here and in `provider_reputation` — with the ordering clause copied
+  -- between them, and PD-092 added a JOIN to that clause. So what is pinned here
+  -- is the DELEGATION, and the rule is pinned once, below.
   perform pg_temp.chk('reviews2',
-    'and it still counts only REVEALED reviews', 'true',
+    'and it stores what the canonical function computes rather than its own copy',
+    'true', (v_src like '%provider_reputation_canonical%')::text);
+  perform pg_temp.chk('reviews2',
+    'and keeps no second copy of the rule to drift', 'false',
+    (v_src ~* 'distinct\s+on\s*\(\s*pr\.reviewer_user_id')::text);
+
+  select p.prosrc into v_src from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'provider_reputation_canonical';
+  perform pg_temp.chk('reviews2',
+    'the canonical rule still counts only REVEALED reviews', 'true',
     (v_src like '%provider_review_revealed%')::text);
   perform pg_temp.chk('reviews2',
-    'and the average is still latest-per-distinct-client (PD-091)', 'true',
+    'and is still one voice per distinct client (PD-091)', 'true',
     (v_src ~* 'distinct\s+on\s*\(\s*pr\.reviewer_user_id')::text);
+  -- PD-092. Pinned in the SOURCE as well as behaviourally, because a copy-forward
+  -- from 20261077000000 would silently restore review-order and every behavioural
+  -- assertion that does not happen to review out of service order would still pass.
+  perform pg_temp.chk('reviews2',
+    'and ordered by the SERVICE chronology, not the review order (PD-092)', 'true',
+    (v_src ~* 'order\s+by\s+pr\.reviewer_user_id\s*,\s*b\.completed_at\s+desc')::text);
+  perform pg_temp.chk('reviews2',
+    'and joined to bookings, which is where that chronology lives', 'true',
+    (v_src ~* 'join\s+public\.bookings')::text);
+  -- Without a total order `distinct on` returns an implementation-defined row.
+  perform pg_temp.chk('reviews2',
+    'and finishes on a total order, so the answer cannot wobble', 'true',
+    (v_src ~* 'pr\.id\s+desc')::text);
+
+  -- EXACTLY ONE function may contain the rule. This is the assertion that makes
+  -- "do not restate this query anywhere" enforceable rather than a comment.
+  perform pg_temp.chk('reviews2',
+    'and exactly one function in the schema contains the rule', '1',
+    (select count(*)::text from pg_proc p
+       join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public'
+        and p.prosrc ~* 'distinct\s+on\s*\(\s*pr\.reviewer_user_id'));
 end $$;
 
 -- ══ 6c. NOBODY BUT AN OPERATOR CAN PUT A BOOKING UNDER REVIEW ════════════
@@ -610,13 +835,159 @@ select pg_temp.chk('reviews2', 'the reputation function is callable by a visitor
   has_function_privilege('anon', 'public.provider_reputation(uuid)', 'EXECUTE')::text);
 -- It reads only revealed reviews, by the same predicate the read policy uses, so
 -- it cannot become a side channel for a blind one.
+-- It delegates to the canonical rule, which reads revealed reviews only by the
+-- same predicate the read policy uses, so it cannot become a side channel for a
+-- blind one. Pinned on the delegation AND on the callee, because a rewrite that
+-- inlined a query here would otherwise satisfy neither check nor fail one.
 select pg_temp.chk('reviews2', 'and it computes over REVEALED reviews only', '1',
   (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'provider_reputation'
-      and p.prosrc like '%provider_review_revealed%'));
+      and p.prosrc like '%provider_reputation_canonical%'));
+-- The canonical engine itself is NOT client-callable. It is the same numbers, but
+-- granting it would publish an un-gated entry point to the reputation rule for no
+-- reason — `provider_reputation` is the public door and it is already open.
+select pg_temp.chk('reviews2', 'the canonical engine is not client-callable', 'false',
+  (has_function_privilege('authenticated', 'public.provider_reputation_canonical(uuid)', 'EXECUTE')
+   or has_function_privilege('anon', 'public.provider_reputation_canonical(uuid)', 'EXECUTE'))::text);
 -- The recompute helper stays server-side: a client that could call it could use
 -- timing to infer a blind review landed.
 select pg_temp.chk('reviews2', 'the recompute helper is not client-callable', 'false',
   (has_function_privilege('authenticated', 'public.recompute_provider_rating_for(uuid)', 'EXECUTE')
    or has_function_privilege('anon', 'public.recompute_provider_rating_for(uuid)', 'EXECUTE'))::text);
+
+-- ══ 8. THERE IS NO MANUAL RATING PIN ══════════════════════════════════════
+--
+-- OQ-079's ruling: *"Public rating must be derived from canonical eligible
+-- review data. There is NO manual/service-role rating override or permanent
+-- rating pin."* Asserted as the ROLE THE RULING IS ABOUT — `service_role`, which
+-- bypasses RLS and holds every column grant — because a check that only proves a
+-- client cannot do it proves nothing about the ruling.
+do $$
+declare
+  pu uuid := current_setting('b5b.r2_pu')::uuid;
+  pid uuid := current_setting('b5b.r2_pid')::uuid;
+  c1 uuid := current_setting('b5b.r2_c1')::uuid;
+  v_code text; v_bk uuid; v_new uuid;
+begin
+  perform pg_temp.act_service();
+  delete from public.provider_reviews where provider_id = pid;
+  delete from public.client_reviews where reviewer_provider_id = pid;
+  delete from public.bookings where provider_id = pid;
+  perform public.recompute_provider_rating_for(pid);
+
+  begin
+    update public.providers set average_rating = 5.00 where id = pid;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('reviews2',
+    'service_role cannot store a rating the review data does not produce',
+    '23514', v_code);
+
+  begin
+    update public.providers set review_count = 99 where id = pid;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('reviews2', 'nor a review count', '23514', v_code);
+
+  begin
+    update public.providers set rating_client_count = 99 where id = pid;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('reviews2', 'nor a client count', '23514', v_code);
+
+  -- `providers.rating` is the one that was actually live: no recompute had ever
+  -- written it, and `hooks/useProviders.ts` ranked and filtered provider SEARCH on
+  -- it while every display surface read `average_rating`. A value written here was
+  -- a permanent, invisible, hand-set marketplace position.
+  begin
+    update public.providers set rating = 4.90 where id = pid;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('reviews2',
+    'nor the legacy search-ranking rating column', '23514', v_code);
+
+  -- And a provider cannot be CREATED carrying one, which is how seeded or
+  -- imported rows would have arrived with reputation nobody earned.
+  begin
+    insert into public.providers(user_id, display_name, username, is_approved,
+                                 average_rating, rating, review_count)
+    values (pu, 'pinned', 'pinned_'||substr(gen_random_uuid()::text,1,8), true, 5.00, 5.00, 42)
+    returning id into v_new;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('reviews2',
+    'and a provider cannot be seeded with a rating either', '23514', v_code);
+
+  -- The legitimate writer still works, and `rating` now tracks `average_rating`.
+  v_bk := pg_temp.r2_booking(c1, 40);
+  insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating,
+                                      created_at)
+  values (v_bk, pid, c1, 4, now() - interval '39 days');
+  perform public.recompute_provider_rating_for(pid);
+  perform pg_temp.chk('reviews2',
+    'the derived rating is still written by the recompute', '4.00',
+    (select average_rating::text from public.providers where id = pid));
+  perform pg_temp.chk('reviews2',
+    'and the search-ranking column mirrors it rather than lagging at zero', '4.00',
+    (select rating::text from public.providers where id = pid));
+  perform pg_temp.chk('reviews2', 'and it equals a fresh canonical computation', 'true',
+    (select (p.rating = c.average_rating and p.average_rating = c.average_rating
+             and p.review_count = c.review_count
+             and p.rating_client_count = c.rating_client_count)::text
+       from public.providers p, public.provider_reputation_canonical(pid) c
+      where p.id = pid));
+end $$;
+
+-- The other half of the same boundary, from underneath: a provider holds no
+-- UPDATE privilege on any reputation column, so the invariant above is the second
+-- line of defence for a client role and the FIRST for service_role.
+select pg_temp.chk('reviews2',
+  'a provider holds no write privilege on any reputation column', 'false',
+  (has_column_privilege('authenticated', 'public.providers', 'average_rating', 'UPDATE')
+   or has_column_privilege('authenticated', 'public.providers', 'rating', 'UPDATE')
+   or has_column_privilege('authenticated', 'public.providers', 'review_count', 'UPDATE')
+   or has_column_privilege('authenticated', 'public.providers', 'rating_client_count', 'UPDATE'))::text);
+select pg_temp.chk('reviews2', 'and the invariant guards INSERT as well as UPDATE', '2',
+  (select count(*)::text from pg_trigger t
+    where t.tgrelid = 'public.providers'::regclass
+      and t.tgname in ('providers_reputation_is_derived_ins', 'providers_reputation_is_derived_upd')
+      and not t.tgisinternal));
+
+-- ══ 9. ELIGIBILITY MOVES, REVEALED REVIEWS DO NOT ════════════════════════
+--
+-- `completed_at` is the anchor for eligibility, the window and reveal precisely so
+-- that a LIVE STATUS change cannot be used to suppress a review (SEC-DATA-101). The
+-- aggregate inherits that, and this asserts it there: a provider who dislikes a
+-- published review cannot move the booking's status to make it stop counting.
+do $$
+declare
+  c1 uuid := current_setting('b5b.r2_c1')::uuid;
+  pid uuid := current_setting('b5b.r2_pid')::uuid;
+  v_bk uuid; v_before integer;
+begin
+  perform pg_temp.act_service();
+  select review_count into v_before from public.provider_reputation(pid);
+  perform pg_temp.chk('reviews2', 'a published review is being counted to begin with',
+    'true', (v_before > 0)::text);
+
+  select booking_id into v_bk from public.provider_reviews
+   where provider_id = pid order by created_at desc limit 1;
+
+  update public.bookings set status = 'cancelled_by_provider' where id = v_bk;
+  perform pg_temp.chk('reviews2',
+    'cancelling a completed booking does not uncount its published review',
+    v_before::text, (select review_count::text from public.provider_reputation(pid)));
+
+  update public.bookings set status = 'no_show' where id = v_bk;
+  perform pg_temp.chk('reviews2', 'nor does flagging it a no-show', v_before::text,
+    (select review_count::text from public.provider_reputation(pid)));
+
+  update public.bookings set status = 'completed' where id = v_bk;
+end $$;
+
 select pg_temp.act_service();

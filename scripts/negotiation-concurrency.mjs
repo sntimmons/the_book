@@ -2236,8 +2236,15 @@ select json_build_object('a', current_setting('conc.book_a'),
   // PD-091 under concurrency: two receipts, one relationship, and the rating is
   // the LATEST of the two — not the mean of both.
   chk('two bookings by one client are still one voice', '1', scalar(got.out, 'clients'))
-  chk('and the rating is that client\'s latest review, not an average of both',
-    'true', String(['5.00', '1.00'].includes(scalar(got.out, 'avg'))))
+  // PD-092 MAKES THIS DETERMINISTIC, and that is the assertion worth having.
+  // This previously accepted EITHER value, because under review-order the winner
+  // was whichever review happened to land second — so the rating of a provider
+  // depended on the scheduling of two concurrent HTTP requests. Ordering on
+  // `bookings.completed_at` removes the race from the answer entirely: bookB is
+  // the more recently completed service (39 days vs 40), so its 1★ is the
+  // contributing review no matter which insert won the lock.
+  chk('and the rating is the review of the more recent SERVICE, whoever committed first',
+    '1.00', scalar(got.out, 'avg'))
 
   // The other new edge 20261081000000 has to survive: a booking UPDATE now
   // recomputes too, so a dispute landing at the same instant as a review takes
@@ -2296,9 +2303,15 @@ end $$;`)
       ) as timing from public.providers p where p.id = ${pid};`)
     const written = Number(scalar(after.out, 'written'))
     const held = Number(scalar(after.out, 'held'))
-    chk('the dispute actually holds a review that was written', 'true', String(held > 0))
-    chk('every review except the held one still counts — nothing lost to the dispute',
-      String(written - held), scalar(after.out, 'stored'))
+    chk('the dispute actually lands on a review that was written', 'true', String(held > 0))
+    // THE PM RULING, UNDER CONCURRENCY. Every booking in this scenario completed
+    // 37-40 days ago, so every review was REVEALED by the closed window before any
+    // dispute was filed. Filing must therefore change nothing at all — not the
+    // count, not the rating, not even when the filing and a fresh review contend
+    // for the same provider row at the same instant. This assertion previously
+    // read `written - held`, which pinned the opposite behaviour.
+    chk('filing a dispute removes nothing from the public count, even mid-race',
+      String(written), scalar(after.out, 'stored'))
     chk('and the stored value still agrees with a fresh computation',
       scalar(after.out, 'live'), scalar(after.out, 'stored'))
   }

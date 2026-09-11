@@ -219,7 +219,15 @@ begin
                            -- object, so this cannot quietly become the hole the
                            -- pin exists to prevent.
                            'provider_reputation',
-                           'recompute_provider_rating_for');
+                           'recompute_provider_rating_for',
+                           -- Three more from the PM rulings on the same branch:
+                           -- the single canonical definition the two above
+                           -- delegate to, and the invariant that refuses a stored
+                           -- rating the canonical query does not produce (OQ-079).
+                           -- Both are booking-review objects; the assertion below
+                           -- proves they read no barter table.
+                           'provider_reputation_canonical',
+                           'reputation_is_derived');
   perform pg_temp.chk('no_show',
     'no fulfilment, reputation, penalty or refund function beyond the ruled adjudication',
     '0', v_n::text);
@@ -228,7 +236,8 @@ begin
   -- an approved name.
   select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
    where n.nspname = 'public'
-     and p.proname in ('provider_reputation', 'recompute_provider_rating_for')
+     and p.proname in ('provider_reputation', 'recompute_provider_rating_for',
+                       'provider_reputation_canonical', 'reputation_is_derived')
      and p.prosrc ~* 'barter';
   perform pg_temp.chk('no_show',
     'and the exempted reputation functions read no barter object', '0', v_n::text);

@@ -23,9 +23,11 @@ A review reveals when **either** of these is true:
 **Whichever comes first.** Reviewing is what buys you the right to see — that is
 what makes the window fair rather than merely slow.
 
-**Held separately:** a booking under dispute (`under_review`) holds reveal for
-both sides until the dispute is resolved. That is a `service_role` state; no
-participant can set it.
+**Held separately:** a booking under dispute (`under_review`) holds reveal for a
+review **that had not revealed yet** — and only that one. A review that was
+already public when the dispute was filed **stays public and keeps counting**.
+See § 6b, which is the rule support will actually be asked about. `under_review`
+is a `service_role` state; no participant can set it.
 
 ---
 
@@ -56,6 +58,15 @@ The public rating is the mean of the **latest revealed review from each distinct
 client**. Every review is still recorded, still displayed, and still counted in
 the review count.
 
+**"Latest" means the most recently completed SERVICE, not the most recently
+written review** (PD-092). If a client visits on the 1st and the 5th, then
+reviews the 5th visit first and the 1st visit a week later, the **5th visit's**
+review is the one in the rating — the later-written review of the older haircut
+does not replace it. The ordering key is the booking's server-stamped
+`completed_at`. If two of the same client's bookings were completed at the exact
+same instant (a provider marking both complete in one action), the tie goes to
+the later-written review.
+
 | Number | What it means |
 |---|---|
 | **Rating** | The mean of each distinct client's most recent revealed review |
@@ -76,6 +87,16 @@ for.
 Correct, and intended. The rating counts **clients**, not receipts. Three clients
 who love you is three data points. The profile shows both numbers so nobody has
 to guess which one they are reading.
+
+> *"Can you fix my rating / set it back / adjust it manually?"*
+
+**No, and there is no mechanism to.** The public rating is computed from the
+eligible review data and nothing else — there is no operator rating field, no
+override, no pin, and no support path that produces one. The database refuses to
+store a rating it cannot reproduce from the reviews, so this is not a policy
+support is choosing to apply; it is not possible. If a rating looks wrong, the
+question is whether a REVIEW is eligible, which is an adjudication question, not
+a number to type over.
 
 ---
 
@@ -107,18 +128,39 @@ action with an audit trail, not a support convenience.
 
 ## 6b. When a booking is placed under review
 
-Holding a booking `under_review` does two things at once, and support should
-expect both immediately:
+**Filing a dispute never changes a rating.** This is the single most important
+sentence in this document for support, because the opposite would make the
+dispute button a weapon: either side could reach for it to delete a review they
+did not like, with nothing adjudicated.
 
-1. Both reviews on that booking **disappear from reads** — the read policy is
-   evaluated live, so this is instant for everyone.
-2. The provider's displayed rating and counts **recompute without it**, so the
-   number on their profile drops in the same moment.
+What a hold actually does depends on whether the review was public yet:
 
-Before `20261080000000` only the first happened: the review vanished but the
-rating it contributed to did not move until some unrelated review landed. If a
-provider asks why their rating changed when a dispute opened, that is why — and
-lifting the hold restores both.
+| At the moment the hold opens | What happens |
+|---|---|
+| The review had **not revealed yet** (still inside the blind window, no counterpart review) | It **stays held** and keeps counting for nothing. Nothing public is being retracted, because nothing was public. |
+| The review **was already revealed** | It **stays visible and keeps counting.** The rating does not move. |
+
+So a provider who asks *"my client filed a dispute — will my rating recover?"*
+should be told their rating never dropped, and a provider who asks *"I disputed
+this review, why is it still up?"* should be told that filing a dispute is not
+how a review is removed.
+
+**While a hold is open, no new review can be written on that booking** — neither
+side can add a statement to a contested record. That takes nothing away from
+anyone; it only stops something being added.
+
+**Lifting the hold** returns the booking to the ordinary reveal rule. A review
+still inside its blind window is still blind; a review whose window has closed
+reveals normally.
+
+**Only an operator resolution could change a revealed review's standing**, and
+**no resolution rule does so today.** If one is ever approved it must be written
+down as a product decision first — the current answer to *"can an operator remove
+this review?"* is **no**.
+
+*(This reverses `20261079000000`, which made the stored rating drop the instant a
+hold opened. `20261082000000` latches reveal instead. If the number ever starts
+moving when a dispute is filed, that is a regression, not a fix.)*
 
 ---
 
@@ -135,6 +177,12 @@ lifting the hold restores both.
   it when they look.
 - **No SLA on disputes.** A booking held `under_review` stays held until an
   operator resolves it, and nothing dequeues that automatically.
+- **No review removal by dispute.** Filing a dispute does not take down a
+  published review or move a rating, and there is no approved resolution that
+  does either.
+- **No manual rating.** There is no operator override, pin, or adjustment for a
+  provider's public rating. It is derived from eligible review data, and the
+  database will not store a value it cannot reproduce.
 - **No defence against many accounts.** PD-091 stops ONE client inflating a
   rating by booking repeatedly — twenty reviews from one client is one voice.
   It does nothing about twenty accounts each leaving one review, because the
@@ -148,7 +196,18 @@ lifting the hold restores both.
 
 ## 8. New human operational obligation
 
-**A booking held `under_review` holds BOTH reviews indefinitely.** That state is
-set and cleared only by an operator; there is no timeout, no automatic release,
-and no notification to either party. A dispute nobody works is a review nobody
-sees — and neither participant is told why.
+**A booking held `under_review` blocks NEW reviews on it indefinitely, and holds
+any review that had not revealed yet.** That state is set and cleared only by an
+operator; there is no timeout, no automatic release, and no notification to
+either party. A dispute nobody works is a review window that never opens — and
+neither participant is told why.
+
+**What changed with the dispute ruling, operationally:** a hold is now a
+narrower instrument than it was. It can no longer be used — by anyone, including
+an operator — to take a published review down, so a complaint about an
+already-visible review **cannot be resolved by opening a hold**. It has to be
+resolved as a case, and the outcome today is that the review stays. Expect that
+conversation, and do not promise otherwise.
+
+**Support must not say a review will be removed, reviewed for removal, or
+"looked into" in a way that implies removal.** No such outcome exists.
