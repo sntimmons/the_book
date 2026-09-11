@@ -606,51 +606,64 @@ select pg_temp.chk('reviews2', 'no held booking is missing its hold instant', '0
   (select count(*)::text from public.bookings
     where under_review = true and under_review_at is null));
 
+-- WHY THE NULL STATE IS PINNED BY SOURCE AND NOT BY A FIXTURE, recorded because
+-- "just construct the row" is the obvious objection.
+--
+-- The state this guards against is now UNREACHABLE: the trigger overwrites
+-- `under_review_at` on every path, so the only way to manufacture a held booking
+-- with a null instant is `alter table public.bookings disable trigger` — which
+-- takes an **ACCESS EXCLUSIVE lock on `bookings` and holds it until the
+-- transaction ends**. This suite runs as ONE transaction that lasts minutes, so
+-- that lock would stall every other session's access to the hottest table in the
+-- schema for the whole run. A first version of this section did exactly that, and
+-- the db-security job failed once, against a database the concurrency harness was
+-- writing to at the same time.
+--
+-- A test that takes the product down to prove a point is not worth the point. So:
+-- the ABSENCE is pinned above as a whole-table post-condition, and the
+-- fail-closed branch is pinned in the source, where removing it is the edit that
+-- would matter.
+do $$
+declare v_src text;
+begin
+  perform pg_temp.act_service();
+  select p.prosrc into v_src from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'provider_review_revealed';
+  perform pg_temp.chk('reviews2',
+    'the latch refuses to evaluate a hold with no recorded instant', 'true',
+    (v_src ~* 'under_review_at\s+is\s+not\s+null')::text);
+
+  -- And the heal itself, which is the mechanism the post-condition rests on.
+  select p.prosrc into v_src from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'stamp_under_review_at';
+  perform pg_temp.chk('reviews2',
+    'and an unchanged hold heals a missing instant to completed_at', 'true',
+    (v_src ~* 'coalesce\s*\(\s*old\.under_review_at')::text);
+  -- The supplied value is never read, on any path. That is the PD-093 property:
+  -- choosing the instant would mean choosing which public reviews a dispute
+  -- suppresses, so there is no `new.under_review_at` on the right-hand side of
+  -- any assignment in this function.
+  perform pg_temp.chk('reviews2',
+    'and a caller-supplied hold instant is never read', 'false',
+    (v_src ~* ':=\s*[^;]*new\.under_review_at')::text);
+end $$;
+
+-- THE POSTURE FOR A CLIENT SUPPLYING THE FIELD, pinned as what it IS rather than
+-- as what would be tidier. `under_review_at` is NOT in
+-- `enforce_booking_write_integrity`'s non-user-editable list — that function is
+-- ~290 lines and has lost a rule to a copy-forward three times, so it was not
+-- reopened for a fourth, redundant pin. The boundary is the stamp's
+-- unconditional overwrite, so the write is CLAMPED rather than refused. If this
+-- ever flips to an exception the guard grew the field, which is an improvement —
+-- but it must be a deliberate one.
 do $$
 declare
   c1 uuid := current_setting('b5b.r2_c1')::uuid;
   pid uuid := current_setting('b5b.r2_pid')::uuid;
-  v_bk uuid; v_at timestamptz; v_completed timestamptz; v_code text;
+  v_bk uuid; v_code text;
 begin
   perform pg_temp.act_service();
   v_bk := pg_temp.r2_booking(c1, 40);
-  select completed_at into v_completed from public.bookings where id = v_bk;
-
-  -- A legacy-shaped row cannot be created through the trigger, which is the point
-  -- — so it is created by disabling it, exactly as a pre-20261082000000 row would
-  -- have arrived. Re-enabled immediately; the harness rolls back regardless.
-  alter table public.bookings disable trigger f_bookings_under_review_at_server;
-  update public.bookings set under_review = true, under_review_at = null where id = v_bk;
-  alter table public.bookings enable trigger f_bookings_under_review_at_server;
-
-  -- FAIL CLOSED. A window closed 33 days ago; under the ordinary rule this review
-  -- would be revealed. With no recorded hold instant it must not be.
-  insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating,
-                                      created_at)
-  values (v_bk, pid, c1, 5, now() - interval '39 days');
-  perform pg_temp.chk('reviews2',
-    'a hold with no recorded instant reveals nothing — it fails CLOSED', 'false',
-    public.provider_review_revealed(v_bk)::text);
-
-  -- And the next write to that booking heals it to the documented anchor, which
-  -- is a lower bound: still held, and nothing published retroactively.
-  update public.bookings set service_name = 'touched' where id = v_bk;
-  select under_review_at into v_at from public.bookings where id = v_bk;
-  perform pg_temp.chk('reviews2', 'and the next write heals it to completed_at', 'true',
-    (v_at = v_completed)::text);
-  perform pg_temp.chk('reviews2', 'the healed hold still reveals nothing', 'false',
-    public.provider_review_revealed(v_bk)::text);
-
-  -- THE POSTURE FOR A CLIENT SUPPLYING THE FIELD, pinned as what it IS rather
-  -- than what would be tidier. `under_review_at` is NOT in
-  -- enforce_booking_write_integrity's non-user-editable list — that function is
-  -- ~290 lines and has lost a rule to a copy-forward three times, so it was not
-  -- reopened for a fourth redundant pin. The boundary is the stamp's
-  -- unconditional overwrite, so the write is CLAMPED rather than refused. If this
-  -- assertion ever flips to an exception, the guard grew the field and that is an
-  -- improvement, not a break — but it must be a deliberate one.
-  perform pg_temp.act_service();
-  update public.bookings set under_review = false, status = 'completed' where id = v_bk;
   perform pg_temp.act(c1);
   begin
     update public.bookings set under_review_at = timestamptz '1999-01-01' where id = v_bk;
@@ -661,8 +674,6 @@ begin
   perform pg_temp.chk('reviews2',
     'a client supplying a hold instant is clamped, not obeyed', 'true',
     (select (under_review_at is null)::text from public.bookings where id = v_bk));
-
-  delete from public.provider_reviews where booking_id = v_bk;
   delete from public.bookings where id = v_bk;
 end $$;
 
