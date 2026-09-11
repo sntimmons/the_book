@@ -555,6 +555,13 @@ schema; the product rules around them do not. Each question below is separately 
   launch grounds.
 - **Status:** CLOSED — resolved by PD-090, 2026-09-10
 
+### OQ-077 — What is the erasure and retention treatment for booking photos, contract evidence and booking records?
+- **Area:** Schema / data
+- **Why it matters:** Three artifacts now persist as transaction evidence and **none has a decided erasure story**, which is a different question from whether the rows cascade. **(a) `booking-photos` storage objects.** `booking_reference_photos` rows cascade from `bookings` and `auth.users`; **the objects in the bucket do not.** After a booking or an account is deleted, the bytes remain — readable by nobody (`can_read_booking_photo` returns false with no row, which is what makes an orphan harmless) but present, and they are client-supplied personal imagery. **(b) Historical contract evidence.** `contract_versions` is immutable and an accepted version cannot be deleted while the acceptance exists — deliberately, because that is the whole point of it. That directly conflicts with a deletion request that expects a contract's text to go. **(c) Booking records** generally, which carry service, date, message and now photos. **This entry deliberately proposes nothing.** Inventing a deletion or anonymisation timing here would be inventing policy with legal exposure attached, and the Founder ruling is explicit that it stays unresolved. It needs **Operations, legal and the account-deletion policy together**, and the three artifacts may well get different answers — evidence a counterparty may need to rely on is not the same as a photo the client attached for convenience.
+- **Also recorded, because it is a limitation and not a defect:** acceptances that predate `20261068000000` are bound to the contract's content **at migration time**. If a provider edited between a client's acceptance and that migration, the original wording is gone — nothing recorded it. Those rows are the **best available historical record and are not proof of the exact original wording**, and support must not describe them as more than that.
+- **Blocks:** nothing shipped. It blocks any claim about deletion, and it blocks answering a user who asks for their data to be removed.
+- **Status:** Open
+
 ---
 
 ## Closed — index

@@ -45,7 +45,6 @@ export default function BookContract() {
   const [blocked, setBlocked] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
   const [agreed, setAgreed] = useState(false)
-  const [signed, setSigned] = useState(false)
   // ITEM I: the contract has to be OPENED before it can be signed. For a PDF
   // that means tapping through to the document; for an inline agreement it means
   // the text has actually been scrolled to the end. This is a real precondition,
@@ -164,16 +163,18 @@ export default function BookContract() {
     if (bodyHeight.current - viewportHeight.current - offsetY <= 24) setOpened(true)
   }
 
-  function signAndContinue() {
-    if (!agreed || !signed || !opened || !contract) return
-    // Capture the signing intent; the contract_signatures row is written in
-    // book/payment.tsx once the booking (and its id) exists.
-    setContractSigned(contract.id)
+  function acceptAndContinue() {
+    if (!agreed || !opened || !contract) return
+    // Capture the acceptance AND THE EXACT VERSION on screen. The row is written
+    // in book/payment.tsx once the booking id exists; binding the version here
+    // rather than there means a provider editing their contract in between
+    // cannot bind the acceptance to a document this client never saw.
+    setContractSigned(contract.id, contract.currentVersionId ?? null)
     router.push('/book/payment')
   }
 
   function decline() {
-    // Pre-booking, there is no signature row to mark declined; simply back out
+    // Pre-booking, there is no acceptance row to mark declined; simply back out
     // to reconsider. The booking has not been created yet.
     router.back()
   }
@@ -326,48 +327,22 @@ export default function BookContract() {
           <Text style={styles.bodyText}>{contract?.body}</Text>
         )}
 
-        {/* Signature placeholder — the real finger-drawn canvas (react-native-skia)
-            requires an EAS development build and is swapped in later. */}
-        <Text style={styles.sigLabel}>YOUR SIGNATURE</Text>
-        <View style={styles.sigBox}>
-          {signed ? (
-            <View style={styles.sigSignedRow}>
-              <Feather name="check-circle" size={18} color="#4CAF50" />
-              <Text style={styles.sigSignedText}>Signed</Text>
-            </View>
-          ) : (
-            <>
-              <Feather name="edit-3" size={20} color="rgba(240,232,213,0.25)" />
-              <Text style={styles.sigPlaceholderText}>
-                Signature canvas — requires development build
-              </Text>
-              <TouchableOpacity
-                style={[styles.sigSimBtn, !opened && styles.sigSimBtnInactive]}
-                activeOpacity={0.85}
-                disabled={!opened}
-                onPress={() => setSigned(true)}
-              >
-                <Text style={[styles.sigSimBtnText, !opened && styles.sigSimBtnTextInactive]}>
-                  Sign
-                </Text>
-              </TouchableOpacity>
-              {!opened ? (
-                <Text style={styles.sigGateText}>
-                  {contract?.contractType === 'pdf'
-                    ? 'Open the contract above first.'
-                    : 'Scroll to the end of the agreement first.'}
-                </Text>
-              ) : null}
-            </>
-          )}
-        </View>
+        {/* THE FAKE SIGNATURE CANVAS IS GONE.
+            It rendered "Signature canvas — requires development build" beside a
+            button labelled "Sign", and produced a `signature_url` of null. So it
+            showed the client a broken-looking placeholder, asked them to sign
+            into it, and recorded no signature — a control that looked like
+            evidence and was not.
 
+            What replaces it is what the record actually holds: an explicit
+            ACCEPTANCE of a specific document version. That is a real thing, it
+            is durable, and it does not pretend to be a signature. */}
         <Pressable style={styles.checkboxRow} onPress={() => setAgreed((v) => !v)}>
           <View style={[styles.checkbox, agreed && styles.checkboxChecked]}>
             {agreed ? <Feather name="check" size={13} color="#080808" /> : null}
           </View>
           <Text style={styles.checkboxText}>
-            I agree to the terms of this service agreement.
+            I accept the terms of this service agreement.
           </Text>
         </Pressable>
 
@@ -378,9 +353,17 @@ export default function BookContract() {
             box is the client's own statement rather than something the app
             proved. Saying so plainly is the difference between a real gate and a
             trust claim we cannot support. */}
+        {/* WHAT THE RECORD CLAIMS, AND ITS LIMITS, IN THE SAME BREATH.
+            The gate above is real — the agreement must be opened before this
+            activates. Everything else here is a limit, and they are stated
+            rather than implied because the beta positioning is explicit: this is
+            durable document acceptance and NOT DocuSign-equivalent
+            infrastructure, NOT a verified legal e-signature, and NOT a claim of
+            enforceability. */}
         <Text style={styles.gateNote}>
-          The Book records that you opened this agreement and agreed to it. It
-          does not verify that you read every word.
+          The Book records that you opened this agreement, which version you accepted,
+          and when. It does not verify that you read every word, and it is not a
+          witnessed or legally certified signature.
         </Text>
       </ScrollView>
 
@@ -389,18 +372,18 @@ export default function BookContract() {
           <Text style={styles.declineText}>Decline</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.continueBtn, (!agreed || !signed || !opened) && styles.continueBtnInactive]}
+          style={[styles.continueBtn, (!agreed || !opened) && styles.continueBtnInactive]}
           activeOpacity={0.85}
-          onPress={signAndContinue}
-          disabled={!agreed || !signed || !opened}
+          onPress={acceptAndContinue}
+          disabled={!agreed || !opened}
         >
           <Text
             style={[
               styles.continueText,
-              (!agreed || !signed || !opened) && styles.continueTextInactive,
+              (!agreed || !opened) && styles.continueTextInactive,
             ]}
           >
-            Sign and Continue
+            Accept and Continue
           </Text>
         </TouchableOpacity>
       </View>

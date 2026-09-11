@@ -26,6 +26,7 @@ import {
   ContactBlockedError,
   BookingWriteBlockedError,
 } from '@/lib/bookingDraft'
+import { attachBookingPhotos, PHOTO_PARTIAL_COPY } from '@/lib/bookingPhotos'
 
 function money(n: number): string {
   return '$' + Number(n).toFixed(2)
@@ -46,6 +47,8 @@ export default function BookPayment() {
     bookingMessage,
     contractId,
     contractSigned,
+    contractVersionId,
+    bookingPhotos,
     draftBookingId,
     setDraftBookingId,
   } = useBookingStore()
@@ -172,12 +175,35 @@ export default function BookPayment() {
       if (contractSigned && contractId && !signatureSaved) {
         const { error: sigError } = await supabase.from('contract_signatures').insert({
           contract_id: contractId,
+          // THE EXACT VERSION THE CLIENT SAW, captured on the contract screen
+          // rather than resolved here. The server refuses an acceptance that
+          // names no version (20261070000000), because a record with no document
+          // attached records nothing.
+          contract_version_id: contractVersionId,
           booking_id: bookingId,
           client_user_id: user.id,
+          // NO `signature_url`, and there never was one: the removed canvas
+          // produced null. This is durable ACCEPTANCE of a specific version, not
+          // a captured signature, and the column stays null rather than being
+          // filled with something that implies otherwise.
           signature_url: null,
           signed_at: new Date().toISOString(),
           status: 'signed',
         })
+        // RULING A: the provider changed their agreement between this client
+        // opening it and accepting it. Not a failure to retry — the terms on
+        // screen are no longer the terms on offer, and sending them back to
+        // re-read is the only honest response. PT429 exists so this is
+        // distinguishable from an ordinary write failure.
+        if (sigError && sigError.code === 'PT429') {
+          setProcessError(
+            'This provider updated their agreement while you were booking. Your request '
+            + 'has not been sent. Please review the current agreement and accept it again.',
+          )
+          setIsProcessing(false)
+          router.replace('/book/contract')
+          return
+        }
         // A duplicate means a previous attempt already recorded it — the retry
         // succeeded from the client's point of view, so treat it as saved.
         if (sigError && sigError.code !== '23505') {
@@ -192,11 +218,29 @@ export default function BookPayment() {
         setSignatureSaved(true)
       }
 
+      // REFERENCE PHOTOS UPLOAD BEFORE THE SEND, deliberately.
+      //
+      // The provider's whole reason for having them is to decide whether to
+      // accept, so a request that arrives without them has already lost its
+      // purpose. Uploading first also means the request can never CLAIM photos
+      // that are not there.
+      //
+      // A failure here does NOT stop the send. Losing a reference photo should
+      // not cost someone their appointment — the client is told afterwards which
+      // ones landed, so they can describe the rest in a message.
+      let photoResult = { attached: 0, requested: 0, failed: false }
+      if (bookingPhotos.length > 0) {
+        photoResult = await attachBookingPhotos(bookingId, user.id, bookingPhotos)
+      }
+
       // THE SEND. Until this line the provider cannot see anything.
       await submitBookingRequest(bookingId)
       setSubmitted(true)
 
       setIsProcessing(false)
+      if (photoResult.failed || photoResult.attached < photoResult.requested) {
+        Alert.alert(PHOTO_PARTIAL_COPY.title, PHOTO_PARTIAL_COPY.body)
+      }
       router.push({
         pathname: '/book/confirmed',
         params: { bookingId },

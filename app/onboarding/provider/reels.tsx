@@ -212,8 +212,13 @@ export default function ProviderReels() {
         <TouchableOpacity activeOpacity={0.6} style={styles.skipWrap} onPress={navigate}>
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
+        {/* "Providers with reels get 3x more profile views" was here. There is no
+            product data behind it — the number is invented, and it was being used
+            to push a provider into an OPTIONAL step during onboarding. Replaced
+            with what is actually true, which is also the more useful thing to
+            say: this is optional and can be done later. */}
         <Text style={styles.skipNote}>
-          Providers with reels get 3x more profile views.
+          Reels are optional. You can add them any time from your business profile.
         </Text>
       </View>
     </View>

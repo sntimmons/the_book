@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
@@ -15,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../../lib/supabase'
 import { useAuth } from '../../../context/AuthContext'
 import { canAcceptRequest } from '../../../lib/bookingStatus'
+import { bookingPhotoUrls } from '../../../lib/bookingPhotos'
 import {
   fetchRevealedClientReviews,
   fetchClientCompletionRate,
@@ -51,6 +53,7 @@ export default function BookingRequestScreen() {
   const insets = useSafeAreaInsets()
 
   const [booking, setBooking] = useState<RequestBooking | null>(null)
+  const [photoUrls, setPhotoUrls] = useState<string[]>([])
   const [clientName, setClientName] = useState('Client')
   const [clientSince, setClientSince] = useState<string | null>(null)
   const [reviews, setReviews] = useState<RevealedReview[]>([])
@@ -127,6 +130,23 @@ export default function BookingRequestScreen() {
   useEffect(() => {
     load()
   }, [load])
+
+  // Signed URLs are fetched separately from the booking row: the paths live in
+  // `booking_reference_photos` and the objects are in a private bucket, so each
+  // needs a short-lived signed URL. A failure here leaves the section absent
+  // rather than showing broken frames — a provider deciding on a request should
+  // see photos or nothing, never a grey box implying something they cannot open.
+  useEffect(() => {
+    let cancelled = false
+    if (!id) return
+    ;(async () => {
+      const urls = await bookingPhotoUrls(id as string)
+      if (!cancelled) setPhotoUrls(urls)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id])
 
   // Accept / Decline reuse the proven bookings UPDATE path. Optimistic state
   // with revert-on-error and an honest alert; route away with replace to avoid
@@ -313,6 +333,25 @@ export default function BookingRequestScreen() {
             <View style={s.noteRow}>
               <Ionicons name="chatbubble-outline" size={15} color="rgba(240,232,213,0.45)" />
               <Text style={s.noteText}>{booking.message}</Text>
+            </View>
+          ) : null}
+
+          {/* REFERENCE PHOTOS — requirement B.
+              The client attached these so the provider could see them BEFORE
+              deciding, which is the only moment they are useful. Until this
+              session the picker existed and the files went nowhere; a provider
+              was accepting or declining without context the client believed they
+              had sent. */}
+          {photoUrls.length > 0 ? (
+            <View style={s.photoBlock}>
+              <Text style={s.photoLabel}>
+                {photoUrls.length === 1 ? 'REFERENCE PHOTO' : 'REFERENCE PHOTOS'}
+              </Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {photoUrls.map((u) => (
+                  <Image key={u} source={{ uri: u }} style={s.photoThumb} resizeMode="cover" />
+                ))}
+              </ScrollView>
             </View>
           ) : null}
         </View>
@@ -507,6 +546,20 @@ const s = StyleSheet.create({
     textTransform: 'uppercase',
   },
   detailValue: { fontSize: 16, color: '#F0E8D5', fontFamily: 'Manrope_600SemiBold', marginTop: 6 },
+  photoBlock: { marginTop: 14, gap: 8 },
+  photoLabel: {
+    fontSize: 10,
+    letterSpacing: 1,
+    color: 'rgba(240,232,213,0.4)',
+    fontFamily: 'Manrope_700Bold',
+  },
+  photoThumb: {
+    width: 96,
+    height: 96,
+    borderRadius: 10,
+    marginRight: 8,
+    backgroundColor: 'rgba(240,232,213,0.06)',
+  },
   noteRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',

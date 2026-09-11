@@ -196,14 +196,21 @@ export default function BookPolicy() {
         </View>
       </ScrollView>
 
-      {/* Fixed bottom CTA */}
+      {/* CTA TRUTH — requirement D.
+          This said "Send Request" and navigated to the CONTRACT screen. Nothing
+          was sent, and two more steps stood between here and sending: reviewing
+          the agreement and accepting it. A person who tapped it believed their
+          request was gone, and anyone who stopped there believed they had booked.
+
+          The only control that may say a request is being sent is the one that
+          sends it, and that is `Send Booking Request` on the final screen. */}
       <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
         <Pressable
           style={[styles.continueBtn, !agreedToPolicy && styles.continueBtnInactive]}
           onPress={() => agreedToPolicy && router.push('/book/contract')}
         >
           <Text style={[styles.continueBtnText, !agreedToPolicy && styles.continueBtnTextInactive]}>
-            Send Request
+            Continue to Agreement
           </Text>
         </Pressable>
       </View>
