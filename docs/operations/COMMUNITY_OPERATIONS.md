@@ -1,7 +1,7 @@
 # Community — Operations and support note
 
-**Status:** Authoritative for the branch `feat/community-reshape`. **Not merged.**
-**Anchor:** `main` @ `e029ebc` plus that branch.
+**Status:** Authoritative. Describes `main`.
+**Anchor:** `main` @ `7826ca4` (2026-09-11) — squash-merge of PR #82, Community Reshape.
 
 Written for whoever answers *"why can't I post that?"*, *"can you take this
 down?"* or *"how do I get recommended?"*. Limits sit beside behaviour, because a

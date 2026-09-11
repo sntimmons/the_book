@@ -1,5 +1,42 @@
 # Current State — what is true on `main` today
 
+**Community Reshape merged 2026-09-11 (`8331941`, PR #82; test-margin fix `7826ca4`).**
+Community is a **service community for clients and providers** — it was provider-only by TABLE
+SHAPE, not by policy choice, so no client could ever be represented in it. Clients post *Looking
+for someone · Need advice · Who does this style? · Recommend a provider*; providers post *Open
+today · Update · Announcement* as their business and answer in-thread, including **"I can help"**.
+There is deliberately **no generic post type** — the vocabulary is CHECK-constrained in the
+database and paired with the actor, not merely typed in TypeScript.
+
+**Discover remains the marketplace.** Community is a capped module near the bottom of it and a
+secondary route off it; there is **no sixth tab**. Provider content creation and management, and
+the barter trade board, live in **Business → GROW**, where `NAVIGATION.md` always said they
+belonged and where they had never been.
+
+- **Open Today is a projection with a note on it (PD-096).** Published availability is the truth;
+  the write is refused unless `providers_open_today()` already contains the provider, the expiry is
+  the server's and clamped to 24 hours, and the note stops surfacing when the day ends **or** when
+  they block the date — neither of which requires deleting history. It means published hours, **not
+  a free slot**.
+- **A shoutout is a recommendation, not a review (PD-097, PD-098).** It names a real approved
+  provider — not yourself, not across a block — and moves **nothing**: no rating, no count, no
+  marketplace position. A booking link is **optional**; where the server verified one the shoutout
+  shows *"Booked on The Book"*, which states a booking and not a verdict, and whose **absence
+  implies nothing**.
+- **A report now has an outcome (PD-099).** An authorized operator can **hide** and **restore**
+  Community posts and replies. **Hiding is not deletion** — the row, the report, the case and every
+  prior decision survive it, and it is reversible. It is also a **read boundary**: hidden content is
+  readable by its author and by an operator, and by nobody else. An operator **may not moderate
+  their own matter** (PD-068 applied to a new surface). No bulk moderation, no keyword or AI
+  filtering, no auto-bans, no scoring, **no SLA**.
+- **Community engagement does not influence provider marketplace ranking**, and the feed is ordered
+  chronologically. A provider who never posts is not worse off for it.
+
+**What travels with it:** a **client** author is not told when their post is hidden (clients have no
+"my posts" screen) — support is told what to say, and the UX pass owes the rest. Community is
+**complete for beta scope**, subject to **physical-device QA**, a **final UX/UI pass**, and real
+cohort learning.
+
 **Reviews Phase 2 merged 2026-09-11 (`a253c3f`, PR #81).** A provider's public rating is the mean
 of the **latest revealed review from each distinct client** (PD-091), where *latest* is the review
 tied to the **most recently COMPLETED service** — `bookings.completed_at`, not review submission
@@ -33,9 +70,13 @@ records is **deliberately unresolved** (OQ-077) — support must not promise del
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `a253c3f` (2026-09-11) — squash-merge of **PR #81**, Reviews
-Phase 2. The migration chain is now **126** files, `20260829000000` … `20261087000000`, applied to
-non-production `wcoyjeklscuqsumpjpfo` with local and remote in step and **no drift**. Production
+**Reconciled against:** `main` @ `7826ca4` (2026-09-11) — squash-merge of **PR #82**, Community
+Reshape, plus a test-margin correction. The migration chain is now **138** files,
+`20260829000000` … `20261099000000`, applied to non-production `wcoyjeklscuqsumpjpfo` with local
+and remote in step and **no drift**.
+
+**Previously reconciled against:** `main` @ `a253c3f` — squash-merge of **PR #81**, Reviews
+Phase 2. The chain was **126** files at that point. Production
 `kxregomuawwcqvisuhtr` remains **untouched and never reconciled** — see
 [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) § Production application policy.
 

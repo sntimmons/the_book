@@ -937,7 +937,7 @@ decided what deletion does to transaction evidence.
 **Validation at merge:** B5B **1791/1791**, Jest **949/949**, concurrency **224/224**, typecheck
 clean, lint 0 errors, migrations local == non-production with no drift, production untouched.
 
-### Community Reshape — **IMPLEMENTED, pending merge** (`feat/community-reshape`)
+### Community Reshape — **MERGED** (`8331941`, PR #82, 2026-09-11)
 
 Four migrations, `20261088000000` … `20261091000000`, and three locked decisions
 (**PD-095**, **PD-096**, **PD-097**).
@@ -960,9 +960,21 @@ under a post they held a link to; a **deapproved provider could still post**, th
 barter writes have had since `20261048000000`; the community tables had no index beyond their
 primary keys; and the post model had **zero test coverage**.
 
-**Filed, not settled:** **OQ-081** (should a shoutout require a completed booking — optional for
-beta, and why), **OQ-082** (a Community report creates a real operator case and there is **no
-take-down**; `is_active` has no writer and is now documented as reserved).
+**Both open questions were then RULED, and the second required building something.** **PD-098**
+(closing OQ-081): a shoutout needs no booking, and where one is verified it shows *"Booked on The
+Book"* — a fact about a booking, not a verdict. **PD-099** (closing OQ-082): a report now has a
+real outcome. An authorized operator can hide and restore Community posts and replies; hiding
+preserves the row, the report, the case and the action history and is **never a delete**, and it is
+a **read boundary** rather than only a rendering one. An operator **may not moderate their own
+matter**. Migrations `20261096000000` … `20261099000000`.
+
+**Also closed in the same pass:** **PD-100** (OQ-083 — PD-090 stands for the closed beta, revisit
+before broader launch) and **PD-101** (OQ-080 — `service_role` is accepted trusted infrastructure;
+the guarantee is that no client, provider or operator path exposes rating mutation).
+
+**Community is COMPLETE FOR BETA SCOPE**, subject to physical-device QA, a final UX/UI pass, and
+real cohort learning. One known gap, recorded not fixed: a **client** author is not told when their
+post has been hidden.
 
 **Not done here, deliberately:** no client media or gallery, no Follow expansion, no trending or
 engagement ranking, no operator content take-down, no barter redesign (PD-080's Find → Talk →

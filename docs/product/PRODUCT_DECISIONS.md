@@ -2037,7 +2037,7 @@ as locked decisions.
 - **Evidence.** `20261088000000`, `20261089000000`, `20261090000000`, `20261091000000`;
   `supabase/tests/community.test.sql`; `__tests__/guards/communityShape.test.ts`;
   `docs/operations/COMMUNITY_OPERATIONS.md`.
-- **Status:** Locked; **implemented on `feat/community-reshape`**, pending merge.
+- **Status:** Locked; **implemented and merged** (`8331941`, PR #82).
 
 ---
 
@@ -2061,7 +2061,7 @@ as locked decisions.
   the same under-claim the "Open today" discovery filter already makes (`20261044000000`).
 - **Evidence.** `20261088000000` (the CHECK making an expiry-less open_today unrepresentable, the
   trigger, the view), `supabase/tests/community.test.sql` § 3.
-- **Status:** Locked; **implemented on `feat/community-reshape`**, pending merge.
+- **Status:** Locked; **implemented and merged** (`8331941`, PR #82).
 
 ---
 
@@ -2086,7 +2086,7 @@ as locked decisions.
   self / block / booking checks); `supabase/tests/community.test.sql` § 2, which asserts the
   reputation numbers are unchanged AND that the rule cannot structurally see community at all;
   `components/ProviderShoutouts.tsx`.
-- **Status:** Locked; **implemented on `feat/community-reshape`**, pending merge.
+- **Status:** Locked; **implemented and merged** (`8331941`, PR #82).
 
 ---
 
@@ -2117,7 +2117,7 @@ as locked decisions.
 - **Evidence.** `20261088000000` (the CHECK requiring a named provider; the trigger's approval,
   self, block and booking checks); `supabase/tests/community.test.sql` §§ 2, 6c;
   `components/ProviderShoutouts.tsx`; `__tests__/guards/communityShape.test.ts`.
-- **Status:** Locked; **implemented**.
+- **Status:** Locked; **implemented and merged** (`8331941`, PR #82).
 
 ---
 
@@ -2174,7 +2174,7 @@ as locked decisions.
 - **Evidence.** `20261096000000`, `20261097000000`, `20261098000000`;
   `supabase/tests/community.test.sql` §§ 6e–6j; `lib/operator.ts`; `app/operator/[id].tsx`;
   `docs/operations/COMMUNITY_OPERATIONS.md`.
-- **Status:** Locked; **implemented**.
+- **Status:** Locked; **implemented and merged** (`8331941`, PR #82).
 
 ---
 
