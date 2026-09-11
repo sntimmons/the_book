@@ -588,6 +588,129 @@ begin
   delete from public.bookings where id = v_bk;
 end $$;
 
+-- ══ 5e. THE LEGACY HOLD, AND THE ASSERTION THAT WOULD HAVE CAUGHT IT ═════
+--
+-- `20261082000000` created the stamping trigger and THEN ran its backfill. The
+-- backfill does not change `under_review`, so the trigger took its unchanged-hold
+-- branch and wrote `old.under_review_at` — `NULL` — straight back. The backfill
+-- wrote nothing, silently, while the migration comment and the ledger both
+-- asserted the post-condition. Nothing broke, because the latch tests for null
+-- and fails closed; the safety net was doing the load-bearing work while the
+-- documentation credited the anchor. `20261086000000` heals it inside the
+-- function, which is the only place the value can be computed without letting a
+-- writer supply it.
+--
+-- The first assertion here is the one that was missing and is worth more than the
+-- fix: it is a whole-table post-condition, so it catches the same class again.
+select pg_temp.chk('reviews2', 'no held booking is missing its hold instant', '0',
+  (select count(*)::text from public.bookings
+    where under_review = true and under_review_at is null));
+
+do $$
+declare
+  c1 uuid := current_setting('b5b.r2_c1')::uuid;
+  pid uuid := current_setting('b5b.r2_pid')::uuid;
+  v_bk uuid; v_at timestamptz; v_completed timestamptz; v_code text;
+begin
+  perform pg_temp.act_service();
+  v_bk := pg_temp.r2_booking(c1, 40);
+  select completed_at into v_completed from public.bookings where id = v_bk;
+
+  -- A legacy-shaped row cannot be created through the trigger, which is the point
+  -- — so it is created by disabling it, exactly as a pre-20261082000000 row would
+  -- have arrived. Re-enabled immediately; the harness rolls back regardless.
+  alter table public.bookings disable trigger f_bookings_under_review_at_server;
+  update public.bookings set under_review = true, under_review_at = null where id = v_bk;
+  alter table public.bookings enable trigger f_bookings_under_review_at_server;
+
+  -- FAIL CLOSED. A window closed 33 days ago; under the ordinary rule this review
+  -- would be revealed. With no recorded hold instant it must not be.
+  insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating,
+                                      created_at)
+  values (v_bk, pid, c1, 5, now() - interval '39 days');
+  perform pg_temp.chk('reviews2',
+    'a hold with no recorded instant reveals nothing — it fails CLOSED', 'false',
+    public.provider_review_revealed(v_bk)::text);
+
+  -- And the next write to that booking heals it to the documented anchor, which
+  -- is a lower bound: still held, and nothing published retroactively.
+  update public.bookings set service_name = 'touched' where id = v_bk;
+  select under_review_at into v_at from public.bookings where id = v_bk;
+  perform pg_temp.chk('reviews2', 'and the next write heals it to completed_at', 'true',
+    (v_at = v_completed)::text);
+  perform pg_temp.chk('reviews2', 'the healed hold still reveals nothing', 'false',
+    public.provider_review_revealed(v_bk)::text);
+
+  -- THE POSTURE FOR A CLIENT SUPPLYING THE FIELD, pinned as what it IS rather
+  -- than what would be tidier. `under_review_at` is NOT in
+  -- enforce_booking_write_integrity's non-user-editable list — that function is
+  -- ~290 lines and has lost a rule to a copy-forward three times, so it was not
+  -- reopened for a fourth redundant pin. The boundary is the stamp's
+  -- unconditional overwrite, so the write is CLAMPED rather than refused. If this
+  -- assertion ever flips to an exception, the guard grew the field and that is an
+  -- improvement, not a break — but it must be a deliberate one.
+  perform pg_temp.act_service();
+  update public.bookings set under_review = false, status = 'completed' where id = v_bk;
+  perform pg_temp.act(c1);
+  begin
+    update public.bookings set under_review_at = timestamptz '1999-01-01' where id = v_bk;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('reviews2',
+    'a client supplying a hold instant is clamped, not obeyed', 'true',
+    (select (under_review_at is null)::text from public.bookings where id = v_bk));
+
+  delete from public.provider_reviews where booking_id = v_bk;
+  delete from public.bookings where id = v_bk;
+end $$;
+
+-- ══ 5f. TWO ONE-WORD EDITS THAT WOULD LOOK LIKE CONCURRENCY BUGS ═════════
+--
+-- Both are single tokens inside function bodies, both are invisible to every
+-- behavioural test, and both would surface as intermittent failures that get
+-- diagnosed as races rather than as the edits they are.
+do $$
+declare v_src text;
+begin
+  perform pg_temp.act_service();
+
+  -- `review_window_closed` must use `now()` — the TRANSACTION timestamp. Under
+  -- `clock_timestamp()` the reveal predicate would return different answers at
+  -- different points inside ONE transaction, so `reputation_is_derived` (which
+  -- re-evaluates the canonical query inside the recompute's own UPDATE) would
+  -- trip at random near a 7-day boundary. The symptom would be a `23514` nobody
+  -- can reproduce.
+  select p.prosrc into v_src from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'review_window_closed';
+  perform pg_temp.chk('reviews2',
+    'the window clock is the transaction''s, not the wall''s', 'false',
+    (v_src ~* 'clock_timestamp')::text);
+  perform pg_temp.chk('reviews2', 'and it is still now()', 'true',
+    (v_src ~* '\mnow\s*\(\s*\)')::text);
+
+  -- The recompute triggers on both review tables are what serialize every writer
+  -- that can change the canonical answer — that is why the invariant above cannot
+  -- trip against an honest concurrent reviewer. Their EVENT lists are the
+  -- mechanism, so they are pinned. `client_reviews` is insert/delete only: a
+  -- privileged UPDATE of a counterpart's created_at would move a latch input
+  -- without recomputing. Unreachable by any client role (no UPDATE policy), and
+  -- pinned so the asymmetry stays a decision rather than becoming an omission.
+  perform pg_temp.chk('reviews2',
+    'the provider_reviews recompute fires on insert, update and delete', 'true',
+    (select (t.tgtype & 28) = 28 from pg_trigger t
+      where t.tgrelid = 'public.provider_reviews'::regclass
+        and t.tgname = 'provider_reviews_recompute_rating')::text);
+  perform pg_temp.chk('reviews2',
+    'and the client_reviews one on insert and delete (NOT update — see OQ-080)',
+    'true',
+    (select (t.tgtype & 4) = 4 and (t.tgtype & 8) = 8 and (t.tgtype & 16) = 0
+       from pg_trigger t
+      where t.tgrelid = 'public.client_reviews'::regclass
+        and t.tgname = 'client_reviews_recompute_provider_rating')::text);
+end $$;
+
 -- ══ 6. WHAT CANNOT BE REVIEWED ════════════════════════════════════════════
 do $$
 declare

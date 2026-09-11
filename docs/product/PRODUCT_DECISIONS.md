@@ -1900,8 +1900,9 @@ as locked decisions.
 - **Why `completed_at`.** It is server-stamped, immutable (SEC-DATA-101), and already the anchor
   for eligibility, the 7-day blind window and reveal. Ordering on it means ONE authoritative
   chronology governs the whole review system rather than two that can disagree. It also removes
-  submission timing from the answer entirely: two concurrent reviews now produce the same rating
-  regardless of which commits first.
+  submission timing from the answer **wherever the services differ**: two concurrent reviews on two
+  differently-completed bookings now produce the same rating regardless of which commits first.
+  Submission order still decides the tie above, and only that tie.
 - **What this does NOT change.** One client still contributes exactly one value. `review_count` is
   still every revealed review. `rating_client_count` is still distinct contributing clients. The
   blind window, one-sided validity, one-review-per-reviewer-per-booking, no client UPDATE/DELETE,
@@ -1983,6 +1984,14 @@ as locked decisions.
 - **What was deliberately NOT done.** No operator rating editing, and none should be built — an
   override surface would be the pin this forbids, wearing a UI. If a rating is wrong, the eligible
   review data is what is wrong, and that is an adjudication question (**PD-068**).
+- **SCOPE, stated exactly, because the prose invites a wider reading than the implementation.** This
+  decision governs **what may be STORED in the derived columns**. It does not constrain the review
+  ROWS the canonical query reads: `service_role` retains full INSERT/UPDATE/DELETE on both review
+  tables (there is no append-only guard on either), so a holder of the service key can still move a
+  rating by fabricating or removing reviews — and the resulting aggregate passes the invariant,
+  because it *is* canonical for the altered data. That is one layer further back than OQ-079 looked
+  and it is **not decided here**; it is filed as **OQ-080**. Nothing reachable by any client role
+  changes either way.
 - **Evidence.** `20261084000000` (`reputation_is_derived()`, `providers.rating` mirror);
   `hooks/useProviders.ts` (search now ranks and filters on `average_rating`);
   `supabase/tests/reviews_phase2.test.sql` § 8; `docs/operations/REVIEWS_OPERATIONS.md` §§ 4, 7.

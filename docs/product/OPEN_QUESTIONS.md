@@ -583,6 +583,18 @@ schema; the product rules around them do not. Each question below is separately 
 
 ---
 
+### OQ-080 — Is privileged mutation of review ROWS an accepted operator power?
+- **Area:** Reviews / reputation / operations
+- **Why it matters:** **PD-094** removed every way to store a public rating the review data does not produce — including for `service_role`, which is the role the ruling was about. It did that by comparing the stored value against the canonical computation rather than by checking who is writing, so there is no carve-out to find. **What it cannot do is constrain the inputs.** `service_role` retains full INSERT/UPDATE/DELETE on `provider_reviews` and `client_reviews`; there is no append-only or immutability guard on either table (the only triggers are the `created_at` stamp, the self-review guard and the recompute). A holder of the service key can therefore still move any provider's public rating — delete the 1-star, insert a fabricated 5-star against a fabricated completed booking, or edit an existing rating — and the resulting aggregate **passes the PD-094 invariant, because it is canonical for the altered data**. The result is indistinguishable from earned reputation.
+- **Three things this is NOT:** it is not reachable by any client role (neither review table has an UPDATE or DELETE policy, and `authenticated` holds no write grant on any reputation column); it is not a regression introduced by Reviews Phase 2 — the capability predates it and PD-094 simply moved the boundary close enough to see it; and it is not a claim that `service_role` is untrusted, which would reopen decisions far outside reviews.
+- **The related asymmetry, recorded with it because they are the same question:** the dispute latch (PD-093) reads two timestamps. `bookings.under_review_at` deliberately has **no** `service_role` carve-out — it decides which already-public reviews a dispute suppresses. The counterpart review's `created_at`, which is the *other* input to that same latch, **does** have one (`20261079000000`, the standard shape every neighbouring stamp uses for backfills and erasure). A backdated counterpart inserted during a hold would retroactively reveal a held review. Reachable by nothing today — no server-side review writer exists — but two inputs to one rule now have opposite postures, and that should be deliberate rather than incidental.
+- **What an answer would have to weigh:** an append-only guard on the review tables would need an explicit erasure-cascade exemption (the shape `20261053000000` already uses, which exists because that exemption was forgotten once), and it would sit directly on top of **OQ-077**, which has not decided what deletion is supposed to do to transaction evidence at all. Deciding this before OQ-077 risks locking in a retention posture by accident.
+- **This entry deliberately proposes nothing.** Whether operator power over review rows is accepted, bounded, or removed is a product and operations decision with legal exposure attached, not a trigger to write.
+- **Blocks:** nothing shipped. It blocks any absolute phrasing — a support script, a provider-facing claim or a PD — saying reviews cannot be edited or deleted by **anyone**, as opposed to by any client role. `REVIEWS_OPERATIONS.md` § 5 is worded to the narrower, true claim.
+- **Status:** Open
+
+---
+
 ## Closed — index
 
 **Closed questions are not moved.** An earlier version of this section said they would be, and

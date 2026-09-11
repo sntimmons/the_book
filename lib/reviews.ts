@@ -3,11 +3,18 @@ import { supabase } from './supabase'
 // ── Blind reveal read layer (DB is authoritative — Phase 0) ──────────────────
 //
 // The DATABASE owns review reveal and eligibility. The canonical rule lives once
-// in SQL (migration 20260902000000): a review is revealed when the booking is
-// eligible (status='completed' AND under_review=false) AND (the counterpart
-// review exists OR the 7-day window from the server-stamped completed_at has
-// closed). One 7-day definition, one `<=` boundary. TypeScript no longer decides
-// whether hidden reviews are visible.
+// in SQL and TypeScript no longer decides whether hidden reviews are visible.
+//
+// The rule, as of 20261082000000 (PD-093): a review is revealed when the booking
+// has a server-stamped `completed_at` AND (the counterpart review exists OR the
+// 7-day window has closed) — with one twist. **Reveal LATCHES.** While a booking
+// is `under_review` (a dispute hold), that same rule is evaluated as of
+// `bookings.under_review_at`, the instant the hold opened. So a review that was
+// already public when someone filed stays public and keeps counting, and a review
+// that had not revealed yet stays held. Filing a dispute is not a way to remove a
+// review. Phase 0's flat `under_review = false` requirement is GONE; do not
+// restore it from this comment's previous wording. One 7-day definition, one `<=`
+// boundary, three immutable server-stamped facts and no cached verdict.
 //
 // provider_reviews: reveal is enforced by a single SECURITY DEFINER-gated SELECT
 // policy (public.provider_review_revealed). The DB returns only revealed rows plus

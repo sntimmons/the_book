@@ -105,6 +105,12 @@ a number to type over.
 **No. Neither side, at any point.** There is no update path and no delete path —
 not in the app and not in the database, for any client role.
 
+**Say it that way, not as "nobody can."** The database refuses it for every role a
+person can log in as; it does not refuse it to the service key, which is how
+backfills and account erasure work at all. That difference never reaches a user
+and there is no support path to it, but an absolute claim in a support script is
+one the product cannot back (OQ-080).
+
 This is deliberate: an editable or deletable review is a reputation-manipulation
 loop (write, see the effect, rewrite). **Support cannot edit or delete a review
 either** — there is no tool for it, and any future one would be an operator
@@ -119,7 +125,7 @@ action with an audit trail, not a support convenience.
 | **"My review is missing."** | If the booking completed within the last 7 days and the other side has not reviewed, it is **blind** — recorded, not lost, and it appears when the window ends. Confirm the booking actually reached **completed**: an uncompleted or cancelled booking creates no review opportunity. |
 | **"Why can't I see what they wrote about me?"** | The window is blind on purpose, so neither side can retaliate. Reviewing yourself reveals both immediately. |
 | **"They never reviewed me, so mine is stuck."** | It is not. It reveals when the 7 days end, regardless of what the other side does. |
-| **"Can I change my review?"** | No. Reviews cannot be edited or deleted by anyone. |
+| **"Can I change my review?"** | No. There is no edit path and no delete path for either side, and support has no tool for it either. |
 | **"My rating didn't move after a great review."** | If it was from a client who has reviewed before, it **replaced** their previous review rather than adding to it. If the booking completed very recently, the review may still be blind. |
 | **"Can I review my barter trade?"** | **No. Barter is outside reviews and reputation entirely for beta.** There is no path from a trade to a review, and a barter trade never affects anyone's rating. |
 | **"Is this reviewer verified?"** | The only thing the product guarantees is that **every review is attached to a real completed booking between those two accounts**. It does not verify identity, and it does not verify that the review is fair or accurate. |
