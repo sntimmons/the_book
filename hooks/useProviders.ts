@@ -99,6 +99,7 @@ const PUBLIC_PROVIDER_FIELDS = [
   'cover_image_url',
   'rating',
   'average_rating',
+  'rating_client_count',
   'review_count',
   'total_bookings',
   'repeat_client_rate',

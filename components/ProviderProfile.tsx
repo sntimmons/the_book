@@ -40,6 +40,13 @@ export interface ProviderData {
   portfolio?: string[]
   reels?: string[]
   rating?: number
+  /**
+   * How many DISTINCT clients the rating rests on. Not the review count: the
+   * rating counts each client once (their most recent revealed review) while
+   * the review list shows every review. Displaying one without the other is
+   * misleading in whichever direction it chose.
+   */
+  ratingClientCount?: number
   bookingCount?: number
   followerCount?: number
   followingCount?: number
@@ -326,7 +333,21 @@ export default function ProviderProfile({
             ) : (
               <Text style={styles.statValue}>New</Text>
             )}
-            <Text style={styles.statLabel}>Rating</Text>
+            {/* REVIEWS PHASE 2 — the label carries the rule.
+                The rating is the mean of the LATEST review from each DISTINCT
+                client, so twenty reviews from one loyal client are one voice,
+                not twenty. That makes "Rating" on its own misleading in a
+                specific way: it invites a reader to assume it rests on however
+                many reviews they can scroll. Saying how many CLIENTS it rests on
+                is the smallest honest fix, and it is why
+                `providers.rating_client_count` exists at all. */}
+            <Text style={styles.statLabel}>
+              {(provider.ratingClientCount ?? 0) > 0
+                ? `Rating · ${provider.ratingClientCount} ${
+                    provider.ratingClientCount === 1 ? 'client' : 'clients'
+                  }`
+                : 'Rating'}
+            </Text>
           </View>
         </View>
 

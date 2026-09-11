@@ -208,10 +208,31 @@ begin
           or p.proname ~* 'closed_without|partially|not_completed')
      and p.proname not in ('adjudicate_barter_obligation',
                            'enforce_barter_adjudication_append_only',
-                           'enforce_barter_adjudication_consistent');
+                           'enforce_barter_adjudication_consistent',
+                           -- Reviews Phase 2. `provider_reputation` matches
+                           -- `reputation` but is not in the domain this pin
+                           -- guards: it computes a BOOKING-review aggregate and
+                           -- PD-027/PD-028 have always anticipated one. Exempted
+                           -- by name, the same mechanism the three above use —
+                           -- and the assertion immediately below keeps the
+                           -- exemption honest by proving it touches no barter
+                           -- object, so this cannot quietly become the hole the
+                           -- pin exists to prevent.
+                           'provider_reputation',
+                           'recompute_provider_rating_for');
   perform pg_temp.chk('no_show',
     'no fulfilment, reputation, penalty or refund function beyond the ruled adjudication',
     '0', v_n::text);
+  -- The exemption above is only safe while it stays true. A reputation function
+  -- that learned to read barter would be exactly the thing this pin bans, wearing
+  -- an approved name.
+  select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('provider_reputation', 'recompute_provider_rating_for')
+     and p.prosrc ~* 'barter';
+  perform pg_temp.chk('no_show',
+    'and the exempted reputation functions read no barter object', '0', v_n::text);
+
   select count(*) into v_n from information_schema.tables
    where table_schema = 'public'
      and (table_name ~* 'adjudicat|reputation|verdict|penalt'

@@ -1813,6 +1813,44 @@ as locked decisions.
 
 ---
 
+### PD-091 — Reputation counts client relationships, not receipts
+- **Decided:** 2026-09-11
+- **Decision.** A provider's public rating is the **mean of the LATEST revealed review from each
+  DISTINCT client**. Every review is still stored, still displayed, and still counted in the
+  review count. A third number — how many distinct clients the rating rests on — is published and
+  **must be labelled** wherever the rating appears.
+- **The problem.** Phase 0 correctly let every completed booking create its own review
+  opportunity, because service quality changes and a client's fifth visit is real information.
+  But the aggregate averaged every revealed review, so twenty reviews from one client counted as
+  twenty independent customer relationships. Two people booking each other could manufacture a
+  reputation; a genuinely loyal client could manufacture one by accident.
+- **Why not the alternatives**, recorded so the analysis is not redone:
+  - **Blocking repeat reviews** fixes the arithmetic by destroying the signal — a provider whose
+    quality dropped last month would keep a rating built on a review from a year ago.
+  - **A cap** ("at most N from one client") needs an arbitrary N and still permits N-fold
+    inflation.
+  - **Diminishing weight** is hard to explain to a provider asking why their rating moved, and
+    hard to pin in a test without encoding the curve twice.
+  - **Deleting repeat reviews** destroys legitimate feedback.
+- **Why this one.** It is one sentence; it is deterministic with no constant to tune; it is kind
+  to repeat clients, whose voice counts fully and whose **latest** opinion is the one that counts,
+  so a loyal client who is disappointed today moves the rating today; and it is useless for
+  farming, because twenty reviews from one pair contribute exactly one value.
+- **The trade-off, stated because it is real.** A provider with three loyal clients and twenty
+  reviews has a rating built on **three** values while displaying twenty reviews. That is
+  intended — three relationships is what they have — but it makes the display obligation
+  load-bearing. The two numbers mean different things and a surface showing one without the other
+  is misleading in whichever direction it chose.
+- **What this does NOT do.** No trust score, no decay, no social or content signal, no Reel or
+  post influence, and **no barter influence** — barter remains entirely outside reviews and
+  reputation for beta. Review edit and delete remain impossible for every client role, which is
+  what stops a write-observe-rewrite loop.
+- **Evidence.** `20261077000000`, `20261078000000`; `supabase/tests/reviews_phase2.test.sql`;
+  `docs/operations/REVIEWS_OPERATIONS.md`.
+- **Status:** Locked; **implemented**, pending review of the Reviews Phase 2 branch.
+
+---
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

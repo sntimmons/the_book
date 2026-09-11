@@ -889,8 +889,32 @@ observed any of it**, and none of it has been.
 tree; only a device can prove a person can REACH it. Those are different claims, and this repository
 has already shipped one control that existed and could not be reached.
 
+### Booking & Onboarding Integrity — **MERGED** (`2da313a`, 2026-09-11)
+
+Nine migrations, `20261068000000` … `20261076000000`. **Durable contract acceptance**: immutable
+`contract_versions`, an acceptance bound to a version, and two opposite rules both enforced — the
+CURRENT version is required to ENTER an agreement (`PT429`), and the accepted version is FROZEN the
+moment you do. `booking_contract_record` returns what was actually accepted to BOTH parties, with
+`provider_contract_changed_since`. **Reference photos actually reach the provider**, and the SET
+settles when the request is sent — rows and storage objects, additions and removals alike.
+**`provider_is_bookable`** withdraws Book Now when a provider has no availability configured.
+The fake signature canvas, the premature "Send Request" CTA, the placeholder client onboarding
+step and the invented "3x more profile views" claim are all gone.
+
+**Known limits, recorded rather than resolved:** acceptances predating `20261068000000` are the
+**best available historical record and not proof of exact original wording**; erasure and retention
+for booking photos, contract evidence and booking records stay open (**OQ-077**).
+
 ### Sessions 9–10 — Reviews Phase 2 / reputation
 Structured signals (PD-028) and the conduct/reliability layer that `no_show` feeds (PD-027).
+
+**Phase 0 (`20260902000000`) already established more than the name suggests**, and a Phase 2
+plan should start from it rather than from this line: a **7-day blind window** from the
+server-stamped `completed_at` with one definition and one boundary operator; reveal on
+**counterpart-review-exists OR window-closed**, so **mutual submission is never required**;
+`UNIQUE(booking_id)` per direction; revealed-only aggregates; and **no UPDATE or DELETE policy on
+either review table**, so a review cannot be edited or deleted at all. What Phase 2 actually owes
+is the **repeat-pair anti-gaming rule** and the display truth that follows from it.
 
 ### Session 11 — Delayed-deliverable review model
 **Only if required pre-beta.** `delivered_at` and category-specific windows for
