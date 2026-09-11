@@ -175,7 +175,7 @@ guessed at.
 | Request expired | Expired state on both sides | The 72-hour window (or the appointment) passed | The provider cannot accept. A new request is the only path. History is retained. |
 | Provider no longer bookable | "Not currently available for new bookings" | De-approved **or** no availability configured | Both look identical to the client, deliberately. For a provider asking why: check approval first, then whether they have any hours set. |
 | Agreement changed mid-booking | "This provider updated their agreement while you were booking" | The provider edited between the client opening the agreement and accepting it | **The request was NOT sent.** They must review the current agreement and accept it again. Their earlier bookings still point at the version they accepted then. |
-| Photo removal after sending | "Already sent" | Photos settle into the record when the request is sent | Nothing is wrong. They can mention anything that changed in a message. Do not promise removal. |
+| Photo removal after sending | No control exists in the app | **The whole SET settles when the request is sent** — rows and storage objects, additions and removals alike | Nothing is wrong. They can mention anything that changed in a message. **Do not promise removal**, and note this is about the request record, not about account deletion (OQ-077). |
 | Duplicate/retry | Nothing visible | One intent = one request; drafts are resumed | **A retry never creates a second request.** If a client believes they sent two, they did not. |
 | Report rate-limited | "Too many reports just now" | 5/hour or 20/day reached | Their text is preserved on screen. If it is urgent, direct them to emergency services — The Book is not an emergency channel. |
 

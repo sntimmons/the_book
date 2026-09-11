@@ -170,10 +170,14 @@ declare
   bk uuid := current_setting('b5b.bi_bk')::uuid;
   v_n integer; v_code text;
 begin
-  perform pg_temp.act(cu);
+  -- SEEDED PRIVILEGED, because this booking is already SUBMITTED and the client
+  -- INSERT path is now closed on a sent request (20261076000000). The client's
+  -- own attach path is exercised on a DRAFT in § 8, which is where it happens in
+  -- the product.
+  perform pg_temp.act_service();
   insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
   values (bk, cu::text || '/' || bk::text || '/a.jpg', cu);
-  perform pg_temp.chk('bookingintegrity', 'a client can attach a reference photo', '1',
+  perform pg_temp.chk('bookingintegrity', 'a reference photo is attached to the request', '1',
     (select count(*)::text from public.booking_reference_photos where booking_id = bk));
 
   perform pg_temp.act(pu);
@@ -203,8 +207,9 @@ begin
   perform pg_temp.chk('bookingintegrity', 'a provider cannot attach photos to a request',
     '42501', v_code);
 
-  -- Three is the server's limit, not the screen's.
-  perform pg_temp.act(cu);
+  -- Three is the server's limit, not the screen's. Seeded privileged for the same
+  -- reason as above; the limit trigger runs regardless of who inserts.
+  perform pg_temp.act_service();
   insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
   values (bk, 'b.jpg', cu), (bk, 'c.jpg', cu);
   begin
@@ -511,4 +516,79 @@ begin
     'after sending, the photo is part of the record and survives', '1', v_n::text);
   perform pg_temp.act_service();
 end $$;
+select pg_temp.act_service();
+
+-- ══ 8. THE BYTES SETTLE TOO ═══════════════════════════════════════════════
+--
+-- The first pass at Ruling B settled the ROW and left the OBJECT deletable: the
+-- storage policy was folder-scoped with no `submitted_at` test. The row survived
+-- asserting the photo was attached while the bytes were gone — and the provider
+-- would never have noticed, because the request screen renders only the photos
+-- whose signed URL resolves, by design.
+do $$
+declare
+  cu uuid := current_setting('b5b.bi_c')::uuid;
+  pid uuid := current_setting('b5b.bi_pid')::uuid;
+  v_draft uuid; v_sent uuid; v_dpath text; v_spath text;
+begin
+  perform pg_temp.act_service();
+  delete from public.bookings where user_id = cu and provider_id = pid and submitted_at is null;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (cu, pid, 'bytes draft', current_date + 23) returning id into v_draft;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, expires_at)
+  values (cu, pid, 'bytes sent', current_date + 25, 'pending', now(),
+          now() + interval '71 hours')
+  returning id into v_sent;
+  v_dpath := cu::text || '/' || v_draft::text || '/0.jpg';
+  v_spath := cu::text || '/' || v_sent::text || '/0.jpg';
+  insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
+  values (v_draft, v_dpath, cu), (v_sent, v_spath, cu);
+
+  perform pg_temp.act(cu);
+  perform pg_temp.chk('bookingintegrity',
+    'while composing, the client may still remove the OBJECT', 'true',
+    public.can_modify_booking_photo_object(v_dpath)::text);
+  perform pg_temp.chk('bookingintegrity',
+    'once sent, the object cannot be removed or replaced either', 'false',
+    public.can_modify_booking_photo_object(v_spath)::text);
+
+  -- An orphan — an abandoned upload with no row — stays clearable by its
+  -- uploader. Nothing references it and nobody can read it, so refusing would
+  -- only strand bytes no one can remove.
+  perform pg_temp.chk('bookingintegrity',
+    'an orphaned upload is still clearable by whoever made it', 'true',
+    public.can_modify_booking_photo_object(cu::text || '/nothing/0.jpg')::text);
+
+  -- AND THE SET IS SETTLED, not just its members: nothing may be ADDED to a
+  -- request the provider has already read and decided on.
+  declare v_code text;
+  begin
+    begin
+      insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
+      values (v_sent, cu::text || '/' || v_sent::text || '/late.jpg', cu);
+      v_code := 'NO ERROR';
+    exception when others then v_code := sqlstate;
+    end;
+    perform pg_temp.chk('bookingintegrity',
+      'and no photo may be added to a request already sent', '42501', v_code);
+  end;
+
+  -- The pre-send flow is untouched: add, remove, replace all still work.
+  insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
+  values (v_draft, cu::text || '/' || v_draft::text || '/1.jpg', cu);
+  perform pg_temp.chk('bookingintegrity', 'while composing, photos can still be added', '2',
+    (select count(*)::text from public.booking_reference_photos where booking_id = v_draft));
+  perform pg_temp.act_service();
+end $$;
+
+-- The storage DELETE policy actually consults the booking, rather than only the
+-- folder. Pinned because the folder rule LOOKS sufficient and is not — it answers
+-- "whose upload is this", and the question is "has the request been sent".
+select pg_temp.chk('bookingintegrity',
+  'the storage delete policy resolves through the booking, not just the folder', '1',
+  (select count(*)::text from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and policyname = 'booking_photos_delete_own'
+      and qual like '%can_modify_booking_photo_object%'));
 select pg_temp.act_service();
