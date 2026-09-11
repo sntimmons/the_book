@@ -154,9 +154,15 @@ const PUBLIC_PROVIDER_FIELDS = [
 //
 // It also fixes the second half of the same defect: lane membership no longer
 // shifts as the grid pages more rows in beneath it.
+// PD-089: reads `providers_visible`, not `providers` — the same public columns
+// minus anyone the caller is blocked with, in either direction. The view does the
+// filtering so no client can ask "is X hidden from me"; it can only ask for what
+// it can see, and an absent provider is indistinguishable from one that is
+// unapproved, deleted or filtered out. A directly-opened profile deliberately
+// still reads `providers` (see the view's comment).
 export async function fetchDiscoveryPool(limit: number = 200): Promise<Provider[]> {
   const { data, error } = await supabase
-    .from('providers')
+    .from('providers_visible')
     .select(PUBLIC_PROVIDER_FIELDS)
     .eq('is_approved', true)
     .order('id', { ascending: true })
@@ -248,7 +254,7 @@ export function useProviders(categoryId?: number, pageSize?: number) {
         else setLoadingMore(true)
 
         let query = supabase
-          .from('providers')
+          .from('providers_visible')
           .select(PUBLIC_PROVIDER_FIELDS)
           .eq('is_approved', true)
           .order('is_featured', { ascending: false })
@@ -410,7 +416,7 @@ export function useProviderSearch(
       setFilterFailed(false)
 
       let dbQuery = supabase
-        .from('providers')
+        .from('providers_visible')
         .select(PUBLIC_PROVIDER_FIELDS)
         .eq('is_approved', true)
 
@@ -561,12 +567,16 @@ export function useContentSearch(query: string) {
       const catSelect =
         'id, media_url, media_type, thumbnail_url, provider_id, provider:providers!inner(id, display_name)'
 
+      // PD-089: the posts branch reads `posts_visible`, so a provider cannot
+      // re-enter search through their own content after being filtered out of
+      // the base-column match.
+      //
       // Two queries merged: base-column text match, and (when the query names a
       // category) posts whose provider is in that category. Kept separate
       // because PostgREST can't OR a base column against an embedded one.
       const queries: any[] = [
         supabase
-          .from('posts')
+          .from('posts_visible')
           .select(textSelect)
           .eq('is_active', true)
           .eq('is_demo', false)
@@ -577,7 +587,7 @@ export function useContentSearch(query: string) {
       if (catIds.length > 0) {
         queries.push(
           supabase
-            .from('posts')
+            .from('posts_visible')
             .select(catSelect)
             .eq('is_active', true)
             .eq('is_demo', false)

@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '../../context/AuthContext'
 import {
   REPORT_FAILED_COPY,
+  REPORT_LIMITED_COPY,
   submitReport,
   type BookingIssueReason,
 } from '@/lib/safety'
@@ -112,7 +113,7 @@ export default function IssueReport() {
     // boundary added in 20261052000000, or about the trigger that opens the
     // operator case. Its TAXONOMY stays its own (see BOOKING_ISSUE_REASONS);
     // only the write is shared.
-    const ok = await submitReport({
+    const res = await submitReport({
       reporterUserId: user.id,
       type: 'booking',
       reason,
@@ -120,10 +121,14 @@ export default function IssueReport() {
       bookingId: id,
     })
 
-    if (!ok) {
+    if (!res.ok) {
       // Do NOT show success on failure — surface an error, keep the user here.
+      // The selections and the description are untouched either way, which is
+      // what PD-088 requires of a rate-limited report and what an honest failure
+      // deserves regardless.
       setSubmitting(false)
-      Alert.alert(REPORT_FAILED_COPY.title, REPORT_FAILED_COPY.body)
+      const copy = res.limited ? REPORT_LIMITED_COPY : REPORT_FAILED_COPY
+      Alert.alert(copy.title, copy.body)
       return
     }
 

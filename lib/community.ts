@@ -71,6 +71,17 @@ async function assemblePosts(rows: RawPostRow[]): Promise<CommunityPostView[]> {
   }))
 }
 
+// ── PD-089 ────────────────────────────────────────────────────────────────
+//
+// Every ordinary content read here goes through a `_visible` view, which returns
+// the same columns MINUS anyone the caller is blocked with in either direction.
+// The filter lives in the view, not in a predicate a client could call, so there
+// is no "is X hidden from me" to ask — only "show me what I can see", and an
+// absent post is indistinguishable from one deleted, deactivated or filtered.
+//
+// Replies get their own view: hiding a post while leaving its author's replies
+// under someone else's post would deliver half the rule and read as a bug.
+
 const POST_COLUMNS =
   'id, provider_id, user_id, content, category, like_count, reply_count, created_at'
 
@@ -96,15 +107,32 @@ export function timeAgo(iso: string): string {
 
 // Batch-fetch provider display info (name, photo, category name) keyed by
 // providers.id, resolving category_id -> category name in a second query.
+/**
+ * PD-089 — WHICH TABLE THIS READS IS A PRODUCT DECISION, NOT A DETAIL.
+ *
+ * `scope: 'feed'` filters blocked parties out; `scope: 'transaction'` does not.
+ * The helper is shared by the community feed AND by barter Trade Activity, and
+ * pointing all of it at the filtered view broke the live-transaction exception:
+ * a counterparty on a CONFIRMED agreement with an unresolved obligation rendered
+ * as "Provider" with no photo, because the view returned no row for them.
+ *
+ * PD-089 preserves exactly that access — two people inside a live obligation
+ * must still see each other's names, terms and controls, or the block strands
+ * the trade. It is also the same failure in miniature as the block oracle: a
+ * counterparty who is nameless ONLY when blocked is itself a signal.
+ *
+ * Default is `'feed'`, so a new caller is filtered unless it says otherwise.
+ */
 export async function fetchProviderInfoMap(
   providerIds: string[],
+  scope: 'feed' | 'transaction' = 'feed',
 ): Promise<Map<string, CommunityProviderInfo>> {
   const map = new Map<string, CommunityProviderInfo>()
   const ids = Array.from(new Set(providerIds.filter(Boolean)))
   if (ids.length === 0) return map
 
   const { data: provs } = await supabase
-    .from('providers')
+    .from(scope === 'feed' ? 'providers_visible' : 'providers')
     .select('id, display_name, profile_photo_url, category_id, neighborhood')
     .in('id', ids)
 
@@ -152,7 +180,7 @@ export async function fetchCommunityFeed(
   limit = 20,
 ): Promise<CommunityPostView[]> {
   let query = supabase
-    .from('community_posts')
+    .from('community_posts_visible')
     .select(POST_COLUMNS)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
@@ -180,7 +208,7 @@ export async function fetchBookmarkedFeed(
   if (postIds.length === 0) return []
 
   const { data, error } = await supabase
-    .from('community_posts')
+    .from('community_posts_visible')
     .select(POST_COLUMNS)
     .in('id', postIds)
     .eq('is_active', true)
@@ -226,7 +254,7 @@ export async function fetchCommunityPost(
   id: string,
 ): Promise<CommunityPostView | null> {
   const { data, error } = await supabase
-    .from('community_posts')
+    .from('community_posts_visible')
     .select(POST_COLUMNS)
     .eq('id', id)
     .maybeSingle()
@@ -242,7 +270,7 @@ export async function fetchCommunityReplies(
   postId: string,
 ): Promise<CommunityReplyView[]> {
   const { data, error } = await supabase
-    .from('community_replies')
+    .from('community_replies_visible')
     .select('id, provider_id, user_id, content, created_at')
     .eq('post_id', postId)
     .order('created_at', { ascending: true })

@@ -4,6 +4,7 @@ import {
   BLOCKED_PROFILE_COPY,
   MESSAGE_REFUSED_COPY,
   MESSAGE_FAILED_COPY,
+  REPORT_LIMITED_COPY,
   BLOCK_FAILED_COPY,
   UNBLOCK_FAILED_COPY,
   SAFETY_UNAVAILABLE_COPY,
@@ -96,7 +97,7 @@ describe('reporting', () => {
         reason: 'safety_concern',
         reportedProviderId: 'p1',
       }),
-    ).resolves.toBe(true)
+    ).resolves.toEqual({ ok: true, limited: false })
     expect(c.insert).toHaveBeenCalledWith(
       expect.objectContaining({ reporter_user_id: 'me', report_type: 'provider' }),
     )
@@ -323,5 +324,40 @@ describe('the blocked-thread notice', () => {
     for (const p of ['can no longer', 'cannot message', 'closed', 'ended']) {
       expect([p, n.includes(p)]).toEqual([p, false])
     }
+  })
+})
+
+describe('a report the backstop refused (PD-088)', () => {
+  it('is reported as LIMITED, not as a failure', async () => {
+    // The two need opposite handling: a limited report keeps the text on screen
+    // and must not be retried immediately; a failure may be retried at once.
+    ;(supabase.from as jest.Mock).mockReturnValue(chain({ error: { code: 'PT428' } }))
+    await expect(
+      submitReport({ reporterUserId: 'me', type: 'client', reason: 'harassment' }),
+    ).resolves.toEqual({ ok: false, limited: true })
+  })
+
+  it('keeps an ordinary failure distinguishable from it', async () => {
+    ;(supabase.from as jest.Mock).mockReturnValue(chain({ error: { code: '08006' } }))
+    await expect(
+      submitReport({ reporterUserId: 'me', type: 'client', reason: 'harassment' }),
+    ).resolves.toEqual({ ok: false, limited: false })
+  })
+
+  it('says the text is kept, and names no number', () => {
+    // PD-088: say the limit was reached in plain words, keep what they wrote,
+    // never discard it silently. A number invites someone to count and wait,
+    // and anyone hitting these limits is not in a situation arithmetic solves.
+    const body = REPORT_LIMITED_COPY.body.toLowerCase()
+    expect(body).toContain('still here')
+    for (const n of ['5 ', 'five', '20 ', 'twenty', 'per hour', 'per day']) {
+      expect([n, body.includes(n)]).toEqual([n, false])
+    }
+  })
+
+  it('points somewhere real for an emergency, since we are refusing them', () => {
+    // The one moment this product turns away a safety report is the one moment
+    // it owes the person a route that is not this product.
+    expect(REPORT_LIMITED_COPY.body.toLowerCase()).toContain('emergency services')
   })
 })

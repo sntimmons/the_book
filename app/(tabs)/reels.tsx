@@ -78,8 +78,12 @@ const REEL_FALLBACK_COLOR = '#0d0d0d'
 // Reel shape the feed already renders. Returns [] on error or when there are
 // no real videos yet, in which case the feed shows an empty state.
 async function fetchReels(): Promise<Reel[]> {
+  // PD-089: `posts_visible`, not `posts` — the same columns minus anyone the
+  // caller is blocked with, in either direction. The embedded provider join
+  // still reads `providers`, which is correct: by the time a row is returned its
+  // owner is not blocked, so resolving their name is not a leak.
   const { data, error } = await supabase
-    .from('posts')
+    .from('posts_visible')
     .select(
       'id, media_url, caption, like_count, comment_count, provider:providers(id, display_name, category_id, neighborhood, profile_photo_url)',
     )
@@ -184,8 +188,10 @@ async function resolveCommenterNames(userIds: string[]): Promise<Map<string, str
 }
 
 async function loadComments(postId: string): Promise<CommentRow[]> {
+  // PD-089. Comments are where a blocked person most easily reappears after
+  // their own content is hidden, because they arrive under someone else's post.
   const { data, error } = await supabase
-    .from('post_comments')
+    .from('post_comments_visible')
     .select('id, user_id, comment_text, created_at')
     .eq('post_id', postId)
     .order('created_at', { ascending: true })

@@ -1862,6 +1862,63 @@ comments and all three had gone stale in the permissive direction.
 B5B **1579/1579** with zero residue, Jest **925/925**, typecheck clean, lint 0
 errors, `supabase migration list` local == remote with no drift.
 
+## 2026-09-10 — `20261063000000` … `20261065000000` **APPLIED to non-production** (Session 8C: safety hardening)
+
+Three files: PD-088's intake bounds, then PD-089 in two passes.
+
+| File | What it does |
+|---|---|
+| `20261063000000_report_intake_bounds.sql` | PD-088. Duplicate protection in `open_case_for_report` (one live case per reporter/target, later reports APPEND), and `enforce_report_rate_limit` (5/hour, 20/day, `PT428`). |
+| `20261064000000_blocked_users_leave_ordinary_surfaces.sql` | PD-089. `providers_visible`, `community_posts_visible`, `community_replies_visible`. |
+| `20261065000000_reels_and_comments_leave_too.sql` | PD-089, the surfaces the first pass did not reach: `posts_visible`, `post_comments_visible`. |
+
+**WHY PD-089 IS FIVE VIEWS AND NOT AN RLS POLICY.** Symmetric hiding is the hard
+part. A policy on `providers` can see the caller's OWN blocks — RLS on
+`user_blocks` scopes reads to `blocker_user_id = auth.uid()` — but cannot see a
+block made AGAINST the caller without bypassing it, which means a
+`SECURITY DEFINER` predicate, which a policy can only use if it is granted to
+`authenticated`. **That is what `20261055000000` forbids in writing**, and the
+Founder ruling rejected it outright: PD-087 permits a block to be INFERABLE
+through normal product behaviour and does not authorise a per-target oracle a
+client can probe.
+
+So the filter returns CONTENT, not an answer. There is no question to ask: a
+caller cannot request *"is X hidden from me"*, only *"show me what I can see"*,
+and an absent row is indistinguishable from one deleted, deactivated, unapproved
+or filtered by any other predicate.
+
+**VIEWS RATHER THAN RPCs, DELIBERATELY.** A view keeps every existing query
+shape — same columns, filters, ordering, pagination — so the client change is a
+table name and nothing else. A `discover_providers(...)` RPC would have meant
+re-implementing PostgREST's search grammar, filters and pagination inside SQL,
+and a rewritten query that behaves subtly differently is a worse outcome than
+the bug being fixed.
+
+**WHAT A DEFINER VIEW COSTS.** `security_invoker = false` bypasses the
+underlying RLS and column grants. That is the mechanism AND the hazard — the
+ledger already records that recreating `my_barter_obligations` without
+`security_invoker = true` would be "a silent, total RLS read bypass". These are
+the opposite case and must stay definer, so B5B pins it; and each view lists its
+columns EXPLICITLY rather than `select *`, so a column added to `providers`
+later is not published by accident. B5B also asserts no private column
+(`phone`, `email`, `is_admin`, …) rides in, and that none of the views is a
+write path — a simple view over one table is auto-updatable in Postgres, which
+would otherwise be an INSERT/UPDATE/DELETE route straight past RLS.
+
+**WHICH READS DELIBERATELY DID NOT CHANGE**, each for a reason: a provider
+profile opened DIRECTLY (not a feed, and a 404 for one person and not another is
+a louder signal than a missing card); every booking, thread, review, contract and
+own-business read (the narrow transaction/history access PD-089 preserves — a
+blocked pair mid-booking must still see each other's name, terms and
+appointment); `getLiveCount()` (an aggregate with no identity in it);
+`attachHeroImages` (its input list is already filtered); and operator/service
+paths, where `auth.uid()` is null so the predicate is vacuous — an operator
+handling a report about someone they happen to have blocked must still see them.
+
+**Validation** (non-production `wcoyjeklscuqsumpjpfo`; production untouched):
+B5B **1619/1619** with zero residue, Jest **929/929**, typecheck clean, lint 0
+errors, `supabase migration list` local == remote with no drift.
+
 ## Production application policy
 
 Locked by Founder ruling, 2026-09-04. **No production reconciliation or migration work is

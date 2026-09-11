@@ -30,6 +30,7 @@ import {
   REPORT_REASONS,
   REPORT_SUBMITTED_COPY,
   REPORT_FAILED_COPY,
+  REPORT_LIMITED_COPY,
   iBlocked,
   submitReport,
   type ReportReason,
@@ -260,7 +261,7 @@ export default function ChatScreen() {
     // have a provider row, the report is about a provider and names it; if they
     // do not, it is about a client. This is still the only path in the product
     // that can produce `report_type = 'client'`.
-    const ok = await submitReport({
+    const res = await submitReport({
       reporterUserId: user.id,
       type: otherProviderId ? 'provider' : 'client',
       reason,
@@ -269,8 +270,15 @@ export default function ChatScreen() {
       reportedProviderId: otherProviderId,
     })
     setReporting(false)
+    if (res.limited) {
+      // THE SHEET STAYS OPEN. PD-088 requires the text be kept, and closing the
+      // sheet would throw away what they wrote — the one thing a refused report
+      // must never do.
+      Alert.alert(REPORT_LIMITED_COPY.title, REPORT_LIMITED_COPY.body)
+      return
+    }
     setReportOpen(false)
-    const copy = ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+    const copy = res.ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
     Alert.alert(copy.title, copy.body)
   }
 
