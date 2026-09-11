@@ -1987,6 +1987,75 @@ async function raceTwoOperatorsOneCase() {
     delete from public.reports where reporter_user_id = '${ids.ru}';`)
 }
 
+// ── 31. BLOCK/UNBLOCK RACING A FEED READ (PD-089) ─────────────────────────
+//
+// Visibility is DERIVED from the block row rather than stored, which is the
+// design that makes an inconsistent state impossible — there is no second copy
+// to fall out of step. That is a claim until something races it.
+//
+// A reader paging the feed while the other party blocks and unblocks them must
+// never see a TORN state: the same provider present and absent within one
+// query's result, or a stale visibility that survives the block.
+async function raceBlockVsVisibility() {
+  await runSql(`
+    delete from public.user_blocks
+     where blocker_user_id in ('${ids.ou}','${ids.ru}')
+        or blocked_user_id in ('${ids.ou}','${ids.ru}');`)
+
+  const block = `insert into public.user_blocks(blocker_user_id, blocked_user_id)
+                 values ('${ids.ou}','${ids.ru}') on conflict do nothing;`
+  const read = `perform count(*) from public.providers_visible;`
+
+  const [a, b] = await Promise.all([
+    runTimedUser(ids.ou, block),
+    runTimedUser(ids.ru, read),
+  ])
+  chk('a block and a feed read genuinely overlapped',
+    'true', String(intervalsOverlap(a.timing, b.timing)))
+  chk('neither the block nor the read deadlocked', 'true',
+    String(a.timing?.code !== '40P01' && b.timing?.code !== '40P01'))
+  chk('both complete — a feed read never blocks on someone else blocking you',
+    'true', String(a.opOk && b.opOk))
+
+  // AFTER the block has committed, the answer is settled and symmetric. There is
+  // no cache, no materialized column and no second write to lag behind.
+  const after = await runSql(`
+    select json_build_object(
+      'blocker_sees', (select count(*) from public.providers_visible v
+                        join public.providers p on p.id = v.id
+                       where p.user_id = '${ids.ru}'),
+      'blocked_sees', 0
+    ) as timing
+    from (select set_config('request.jwt.claims',
+            json_build_object('sub','${ids.ou}','role','authenticated')::text, true)) _;`)
+  chk('once the block commits, the blocker does not see them', '0',
+    scalar(after.out, 'blocker_sees'))
+
+  const rev = await runSql(`
+    select json_build_object(
+      'sees', (select count(*) from public.providers_visible v
+                join public.providers p on p.id = v.id
+               where p.user_id = '${ids.ou}')
+    ) as timing
+    from (select set_config('request.jwt.claims',
+            json_build_object('sub','${ids.ru}','role','authenticated')::text, true)) _;`)
+  chk('and the blocked party does not see the blocker either', '0', scalar(rev.out, 'sees'))
+
+  // Unblock restores both directions, with nothing to reconcile.
+  await runSql(`delete from public.user_blocks
+                 where blocker_user_id = '${ids.ou}' and blocked_user_id = '${ids.ru}';`)
+  const back = await runSql(`
+    select json_build_object(
+      'sees', (select count(*) from public.providers_visible v
+                join public.providers p on p.id = v.id
+               where p.user_id = '${ids.ru}')
+    ) as timing
+    from (select set_config('request.jwt.claims',
+            json_build_object('sub','${ids.ou}','role','authenticated')::text, true)) _;`)
+  chk('unblocking restores visibility with no second state to reconcile',
+    '1', scalar(back.out, 'sees'))
+}
+
 // ── 30. TWO SIGNED-IN OPERATORS ON ONE CASE ───────────────────────────────
 //
 // The race above contends two `service_role` sessions, which is what an operator
@@ -2055,6 +2124,7 @@ await raceBlockVsBooking()
 await raceDuplicateProviderAppeal()
 await raceTwoOperatorsOneCase()
 await raceTwoSignedInOperators()
+await raceBlockVsVisibility()
 
 await cleanup()
 

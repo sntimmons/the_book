@@ -1721,8 +1721,10 @@ as locked decisions.
   - **What a refused report must do.** Say the limit was reached in plain words, keep the text the
     person wrote, and never discard it silently.
 - **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-074**.
-- **Status:** Locked; **NOT IMPLEMENTED.** **Assigned to SESSION 8C** (safety hardening /
-  enforcement cleanup), 2026-09-10. Required before broad beta.
+- **Status:** Locked; **IMPLEMENTED** in Session 8C (`20261063000000`), pending review of that
+  branch. Duplicate protection appends to the live case; the 5/hour and 20/day backstop raises
+  `PT428`, which all four report surfaces handle by naming the limit and KEEPING the text. No
+  standing requirement was added, and that is asserted as a test rather than intended.
 
 ---
 
@@ -1749,11 +1751,17 @@ as locked decisions.
   person anything; and it must not be implemented with a client-callable block predicate, which
   `20261055000000` established as an oracle.
 - **Evidence.** Founder ruling, Session 8 final PM rulings, 2026-09-09. Closes **OQ-075**.
-- **Status:** Locked; **NOT IMPLEMENTED.** **Assigned to SESSION 8C** (safety hardening /
-  enforcement cleanup), 2026-09-10. Not Session 8, and explicitly **not** Session 8B, which is the
-  operator surface only. Session 8C must verify this composes with the existing live-transaction
-  exceptions rather than assuming it does — hiding is a different mechanism from refusing, and the
-  pair inside a live obligation must still see each other.
+- **Status:** Locked; **IMPLEMENTED** in Session 8C (`20261064000000`, `20261065000000`),
+  pending review of that branch.
+  - **Architecture: five `SECURITY DEFINER` views that return already-filtered content**, not a
+    predicate a client can call. Founder ruling, 2026-09-10, rejecting the RLS-policy design
+    because it would have required re-granting the per-target block predicate `20261055000000`
+    removed. There is no question to ask — only "show me what I can see" — and an absent row is
+    indistinguishable from one deleted, deactivated or filtered.
+  - **It composes with the live-transaction exception because it does not touch it.** Hiding is a
+    different mechanism from refusing, and only the ORDINARY surfaces moved: every booking,
+    thread, review and contract read still uses the base tables, so a pair inside a live
+    obligation still sees each other's name, terms and appointment. Asserted directly.
 
 ---
 

@@ -71,6 +71,17 @@ async function assemblePosts(rows: RawPostRow[]): Promise<CommunityPostView[]> {
   }))
 }
 
+// ── PD-089 ────────────────────────────────────────────────────────────────
+//
+// Every ordinary content read here goes through a `_visible` view, which returns
+// the same columns MINUS anyone the caller is blocked with in either direction.
+// The filter lives in the view, not in a predicate a client could call, so there
+// is no "is X hidden from me" to ask — only "show me what I can see", and an
+// absent post is indistinguishable from one deleted, deactivated or filtered.
+//
+// Replies get their own view: hiding a post while leaving its author's replies
+// under someone else's post would deliver half the rule and read as a bug.
+
 const POST_COLUMNS =
   'id, provider_id, user_id, content, category, like_count, reply_count, created_at'
 
@@ -104,7 +115,7 @@ export async function fetchProviderInfoMap(
   if (ids.length === 0) return map
 
   const { data: provs } = await supabase
-    .from('providers')
+    .from('providers_visible')
     .select('id, display_name, profile_photo_url, category_id, neighborhood')
     .in('id', ids)
 
@@ -152,7 +163,7 @@ export async function fetchCommunityFeed(
   limit = 20,
 ): Promise<CommunityPostView[]> {
   let query = supabase
-    .from('community_posts')
+    .from('community_posts_visible')
     .select(POST_COLUMNS)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
@@ -180,7 +191,7 @@ export async function fetchBookmarkedFeed(
   if (postIds.length === 0) return []
 
   const { data, error } = await supabase
-    .from('community_posts')
+    .from('community_posts_visible')
     .select(POST_COLUMNS)
     .in('id', postIds)
     .eq('is_active', true)
@@ -226,7 +237,7 @@ export async function fetchCommunityPost(
   id: string,
 ): Promise<CommunityPostView | null> {
   const { data, error } = await supabase
-    .from('community_posts')
+    .from('community_posts_visible')
     .select(POST_COLUMNS)
     .eq('id', id)
     .maybeSingle()
@@ -242,7 +253,7 @@ export async function fetchCommunityReplies(
   postId: string,
 ): Promise<CommunityReplyView[]> {
   const { data, error } = await supabase
-    .from('community_replies')
+    .from('community_replies_visible')
     .select('id, provider_id, user_id, content, created_at')
     .eq('post_id', postId)
     .order('created_at', { ascending: true })
