@@ -2219,6 +2219,16 @@ select json_build_object('a', current_setting('conc.book_a'),
   // conflicts with the for-key-share the review foreign key already holds.
   chk('both concurrent reviews are accepted — neither deadlocks', 'true',
     String(x.opOk && y.opOk))
+  // PD-094's invariant re-evaluates the canonical query INSIDE the recompute's own
+  // UPDATE, so if a reveal-affecting transaction could commit between the
+  // recompute's read and the trigger's re-read, an honest reviewer would be
+  // refused with 23514. It cannot: every writer that can change the canonical
+  // answer takes the same `providers` row lock before it can commit, and
+  // `review_window_closed` uses now() rather than clock_timestamp() so time cannot
+  // drift between the two evaluations inside one transaction. This is the
+  // assertion that says so at runtime rather than on paper.
+  chk('and neither trips the derived-rating invariant it now runs inside', 'true',
+    String(x.timing?.code !== '23514' && y.timing?.code !== '23514'))
   chk('the two review writes genuinely overlapped (else this scenario proves nothing)',
     'true', String(intervalsOverlap(x.timing, y.timing)))
 
