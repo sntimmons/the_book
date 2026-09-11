@@ -136,26 +136,65 @@ not ranked lower for it.
 
 ---
 
-## 7. Reports, blocks and what an operator can actually do
+## 7. Reports, blocks, and what an operator can now actually do
 
-**Reporting a post creates a real operator case**, through the same intake every
-other report in the product uses. The reported post's id travels in the case
-notes so an operator can find the content. Report intake bounds (PD-088) apply.
+**Reporting a post or a reply creates a real operator case**, through the same
+intake every other report in the product uses. Report intake bounds (PD-088)
+apply. The report now names the specific content, so an operator can open the
+case and see the post or reply itself rather than hunting for it.
 
-**What an operator can do today:** read the case, claim it, resolve it, dismiss
-it, note it, and — separately — withdraw a provider's eligibility, which stops
-them creating new provider Community activity.
+### Hiding and restoring (PD-099)
 
-**What an operator CANNOT do today: take a post down.** There is no take-down
-mechanism. The only removal path is the author's own delete.
+An authorized operator can **hide** a Community post or reply, and can **restore**
+it later.
 
-**Support must not tell a reporter the content will be removed**, or that it
-will be "reviewed for removal", or anything implying a take-down outcome exists.
-It does not. This is filed as **OQ-082**.
+**Hiding is not a delete.** Say that plainly, internally and to anyone who asks:
 
-If content must come down urgently, the available levers are: the author
-removing it, and withdrawing the provider's eligibility (which stops **new**
-provider activity and does not remove existing posts).
+| Hiding does | Hiding does NOT |
+|---|---|
+| Remove the content from the feed, threads, Discover and provider profiles | Delete the post or reply |
+| Remove it for **everyone**, not just the reporter | Delete the report |
+| Stay on the record — who hid it, when, against which case, and why | Delete the case |
+| Stay reversible | Suspend the author |
+| | Restrict a provider |
+| | Resolve the case |
+
+The last three matter operationally: **hiding is only hiding.** If a provider
+should also lose their eligibility, that is a separate action with its own audit
+row. If the case should be closed, close it. Nothing happens as a side effect of
+something else, because a decision nobody made is one nobody can defend.
+
+**Restoring** puts the content back on the ordinary surfaces. It does **not**
+erase the fact that it was hidden — the operator screen shows *Visible*,
+*Hidden by operator*, or *Restored — hidden before*, and the moderation history
+lists every decision. An operator looking at something that has been hidden and
+restored once already should know that.
+
+**Blocking still applies on top.** Restoring content does not make it visible to
+someone who has blocked its author — those are two independent rules and both
+have to pass.
+
+**The author is told.** A provider whose post is hidden sees it marked in
+Business → Community. There is no notification and none is promised; the post is
+simply not silently missing from their own list.
+
+### What support may say
+
+- *"It has been reported and an operator will look at it."* — true.
+- *"I can't tell you what will happen to it."* — true, and the honest answer.
+- **Do not say the content is coming down**, is "being removed", or is under a
+  process that ends in removal. An operator may hide it, may restore it later,
+  and may decide it stays. **All three are real outcomes.**
+- **Do not give a timeframe.** There is none.
+- **Do not tell a reporter what was decided.** There is no channel to tell them
+  through and none is promised.
+
+### What an operator cannot do here
+
+Suspend an account from this screen, act on many items at once, or filter content
+automatically. There is no bulk moderation, no keyword or AI filtering, no
+auto-ban, no content scoring and no priority queue. A person reads a case and
+decides.
 
 ---
 
@@ -163,7 +202,11 @@ provider activity and does not remove existing posts).
 
 - **No moderation SLA.** No timeframe, no queue position, no notification. PD-068
   is explicit that there is no SLA, and this surface does not create one.
-- **No content take-down.** See § 7.
+- **No guaranteed take-down.** An operator CAN hide content (§ 7), and is not
+  obliged to. A report is not a removal request that gets granted.
+- **No deletion as a moderation outcome.** Hiding is **not a delete** — the
+  content, the report and the case are all kept.
+- **No notification of an outcome**, to the reporter or to the author.
 - **No verification of a recommendation** beyond the "Worked together" badge, and
   that badge is about a booking, not about honesty.
 - **No audience, reach or promotion.** Posting does not make a provider more
@@ -200,16 +243,30 @@ It will be sparse. A 25-30 person beta produces a handful of posts a week, and
 
 ## 10. New human operational obligation
 
-**Community reports are new operator work, and the queue has no SLA.** The
-reportable surface grew from ~30 providers to every account holder, so report
-volume should be expected to rise. Nothing dequeues a case except a person.
+**Operators must actually read Community reports and decide.** That is the
+obligation this surface creates, and it is new: before, a Community report could
+only be acknowledged: now it has three real outcomes — **the content stays
+visible, it is hidden, or it is restored** — and choosing between them is human
+work that nothing else does.
 
-**And the outcome available for a Community report is narrower than for other
-report types**, because there is no take-down (§ 7). An operator working a
-Community case can record what happened and, in a severe case, withdraw a
-provider's eligibility — and that is the whole toolset. **Do not promise more
-than that to a reporter, and do not let a case sit implying more is coming.**
+**The queue has no SLA.** Nothing dequeues a case except a person, there is no
+timeframe, and no priority ordering. The reportable surface grew from ~30
+providers to every account holder, so report volume should be expected to rise.
 
-**Provider eligibility is now load-bearing in a second place.** Withdrawing it
-silences a business in Community as well as stopping barter writes and new
-bookings. That is intended, and it is a bigger action than it was last week.
+**Hiding is reversible and recorded, which changes how it should be used.**
+Because nothing is destroyed and every decision is attributable, an operator can
+act promptly on something that looks bad and restore it after a closer look. The
+failure mode to avoid is the opposite one: leaving something visible because the
+decision felt irreversible. It is not.
+
+**Provider eligibility remains the heavier action.** Withdrawing it silences a
+business in Community, stops barter writes and stops new bookings. It is separate
+from hiding a post, and should stay separate: hiding one post is not a verdict
+about a business.
+
+**Account erasure is NOT resolved.** Deleting a user who is the target of a
+report can fail, and deleting an operator who has acted on a case can fail
+because the append-only actor history conflicts with the foreign-key cleanup.
+Both are recorded under **OQ-077** and are the subject of the next dedicated
+workstream (Account Erasure & Retention Integrity). **Until that lands, do not
+promise anyone that their account can be deleted.**

@@ -591,7 +591,7 @@ schema; the product rules around them do not. Each question below is separately 
 - **What an answer would have to weigh:** an append-only guard on the review tables would need an explicit erasure-cascade exemption (the shape `20261053000000` already uses, which exists because that exemption was forgotten once), and it would sit directly on top of **OQ-077**, which has not decided what deletion is supposed to do to transaction evidence at all. Deciding this before OQ-077 risks locking in a retention posture by accident.
 - **This entry deliberately proposes nothing.** Whether operator power over review rows is accepted, bounded, or removed is a product and operations decision with legal exposure attached, not a trigger to write.
 - **Blocks:** nothing shipped. It blocks any absolute phrasing — a support script, a provider-facing claim or a PD — saying reviews cannot be edited or deleted by **anyone**, as opposed to by any client role. `REVIEWS_OPERATIONS.md` § 5 is worded to the narrower, true claim.
-- **Status:** Open
+- **Status:** CLOSED — `service_role` is accepted trusted infrastructure; the guarantee is that no client, provider or operator path exposes rating mutation and canonical recomputation remains the source of truth. Resolved by **PD-101**, 2026-09-11
 
 ---
 
@@ -619,7 +619,7 @@ schema; the product rules around them do not. Each question below is separately 
   recommendation is supposed to mean.
 - **Blocks:** nothing shipped. It blocks describing a shoutout to a user in any words stronger than
   what the badge says.
-- **Status:** Open
+- **Status:** CLOSED — a completed booking is NOT required; a verified link may show a factual "Booked on The Book" indicator that changes no rating and whose absence implies nothing. Resolved by **PD-098**, 2026-09-11
 
 ---
 
@@ -645,7 +645,7 @@ schema; the product rules around them do not. Each question below is separately 
   forbids, wearing a threshold.
 - **Blocks:** nothing shipped. It blocks telling a reporter that content will be removed, and it
   blocks any Operations copy implying a take-down outcome exists.
-- **Status:** Open
+- **Status:** CLOSED — an operator can hide and restore Community posts and replies; hiding preserves the row, the report, the case and the action history, and is never a delete. Resolved by **PD-099**, 2026-09-11
 
 ---
 
@@ -657,7 +657,7 @@ schema; the product rules around them do not. Each question below is separately 
 - **PD-090's own text says "Revisit on safety, abuse, privacy, legal or broader launch grounds."** This is that ground, and it is recorded rather than acted on — narrowing the base-table read for `community_posts`/`community_replies` is a much smaller change than the bookings/threads/reviews narrowing PD-090 declined, but it is still a rule change on a shipped surface and it is not this session's to make.
 - **What is NOT at stake:** nothing is exposed to a stranger. Both tables remain closed to `anon` twice over (a `TO authenticated` policy and a revoked grant), and no private provider column rides in. The ordinary app path reads only the views. The current posture is pinned by `supabase/tests/community.test.sql` § 7 so that narrowing it later is a visible change rather than a silent one.
 - **Blocks:** nothing shipped. It blocks describing Community's block filter to a user as concealment rather than as absence from their ordinary surfaces.
-- **Status:** Open
+- **Status:** CLOSED — PD-090 stands for the closed beta; revisit before broader or public launch if safety, privacy, abuse evidence or legal review requires stronger concealment. Resolved by **PD-100**, 2026-09-11
 
 ---
 
@@ -685,6 +685,10 @@ say that was false.
 | **OQ-075** — Should someone you blocked disappear from your feeds, or only be unable to reach you? | 2026-09-09 | **PD-089** — they disappear from **ordinary** discovery, content and community surfaces; only the narrow access required for existing booking or barter history, logistics, cancellation, completion or review is preserved. **Locked but NOT IMPLEMENTED**, and explicitly not Session 8B. |
 | **OQ-078** — Does "latest" mean the latest review WRITTEN or the latest service RECEIVED? | 2026-09-11 | **PD-092** — the latest service, on `bookings.completed_at` |
 | **OQ-079** — Is `service_role`'s ability to pin a review's `created_at` an accepted posture? | 2026-09-11 | **PD-094** — no, and no rating pin of any kind |
+| **OQ-080** — Is privileged mutation of review ROWS an accepted operator power? | 2026-09-11 | **PD-101** — accepted trusted infrastructure; no client/provider/operator path exposes it |
+| **OQ-081** — Should a Community shoutout require a completed booking? | 2026-09-11 | **PD-098** — no; a verified link may show a factual indicator that changes no rating |
+| **OQ-082** — What happens to Community content when an operator needs it gone? | 2026-09-11 | **PD-099** — hide and restore, audited; never a delete |
+| **OQ-083** — Does PD-090 survive Community opening to everyone? | 2026-09-11 | **PD-100** — yes for the closed beta; revisit before broader launch |
 
 **Three of those four closures are decisions the product has not yet built**, and the index says so
 in each row rather than letting "Closed" read as "done". A question is closed by a decision; the

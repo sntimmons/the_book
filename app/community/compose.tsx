@@ -295,8 +295,9 @@ export default function CommunityCompose() {
                   </TouchableOpacity>
                 ))}
                 <Text style={s.hint}>
-                  Linking one lets people see you actually worked together. Optional — plenty
-                  of good recommendations do not have one.
+                  Linking one shows &ldquo;Booked on The Book&rdquo; on your recommendation.
+                  Optional — plenty of good recommendations do not have one, and leaving it
+                  off says nothing against you.
                 </Text>
               </View>
             ) : null}

@@ -186,6 +186,123 @@ describe('Open Today rides on availability and cannot outlive the day', () => {
   })
 })
 
+describe('moderation is an operator action, and never a delete', () => {
+  const lib = read('lib/operator.ts')
+
+  it('the client layer can hide and restore, and cannot delete', () => {
+    expect(lib).toContain('operator_set_community_visibility')
+    // The whole design: hiding preserves the row, the report, the case and the
+    // history. A delete path here would make every moderation decision
+    // unreviewable, so there must not be one.
+    expect(lib).not.toMatch(/from\('community_posts'\)[\s\S]{0,120}\.delete\(/)
+    expect(lib).not.toMatch(/from\('community_replies'\)[\s\S]{0,120}\.delete\(/)
+    expect(lib).not.toContain('community_moderation_actions')
+  })
+
+  it('and it does not bundle other decisions into the same click', () => {
+    const fn = lib.slice(
+      lib.indexOf('export async function setCommunityVisibility'),
+      lib.indexOf('export async function setProviderEligibility'),
+    )
+    expect(fn.length).toBeGreaterThan(0)
+    // Hiding content must not also resolve the case, restrict the provider or
+    // touch a rating. Those are separate, separately audited actions.
+    expect(fn).not.toContain('operator_update_case')
+    expect(fn).not.toContain('operator_set_provider_eligibility')
+    expect(fn).not.toContain('rating')
+  })
+
+  it('the operator screen tells the three states apart', () => {
+    const screen = read('app/operator/[id].tsx')
+    expect(screen).toContain('communityContentForCase')
+    expect(screen).toContain('Hidden by operator')
+    // "Visible" and "restored after being hidden" share a boolean and are
+    // different situations; the screen must not collapse them.
+    expect(screen).toContain('Restored')
+    expect(screen).toContain('history')
+  })
+
+  it('and offers restore for hidden content rather than only hide', () => {
+    const screen = read('app/operator/[id].tsx')
+    expect(screen).toContain('setVisibility(false)')
+    expect(screen).toContain('setVisibility(true)')
+  })
+
+  it('no client-facing module can change visibility', () => {
+    for (const f of [
+      'lib/community.ts',
+      'app/community/index.tsx',
+      'app/community/[id].tsx',
+      'app/(tabs)/business/community.tsx',
+      'components/DiscoverCommunity.tsx',
+    ]) {
+      const src = read(f)
+      expect(src).not.toContain('operator_set_community_visibility')
+      // `is_active` may be READ (an author is told their own post is hidden);
+      // it must never be sent.
+      expect(src).not.toMatch(/is_active:\s/)
+    }
+  })
+
+  it('a report names the content structurally, not in prose', () => {
+    const hub = read('app/community/index.tsx')
+    const thread = read('app/community/[id].tsx')
+    expect(hub).toContain("contentKind: 'community_post'")
+    expect(thread).toContain("contentKind: 'community_reply'")
+    // The id used to travel inside the notes. An operator now resolves a column.
+    expect(hub).not.toMatch(/notes:\s*`community post/)
+  })
+
+  it('and a reply can be reported, because a reply can be hidden', () => {
+    const thread = read('app/community/[id].tsx')
+    expect(thread).toContain('ReportSheet')
+    expect(thread).toContain('reportReply')
+  })
+
+  it('support copy names no timeframe, and says what it cannot do', () => {
+    const ops = read('docs/operations/COMMUNITY_OPERATIONS.md').toLowerCase()
+    // TIMEFRAMES are checked as absent strings because there is no legitimate
+    // reason to write one here, in a promise OR a prohibition — the rule is that
+    // the product states no response time at all.
+    for (const timeframe of [
+      'within 24 hours',
+      'within 48 hours',
+      'within 2 hours',
+      'business day',
+      'response time of',
+    ]) {
+      expect(ops).not.toContain(timeframe)
+    }
+    // PROMISES are checked POSITIVELY instead. A first version of this test
+    // searched for 'will be removed' and failed on the sentence forbidding
+    // support from saying it — a guard that cannot tell a promise from a
+    // prohibition against that promise flags the document for being careful.
+    expect(ops).toContain('no sla')
+    expect(ops).toContain('not a delete')
+    expect(ops).toContain('restore')
+  })
+})
+
+describe('a shoutout indicator states a booking, not a verdict', () => {
+  it('the badge is shown only from the server-verified flag', () => {
+    for (const f of ['app/community/index.tsx', 'components/ProviderShoutouts.tsx']) {
+      const src = read(f)
+      expect(src).toContain('bookingBacked')
+      expect(src).toContain('Booked on The Book')
+    }
+  })
+
+  it('and the shoutout section still says it is not a review', () => {
+    const src = read('components/ProviderShoutouts.tsx')
+    expect(src).toContain('not reviews')
+    // The word "rating" appears in the copy, saying these do NOT affect it. What
+    // must be absent is a rating FIELD — reading or writing one is what would
+    // make a recommendation into reputation.
+    expect(src).not.toMatch(/average_rating|rating_client_count|\brating:/)
+    expect(src).not.toContain('provider_reviews')
+  })
+})
+
 describe('Barter is still there, and still provider-to-provider', () => {
   it('the trade board has its own route', () => {
     expect(existsSync(join(ROOT, 'app/community/barter.tsx'))).toBe(true)

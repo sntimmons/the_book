@@ -68,7 +68,7 @@ export default function ProviderShoutouts({ providerId }: { providerId: string }
             </Text>
             {p.bookingBacked ? (
               <View style={s.chip}>
-                <Text style={s.chipText}>Worked together</Text>
+                <Text style={s.chipText}>Booked on The Book</Text>
               </View>
             ) : null}
             <Text style={s.time}>{timeAgo(p.createdAt)}</Text>

@@ -180,6 +180,13 @@ export interface CommunityPostView {
   likeCount: number
   replyCount: number
   createdAt: string
+  /**
+   * False when an operator has HIDDEN this from ordinary surfaces. Only ever
+   * present on an author's own view of their own content (Business →
+   * Community), which reads the base table — the public feed reads a view that
+   * excludes hidden rows entirely, so this is never false there.
+   */
+  isActive?: boolean
   author: CommunityAuthor
   /** The provider a shoutout names, when it could be resolved. */
   taggedProvider: CommunityProviderInfo | null

@@ -212,7 +212,13 @@ export default function CommunityHub() {
       type: 'content',
       reason,
       reportedUserId: post.userId,
-      notes: notes ? `community post ${post.id}\n\n${notes}` : `community post ${post.id}`,
+      // The post is named STRUCTURALLY now (20261097000000), so the notes carry
+      // only the reporter's own words. An operator can resolve the reference,
+      // see the content and hide or restore it; parsing a sentence to decide
+      // what to moderate worked until someone edited the copy.
+      contentKind: 'community_post',
+      contentId: post.id,
+      notes: notes?.trim() || null,
     })
     if (res.limited) {
       Alert.alert(REPORT_LIMITED_COPY.title, REPORT_LIMITED_COPY.body, [{ text: 'OK' }])
@@ -525,11 +531,13 @@ export function PostCard({
             {post.taggedProvider?.name ?? 'A provider'}
           </Text>
           {post.bookingBacked ? (
-            // Shown ONLY because the server verified a completed booking between
-            // this author and this provider. It is not a rating and it never
-            // becomes one — a recommendation is not a review.
+            // PD-098. Shown ONLY because the server verified a completed
+            // booking between this author and this provider. It is a FACT about
+            // a booking, not a rating and not a verification of the opinion —
+            // and its absence means nothing was claimed, not that something is
+            // missing.
             <View style={s.verifiedChip}>
-              <Text style={s.verifiedText}>Worked together</Text>
+              <Text style={s.verifiedText}>Booked on The Book</Text>
             </View>
           ) : null}
           <Feather name="chevron-right" size={14} color="rgba(240,232,213,0.35)" />

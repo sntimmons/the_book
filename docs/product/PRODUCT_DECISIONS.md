@@ -2090,6 +2090,113 @@ as locked decisions.
 
 ---
 
+### PD-098 — A shoutout needs no booking, and may never imply one it does not have
+- **Decided:** 2026-09-11 (closes **OQ-081**)
+- **Decision.** A completed booking is **NOT required** to create a Community recommendation.
+  A shoutout is community/social proof: separate from reviews, **not a reputation event**, and
+  **not a star-rating input**.
+- **What is required, and enforced server-side.** It must tag a **real, eligible provider**; it
+  **cannot self-tag**; it **cannot tag across a block** in either direction; and it must **never**
+  change provider review, rating or reputation data.
+- **When a booking link does exist**, the shoutout **MAY** carry a factual indicator — *"Booked on
+  The Book"* — and the server verifies the link before anything may say so (the author's own
+  COMPLETED booking with that exact provider). Three limits travel with that indicator:
+  it **does not convert the shoutout into a review**, it **does not change any rating**, and its
+  **absence must not be presented as a negative** — most honest recommendations in a beta this
+  size will have no link, and a surface that implies otherwise is asserting a verification the
+  product did not perform.
+- **Why not require it.** In a 25–30 person cohort almost nobody has a completed booking with the
+  provider they would recommend, so the requirement would make the feature unusable on the day it
+  shipped. It would also rebuild the review system's evidence bar on a surface that is explicitly
+  not a review — and if a recommendation needed a completed booking, the honest question would be
+  why it is not simply a review.
+- **The boundary this keeps.** Review = transaction reputation. Shoutout = recommendation. They
+  render in separate, separately-labelled sections of a provider's profile, and no community
+  object appears in `provider_reputation_canonical()` — asserted structurally, so it holds for
+  every future row rather than for today's data.
+- **Evidence.** `20261088000000` (the CHECK requiring a named provider; the trigger's approval,
+  self, block and booking checks); `supabase/tests/community.test.sql` §§ 2, 6c;
+  `components/ProviderShoutouts.tsx`; `__tests__/guards/communityShape.test.ts`.
+- **Status:** Locked; **implemented**.
+
+---
+
+### PD-099 — A Community report has a real outcome: hide and restore, never delete
+- **Decided:** 2026-09-11 (closes **OQ-082**)
+- **Decision.** Community reports must have a real operator moderation outcome. An authorized
+  operator can **hide** a Community post or reply from ordinary user surfaces, and **restore**
+  previously hidden content. Hiding **preserves the underlying row, the report, the case and the
+  operator action history**.
+- **Hard-deleting reported content is NOT the moderation action.** This is **moderation visibility
+  control, not evidence deletion**. A moderation decision has to be reviewable, reversible and
+  attributable; a deleted row is none of those, and destroying the thing a complaint is about is
+  the one action that makes the complaint unanswerable.
+- **Only an authorized operator, only through the audited path.** Two conditions are required
+  together, and neither is sufficient: `is_operator()` (so no client, provider or deapproved
+  provider can reach it) **and** a marker set only inside
+  `operator_set_community_visibility()` (so an operator cannot take a shortcut that leaves no audit
+  row). A shortcut is refused **out loud** — a privileged action that quietly does nothing is how
+  `is_active` became a trap in the first place.
+- **Three states, told apart.** Visible · hidden by operator · restored. The last two share a
+  boolean and are different situations, so `community_moderation_actions` records every hide and
+  restore with who, when, against which case, and why. The operator surface shows the current
+  state and the history.
+- **What hiding does NOT do.** It does not resolve the case, suspend an account, restrict a
+  provider, or delete anything. Those are separate, separately audited actions — bundling them
+  would hide several decisions behind one click.
+- **Explicitly NOT built:** bulk moderation, keyword filtering, AI moderation, auto-bans, content
+  scoring, moderation SLA, priority queues, or any general-purpose moderation platform. Scope is
+  Community posts and replies.
+- **What is not promised.** No guaranteed takedown, no guaranteed suspension, **no response time**.
+  A report creates durable operator work; a person reads it and decides. PD-068's no-SLA rule is
+  unchanged and this decision does not create one.
+- **Evidence.** `20261096000000`, `20261097000000`, `20261098000000`;
+  `supabase/tests/community.test.sql` §§ 6e–6j; `lib/operator.ts`; `app/operator/[id].tsx`;
+  `docs/operations/COMMUNITY_OPERATIONS.md`.
+- **Status:** Locked; **implemented**.
+
+---
+
+### PD-100 — Block inference stays where PD-090 left it, for the closed beta
+- **Decided:** 2026-09-11 (closes **OQ-083**)
+- **Decision.** **PD-090 stands.** For the Houston closed beta: **no dedicated block-status
+  oracle**; sophisticated inference from otherwise-authorized data is **accepted**; and **no large
+  refactor is undertaken solely to make block status mathematically non-inferable**.
+- **What OQ-083 raised, and why it does not change the answer now.** The Community reshape widened
+  who can run the `_visible`-vs-base-table diff from ~30 provider accounts to every account, on the
+  surface PD-089 was written for. That is a real change in the population, and it is recorded. It
+  is not a change in what is exposed: nothing reaches `anon`, no private column rides in, and the
+  ordinary app reads only the views. The cost of closing it remains what PD-090 weighed — a rule
+  change on the product's most transaction-sensitive read surface — against defeating a two-request
+  diff run by someone who already suspects the answer.
+- **Recorded, in PD-090's own words:** *revisit before broader or public launch if safety, privacy,
+  abuse evidence, or legal review requires stronger concealment.* A closed beta of a known cohort
+  and a public launch are different risk surfaces, and this decision does not travel to the second.
+- **The current posture is pinned** (`supabase/tests/community.test.sql` § 7), so narrowing it
+  later is a visible change rather than a silent one.
+- **Status:** Locked; **satisfied by current behaviour** — no code change follows.
+
+---
+
+### PD-101 — `service_role` is trusted infrastructure, not a product surface
+- **Decided:** 2026-09-11 (closes **OQ-080**)
+- **Decision.** Closed as an **accepted trusted-infrastructure privilege**. The product does not
+  attempt to make `service_role` mathematically incapable of mutating review data — a key that can
+  run migrations can do anything, and pretending otherwise would be security theatre that costs
+  real capability.
+- **What IS asserted, and is the actual product guarantee:** public reputation remains **derived
+  canonically for every normal user and operator path**. Specifically — **no client path** exposes
+  manual rating mutation; **no provider path** does; **no operator UI or RPC** exposes rating
+  pinning; and **canonical recomputation remains the product source of truth** (PD-094's invariant
+  refuses to store any reputation value `provider_reputation_canonical()` does not produce, for
+  every role that is not `service_role`).
+- **Scope discipline.** Community's moderation work does **not** widen into review internals: the
+  moderation action is asserted to touch no review table, no rating column and no eligibility flag
+  (`community.test.sql` § 6j).
+- **Status:** Locked; **satisfied by current behaviour** — no code change follows.
+
+---
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

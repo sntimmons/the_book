@@ -15,13 +15,17 @@ import { Ionicons } from '@expo/vector-icons'
 import { useAuth } from '@/context/AuthContext'
 import {
   CASE_TYPE_LABEL,
+  MODERATION_HELP,
   OUTCOME_HELP,
   OUTCOME_LABEL,
   adjudicateObligation,
   caseDetail,
+  communityContentForCase,
+  setCommunityVisibility,
   setProviderEligibility,
   updateCase,
   type CaseDetail,
+  type ReportedContent,
 } from '@/lib/operator'
 
 // One case, its facts, its history, and the one action it supports.
@@ -53,11 +57,16 @@ export default function OperatorCase() {
   const [failed, setFailed] = useState(false)
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
+  // The Community content this case is about, when it is about any. Null is the
+  // ordinary answer — every non-Community report has none — so it is rendered as
+  // an absence, never as a failure.
+  const [content, setContent] = useState<ReportedContent | null>(null)
 
   const load = useCallback(async () => {
     const d = await caseDetail(id as string)
     setFailed(d === null)
     setC(d)
+    setContent(d ? await communityContentForCase(id as string) : null)
   }, [id])
 
   useFocusEffect(
@@ -68,12 +77,35 @@ export default function OperatorCase() {
         if (cancelled) return
         setFailed(d === null)
         setC(d)
+        const cc = d ? await communityContentForCase(id as string) : null
+        if (!cancelled) setContent(cc)
       })()
       return () => {
         cancelled = true
       }
     }, [id]),
   )
+
+  // HIDE OR RESTORE, and nothing else. It does not resolve the case: an operator
+  // may reasonably hide something and keep the case open while they look into
+  // the account behind it, and folding the two together would record a decision
+  // nobody made.
+  async function setVisibility(hidden: boolean) {
+    if (!user || !content || busy || content.missing) return
+    const kind = content.kind === 'reply' || content.kind === 'community_reply' ? 'reply' : 'post'
+    setBusy(true)
+    const r = await setCommunityVisibility({ kind, id: content.id }, hidden, user.id, {
+      caseId: id as string,
+      note,
+    })
+    setBusy(false)
+    if (!r.ok) {
+      Alert.alert('Could not record that', 'Please try again.')
+      return
+    }
+    setNote('')
+    await load()
+  }
 
   async function act(action: 'claimed' | 'resolved' | 'dismissed' | 'noted') {
     if (!user || busy) return
@@ -320,6 +352,68 @@ export default function OperatorCase() {
             </>
           ) : null}
 
+          {c.case_type === 'user_report' && content ? (
+            <>
+              <Text style={s.section}>REPORTED CONTENT</Text>
+              {content.missing ? (
+                <Text style={s.gone}>
+                  This content no longer exists — its author removed it, or it was deleted
+                  with the account behind it. Nothing to hide or restore.
+                </Text>
+              ) : (
+                <View style={s.card}>
+                  {/* THE THREE STATES, SAID APART. "Visible" and "restored" are
+                      the same boolean and different situations: one has never
+                      been acted on, the other has been hidden and put back. An
+                      operator deciding what to do now needs to know which. */}
+                  <Text style={s.moderationState}>
+                    {content.is_hidden
+                      ? 'Hidden by operator'
+                      : (content.history?.length ?? 0) > 0
+                        ? 'Restored — hidden before'
+                        : 'Visible'}
+                  </Text>
+                  <Text style={s.contentBody}>{content.content}</Text>
+                  <Fact label="kind" value={content.kind} />
+                  <Fact label="author" value={content.author_user_id} />
+                  <Fact label="posted" value={content.created_at} />
+                  {(content.history?.length ?? 0) > 0 ? (
+                    <>
+                      <Text style={s.section}>MODERATION HISTORY</Text>
+                      {content.history!.map((h) => (
+                        <View key={h.id} style={s.event}>
+                          <Text style={s.eventHead}>{h.action}</Text>
+                          <Text style={s.eventTime}>{h.created_at}</Text>
+                          {h.note ? <Text style={s.eventNote}>{h.note}</Text> : null}
+                        </View>
+                      ))}
+                    </>
+                  ) : null}
+                  <View style={s.actions}>
+                    {content.is_hidden ? (
+                      <TouchableOpacity
+                        style={s.btn}
+                        disabled={busy}
+                        onPress={() => setVisibility(false)}
+                      >
+                        <Text style={s.btnText}>Restore</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={s.btn}
+                        disabled={busy}
+                        onPress={() => setVisibility(true)}
+                      >
+                        <Text style={s.btnText}>Hide from ordinary surfaces</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  <Text style={s.hint}>{MODERATION_HELP}</Text>
+                </View>
+              )}
+            </>
+          ) : null}
+
           {c.case_type === 'user_report' ? (
             <>
               <Text style={s.section}>DECISION</Text>
@@ -333,7 +427,8 @@ export default function OperatorCase() {
               </View>
               <Text style={s.hint}>
                 Neither tells the reporter anything — there is no channel to tell them through,
-                and none is promised.
+                and none is promised. Resolving does not hide anything, and hiding does not
+                resolve anything: they are separate decisions and both are recorded.
               </Text>
             </>
           ) : null}
@@ -382,6 +477,19 @@ const s = StyleSheet.create({
   factLabel: { flex: 1, fontSize: 12, color: 'rgba(240,232,213,0.45)', fontFamily: 'Manrope_400Regular' },
   factValue: { flex: 1.4, fontSize: 13, color: '#F0E8D5', fontFamily: 'Manrope_400Regular' },
   event: { borderTopWidth: 1, borderTopColor: 'rgba(240,232,213,0.06)', paddingTop: 10 },
+  moderationState: {
+    fontSize: 12,
+    color: '#C8922A',
+    fontFamily: 'Manrope_700Bold',
+    letterSpacing: 0.4,
+  },
+  contentBody: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: '#F0E8D5',
+    fontFamily: 'Manrope_400Regular',
+    marginVertical: 4,
+  },
   eventHead: { fontSize: 12, color: '#F0E8D5', fontFamily: 'Manrope_700Bold' },
   eventNote: {
     fontSize: 13,

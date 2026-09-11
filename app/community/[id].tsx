@@ -20,6 +20,14 @@ import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
 import { checkRateLimit } from '@/lib/rateLimit'
+import {
+  submitReport,
+  REPORT_SUBMITTED_COPY,
+  REPORT_FAILED_COPY,
+  REPORT_LIMITED_COPY,
+  ReportReason,
+} from '@/lib/safety'
+import ReportSheet from '@/components/ReportSheet'
 import { cacheBustedPhoto } from '@/lib/image'
 import {
   fetchCommunityPost,
@@ -44,6 +52,17 @@ const REPLY_ACCESSORY_ID = 'communityReplyInput'
 
 type ThreadPost = CommunityPostView & { isLiked: boolean; isBookmarked: boolean }
 
+// The same five reasons the feed offers, mapped onto the product-wide
+// vocabulary in lib/safety.ts. A second reporting vocabulary would be a second
+// thing to keep in step.
+const REPLY_REPORT_REASONS: { label: string; value: ReportReason }[] = [
+  { label: 'Inappropriate content', value: 'profile_or_content' },
+  { label: 'Harassment', value: 'harassment' },
+  { label: 'Scam or fraud', value: 'scam_or_fraud' },
+  { label: 'Safety concern', value: 'safety_concern' },
+  { label: 'Something else', value: 'other' },
+]
+
 export default function CommunityThread() {
   const insets = useSafeAreaInsets()
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -55,6 +74,8 @@ export default function CommunityThread() {
   const [myInfo, setMyInfo] = useState<CommunityProviderInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [replyInput, setReplyInput] = useState('')
+  const [reportReplyTarget, setReportReplyTarget] = useState<CommunityReplyView | null>(null)
+  const [reportingReply, setReportingReply] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const load = useCallback(async () => {
@@ -146,6 +167,32 @@ export default function CommunityThread() {
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: () => deleteReply(replyId) },
     ])
+  }
+
+  // A REPLY CAN BE REPORTED, because a reply can now be HIDDEN. An operator
+  // capability with no intake would be a control nobody can reach: the ruling
+  // covers posts AND replies, so the report path has to cover both.
+  async function reportReply(
+    reply: CommunityReplyView,
+    reason: ReportReason,
+    notes: string | null,
+  ) {
+    if (!user) return
+    const res = await submitReport({
+      reporterUserId: user.id,
+      type: 'content',
+      reason,
+      reportedUserId: reply.userId,
+      contentKind: 'community_reply',
+      contentId: reply.id,
+      notes: notes?.trim() || null,
+    })
+    if (res.limited) {
+      Alert.alert(REPORT_LIMITED_COPY.title, REPORT_LIMITED_COPY.body, [{ text: 'OK' }])
+      return
+    }
+    const copy = res.ok ? REPORT_SUBMITTED_COPY : REPORT_FAILED_COPY
+    Alert.alert(copy.title, copy.body, [{ text: 'OK' }])
   }
 
   async function submitReply(kind: 'reply' | 'can_help' = 'reply') {
@@ -380,15 +427,17 @@ export default function CommunityThread() {
                   </TouchableOpacity>
                 ) : null}
               </View>
-              {item.userId === currentUserId ? (
-                <TouchableOpacity
-                  onPress={() => confirmDeleteReply(item.id)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  activeOpacity={0.7}
-                >
-                  <Feather name="more-vertical" size={16} color="rgba(240,232,213,0.35)" />
-                </TouchableOpacity>
-              ) : null}
+              <TouchableOpacity
+                onPress={() =>
+                  item.userId === currentUserId
+                    ? confirmDeleteReply(item.id)
+                    : setReportReplyTarget(item)
+                }
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.7}
+              >
+                <Feather name="more-vertical" size={16} color="rgba(240,232,213,0.35)" />
+              </TouchableOpacity>
             </View>
           )}
         />
@@ -456,6 +505,22 @@ export default function CommunityThread() {
         </View>
         </View>
       ) : null}
+
+      <ReportSheet
+        visible={reportReplyTarget !== null}
+        title="Report this reply"
+        options={REPLY_REPORT_REASONS}
+        submitting={reportingReply}
+        onCancel={() => setReportReplyTarget(null)}
+        onSubmit={async (reason, notes) => {
+          const target = reportReplyTarget
+          if (!target) return
+          setReportingReply(true)
+          await reportReply(target, reason, notes)
+          setReportingReply(false)
+          setReportReplyTarget(null)
+        }}
+      />
 
       {/* iOS: a Done bar above the keyboard so a multiline reply can be
           dismissed (mirrors the message composer's accessory bar). */}

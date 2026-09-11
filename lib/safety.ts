@@ -200,6 +200,15 @@ export interface ReportInput {
   reportedUserId?: string | null
   reportedProviderId?: string | null
   bookingId?: string | null
+  /**
+   * The specific Community post or reply this report is about, so an operator
+   * can act on it. Validated server-side: the content must exist AND its author
+   * must be `reportedUserId`, so a report about one person cannot be attached to
+   * somebody else's post. Before 20261097000000 this reference travelled in the
+   * notes as free text, which was fine while nothing could act on it.
+   */
+  contentKind?: 'community_post' | 'community_reply' | null
+  contentId?: string | null
 }
 
 /**
@@ -229,6 +238,8 @@ export async function submitReport(input: ReportInput): Promise<ReportResult> {
     reported_user_id: input.reportedUserId ?? null,
     reported_provider_id: input.reportedProviderId ?? null,
     booking_id: input.bookingId ?? null,
+    reported_content_kind: input.contentId ? input.contentKind ?? null : null,
+    reported_content_id: input.contentId ?? null,
   })
   if (error) {
     // PD-088's backstop is an EXPECTED refusal, not a fault. No Sentry event:

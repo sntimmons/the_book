@@ -55,7 +55,7 @@ export default function BusinessCommunity() {
         .from('community_posts')
         .select(
           'id, provider_id, user_id, author_kind, intent, content, service_tag, area, timing, ' +
-            'tagged_provider_id, tagged_booking_id, expires_at, like_count, reply_count, created_at',
+            'tagged_provider_id, tagged_booking_id, expires_at, like_count, reply_count, created_at, is_active',
         )
         .eq('provider_id', providerId)
         .eq('author_kind', 'provider')
@@ -79,6 +79,7 @@ export default function BusinessCommunity() {
           likeCount: (r.like_count as number) ?? 0,
           replyCount: (r.reply_count as number) ?? 0,
           createdAt: r.created_at as string,
+          isActive: r.is_active !== false,
           author: {
             kind: 'provider',
             name: '',
@@ -243,6 +244,12 @@ export default function BusinessCommunity() {
               item.intent === 'open_today' &&
               item.expiresAt != null &&
               new Date(item.expiresAt).getTime() <= Date.now()
+            // THE AUTHOR IS TOLD. This screen reads the base table, so a hidden
+            // post would otherwise sit here looking ordinary while being absent
+            // from every public surface — the provider would conclude the
+            // product had eaten it. Saying so is not a notification channel and
+            // promises nothing; it is the difference between a state and a bug.
+            const hidden = item.isActive === false
             return (
               <View style={s.row}>
                 <View style={{ flex: 1, gap: 4 }}>
@@ -250,6 +257,11 @@ export default function BusinessCommunity() {
                     {intentLabel(item.intent)} · {timeAgo(item.createdAt)}
                     {expired ? ' · ended' : ''}
                   </Text>
+                  {hidden ? (
+                    <Text style={s.hiddenBadge}>
+                      Hidden by The Book — not shown in Community
+                    </Text>
+                  ) : null}
                   <Text style={s.rowText} numberOfLines={3}>
                     {item.content}
                   </Text>
@@ -357,4 +369,5 @@ const s = StyleSheet.create({
   rowMeta: { color: 'rgba(240,232,213,0.35)', fontSize: 11 },
   rowText: { color: 'rgba(240,232,213,0.85)', fontSize: 13, lineHeight: 18 },
   rowStats: { color: 'rgba(240,232,213,0.3)', fontSize: 11 },
+  hiddenBadge: { color: '#C8922A', fontSize: 11, fontWeight: '600' },
 })
