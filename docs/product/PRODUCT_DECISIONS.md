@@ -1,7 +1,13 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** the **Session 8** branch (safety, trust and operator handling), which recorded
+**Last edited by:** **Session 8C** (safety hardening), which implemented PD-088 and PD-089 and
+recorded **PD-090** — the ruling that closes OQ-076: The Book builds no block-status oracle, and
+inference by a determined user comparing otherwise-authorized data is an **accepted closed-beta
+limitation** rather than a blocker. The broad booking/thread/review/contract read policies are
+deliberately NOT narrowed to defeat it.
+
+Before it, the **Session 8** branch (safety, trust and operator handling) recorded
 **PD-082 … PD-089**. The last three are **Founder rulings on the finished branch**, closing the
 three questions Session 8 filed rather than answered: **PD-087** (a block is never announced, but
 need not be undiscoverable — no code change), **PD-088** (report intake gets a bounded abuse
@@ -1762,6 +1768,48 @@ as locked decisions.
     different mechanism from refusing, and only the ORDINARY surfaces moved: every booking,
     thread, review and contract read still uses the base tables, so a pair inside a live
     obligation still sees each other's name, terms and appointment. Asserted directly.
+
+---
+
+### PD-090 — No block-status oracle is built or exposed; inference through ordinary product behaviour is an accepted beta limitation
+- **Decided:** 2026-09-10
+- **Decision.** **The Book will not expose or build a dedicated block-status oracle.** A
+  technically sophisticated user may nonetheless be able to INFER that a block exists, by comparing
+  otherwise-authorized data or by observing ordinary product behaviour. **That is acceptable for
+  the Houston closed beta.**
+  - **Do NOT narrow broad booking, message-thread, review or contract read policies for the sole
+    purpose of making block status mathematically non-determinable.**
+  - **This is an accepted inference limitation, not a beta blocker.**
+- **What closed the question.** PD-089 was implemented as `SECURITY DEFINER` views returning
+  already-filtered content, and OQ-076 recorded that the views are DIFFABLE against their base
+  tables: `providers?id=eq.X` and `providers_visible?id=eq.X` answer *"is there a block between me
+  and X"* in two requests. The architecture had been chosen partly on the premise that *"there is
+  no question to ask"*, which was not true as shipped. **The premise was wrong; the architecture
+  is still right**, and the cost of making the premise true is the thing this decision refuses.
+- **Why refusing that cost is the right answer.** Closing the inference gap means the base tables
+  must stop being readable for the same rows — narrowing `providers_public_read` and routing
+  bookings, threads, reviews and contracts through filtered views. That is a large, high-risk
+  change to the authorization surface of the most transaction-sensitive paths in the product, in
+  exchange for defeating a two-request diff performed by someone who already suspects the answer.
+  **The person doing that has decided they were blocked before they ran the query.** Trading
+  read-policy correctness on live bookings for that is a bad trade in a closed beta.
+- **What this does NOT license.**
+  - It does not weaken **PD-087**, which stands intact: a block is never explicitly ANNOUNCED, it
+    need not be perfectly non-determinable, and **no shadow-ban complexity may be built** merely to
+    prevent inference.
+  - It does not reopen **PD-089**. Blocked users still disappear from each other's ordinary
+    discovery, community and content surfaces.
+  - It is not permission to ADD an oracle. Building or granting a per-target block predicate
+    remains forbidden — that is what `20261055000000` removed and what the PD-089 ruling rejected.
+    The distinction this decision draws is between **an answer the product gives** and **an
+    inference a determined person constructs**; the first stays forbidden.
+- **Revisit only if** safety evidence, abuse evidence, privacy requirements, legal review, or
+  broader launch requirements show that stronger concealment is necessary. Closed beta is a
+  small, known cohort; a public launch is a different risk surface and this decision does not
+  travel to it by default.
+- **Evidence.** Founder ruling, 2026-09-10, closing **OQ-076**. `20261064000000`,
+  `20261066000000`, `20261067000000`; `supabase/tests/blocked_surfaces.test.sql`.
+- **Status:** Locked; **satisfied by current behaviour** — no code change follows.
 
 ---
 
