@@ -275,7 +275,7 @@ declare
   cu uuid := current_setting('b5b.bi_c')::uuid;
   pid uuid := current_setting('b5b.bi_pid')::uuid;
   cid uuid := current_setting('b5b.bi_cid')::uuid;
-  v_bk uuid; v_when timestamptz; v_code text;
+  v_bk uuid; v_when timestamptz; v_code text; v_cur_for_stamp uuid;
 begin
   perform pg_temp.act_service();
   insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
@@ -283,11 +283,18 @@ begin
   values (cu, pid, 'stamped', current_date + 11, 'pending', now(), now() + interval '71 hours')
   returning id into v_bk;
 
+  -- The CURRENT version, resolved PRIVILEGED before switching role. Ruling A
+  -- refuses a new acceptance naming a stale version, and §2 has already moved
+  -- this contract to v2 — but a client cannot READ v2 from the table, because
+  -- contract_versions RLS shows them only versions they have accepted. In the
+  -- app they never need to: contract_for_booking is SECURITY DEFINER and hands
+  -- the current version id back with the document. This is the equivalent.
+  select id into v_cur_for_stamp from public.contract_versions
+   where contract_id = cid order by version_no desc limit 1;
   perform pg_temp.act(cu);
   insert into public.contract_signatures(contract_id, contract_version_id, booking_id,
                                          client_user_id, signed_at, status)
-  values (cid, current_setting('b5b.bi_v1')::uuid, v_bk, cu,
-          now() - interval '30 days', 'signed');
+  values (cid, v_cur_for_stamp, v_bk, cu, now() - interval '30 days', 'signed');
   select signed_at into v_when from public.contract_signatures where booking_id = v_bk;
   perform pg_temp.chk('bookingintegrity',
     'a client-supplied acceptance time does not survive', 'true',
@@ -397,4 +404,111 @@ select pg_temp.chk('bookingintegrity',
   (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'enforce_signature_target_immutable'
       and p.prosrc like '%service_role%'));
+select pg_temp.act_service();
+
+-- ══ 7. THE FINAL CONTRACT-INTEGRITY RULINGS ═══════════════════════════════
+
+-- RULING A. A client may not newly accept an OUTDATED version. The security
+-- review of this branch recorded the gap as SEC-DATA-004: a repeat client of the
+-- same provider could re-use a version uuid they already held and bind a NEW
+-- booking to OLD terms. Entry now requires the current version; the acceptance
+-- remains frozen afterwards, which is the opposite rule and also true.
+do $$
+declare
+  cu uuid := current_setting('b5b.bi_c')::uuid;
+  pid uuid := current_setting('b5b.bi_pid')::uuid;
+  cid uuid := current_setting('b5b.bi_cid')::uuid;
+  v1 uuid := current_setting('b5b.bi_v1')::uuid;
+  v_bk uuid; v_code text; v_cur uuid;
+begin
+  perform pg_temp.act_service();
+  select id into v_cur from public.contract_versions
+   where contract_id = cid order by version_no desc limit 1;
+  perform pg_temp.chk('bookingintegrity', 'the contract has moved past version 1', 'true',
+    (v_cur is distinct from v1)::text);
+
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, expires_at)
+  values (cu, pid, 'stale attempt', current_date + 17, 'pending',
+          now(), now() + interval '71 hours')
+  returning id into v_bk;
+
+  -- The repeat client names the version they accepted last time.
+  perform pg_temp.act(cu);
+  begin
+    insert into public.contract_signatures(contract_id, contract_version_id, booking_id,
+                                           client_user_id, signed_at, status)
+    values (cid, v1, v_bk, cu, now(), 'signed');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookingintegrity',
+    'a NEW acceptance naming a stale version is refused', 'PT429', v_code);
+
+  -- The current version is accepted normally.
+  begin
+    insert into public.contract_signatures(contract_id, contract_version_id, booking_id,
+                                           client_user_id, signed_at, status)
+    values (cid, v_cur, v_bk, cu, now(), 'signed');
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('bookingintegrity', 'and the current version is accepted', 'OK', v_code);
+
+  -- AND THE EARLIER ACCEPTANCE IS UNTOUCHED. Requiring the newest version to
+  -- ENTER an agreement must not disturb one already entered.
+  perform pg_temp.act_service();
+  perform pg_temp.chk('bookingintegrity',
+    'the earlier booking still points at the version IT accepted', '1',
+    (select v.version_no::text from public.contract_signatures s
+       join public.contract_versions v on v.id = s.contract_version_id
+      where s.booking_id = current_setting('b5b.bi_bk')::uuid));
+end $$;
+
+-- RULING B. Photos are the client's while composing and part of the record once
+-- sent. A provider's accept or decline must not end up attached to context that
+-- was withdrawn afterwards.
+do $$
+declare
+  cu uuid := current_setting('b5b.bi_c')::uuid;
+  pid uuid := current_setting('b5b.bi_pid')::uuid;
+  v_draft uuid; v_sent uuid; v_code text; v_n integer;
+begin
+  perform pg_temp.act_service();
+  delete from public.bookings where user_id = cu and provider_id = pid and submitted_at is null;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+  values (cu, pid, 'composing', current_date + 19) returning id into v_draft;
+  insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
+  values (v_draft, cu::text || '/' || v_draft::text || '/0.jpg', cu);
+
+  -- While it is a draft, the client may remove one.
+  perform pg_temp.act(cu);
+  delete from public.booking_reference_photos where booking_id = v_draft;
+  select count(*) into v_n from public.booking_reference_photos where booking_id = v_draft;
+  perform pg_temp.chk('bookingintegrity',
+    'before sending, a client can remove a reference photo', '0', v_n::text);
+
+  -- Once sent, they cannot.
+  perform pg_temp.act_service();
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, expires_at)
+  values (cu, pid, 'sent', current_date + 21, 'pending', now(), now() + interval '71 hours')
+  returning id into v_sent;
+  insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
+  values (v_sent, cu::text || '/' || v_sent::text || '/0.jpg', cu);
+
+  perform pg_temp.act(cu);
+  begin
+    delete from public.booking_reference_photos where booking_id = v_sent;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  -- The POLICY filters the row out, so a delete matches nothing rather than
+  -- raising. Either way the photo survives, and that is what is asserted — the
+  -- outcome, not the mechanism, because the trigger is the second refusal.
+  select count(*) into v_n from public.booking_reference_photos where booking_id = v_sent;
+  perform pg_temp.chk('bookingintegrity',
+    'after sending, the photo is part of the record and survives', '1', v_n::text);
+  perform pg_temp.act_service();
+end $$;
 select pg_temp.act_service();

@@ -167,3 +167,23 @@ export const PHOTO_PARTIAL_COPY = {
     'Your request was sent, but not every photo uploaded. Your provider can see the'
     + ' ones that did. You can describe the rest in a message.',
 }
+
+
+/**
+ * What a client is told if they try to remove a photo after sending.
+ *
+ * RULING B: before submission the photos are theirs to add, remove and replace;
+ * once the request is sent they are part of the record the provider is deciding
+ * on. Pulling them out from under that decision would leave an accept or a
+ * decline attached to context that is no longer there.
+ *
+ * It does NOT say "permanently" or name a retention period — erasure and
+ * retention are deliberately unresolved (Ruling C) and belong to Operations,
+ * legal and account-deletion policy, not to this string.
+ */
+export const PHOTO_SETTLED_COPY = {
+  title: 'Already sent',
+  body:
+    'This photo is part of a booking request you have already sent, so it cannot be'
+    + ' removed. You can mention anything that changed in a message to your provider.',
+}

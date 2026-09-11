@@ -190,6 +190,20 @@ export default function BookPayment() {
           signed_at: new Date().toISOString(),
           status: 'signed',
         })
+        // RULING A: the provider changed their agreement between this client
+        // opening it and accepting it. Not a failure to retry — the terms on
+        // screen are no longer the terms on offer, and sending them back to
+        // re-read is the only honest response. PT429 exists so this is
+        // distinguishable from an ordinary write failure.
+        if (sigError && sigError.code === 'PT429') {
+          setProcessError(
+            'This provider updated their agreement while you were booking. Your request '
+            + 'has not been sent. Please review the current agreement and accept it again.',
+          )
+          setIsProcessing(false)
+          router.replace('/book/contract')
+          return
+        }
         // A duplicate means a previous attempt already recorded it — the retry
         // succeeded from the client's point of view, so treat it as saved.
         if (sigError && sigError.code !== '23505') {

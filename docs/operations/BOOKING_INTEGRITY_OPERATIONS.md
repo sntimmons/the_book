@@ -136,7 +136,14 @@ guessed at.
 3. **No notification channel** — no push, email or SMS. Nothing tells a user their report, appeal or request was looked at.
 4. **No SLA anywhere**, and nothing dequeues an operator case except a person.
 5. **Contract acceptance is durable but not legally certified** (§ 2).
-6. **Pre-session acceptances may not reflect the original wording** (§ 2).
+6. **Pre-session acceptances may not reflect the original wording** (§ 2). They are the
+   **best available historical record, not proof of the exact original wording** — support must
+   not describe them as more.
+10. **Erasure and retention are UNDECIDED** for booking photos, historical contract evidence and
+   booking records (**OQ-077**). Photo rows cascade; storage objects do not. An accepted contract
+   version cannot be deleted while the acceptance exists, which conflicts with a deletion request
+   that expects the text to go. **Support must not promise deletion of any of these**, and the
+   three may well get different answers.
 7. **A block is inferable** by a determined user comparing otherwise-authorized data — accepted for closed beta (PD-090).
 8. **Client media does not exist.** No client photos, videos or reels.
 9. **OQ-072 open** — booking expiry with no authoritative appointment time.
@@ -167,6 +174,8 @@ guessed at.
 | Photo upload fails | "Some photos were not attached" | The request **was** sent; some files did not upload | Tell them the provider can see the ones that did, and to describe the rest in a message. Do not tell them to re-send the request. |
 | Request expired | Expired state on both sides | The 72-hour window (or the appointment) passed | The provider cannot accept. A new request is the only path. History is retained. |
 | Provider no longer bookable | "Not currently available for new bookings" | De-approved **or** no availability configured | Both look identical to the client, deliberately. For a provider asking why: check approval first, then whether they have any hours set. |
+| Agreement changed mid-booking | "This provider updated their agreement while you were booking" | The provider edited between the client opening the agreement and accepting it | **The request was NOT sent.** They must review the current agreement and accept it again. Their earlier bookings still point at the version they accepted then. |
+| Photo removal after sending | "Already sent" | Photos settle into the record when the request is sent | Nothing is wrong. They can mention anything that changed in a message. Do not promise removal. |
 | Duplicate/retry | Nothing visible | One intent = one request; drafts are resumed | **A retry never creates a second request.** If a client believes they sent two, they did not. |
 | Report rate-limited | "Too many reports just now" | 5/hour or 20/day reached | Their text is preserved on screen. If it is urgent, direct them to emergency services — The Book is not an emergency channel. |
 
