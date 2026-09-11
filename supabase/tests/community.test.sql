@@ -1062,6 +1062,198 @@ select pg_temp.chk('community',
       and contype = 'f' and confdeltype = 'n')::text);
 select pg_temp.act_service();
 
+-- ══ 6h-iii. THE RECORD OUTLIVES THE CONTENT, AND THE AUTHOR KEEPS THEIR DELETE ══
+--
+-- `post_id` / `reply_id` were ON DELETE CASCADE into an append-only table, and a
+-- referential cascade is a real DELETE that runs as the person who issued it —
+-- an ordinary author. The guard saw `authenticated`, matched no carve-out, and
+-- raised: **moderated content became undeletable by its own author**, with
+-- `23514` rendered as "that isn't something this account can post". Third time
+-- this session a referential action turned out to fire a rule.
+--
+-- Carving the cascade out would have fixed the delete and destroyed the audit
+-- trail with the content. SET NULL does both jobs: the author deletes, and the
+-- record survives having lost only its pointer — the same treatment
+-- `actor_user_id` already had.
+do $$
+declare
+  opu uuid := current_setting('b5b.cm_op')::uuid;
+  cu  uuid := current_setting('b5b.cm_cu')::uuid;
+  bu  uuid := current_setting('b5b.cm_bu')::uuid;
+  v_post uuid; v_reply uuid; v_code text; v_before integer;
+begin
+  perform pg_temp.act_service();
+  insert into public.community_posts(user_id, author_kind, intent, content)
+  values (cu, 'client', 'need_advice', 'moderated then deleted') returning id into v_post;
+  insert into public.community_replies(post_id, user_id, author_kind, kind, content)
+  values (v_post, bu, 'client', 'reply', 'a reply beneath it') returning id into v_reply;
+
+  perform pg_temp.act(opu);
+  perform public.operator_set_community_visibility('post',  v_post,  true,  opu, null, 'x');
+  perform public.operator_set_community_visibility('post',  v_post,  false, opu, null, 'y');
+  perform public.operator_set_community_visibility('reply', v_reply, true,  opu, null, 'z');
+
+  perform pg_temp.act_service();
+  select count(*) into v_before from public.community_moderation_actions
+   where post_id = v_post or reply_id = v_reply;
+  perform pg_temp.chk('community', 'three decisions are on the record', '3', v_before::text);
+
+  -- THE AUTHOR DELETES THEIR OWN POST. The reply beneath it cascades too, so
+  -- this exercises both pointers at once.
+  perform pg_temp.act(cu);
+  begin
+    delete from public.community_posts where id = v_post;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community',
+    'the author can still delete a post that has been moderated', 'NO ERROR', v_code);
+  perform pg_temp.chk('community', 'and it is gone', '0',
+    (select count(*)::text from public.community_posts where id = v_post));
+  perform pg_temp.chk('community',
+    'while every moderation decision survives it, pointer nulled', '3',
+    (select count(*)::text from public.community_moderation_actions
+      where note in ('x', 'y', 'z') and post_id is null and reply_id is null));
+
+  -- AND THE RECORD IS STILL UNREWRITABLE. Losing a pointer is the only change
+  -- the guard admits; a note is still a note.
+  perform pg_temp.act(opu);
+  begin
+    update public.community_moderation_actions set note = 'rewritten' where note = 'x';
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community', 'and the note still cannot be rewritten', '42501', v_code);
+end $$;
+
+-- ══ 6h-iv. HIDING IS A READ BOUNDARY, AND NOT YOUR OWN MATTER ════════════
+do $$
+declare
+  opu uuid := current_setting('b5b.cm_op')::uuid;
+  cu  uuid := current_setting('b5b.cm_cu')::uuid;
+  bu  uuid := current_setting('b5b.cm_bu')::uuid;
+  pu  uuid := current_setting('b5b.cm_pu')::uuid;
+  pid2 uuid := current_setting('b5b.cm_pid2')::uuid;
+  v_post uuid; v_own uuid; v_shout uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into public.community_posts(user_id, author_kind, intent, content)
+  values (cu, 'client', 'need_advice', 'hidden from the base table too')
+  returning id into v_post;
+
+  perform pg_temp.act(opu);
+  perform public.operator_set_community_visibility('post', v_post, true, opu, null, null);
+
+  -- A THIRD PARTY CANNOT READ IT AT ALL — not through the view, and not through
+  -- the base table either. A take-down that only stops rendering is one REST
+  -- call from being no take-down.
+  perform pg_temp.act(pu);
+  perform pg_temp.chk('community', 'a third party cannot read hidden content directly', '0',
+    (select count(*)::text from public.community_posts where id = v_post));
+  -- THE AUTHOR STILL CAN, because they are told it is hidden and must be able to
+  -- remove it.
+  perform pg_temp.act(cu);
+  perform pg_temp.chk('community', 'but its author still can', '1',
+    (select count(*)::text from public.community_posts where id = v_post));
+  -- AND AN OPERATOR CAN, because somebody has to be able to review the decision.
+  perform pg_temp.act(opu);
+  perform pg_temp.chk('community', 'and so can an operator', '1',
+    (select count(*)::text from public.community_posts where id = v_post));
+
+  -- NOT YOUR OWN MATTER (PD-068, the rule PD-064 enforces twice for barter).
+  perform pg_temp.act_service();
+  insert into public.community_posts(user_id, author_kind, intent, content)
+  values (opu, 'client', 'need_advice', 'the operator''s own post') returning id into v_own;
+  perform pg_temp.act(opu);
+  begin
+    perform public.operator_set_community_visibility('post', v_own, true, opu, null, null);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community',
+    'an operator cannot moderate their own content', '42501', v_code);
+
+  -- Nor a recommendation of a business they own. `pid2`'s owner is made an
+  -- operator for this one assertion.
+  perform pg_temp.act_service();
+  insert into public.operators(user_id, granted_by_user_id, note)
+    values (current_setting('b5b.cm_pu2')::uuid, null, 'self-dealing fixture')
+    on conflict do nothing;
+  insert into public.community_posts(user_id, author_kind, intent, content, tagged_provider_id)
+  values (cu, 'client', 'shoutout', 'great work', pid2) returning id into v_shout;
+  perform pg_temp.act(current_setting('b5b.cm_pu2')::uuid);
+  begin
+    perform public.operator_set_community_visibility('post', v_shout, true,
+      current_setting('b5b.cm_pu2')::uuid, null, null);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community',
+    'nor a recommendation of a business they own', '42501', v_code);
+
+  -- And an operator who could restore their own hidden post could undo any
+  -- take-down of themselves. Covered by the author check above, asserted from
+  -- the restore direction because that is the one that looks harmless.
+  perform pg_temp.act_service();
+  update public.community_posts set is_active = false where id = v_own;
+  perform pg_temp.act(opu);
+  begin
+    perform public.operator_set_community_visibility('post', v_own, false, opu, null, null);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community',
+    'and cannot restore their own hidden post either', '42501', v_code);
+end $$;
+
+-- ══ 6h-v. THE MARKER NAMES ONE ROW, AND DOES NOT SURVIVE A RAISE ═════════
+do $$
+declare
+  opu uuid := current_setting('b5b.cm_op')::uuid;
+  cu  uuid := current_setting('b5b.cm_cu')::uuid;
+  v_a uuid; v_b uuid; v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into public.community_posts(user_id, author_kind, intent, content)
+  values (cu, 'client', 'need_advice', 'row a') returning id into v_a;
+  insert into public.community_posts(user_id, author_kind, intent, content)
+  values (cu, 'client', 'need_advice', 'row b') returning id into v_b;
+
+  -- A marker naming ROW A does not authorise a change to ROW B. Bare 'on' would
+  -- have: harmless while the only writer is a single-row UPDATE, and exactly the
+  -- assumption a bulk path would break later.
+  perform pg_temp.act(cu);
+  begin
+    perform set_config('app.community_moderation', v_a::text, true);
+    update public.community_posts set is_active = false where id = v_b;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform set_config('app.community_moderation', '', true);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community', 'a marker naming one row does not authorise another',
+    '42501', v_code);
+
+  -- A RAISING RPC MUST NOT LEAVE THE PERMISSION BEHIND.
+  perform pg_temp.act(opu);
+  begin
+    perform public.operator_set_community_visibility('post', gen_random_uuid(), true,
+      opu, null, null);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('community', 'moderating content that does not exist is refused',
+    '23514', v_code);
+  perform pg_temp.chk('community', 'and the marker does not survive the refusal', 'true',
+    (coalesce(pg_catalog.current_setting('app.community_moderation', true), '') = '')::text);
+  perform pg_temp.act_service();
+end $$;
+
 -- ══ 6i. A REPORT MUST POINT AT THE RIGHT PERSON'S CONTENT ════════════════
 do $$
 declare
@@ -1165,20 +1357,34 @@ select pg_temp.chk('community', 'the integrity functions are not client-callable
    or has_function_privilege('authenticated', 'public.enforce_community_reply_integrity()', 'EXECUTE')
    or has_function_privilege('anon', 'public.enforce_community_post_integrity()', 'EXECUTE'))::text);
 
--- THE BASE-TABLE POSTURE, PINNED AS WHAT IT IS. The PD-089 block filter for
--- Community lives in the VIEWS; the base tables read `using (true)` for any
--- signed-in caller, so a blocked party CAN diff the two. That is not an
--- oversight: **PD-090** ruled the `_visible`-vs-base diff an accepted limitation
--- for the Houston closed beta and deliberately did not narrow the base read
--- policies. What changed with this reshape is WHO can do it — from ~30 provider
--- accounts to every account — which is grounds for PD-090's own revisit clause,
--- filed rather than acted on. It is asserted here so the posture is deliberate
--- rather than incidental, and so a future narrowing is a visible change.
-select pg_temp.chk('community', 'the base-table read is open to any signed-in caller (PD-090)',
+-- THE BASE-TABLE POSTURE, PINNED AS WHAT IT IS — and it is now two rules, not
+-- one, because they answer different questions.
+--
+-- **BLOCKING** is enforced only in the `_visible` views, so a blocked party can
+-- still diff the base table and infer a block. **PD-090/PD-100 rule that
+-- acceptable** for the Houston closed beta and deliberately do not narrow the
+-- base read.
+--
+-- **HIDING IS NOT THE SAME QUESTION**, and `20261099000000` narrowed it: content
+-- an operator has taken down is readable by its AUTHOR (who is told, and must be
+-- able to delete it) and by an OPERATOR (who has to review the decision), and by
+-- nobody else. PD-100 weighed block inference; it did not weigh a safety
+-- take-down being one REST call away from every account in the cohort, and
+-- `COMMUNITY_OPERATIONS.md` tells support hiding removes content "for everyone".
+select pg_temp.chk('community',
+  'the base-table read still admits any signed-in caller for VISIBLE content (PD-090)',
   'true',
   (select count(*) > 0 from pg_policies
     where schemaname = 'public' and tablename = 'community_posts'
-      and cmd = 'SELECT' and qual = 'true')::text);
+      and cmd = 'SELECT' and qual like '%is_active%')::text);
+select pg_temp.chk('community', 'and the same rule guards replies', 'true',
+  (select count(*) > 0 from pg_policies
+    where schemaname = 'public' and tablename = 'community_replies'
+      and cmd = 'SELECT' and qual like '%is_active%')::text);
+-- A reply has no UPDATE policy at all, so the table-level privilege was one
+-- added policy away from being a live hole. Two refusals is the standard here.
+select pg_temp.chk('community', 'and authenticated holds no UPDATE on replies', 'false',
+  has_table_privilege('authenticated', 'public.community_replies', 'UPDATE')::text);
 
 -- The legacy free-text column is bounded, even though nothing writes it.
 select pg_temp.chk('community', 'the legacy category column cannot store a megabyte', 'true',

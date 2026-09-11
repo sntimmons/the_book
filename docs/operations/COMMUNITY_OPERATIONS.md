@@ -174,9 +174,20 @@ restored once already should know that.
 someone who has blocked its author — those are two independent rules and both
 have to pass.
 
-**The author is told.** A provider whose post is hidden sees it marked in
-Business → Community. There is no notification and none is promised; the post is
-simply not silently missing from their own list.
+**The author is told — a provider is.** A provider whose post is hidden sees it
+marked in Business → Community. There is no notification and none is promised;
+the post is simply not silently missing from their own list.
+
+**A CLIENT author is not told, and that is a known gap.** Clients have no "my
+posts" screen, so a client whose post is hidden sees it disappear from the feed
+with no explanation. They can still read it if they hold the link. If a client
+asks why their post vanished, **say that it was hidden by The Book and that you
+cannot say more** — do not suggest a bug, and do not invent a reason. Owed to a
+later UX pass, not to this one.
+
+**An operator cannot moderate their own matter.** They cannot hide or restore
+their own content, a recommendation of a business they own, or content on a
+report they filed themselves. Hand it to another operator.
 
 ### What support may say
 

@@ -80,6 +80,26 @@ describe('Community is a route, not a tab', () => {
   })
 })
 
+describe('Me stays personal; Business owns provider work', () => {
+  it('the Me tab links to Community and manages nothing', () => {
+    const me = read('components/ProviderMe.tsx')
+    // A shortcut to the surface is fine. Business CONTROLS in Me are not: the
+    // composer, the post list and the trade board all live in Business.
+    expect(me).toContain("router.push('/community' as never)")
+    expect(me).not.toContain('/community/compose')
+    expect(me).not.toContain('/community/barter')
+    expect(me).not.toContain('business/community')
+    expect(me).not.toContain('deleteOwnPost')
+  })
+
+  it('and Business is where provider content is created and managed', () => {
+    const biz = read('app/(tabs)/business/community.tsx')
+    expect(biz).toContain('/community/compose')
+    expect(biz).toContain('deleteOwnPost')
+    expect(biz).toContain('/community/barter')
+  })
+})
+
 describe('Community does not rank the marketplace', () => {
   it('no discovery or provider-search module imports the community layer', () => {
     for (const f of ['lib/discovery.ts', 'hooks/useProviders.ts']) {

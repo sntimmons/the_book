@@ -2133,10 +2133,31 @@ as locked decisions.
   the one action that makes the complaint unanswerable.
 - **Only an authorized operator, only through the audited path.** Two conditions are required
   together, and neither is sufficient: `is_operator()` (so no client, provider or deapproved
-  provider can reach it) **and** a marker set only inside
+  provider can reach it) **and** a row-scoped marker set only inside
   `operator_set_community_visibility()` (so an operator cannot take a shortcut that leaves no audit
-  row). A shortcut is refused **out loud** — a privileged action that quietly does nothing is how
-  `is_active` became a trap in the first place.
+  row). **Stated precisely, because the first version of this sentence was not:** a caller who does
+  not own the row is refused *silently* by the owner UPDATE policy, which filters the statement out
+  of scope; the row's **author** reaches the trigger and is refused *loudly*. Both are refusals and
+  the second is the one the trigger exists for — an author must not be able to undo a take-down of
+  their own content.
+- **An operator may not moderate their own matter.** They cannot hide or restore content they
+  wrote, a recommendation naming a business they own, or content on a report they filed. This is
+  **PD-068 applied to a new surface**, not a new rule — PD-064 already enforces it twice for barter
+  adjudication, in the RPC and again where the record is written. Without it an operator could hide
+  a complaint about their own business, or **restore their own hidden post**.
+- **Hiding is a READ boundary, not only a rendering one.** A hidden post or reply is readable by its
+  author (who is told it is hidden and must be able to delete it) and by an operator (who has to be
+  able to review the decision) — and by nobody else, at the table as well as in the views. PD-100
+  accepts the `_visible`-vs-base-table diff for **block inference**; it did not weigh a safety
+  take-down remaining one REST call away from every account in the cohort, and those are different
+  questions. Support is told hiding removes content "for everyone", and that is now true of the
+  data and not only of the surfaces.
+- **The record outlives the content.** The moderation trail's content pointers are `ON DELETE SET
+  NULL`, like its actor: a decision survives the deletion of what it was about, having lost only the
+  pointer. The first version cascaded, which both destroyed the audit trail in exactly the
+  situation it exists for *and* made moderated content **undeletable by its own author** — a
+  referential cascade is a DELETE that runs as the person who issued it, so the append-only guard
+  refused them.
 - **Three states, told apart.** Visible · hidden by operator · restored. The last two share a
   boolean and are different situations, so `community_moderation_actions` records every hide and
   restore with who, when, against which case, and why. The operator surface shows the current

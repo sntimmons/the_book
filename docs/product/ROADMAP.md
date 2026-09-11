@@ -969,6 +969,67 @@ engagement ranking, no operator content take-down, no barter redesign (PD-080's 
 Propose → Agree → Do it → Confirm simplification remains a later requirement), and no change to
 discovery or provider search.
 
+### NEXT DEDICATED WORKSTREAM — Account Erasure & Retention Integrity
+
+**Status: RECORDED, NOT STARTED. Blocked on policy, not on engineering.**
+
+**Why it is next.** The product now retains several durable classes of evidence,
+each accumulated for a good reason and none of them with a decided deletion
+story:
+
+- booking history
+- contract acceptance and version evidence
+- booking reference photos (storage objects, which do **not** cascade)
+- reviews
+- reports
+- operator case history and, since PD-099, Community moderation history
+- barter agreements, obligations and adjudications
+- messages
+
+**Known technical defects, both already recorded under OQ-077 and both
+reproducible today:**
+
+1. **Deleting a user who is the target of a report can fail** — the report
+   retains a reference the erasure path does not resolve.
+2. **Deleting an operator can fail** because append-only actor history conflicts
+   with the foreign-key cleanup. Pinned precisely by
+   `supabase/tests/community.test.sql` § 6h-ii: the case-event append-only guard
+   carves out `DELETE` and **not** `UPDATE`, while the column that needs it is
+   `ON DELETE SET NULL` — and a set-null is an UPDATE. The carve-out has the
+   right shape and the wrong verb. Pinned as a SOURCE fact rather than as a
+   behavioural expectation, so the eventual fix does not read as a test failure.
+
+**This workstream requires POLICY INPUT BEFORE IMPLEMENTATION.** The engineering
+is tractable; what is not decided is what deletion is supposed to MEAN for each
+class above, and that is not an engineering call. **Business Operations, legal
+and Founder need to decide:**
+
+- whether self-service deletion is required for beta at all
+- immediate deletion vs delayed
+- anonymisation vs deletion, per class
+- treatment of completed bookings
+- contract evidence retention (an accepted version is currently immutable *by
+  design*, which directly conflicts with a request that its text go)
+- booking-photo retention (the storage objects outlive the rows today)
+- reviews
+- reports and moderation records
+- barter history
+- messages
+- the operator audit trail
+- any legally required retention
+- a restoration window, if any
+
+**Do not invent retention periods.** Recording a number nobody decided is worse
+than recording none: it becomes the answer support gives.
+
+**GATE:** if account deletion is exposed to beta users, this is a
+**pre-external-beta policy AND technical gate**. Until it lands, **nothing in the
+product may promise a user that their account can be deleted**, and
+`COMMUNITY_OPERATIONS.md` § 10 says so.
+
+**Not authorised to start.** Recorded here so the next session inherits the
+question rather than the surprise.
+
 ### Sessions 9–10 — Reviews, remaining
 Structured signals (PD-028) and the conduct/reliability layer that `no_show` feeds (PD-027).
 **Phase 2 above did NOT build either** — it closed the anti-gaming and display-truth work. What
