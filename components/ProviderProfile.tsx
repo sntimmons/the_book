@@ -13,6 +13,7 @@ import {
   FlatList,
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
+import { ratingClientLabel } from '../lib/reputationLabel'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -342,10 +343,8 @@ export default function ProviderProfile({
                 is the smallest honest fix, and it is why
                 `providers.rating_client_count` exists at all. */}
             <Text style={styles.statLabel}>
-              {(provider.ratingClientCount ?? 0) > 0
-                ? `Rating · ${provider.ratingClientCount} ${
-                    provider.ratingClientCount === 1 ? 'client' : 'clients'
-                  }`
+              {ratingClientLabel(provider.ratingClientCount) != null
+                ? `Rating · ${ratingClientLabel(provider.ratingClientCount)}`
                 : 'Rating'}
             </Text>
           </View>

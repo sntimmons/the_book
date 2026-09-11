@@ -105,6 +105,23 @@ action with an audit trail, not a support convenience.
 
 ---
 
+## 6b. When a booking is placed under review
+
+Holding a booking `under_review` does two things at once, and support should
+expect both immediately:
+
+1. Both reviews on that booking **disappear from reads** — the read policy is
+   evaluated live, so this is instant for everyone.
+2. The provider's displayed rating and counts **recompute without it**, so the
+   number on their profile drops in the same moment.
+
+Before `20261080000000` only the first happened: the review vanished but the
+rating it contributed to did not move until some unrelated review landed. If a
+provider asks why their rating changed when a dispute opened, that is why — and
+lifting the hold restores both.
+
+---
+
 ## 7. What the system does NOT promise
 
 - **No identity verification** behind a review. The guarantee is transaction
@@ -118,6 +135,14 @@ action with an audit trail, not a support convenience.
   it when they look.
 - **No SLA on disputes.** A booking held `under_review` stays held until an
   operator resolves it, and nothing dequeues that automatically.
+- **No defence against many accounts.** PD-091 stops ONE client inflating a
+  rating by booking repeatedly — twenty reviews from one client is one voice.
+  It does nothing about twenty accounts each leaving one review, because the
+  rule counts distinct client accounts and nothing verifies that two accounts
+  are two people. Bounding that needs identity, which the beta does not have.
+  **If support is asked "is this rating real?", the honest answer is that the
+  reviews are all linked to completed bookings between those accounts, and that
+  The Book does not verify the accounts are different people.**
 
 ---
 

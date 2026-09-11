@@ -2141,6 +2141,68 @@ await raceTwoOperatorsOneCase()
 await raceTwoSignedInOperators()
 await raceBlockVsVisibility()
 
+// ── REVIEWS PHASE 2 (PD-091) ────────────────────────────────────────────────
+//
+// The stored reputation on `providers` is recomputed by a trigger on every
+// review write. That recompute counts the reviews and THEN updates the row, so
+// before 20261080000000 two reviews committing concurrently each wrote a total
+// computed from a snapshot that did not contain the other — a silent lost
+// update, permanent until some unrelated review happened to recompute again.
+//
+// **B5B cannot reach this.** It runs every suite inside one transaction that is
+// always rolled back, so there is never a second session to lose an update to.
+// A lost update is only visible to a harness that commits, which is this one.
+async function raceTwoReviewsOneProvider() {
+  const pid = `(select id from public.providers where user_id = '${ids.ou}')`
+  const mk = (days) => `insert into public.bookings(user_id, provider_id, service_name,
+      requested_date, status, submitted_at, completed_at)
+    values ('${ids.ru}', ${pid}, 'review race', current_date - ${days}, 'completed',
+            now() - interval '${days} days', now() - interval '${days} days')
+    returning id`
+  await runSql(`
+    delete from public.provider_reviews where provider_id = ${pid};
+    delete from public.bookings where user_id = '${ids.ru}' and provider_id = ${pid};`)
+
+  // Completed well outside the 7-day blind window, so both reviews are REVEALED
+  // the moment they land and both must reach the stored aggregate.
+  const b = await runSql(`
+    with a as (${mk(40)}), b as (${mk(39)})
+    select json_build_object('a', (select id from a), 'b', (select id from b)) as timing;`)
+  const bookA = scalar(b.out, 'a')
+  const bookB = scalar(b.out, 'b')
+
+  const review = (bk, rating) => `insert into public.provider_reviews
+      (booking_id, provider_id, reviewer_user_id, rating)
+    values ('${bk}', ${pid}, '${ids.ru}', ${rating});`
+  const [x, y] = await Promise.all([
+    runTimedMaintenance(review(bookA, 5)),
+    runTimedMaintenance(review(bookB, 1)),
+  ])
+  chk('both concurrent reviews are accepted', 'true', String(x.opOk && y.opOk))
+  chk('the two review writes genuinely overlapped (else this scenario proves nothing)',
+    'true', String(intervalsOverlap(x.timing, y.timing)))
+
+  const got = await runSql(`select json_build_object(
+      'stored', p.review_count, 'clients', p.rating_client_count,
+      'live', (select review_count from public.provider_reputation(p.id)),
+      'avg', p.average_rating
+    ) as timing from public.providers p where p.id = ${pid};`)
+  // The lost update showed up here as 1: each writer counted only its own.
+  chk('neither review is lost from the stored count', '2', scalar(got.out, 'stored'))
+  chk('and the stored count agrees with a fresh computation', '2', scalar(got.out, 'live'))
+  // PD-091 under concurrency: two receipts, one relationship, and the rating is
+  // the LATEST of the two — not the mean of both.
+  chk('two bookings by one client are still one voice', '1', scalar(got.out, 'clients'))
+  chk('and the rating is that client\'s latest review, not an average of both',
+    'true', String(['5.00', '1.00'].includes(scalar(got.out, 'avg'))))
+
+  await runSql(`
+    delete from public.provider_reviews where provider_id = ${pid};
+    delete from public.bookings where user_id = '${ids.ru}' and provider_id = ${pid};`)
+}
+
+await raceTwoReviewsOneProvider()
+
 await cleanup()
 
 const failed = results.filter((r) => !r.ok).length

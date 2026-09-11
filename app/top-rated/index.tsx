@@ -12,6 +12,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { ratingClientLabel } from '../../lib/reputationLabel'
 import { useProviders, useCategories, Provider, Category } from '../../hooks/useProviders'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -36,11 +37,6 @@ function providerHood(p: Provider): string {
 function categoryName(categoryId: number | null, categories: Category[]): string {
   if (categoryId == null) return ''
   return categories.find((c) => c.id === categoryId)?.name ?? ''
-}
-
-function formatCount(n: number): string {
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
-  return n.toString()
 }
 
 function subtitleFor(p: Provider, categories: Category[]): string {
@@ -100,7 +96,8 @@ function FeaturedHero({
   categories: Category[]
 }) {
   const rating = ratingValue(provider)
-  const reviews = provider.review_count ?? 0
+  // PD-091: beside a rating, the honest denominator is clients, not reviews.
+  const clients = ratingClientLabel(provider.rating_client_count)
   const image = provider.cover_image_url ?? provider.profile_photo_url
 
   function goToProvider() {
@@ -136,11 +133,7 @@ function FeaturedHero({
         <View style={s.heroMeta}>
           <Ionicons name="star" size={13} color="#C8922A" />
           <Text style={s.heroRating}>{rating != null ? rating.toFixed(1) : 'New'}</Text>
-          {reviews > 0 && (
-            <Text style={s.heroReviews}>
-              {formatCount(reviews)} {reviews === 1 ? 'review' : 'reviews'}
-            </Text>
-          )}
+          {clients != null && <Text style={s.heroReviews}>{clients}</Text>}
         </View>
         <View style={s.heroButtons}>
           <TouchableOpacity style={s.heroBtnOutline} activeOpacity={0.85} onPress={goToProvider}>
@@ -167,7 +160,7 @@ function RankRow({
   categories: Category[]
 }) {
   const rating = ratingValue(provider)
-  const reviews = provider.review_count ?? 0
+  const clients = ratingClientLabel(provider.rating_client_count)
 
   return (
     <TouchableOpacity
@@ -200,7 +193,7 @@ function RankRow({
         <View style={s.rowMeta}>
           <Ionicons name="star" size={11} color="#C8922A" />
           <Text style={s.rowRating}>{rating != null ? rating.toFixed(1) : 'New'}</Text>
-          {reviews > 0 && <Text style={s.rowReviews}>({formatCount(reviews)})</Text>}
+          {clients != null && <Text style={s.rowReviews}>· {clients}</Text>}
         </View>
       </View>
 
@@ -230,7 +223,11 @@ export default function TopRatedScreen() {
       const ar = a.average_rating ?? a.rating ?? 0
       const br = b.average_rating ?? b.rating ?? 0
       if (br !== ar) return br - ar
-      return (b.review_count ?? 0) - (a.review_count ?? 0)
+      // PD-091: break ties on how many CLIENTS back the rating, not how many
+      // reviews exist. Ranking on receipts would let one repeat client push a
+      // provider up the leaderboard — the rating is protected from that, and the
+      // position beside it must be too, or the gaming just moves one column over.
+      return (b.rating_client_count ?? 0) - (a.rating_client_count ?? 0)
     })
   }, [providers, activeCategoryId])
 

@@ -21,6 +21,9 @@ export interface Provider {
   rating: number | null
   average_rating: number | null
   review_count: number | null
+  // PD-091: how many distinct clients the rating averages. Selected in
+  // PUBLIC_PROVIDER_FIELDS and granted on providers_visible.
+  rating_client_count: number | null
   total_bookings: number | null
   repeat_client_rate: number | null
   follower_count: number | null

@@ -1845,8 +1845,28 @@ as locked decisions.
   post influence, and **no barter influence** — barter remains entirely outside reviews and
   reputation for beta. Review edit and delete remain impossible for every client role, which is
   what stops a write-observe-rewrite loop.
-- **Evidence.** `20261077000000`, `20261078000000`; `supabase/tests/reviews_phase2.test.sql`;
+- **Where the two numbers appear.** The obligation above is discharged, not merely stated:
+  the provider profile reads `Rating · N clients`; the search card and the Top Rated rows and
+  hero show `★ 4.8 · N clients` instead of a bare review total; and Top Rated **ranks ties on
+  client count, not review count**. That last one is not cosmetic — leaving the tiebreak on
+  receipts would have let one repeat client push a provider up the leaderboard even though the
+  rating itself was protected, which moves the gaming one column over rather than closing it.
+  Phrasing lives in `lib/reputationLabel.ts` so it is one decision in one place.
+- **What decides "latest" is the server's.** `provider_reviews.created_at` was client-settable,
+  which would have let one review be pinned as "latest" forever — uncorrectable, because reviews
+  can never be edited or deleted. It is now server-stamped and immutable (`20261079000000`).
+  This rule is only as trustworthy as its ordering key.
+- **A disputed review stops counting immediately.** Placing a booking `under_review` always hid
+  the row from reads, but the STORED aggregate every surface displays did not move until some
+  unrelated review landed. It now recomputes on the hold (`20261079000000`).
+- **Evidence.** `20261077000000`, `20261078000000`, `20261079000000`, `20261080000000`;
+  `supabase/tests/reviews_phase2.test.sql`; `__tests__/lib/reputationLabel.test.ts`;
+  `scripts/negotiation-concurrency.mjs` (`raceTwoReviewsOneProvider`);
   `docs/operations/REVIEWS_OPERATIONS.md`.
+- **Known limit, not solved here.** The rule counts distinct client *accounts*. Many accounts
+  each leaving one review is still unbounded — identity is what would bound it, and this session
+  does not take on third-party identity. Recorded in `REVIEWS_OPERATIONS.md` under what the
+  system does not promise.
 - **Status:** Locked; **implemented**, pending review of the Reviews Phase 2 branch.
 
 ---

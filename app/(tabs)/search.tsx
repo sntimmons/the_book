@@ -18,6 +18,7 @@ import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { ratingClientLabel } from '../../lib/reputationLabel'
 import {
   useProviderSearch,
   useContentSearch,
@@ -698,7 +699,12 @@ function ProviderCard({ provider: p }: { provider: Provider }) {
           <Text style={styles.cardRating}>
             {ratingValue != null ? ratingValue.toFixed(1) : 'New'}
           </Text>
-          <Text style={styles.cardReviews}>({p.review_count ?? 0})</Text>
+          {/* PD-091: the rating averages CLIENTS, so that is what explains it.
+              A bare review total here would imply more independent opinion
+              than the rating actually rests on. */}
+          {ratingClientLabel(p.rating_client_count) != null && (
+            <Text style={styles.cardReviews}>· {ratingClientLabel(p.rating_client_count)}</Text>
+          )}
         </View>
       </View>
     </TouchableOpacity>
