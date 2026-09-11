@@ -89,7 +89,7 @@ written and authoritative.
 - `architecture/` - `ARCHITECTURE.md`, `DATA_MODEL.md` (after F2)
 - `security/` - `SECURITY_MODEL.md`, `SECURITY_BACKLOG.md` (after F2)
 - `testing/` - `TESTING.md` (planned). The executable DB/security harness (B5B) is documented at `supabase/tests/README.md`.
-- `operations/` - `MIGRATION_LEDGER.md` and `REVIEWS_OPERATIONS.md` are **authoritative**; `RELEASE_PROCESS.md`, `ENVIRONMENTS.md` (planned). `REVIEWS_OPERATIONS.md` is the support note for reviews, reputation and dispute holds — the answer to *"where is my review?"*, *"why did my rating not move?"* and *"can you change my rating?"*, with the limits beside the behaviour.
+- `operations/` - `MIGRATION_LEDGER.md`, `REVIEWS_OPERATIONS.md` and `COMMUNITY_OPERATIONS.md` are **authoritative**; `RELEASE_PROCESS.md`, `ENVIRONMENTS.md` (planned). `REVIEWS_OPERATIONS.md` is the support note for reviews, reputation and dispute holds — the answer to *"where is my review?"*, *"why did my rating not move?"* and *"can you change my rating?"*, with the limits beside the behaviour. `COMMUNITY_OPERATIONS.md` is the support note for Community — exactly what a client and a provider can do, Open Today and shoutout rules, what an operator can and cannot do about a report, and what to say when the surface is quiet.
 - `decisions/` - Architecture Decision Records (ADR-0001+)
 - `design/` - design/UX references
 - `marketing/` - `MARKETING_MESSAGE_BANK.md` is **written** (indexed above). Any further

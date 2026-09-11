@@ -19,6 +19,7 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BLOCKED_PROFILE_COPY } from '@/lib/safety'
 import ProviderReviewsSection from './ProviderReviewsSection'
+import ProviderShoutouts from './ProviderShoutouts'
 
 export interface ProviderService {
   id?: string
@@ -550,6 +551,13 @@ export default function ProviderProfile({
             </View>
           </View>
         )}
+
+        {/* ── RECOMMENDED BY CLIENTS (community shoutouts) ──
+            ABOVE the reviews and visibly separate from them. A shoutout is a
+            recommendation, not transaction reputation: it needs no booking, it
+            is public immediately, and it moves no rating. Renders nothing when
+            there are none. */}
+        {!previewMode && providerId ? <ProviderShoutouts providerId={providerId} /> : null}
 
         {/* ── CLIENT REVIEWS (live, revealed only) ── */}
         {!previewMode && providerId ? (

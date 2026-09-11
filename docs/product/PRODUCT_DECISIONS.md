@@ -1999,6 +1999,97 @@ as locked decisions.
 
 ---
 
+### PD-095 — Community is a service community, for clients and providers
+- **Decided:** 2026-09-11
+- **Decision.** Community serves **both clients and providers**, and exists to help people find
+  providers, ask service questions, recommend providers, let providers say something useful about
+  their business, and let local demand meet local supply. It is **not** a generic status feed, not
+  lifestyle posting, not an influencer competition, not a follower-count economy and not an
+  engagement-ranking system. **Discover remains the primary marketplace entry; Community is a
+  secondary route surfaced from it, and does not replace it.** No sixth bottom tab.
+- **The blocker this removed.** `community_posts.provider_id` was `NOT NULL REFERENCES
+  providers(id)`, and both the INSERT policy and the read view required the caller to be in
+  `providers`. A client could not post, reply or read — not by policy choice but by **table
+  shape**. Community was provider-only in the strongest possible sense.
+- **The actor model.** `author_kind` is an **explicit** discriminator, not "provider_id is null".
+  The two agree today and drift the first time someone who owns a business posts as a person —
+  the ordinary case for a provider asking another provider for a recommendation. A provider post
+  is rewritten server-side to the caller's own **approved** provider, so a client cannot speak as a
+  business and a **deapproved or restricted provider cannot speak as one at all** (the eligibility
+  gate barter writes have taken since `20261048000000`, which Community never took).
+- **Intents, not a blank composer.** Clients post `looking_for`, `need_advice`, `who_does_this`,
+  `shoutout`; providers post `open_today`, `update`, `announcement`. **Answering a client question
+  is a REPLY**, not a fourth provider post type — an answer that is not attached to the question is
+  how a service community becomes a feed. The vocabulary is CHECK-constrained in the database and
+  paired with the actor, **not only typed in TypeScript**: the pre-existing `category` column is
+  free text with no constraint and the app mapped anything unrecognised to "Other", so a typo wrote
+  a value that rendered as Other forever with no error at any layer.
+- **What is deliberately NOT built.** No generic client post type. No client media or gallery
+  system — Reels is not reopened. No follow expansion. No trending, no ranking by engagement, no
+  operator content take-down (`is_active` is documented as reserved and unused rather than left
+  looking like a working mechanism).
+- **Content ranking, stated as a hard rule.** Social content engagement **does not influence
+  provider marketplace ranking**, and the community feed itself is ordered chronologically. A
+  provider who never posts is not worse off for it — there is no hidden tax for not posting.
+  `lib/discovery.ts` already enforced this with a type carrying no content field; this decision
+  does not weaken it, and `__tests__/guards/communityShape.test.ts` plus
+  `supabase/tests/community.test.sql` § 9 assert the separation from both sides.
+- **Evidence.** `20261088000000`, `20261089000000`, `20261090000000`, `20261091000000`;
+  `supabase/tests/community.test.sql`; `__tests__/guards/communityShape.test.ts`;
+  `docs/operations/COMMUNITY_OPERATIONS.md`.
+- **Status:** Locked; **implemented on `feat/community-reshape`**, pending merge.
+
+---
+
+### PD-096 — Open Today is a projection with a note on it, not a post
+- **Decided:** 2026-09-11
+- **Decision.** A provider's "Open Today" is **derived from published availability**, not asserted
+  by a post. The provider attaches a short, time-bounded NOTE to a day they are already published
+  as open; the write is **refused** (`PT430`) if `providers_open_today()` does not contain them,
+  `expires_at` is stamped by the **server** to the end of that day in their own timezone, and the
+  surfacing view requires **both** a live expiry **and** current membership of
+  `providers_open_today()`.
+- **Why not a post.** The availability tables are the truth about whether a provider is open.
+  A stored "I'm open today" post would be a second source of truth that can contradict the first,
+  and a permanent text post saying "open today" forever is exactly the failure this must not ship.
+  **Do not invent availability truth.**
+- **Three properties this buys.** It disappears from Open Today when the day ends; it disappears
+  when the provider blocks the date, *before* it expires; and **neither requires deleting history**
+  — the row stays, and the author can still see it in Business → Community marked as ended.
+- **What it still does not claim.** "Open today" means published hours for today, **not a free
+  slot**. Booked time is not subtracted anywhere in this product, and the badge says so. This is
+  the same under-claim the "Open today" discovery filter already makes (`20261044000000`).
+- **Evidence.** `20261088000000` (the CHECK making an expiry-less open_today unrepresentable, the
+  trigger, the view), `supabase/tests/community.test.sql` § 3.
+- **Status:** Locked; **implemented on `feat/community-reshape`**, pending merge.
+
+---
+
+### PD-097 — A shoutout is a recommendation, not a review
+- **Decided:** 2026-09-11
+- **Decision.** A client may **recommend** a provider in Community. A shoutout **must name a real,
+  approved provider** (not the author's own business, and not across a block), and it **changes
+  nothing in reviews or reputation**: no rating, no review count, no client count, no path into
+  `provider_reputation_canonical()`. **Review = transaction reputation. Shoutout = social
+  recommendation.** They appear in separate, separately-labelled sections of a provider's profile.
+- **Booking linkage is OPTIONAL, and this is the trade-off being surfaced rather than hidden.**
+  Requiring a completed booking would make shoutouts **dead on arrival in a 25-30 person beta** —
+  almost nobody has a completed booking with the provider they want to recommend yet — and it
+  would rebuild the review system's evidence bar on a surface that is explicitly not a review.
+  So linkage is optional; when it IS offered the **server verifies it** (the author's own
+  COMPLETED booking with that exact provider, `PT433` otherwise), and only then may a surface show
+  "Worked together". **Whether beta should require it is filed as OQ-081, not decided here.**
+- **What this does NOT do.** It does not create a second reputation system, it does not rank
+  providers, and it does not let a shoutout move a star. A provider cannot buy, farm or trade their
+  way up the marketplace with it, because the marketplace does not read it.
+- **Evidence.** `20261088000000` (the CHECK requiring a named provider, the trigger's approval /
+  self / block / booking checks); `supabase/tests/community.test.sql` § 2, which asserts the
+  reputation numbers are unchanged AND that the rule cannot structurally see community at all;
+  `components/ProviderShoutouts.tsx`.
+- **Status:** Locked; **implemented on `feat/community-reshape`**, pending merge.
+
+---
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

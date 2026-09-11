@@ -595,6 +595,60 @@ schema; the product rules around them do not. Each question below is separately 
 
 ---
 
+### OQ-081 — Should a Community shoutout require a completed booking?
+- **Area:** Community / reputation boundary
+- **Why it matters:** **PD-097** ships shoutouts with booking linkage **optional and verified when
+  offered**. The alternative — requiring the author's own completed booking with the provider they
+  name — is the stricter product and was not chosen, for a reason worth stating plainly: in a
+  **25-30 person beta almost nobody has a completed booking with the provider they want to
+  recommend**, so the requirement would make the feature unusable on the day it shipped. It would
+  also rebuild the review system's evidence bar on a surface that is deliberately not a review —
+  and if a shoutout needs a completed booking, the honest question is why it is not simply a review.
+- **What is at stake either way.** Optional linkage means an unbacked recommendation is possible,
+  including one written by a friend who has never booked. That is **not** a reputation attack — a
+  shoutout moves no rating, no review count and no marketplace position, and nothing in discovery
+  reads it — but it is a **trust signal a reader may over-weight**, which is why the "Worked
+  together" badge exists and appears **only** where the server verified a booking. Requiring
+  linkage would remove that ambiguity and most of the feature with it.
+- **What would change the answer:** evidence of astroturfing once the cohort is larger; a decision
+  to let shoutouts influence anything at all (which would make verification mandatory rather than
+  optional); or a reading that an unbacked recommendation on a provider's profile is itself a
+  misleading claim regardless of what it moves.
+- **This entry deliberately proposes nothing.** The requirement is a one-line change in
+  `enforce_community_post_integrity`; which line is right is a product decision about what a
+  recommendation is supposed to mean.
+- **Blocks:** nothing shipped. It blocks describing a shoutout to a user in any words stronger than
+  what the badge says.
+- **Status:** Open
+
+---
+
+### OQ-082 — What happens to Community content when an operator needs it gone?
+- **Area:** Community / moderation
+- **Why it matters:** Reporting a Community post creates a **real operator case** through the same
+  `public.reports` intake every other report uses (PD-088's bounds apply). What does not exist is
+  an **outcome**: `community_posts.is_active` has **no writer anywhere** — not the app, not an
+  operator RPC, not a migration — and the only removal path is the author's own delete. So an
+  operator can read a case, claim it, resolve it and note it, and **cannot take the content down**.
+  The column reads like a working take-down mechanism and is not one; it is now commented as
+  reserved and unused so the next reader meets that fact rather than discovering it by wiring a
+  button that fails silently through PostgREST row filtering.
+- **Why this matters more than it did last week:** the reportable surface just grew from ~30
+  providers to everyone with an account, and a client-facing community without a take-down path is
+  a different risk posture from a provider-only one.
+- **What an answer needs:** whether operator take-down is in scope pre-beta; if so, an operator-only
+  RPC with a case event recording who and why (the shape `20261050000000` already uses), and an
+  UPDATE policy that admits it without widening what an author may edit. **PD-068 already says the
+  operator is the only adjudicator** — this is about giving that adjudicator an action.
+- **This entry deliberately proposes nothing**, and specifically does not propose automatic or
+  volume-triggered removal, which would be exactly the participant-driven adjudication PD-068
+  forbids, wearing a threshold.
+- **Blocks:** nothing shipped. It blocks telling a reporter that content will be removed, and it
+  blocks any Operations copy implying a take-down outcome exists.
+- **Status:** Open
+
+---
+
 ## Closed — index
 
 **Closed questions are not moved.** An earlier version of this section said they would be, and
