@@ -14,6 +14,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { styles } from './me/meStyles'
 import { ComingSoonCluster, PreviewGroup } from './me/MeShared'
+import { ratingClientLabel } from '../lib/reputationLabel'
 
 function CommunityHubCard() {
   return (
@@ -98,6 +99,12 @@ interface ProviderMeData {
   photoUrl: string | null
   rating: number
   reviewCount: number
+  /**
+   * How many DISTINCT clients the rating rests on (PD-091). Not the review
+   * count, and the difference is the whole point — so the provider whose
+   * livelihood the number governs is not left to guess at it.
+   */
+  ratingClientCount: number
   completed: number
 }
 
@@ -113,7 +120,7 @@ export function ProviderMe() {
       const { data: prov } = await supabase
         .from('providers')
         .select(
-          'id, display_name, category_id, custom_category, neighborhood, profile_photo_url, average_rating, review_count, completed_count',
+          'id, display_name, category_id, custom_category, neighborhood, profile_photo_url, average_rating, review_count, rating_client_count, completed_count',
         )
         .eq('user_id', user.id)
         .maybeSingle()
@@ -139,6 +146,7 @@ export function ProviderMe() {
         photoUrl: prov?.profile_photo_url ?? null,
         rating: Number(prov?.average_rating ?? 0),
         reviewCount: Number(prov?.review_count ?? 0),
+        ratingClientCount: Number(prov?.rating_client_count ?? 0),
         completed: Number(prov?.completed_count ?? 0),
       })
     })()
@@ -219,7 +227,14 @@ export function ProviderMe() {
                 <Feather name="star" size={13} color="#C8922A" />
               )}
             </View>
-            <Text style={styles.statLabel}>Rating</Text>
+            {/* PD-091's display obligation, on the screen where it is asked
+                about most. "I have twenty five-star reviews and my rating only
+                counts three" is the support question this label answers before
+                it is asked: the rating counts CLIENTS, the column beside it
+                counts reviews, and they are not the same number. */}
+            <Text style={styles.statLabel}>
+              {ratingClientLabel(data?.ratingClientCount) ?? 'Rating'}
+            </Text>
           </View>
           <View style={styles.statDivider} />
           <View style={styles.statCol}>

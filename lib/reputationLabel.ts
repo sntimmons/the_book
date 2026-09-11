@@ -29,3 +29,31 @@ export function reviewTotalLabel(reviews: number | null | undefined): string | n
   if (n <= 0) return null
   return `${n} ${n === 1 ? 'review' : 'reviews'}`
 }
+
+/**
+ * The rating to DISPLAY for a provider, or null when they do not have one yet.
+ *
+ * `providers.average_rating` is `numeric(3,2) NOT NULL DEFAULT 0`, and since
+ * PD-094 `providers.rating` mirrors it — so both are **0, never null**, for a
+ * provider nobody has reviewed. Every surface that tested `!= null` therefore
+ * rendered `★ 0.0` for every new provider: a zero-star claim about someone who
+ * has simply not been rated. The provider's own profile said "New" on the same
+ * data, because it tested `> 0`.
+ *
+ * That mattered least when no rating was real. PD-094 makes them real, so a
+ * fabricated 0.0 now stands beside genuine 4.x values in Discover, search and
+ * the post-decline alternatives — where it reads as a verdict rather than as an
+ * absence.
+ *
+ * One helper, because "does this provider have a rating yet" is one question and
+ * six screens were answering it differently.
+ */
+export function displayRating(
+  p: { average_rating?: number | null; rating?: number | null } | null | undefined,
+): number | null {
+  const r = p?.average_rating ?? p?.rating
+  if (r == null) return null
+  const n = Number(r)
+  // 0 is "not rated", not "rated zero" — the scale starts at 1.
+  return Number.isFinite(n) && n > 0 ? n : null
+}

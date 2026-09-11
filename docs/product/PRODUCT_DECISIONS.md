@@ -1873,7 +1873,7 @@ as locked decisions.
   quietly settled, and both have since been ruled: **OQ-078** → **PD-092** ("latest" is the latest
   SERVICE, ordered on `bookings.completed_at`), **OQ-079** → **PD-094** (no manual or service_role
   rating pin; the stored rating must be reproducible from the review data).
-- **Status:** Locked; **implemented and merged**, as amended by PD-092, PD-093 and PD-094.
+- **Status:** Locked; **implemented on `feat/reviews-phase-2`**, pending merge, as amended by PD-092, PD-093 and PD-094.
 
 ---
 
@@ -1911,7 +1911,7 @@ as locked decisions.
   the rule, delegated to by `recompute_provider_rating_for` and `provider_reputation`);
   `supabase/tests/reviews_phase2.test.sql` §§ 5b, 5b-ii, 6b; `scripts/negotiation-concurrency.mjs`
   (`raceTwoReviewsOneProvider`, now asserting a deterministic rating).
-- **Status:** Locked; **implemented and merged**.
+- **Status:** Locked; **implemented on `feat/reviews-phase-2`**, pending merge.
 
 ---
 
@@ -1951,7 +1951,7 @@ as locked decisions.
   case, and today's outcome is that the review stays. Support must not imply removal is possible.
 - **Evidence.** `20261082000000`, `20261085000000`; `supabase/tests/reviews_phase2.test.sql`
   §§ 5c, 5d; `scripts/negotiation-concurrency.mjs`; `docs/operations/REVIEWS_OPERATIONS.md` § 6b.
-- **Status:** Locked; **implemented and merged**.
+- **Status:** Locked; **implemented on `feat/reviews-phase-2`**, pending merge.
 
 ---
 
@@ -1995,7 +1995,7 @@ as locked decisions.
 - **Evidence.** `20261084000000` (`reputation_is_derived()`, `providers.rating` mirror);
   `hooks/useProviders.ts` (search now ranks and filters on `average_rating`);
   `supabase/tests/reviews_phase2.test.sql` § 8; `docs/operations/REVIEWS_OPERATIONS.md` §§ 4, 7.
-- **Status:** Locked; **implemented and merged**.
+- **Status:** Locked; **implemented on `feat/reviews-phase-2`**, pending merge.
 
 ---
 

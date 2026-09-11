@@ -68,7 +68,13 @@ async function main() {
   const clientUser = await ensureUser(clientEmail, clientPassword)
   const providerUser = await ensureUser(providerEmail, providerPassword)
 
-  // Client row (id = auth uid). Service role bypasses RLS/triggers.
+  // Client row (id = auth uid). Service role bypasses RLS — it does NOT bypass
+  // triggers, and the difference now bites: `reputation_is_derived` (PD-094)
+  // refuses a `providers` INSERT or UPDATE carrying any reputation value the
+  // review data does not produce, for every role including this one. A seed that
+  // sets `rating`, `average_rating`, `review_count` or `rating_client_count` is
+  // rejected with `check_violation`. Leave them at their defaults; reviews are
+  // what move them.
   const { error: cErr } = await admin
     .from('clients')
     .upsert({ id: clientUser.id, name: 'Test Client' }, { onConflict: 'id' })

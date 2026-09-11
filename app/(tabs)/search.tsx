@@ -18,7 +18,7 @@ import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ratingClientLabel } from '../../lib/reputationLabel'
+import { ratingClientLabel, displayRating } from '../../lib/reputationLabel'
 import {
   useProviderSearch,
   useContentSearch,
@@ -448,7 +448,7 @@ function EmptyState({
             contentContainerStyle={styles.nearContent}
           >
             {nearbyTop.map((p) => {
-              const ratingValue = p.average_rating ?? p.rating
+              const ratingValue = displayRating(p)
               return (
                 <TouchableOpacity
                   key={p.id}
@@ -666,7 +666,7 @@ function ContentCell({ post, size }: { post: ContentSearchPost; size: number }) 
 }
 
 function ProviderCard({ provider: p }: { provider: Provider }) {
-  const ratingValue = p.average_rating ?? p.rating
+  const ratingValue = displayRating(p)
   return (
     <TouchableOpacity
       style={styles.providerCard}

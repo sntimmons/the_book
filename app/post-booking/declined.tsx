@@ -10,6 +10,7 @@ import { Feather } from '@expo/vector-icons'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '../../lib/supabase'
+import { displayRating } from '../../lib/reputationLabel'
 
 interface AlternativeProvider {
   id: string
@@ -78,10 +79,12 @@ export default function BookingDeclined() {
           id: p.id as string,
           name: (p.display_name as string) ?? 'Provider',
           meta: metaBits.join(' · '),
-          rating:
-            p.average_rating != null
-              ? Number(p.average_rating).toFixed(1)
-              : null,
+          // An unrated alternative must not be RECOMMENDED carrying ★ 0.0.
+          // average_rating is NOT NULL DEFAULT 0, so `!= null` was always true.
+          rating: (() => {
+            const r = displayRating(p as { average_rating?: number | null })
+            return r != null ? r.toFixed(1) : null
+          })(),
         }
       })
 

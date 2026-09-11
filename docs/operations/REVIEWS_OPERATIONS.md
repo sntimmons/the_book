@@ -134,10 +134,17 @@ action with an audit trail, not a support convenience.
 
 ## 6b. When a booking is placed under review
 
-**Filing a dispute never changes a rating.** This is the single most important
-sentence in this document for support, because the opposite would make the
-dispute button a weapon: either side could reach for it to delete a review they
-did not like, with nothing adjudicated.
+**First, the thing support gets wrong about this section: there is no dispute
+button.** `under_review` is set and cleared by an **operator only** — no screen,
+no API call and no support macro lets a client or a provider put a booking under
+review. What a user actually has is **Report an issue** on the booking, which
+creates a case in the operator queue. An operator may then decide to place the
+booking under review. Do not tell a user to "file a dispute"; tell them what
+Report an issue does.
+
+**And opening a hold never changes a rating.** That is the single most important
+sentence here, because the opposite would make the hold a weapon: whoever could
+trigger one could delete a review they did not like, with nothing adjudicated.
 
 What a hold actually does depends on whether the review was public yet:
 
@@ -146,10 +153,10 @@ What a hold actually does depends on whether the review was public yet:
 | The review had **not revealed yet** (still inside the blind window, no counterpart review) | It **stays held** and keeps counting for nothing. Nothing public is being retracted, because nothing was public. |
 | The review **was already revealed** | It **stays visible and keeps counting.** The rating does not move. |
 
-So a provider who asks *"my client filed a dispute — will my rating recover?"*
-should be told their rating never dropped, and a provider who asks *"I disputed
-this review, why is it still up?"* should be told that filing a dispute is not
-how a review is removed.
+So a provider who asks *"a client reported this booking — will my rating
+recover?"* should be told their rating never dropped, and a provider who asks
+*"I reported this review, why is it still up?"* should be told that reporting is
+not how a review comes down, because nothing is.
 
 **While a hold is open, no new review can be written on that booking** — neither
 side can add a statement to a contested record. That takes nothing away from
@@ -211,9 +218,10 @@ neither participant is told why.
 **What changed with the dispute ruling, operationally:** a hold is now a
 narrower instrument than it was. It can no longer be used — by anyone, including
 an operator — to take a published review down, so a complaint about an
-already-visible review **cannot be resolved by opening a hold**. It has to be
-resolved as a case, and the outcome today is that the review stays. Expect that
-conversation, and do not promise otherwise.
+already-visible review **cannot be resolved by opening a hold**. It arrives
+through **Report an issue** on the booking, becomes an operator case, and the
+outcome today is that the review stays. Expect that conversation, and do not
+promise otherwise.
 
 **Support must not say a review will be removed, reviewed for removal, or
 "looked into" in a way that implies removal.** No such outcome exists.

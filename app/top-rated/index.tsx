@@ -12,7 +12,7 @@ import { Ionicons } from '@expo/vector-icons'
 import { LinearGradient } from 'expo-linear-gradient'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { ratingClientLabel } from '../../lib/reputationLabel'
+import { ratingClientLabel, displayRating } from '../../lib/reputationLabel'
 import { useProviders, useCategories, Provider, Category } from '../../hooks/useProviders'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -27,7 +27,9 @@ function getInitials(name: string): string {
 }
 
 function ratingValue(p: Provider): number | null {
-  return p.average_rating ?? p.rating
+  // Unrated is NOT zero-rated. average_rating is NOT NULL DEFAULT 0, so this
+  // returns null rather than 0 and the row renders "New".
+  return displayRating(p)
 }
 
 function providerHood(p: Provider): string {

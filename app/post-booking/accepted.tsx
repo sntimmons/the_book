@@ -14,6 +14,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Calendar from 'expo-calendar'
 import { supabase } from '../../lib/supabase'
+import { displayRating } from '../../lib/reputationLabel'
 
 interface BookingRow {
   id: string
@@ -178,7 +179,8 @@ export default function BookingAccepted() {
         providerName: provider.display_name ?? 'Provider',
         providerCategory: categoryName,
         providerLocation: provider.neighborhood ?? provider.location ?? null,
-        rating: provider.average_rating,
+        // Unrated is not zero-rated: average_rating is NOT NULL DEFAULT 0.
+        rating: displayRating(provider),
         serviceName: booking.service_name ?? 'Service',
         servicePrice,
         serviceDurationMinutes,

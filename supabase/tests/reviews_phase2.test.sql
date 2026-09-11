@@ -978,6 +978,77 @@ select pg_temp.chk('reviews2', 'the recompute helper is not client-callable', 'f
   (has_function_privilege('authenticated', 'public.recompute_provider_rating_for(uuid)', 'EXECUTE')
    or has_function_privilege('anon', 'public.recompute_provider_rating_for(uuid)', 'EXECUTE'))::text);
 
+-- ══ 7b. THE PUBLIC LIST IS NOT THE READ POLICY ═══════════════════════════
+--
+-- `provider_reviews_read` is `auth.uid() = reviewer_user_id OR revealed` — right
+-- as a PRIVACY boundary, because a reviewer must be able to read back what they
+-- wrote. The app used it as the definition of the PUBLIC review list, so the
+-- author, inside their own blind window, opened the provider's profile and found
+-- their not-yet-public review listed and counted — one tap below the screen that
+-- had just promised it stays private.
+--
+-- Two different questions: *may I read this row* and *is this row public*.
+do $$
+declare
+  pu uuid := current_setting('b5b.r2_pu')::uuid;
+  c1 uuid := current_setting('b5b.r2_c1')::uuid;
+  pid uuid := current_setting('b5b.r2_pid')::uuid;
+  v_blind uuid; v_open uuid;
+begin
+  perform pg_temp.act_service();
+  delete from public.provider_reviews where provider_id = pid;
+  delete from public.client_reviews where reviewer_provider_id = pid;
+  delete from public.bookings where provider_id = pid;
+
+  v_open  := pg_temp.r2_booking(c1, 40);   -- window closed: public
+  v_blind := pg_temp.r2_booking(c1, 1);    -- window open, no counterpart: blind
+  insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating,
+                                      created_at)
+  values (v_open, pid, c1, 5, now() - interval '39 days');
+
+  perform pg_temp.act(c1);
+  insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating)
+  values (v_blind, pid, c1, 1);
+
+  -- The AUTHOR reads. The policy hands them both rows — correctly.
+  perform pg_temp.chk('reviews2',
+    'the author can still read back their own blind review', '2',
+    (select count(*)::text from public.provider_reviews where provider_id = pid));
+
+  -- The public list is only the revealed one, ASKED AS THE AUTHOR, because that
+  -- is the caller for whom the two answers differ.
+  perform pg_temp.chk('reviews2',
+    'but the public list contains only the revealed review, even for its author',
+    '1', (select count(*)::text from public.revealed_provider_review_ids(pid)));
+  perform pg_temp.chk('reviews2', 'and it is the revealed one', 'true',
+    (select exists (
+       select 1 from public.revealed_provider_review_ids(pid) as rid(review_id)
+        join public.provider_reviews pr on pr.id = rid.review_id
+       where pr.booking_id = v_open))::text);
+  perform pg_temp.chk('reviews2', 'and never the blind one', 'false',
+    (select exists (
+       select 1 from public.revealed_provider_review_ids(pid) as rid(review_id)
+        join public.provider_reviews pr on pr.id = rid.review_id
+       where pr.booking_id = v_blind))::text);
+
+  -- A stranger gets the same answer, which is what makes it a PUBLIC list rather
+  -- than a per-caller one.
+  perform pg_temp.act(pu);
+  perform pg_temp.chk('reviews2', 'a visitor sees the same public list', '1',
+    (select count(*)::text from public.revealed_provider_review_ids(pid)));
+end $$;
+
+-- It is the public door, so anon may open it; it discloses nothing the read
+-- policy does not already hand to anon.
+select pg_temp.chk('reviews2', 'the public-list function is callable by a visitor', 'true',
+  (has_function_privilege('anon', 'public.revealed_provider_review_ids(uuid)', 'EXECUTE')
+   and has_function_privilege('authenticated', 'public.revealed_provider_review_ids(uuid)', 'EXECUTE'))::text);
+select pg_temp.chk('reviews2', 'and it uses the same reveal predicate as the policy', '1',
+  (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'revealed_provider_review_ids'
+      and p.prosrc like '%provider_review_revealed%'));
+select pg_temp.act_service();
+
 -- ══ 8. THERE IS NO MANUAL RATING PIN ══════════════════════════════════════
 --
 -- OQ-079's ruling: *"Public rating must be derived from canonical eligible
