@@ -19,6 +19,7 @@ import { router, useLocalSearchParams, useFocusEffect } from 'expo-router'
 import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
+import { checkRateLimit } from '@/lib/rateLimit'
 import { cacheBustedPhoto } from '@/lib/image'
 import {
   fetchCommunityPost,
@@ -155,6 +156,15 @@ export default function CommunityThread() {
     if (!text || !user || !post || submitting) return
     if (kind === 'can_help' && !replyAsProvider) return
     setSubmitting(true)
+
+    // Replies are the contact surface here, and open to every account since the
+    // reshape. Same limiter as the composer, not an error — a wait.
+    const rl = await checkRateLimit(user.id, 'community_reply')
+    if (!rl.allowed) {
+      setSubmitting(false)
+      Alert.alert('Please wait', rl.message ?? 'Please wait before trying again.')
+      return
+    }
 
     const tempId = `temp-${Date.now()}`
     const asProvider = replyAsProvider
@@ -295,7 +305,13 @@ export default function CommunityThread() {
                   </TouchableOpacity>
                   <View style={styles.actionBtn}>
                     <Feather name="message-circle" size={17} color="rgba(240,232,213,0.5)" />
-                    <Text style={styles.actionText}>{post.replyCount}</Text>
+                    {/* THE COUNT THIS VIEWER CAN SEE, not the stored total.
+                        `community_posts.reply_count` counts every reply, while
+                        `community_replies_visible` hides replies from anyone this
+                        viewer is blocked with — so the two disagreed on the same
+                        screen at the same moment, and the difference told the
+                        viewer a hidden reply existed. */}
+                    <Text style={styles.actionText}>{replies.length}</Text>
                   </View>
                   <View style={{ flex: 1 }} />
                   <TouchableOpacity

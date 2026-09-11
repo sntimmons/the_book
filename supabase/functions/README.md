@@ -13,6 +13,7 @@ message on a `429`.
 |---|---|---|
 | `booking_create` | 3 / hour / client | `app/book/payment.tsx` |
 | `community_post` | 10 / hour / **user** | `app/community/compose.tsx` |
+| `community_reply` | 30 / hour / **user** | `app/community/[id].tsx` |
 
 **`community_post` is per USER, not per provider**, and always was — the bucket
 key is the caller's JWT subject. The table said "per provider" because Community

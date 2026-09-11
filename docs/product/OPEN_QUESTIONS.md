@@ -649,6 +649,18 @@ schema; the product rules around them do not. Each question below is separately 
 
 ---
 
+### OQ-083 — Does PD-090's accepted `_visible`-vs-base-table diff survive Community opening to everyone?
+- **Area:** Safety / privacy
+- **Why it matters:** **PD-090** (closing OQ-076, 2026-09-10) ruled that a determined person being able to diff a `_visible` view against its base table — and infer a block from the difference — is an **accepted limitation for the Houston closed beta**, and deliberately did NOT narrow the base-table read policies, because that is a large, high-risk change to the most transaction-sensitive authorization surface in the product traded against defeating a two-request diff run by someone who already suspects the answer. That reasoning stands on its own terms and is not reopened here.
+- **What changed underneath it.** The Community reshape did two things to the premise. First, the population who can run the diff went from **accounts holding a `providers` row (~30)** to **every account**, because the base-table read policy is now `using (true)` for any signed-in caller. Second, Community is the surface PD-089's hiding rule was written FOR — it is the harassment-adjacent, many-to-many content surface, not a transaction record. A blocked party can read `community_posts` and `community_replies` directly and see everything the view hides from them, including posts and replies by the person who blocked them.
+- **Also newly diffable through the same door, and worth naming separately:** deactivated posts (`is_active = false`) and **expired Open Today notes**, both of which the view filters and the base table does not.
+- **PD-090's own text says "Revisit on safety, abuse, privacy, legal or broader launch grounds."** This is that ground, and it is recorded rather than acted on — narrowing the base-table read for `community_posts`/`community_replies` is a much smaller change than the bookings/threads/reviews narrowing PD-090 declined, but it is still a rule change on a shipped surface and it is not this session's to make.
+- **What is NOT at stake:** nothing is exposed to a stranger. Both tables remain closed to `anon` twice over (a `TO authenticated` policy and a revoked grant), and no private provider column rides in. The ordinary app path reads only the views. The current posture is pinned by `supabase/tests/community.test.sql` § 7 so that narrowing it later is a visible change rather than a silent one.
+- **Blocks:** nothing shipped. It blocks describing Community's block filter to a user as concealment rather than as absence from their ordinary surfaces.
+- **Status:** Open
+
+---
+
 ## Closed — index
 
 **Closed questions are not moved.** An earlier version of this section said they would be, and

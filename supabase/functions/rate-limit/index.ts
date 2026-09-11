@@ -40,6 +40,13 @@ function json(body: unknown, status = 200) {
 const RATE_LIMITS: Record<string, { maxRequests: number; windowSeconds: number }> = {
   booking_create: { maxRequests: 3, windowSeconds: 3600 },
   community_post: { maxRequests: 10, windowSeconds: 3600 },
+  // Replies are where CONTACT happens in Community, and the reshape opened them
+  // to every account rather than to providers only — which is exactly why
+  // 20261089000000 added a block gate on the reply WRITE. A bounded ceiling
+  // belongs on the same path. Set above the post limit because answering several
+  // people's questions in an hour is the behaviour this surface wants, and well
+  // below anything that reads as a flood.
+  community_reply: { maxRequests: 30, windowSeconds: 3600 },
   barter_offer: { maxRequests: 5, windowSeconds: 86400 },
   message_send: { maxRequests: 30, windowSeconds: 60 },
 }

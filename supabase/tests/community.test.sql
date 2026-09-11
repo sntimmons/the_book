@@ -468,6 +468,205 @@ begin
     (select count(*)::text from public.community_posts where id = v_post));
 end $$;
 
+-- ══ 6b. A RECOMMENDATION MUST NOT MAKE ITS SUBJECT UNDELETABLE ══════════
+--
+-- `20261090000000` was written to stop exactly this, fixed the TRIGGER half and
+-- missed the CHECK half — `tagged_provider_id` was `ON DELETE SET NULL`, and the
+-- constraint saying a shoutout must name someone then failed on the set-null.
+-- So deleting a recommended provider still aborted, and **any client could make
+-- any approved provider permanently undeletable by posting one recommendation of
+-- them.** That is a right-to-erasure failure a stranger can inflict.
+--
+-- This is the assertion that was missing, and it is the one worth having: it
+-- tests the DELETE, not the trigger, so it catches every rule the referential
+-- action fires rather than the one that was being thought about.
+do $$
+declare
+  cu  uuid := current_setting('b5b.cm_cu')::uuid;
+  v_u uuid := gen_random_uuid();
+  v_p uuid;
+  v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (v_u);
+  insert into public.providers(user_id, display_name, username, is_approved)
+    values (v_u, 'Doomed', 'cmz_'||substr(v_u::text,1,8), true) returning id into v_p;
+
+  perform pg_temp.chk('community', 'a client can recommend them', 'NO ERROR',
+    pg_temp.cm_post(cu, 'client', 'shoutout', null, v_p));
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community', 'and the recommendation exists', '1',
+    (select count(*)::text from public.community_posts where tagged_provider_id = v_p));
+
+  -- THE PROVIDER ROW.
+  begin
+    delete from public.providers where id = v_p;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('community',
+    'deleting a recommended provider SUCCEEDS', 'NO ERROR', v_code);
+  perform pg_temp.chk('community', 'and the recommendation goes with them', '0',
+    (select count(*)::text from public.community_posts where tagged_provider_id = v_p));
+
+  -- AND THE ACCOUNT BEHIND THEM, which is the one erasure actually deletes.
+  insert into public.providers(user_id, display_name, username, is_approved)
+    values (v_u, 'Doomed Again', 'cmz2_'||substr(v_u::text,1,8), true) returning id into v_p;
+  perform pg_temp.chk('community', 'a second recommendation is posted', 'NO ERROR',
+    pg_temp.cm_post(cu, 'client', 'shoutout', null, v_p));
+  perform pg_temp.act_service();
+  begin
+    delete from auth.users where id = v_u;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('community',
+    'and deleting the ACCOUNT behind them succeeds too', 'NO ERROR', v_code);
+
+  -- A deleted BOOKING behaves the opposite way, and should: the recommendation
+  -- was never about the booking, so it survives and simply loses its badge.
+  perform pg_temp.chk('community', 'no orphan recommendation is left behind', '0',
+    (select count(*)::text from public.community_posts
+      where intent = 'shoutout' and tagged_provider_id is null));
+end $$;
+
+-- ══ 6c. THE REST OF THE SHOUTOUT GATE, AND THE COUNTERS ══════════════════
+do $$
+declare
+  cu  uuid := current_setting('b5b.cm_cu')::uuid;
+  pu2 uuid := current_setting('b5b.cm_pu2')::uuid;
+  pid2 uuid := current_setting('b5b.cm_pid2')::uuid;
+  v_post uuid; v_code text;
+begin
+  -- A BLOCK STOPS A RECOMMENDATION, in both directions. The one shoutout refusal
+  -- that had no test.
+  perform pg_temp.act_service();
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (cu, pu2);
+  perform pg_temp.chk('community', 'you cannot recommend someone you blocked', 'PT432',
+    pg_temp.cm_post(cu, 'client', 'shoutout', null, pid2));
+  perform pg_temp.act_service();
+  delete from public.user_blocks where blocker_user_id = cu and blocked_user_id = pu2;
+
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (pu2, cu);
+  perform pg_temp.chk('community', 'nor someone who blocked you', 'PT432',
+    pg_temp.cm_post(cu, 'client', 'shoutout', null, pid2));
+
+  -- AND A THIRD PARTY'S RECOMMENDATION OF THEM LEAVES YOUR FEED. A nameless card
+  -- that still offers the action is worse than no filter (20261066000000).
+  perform pg_temp.act_service();
+  delete from public.user_blocks where blocker_user_id = pu2 and blocked_user_id = cu;
+  perform pg_temp.chk('community', 'a third party recommends them', 'NO ERROR',
+    pg_temp.cm_post(current_setting('b5b.cm_bu')::uuid, 'client', 'shoutout', null, pid2));
+  perform pg_temp.act_service();
+  select id into v_post from public.community_posts
+   where tagged_provider_id = pid2 order by created_at desc limit 1;
+
+  perform pg_temp.act(cu);
+  perform pg_temp.chk('community', 'and an unblocked viewer sees it', '1',
+    (select count(*)::text from public.community_posts_visible where id = v_post));
+  perform pg_temp.act_service();
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (cu, pu2);
+  perform pg_temp.act(cu);
+  perform pg_temp.chk('community',
+    'a recommendation of someone you blocked leaves your feed entirely', '0',
+    (select count(*)::text from public.community_posts_visible where id = v_post));
+  perform pg_temp.act_service();
+  delete from public.user_blocks where blocker_user_id = cu and blocked_user_id = pu2;
+
+  -- THE AUTHOR CANNOT SET THEIR OWN ENGAGEMENT NUMBERS. Asserted on the STORED
+  -- VALUE: these are carried over from `old` rather than refused, so a client
+  -- round-tripping a row it read is not rejected for sending back what it was
+  -- given — the values it sends are simply not what is stored.
+  insert into public.community_posts(user_id, author_kind, intent, content)
+  values (cu, 'client', 'need_advice', 'countable') returning id into v_post;
+
+  -- The counters RAISE, because there is a true value to compare against and a
+  -- loud refusal is better than a silent correction.
+  perform pg_temp.act(cu);
+  begin
+    update public.community_posts set like_count = 999999 where id = v_post;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community', 'an author cannot invent their own like count',
+    '23514', v_code);
+  perform pg_temp.act(cu);
+  begin
+    update public.community_posts set reply_count = 4242 where id = v_post;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community', 'nor their reply count', '23514', v_code);
+  perform pg_temp.chk('community', 'and nothing was stored', '0',
+    (select (like_count + reply_count)::text from public.community_posts where id = v_post));
+
+  -- BUT A TRUE COUNT IS ACCEPTED FROM ANYONE, which is the whole point of
+  -- checking the value rather than the writer — it is what lets the counter
+  -- triggers work at all. Asserted through the real path: a like by someone else.
+  perform pg_temp.act(current_setting('b5b.cm_pu')::uuid);
+  insert into public.community_post_likes(user_id, post_id)
+  values (current_setting('b5b.cm_pu')::uuid, v_post);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community', 'while a TRUE count still lands', '1',
+    (select like_count::text from public.community_posts where id = v_post));
+
+  -- `is_active` has no true value to compare against, so it is pinned outright.
+  -- It is the reserved take-down field (OQ-082); an author who could flip it
+  -- would undo a take-down the moment one is built.
+  perform pg_temp.act(cu);
+  update public.community_posts set is_active = false where id = v_post;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community', 'nor deactivate — or reactivate — their own post',
+    'true', (select is_active::text from public.community_posts where id = v_post));
+
+  -- And an Open Today note cannot outlive the day even by a declared timezone.
+  perform pg_temp.chk('community',
+    'no open_today note may expire more than a day out', '0',
+    (select count(*)::text from public.community_posts
+      where intent = 'open_today' and expires_at > now() + interval '24 hours'));
+end $$;
+
+-- ══ 6d. ONE PROVIDER CANNOT CLOSE THE FEED FOR EVERYONE ══════════════════
+--
+-- `providers_open_today()` runs `now() at time zone <the provider's own text>`
+-- over every provider's availability, and the reshape put that function in the
+-- WHERE clause of the feed view. An unrecognised zone raises 22023 and aborts the
+-- whole query — so one provider's own-row write took down the feed, every
+-- thread, the Discover module and provider-profile shoutouts, for every user.
+do $$
+declare
+  pu  uuid := current_setting('b5b.cm_pu')::uuid;
+  pid uuid := current_setting('b5b.cm_pid')::uuid;
+  v_code text; v_n integer;
+begin
+  perform pg_temp.act(pu);
+  begin
+    update public.provider_availability set timezone = 'not-a-zone' where provider_id = pid;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community',
+    'a provider cannot store a timezone PostgreSQL does not know', '23514', v_code);
+  perform pg_temp.chk('community', 'and the stored value is untouched', '0',
+    (select count(*)::text from public.provider_availability
+      where provider_id = pid and timezone = 'not-a-zone'));
+
+  -- The feed still reads. Asserted AS A READ, not as an absence of a constraint:
+  -- the failure mode was a query that raised, and only running one proves it does
+  -- not. Empty is a fine answer; an exception is not.
+  perform pg_temp.act(pu);
+  begin
+    select count(*) into v_n from public.community_posts_visible;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('community', 'and the community feed still reads', 'NO ERROR', v_code);
+end $$;
+
 -- ══ 7. DIRECT-TABLE AND ANON BYPASS ══════════════════════════════════════
 select pg_temp.chk('community', 'a signed-out visitor reads no community post', 'false',
   has_table_privilege('anon', 'public.community_posts', 'SELECT')::text);
@@ -487,6 +686,37 @@ select pg_temp.chk('community', 'the integrity functions are not client-callable
   (has_function_privilege('authenticated', 'public.enforce_community_post_integrity()', 'EXECUTE')
    or has_function_privilege('authenticated', 'public.enforce_community_reply_integrity()', 'EXECUTE')
    or has_function_privilege('anon', 'public.enforce_community_post_integrity()', 'EXECUTE'))::text);
+
+-- THE BASE-TABLE POSTURE, PINNED AS WHAT IT IS. The PD-089 block filter for
+-- Community lives in the VIEWS; the base tables read `using (true)` for any
+-- signed-in caller, so a blocked party CAN diff the two. That is not an
+-- oversight: **PD-090** ruled the `_visible`-vs-base diff an accepted limitation
+-- for the Houston closed beta and deliberately did not narrow the base read
+-- policies. What changed with this reshape is WHO can do it — from ~30 provider
+-- accounts to every account — which is grounds for PD-090's own revisit clause,
+-- filed rather than acted on. It is asserted here so the posture is deliberate
+-- rather than incidental, and so a future narrowing is a visible change.
+select pg_temp.chk('community', 'the base-table read is open to any signed-in caller (PD-090)',
+  'true',
+  (select count(*) > 0 from pg_policies
+    where schemaname = 'public' and tablename = 'community_posts'
+      and cmd = 'SELECT' and qual = 'true')::text);
+
+-- The legacy free-text column is bounded, even though nothing writes it.
+select pg_temp.chk('community', 'the legacy category column cannot store a megabyte', 'true',
+  (select count(*) > 0 from pg_constraint
+    where conrelid = 'public.community_posts'::regclass
+      and conname = 'community_posts_category_check')::text);
+
+-- OWNERSHIP IS THE SECURITY CONTEXT of a definer view — it is what lets the view
+-- read `user_blocks` rows the caller cannot. Pinned alongside the flag, because
+-- the flag alone says the view is definer without saying whose definer.
+select pg_temp.chk('community', 'and both are owned by the same role as providers_visible',
+  '2',
+  (select count(*)::text from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public'
+      and c.relname in ('community_posts_visible', 'community_replies_visible')
+      and c.relowner = (select relowner from pg_class where oid = 'public.providers_visible'::regclass)));
 
 -- Both views must stay DEFINER: an invoker view would re-evaluate the base
 -- policy as the caller and lose the block filter's meaning.
