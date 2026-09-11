@@ -199,7 +199,18 @@ export default function ClientProfileSetup() {
             //
             // No replacement question was invented to preserve the count: client
             // onboarding is two steps now, and says so.
-            router.push('/onboarding/client/uploads')
+            // STRAIGHT TO PREVIEW. The step that used to sit between them —
+            // "Show them what you're about", nine photo slots and two reel
+            // slots — was ENTIRELY placeholder: every control raised "Coming
+            // soon" and there is no client media system to reach. It promised a
+            // client a profile feature the product does not have, during the one
+            // flow where they are deciding what this product is.
+            //
+            // Client onboarding is still TWO STEPS (PD-081): this one, which
+            // collects the real profile basics and the avatar, and the preview,
+            // which is where the profile is actually created. Nothing was
+            // invented to replace the removed step, which PD-081 also forbids.
+            router.push('/onboarding/client/preview')
           }}
         >
           <Text style={styles.continueBtnText}>Continue</Text>

@@ -34,6 +34,8 @@ interface BookingState {
   // has no contract, so no signature is written.
   contractId: string | null
   contractSigned: boolean
+  /** The EXACT contract version the client accepted, bound at acceptance time. */
+  contractVersionId: string | null
   // Correction 3 items J and K. The booking row is created as a DRAFT before the
   // contract step and carried through signing and submission, so the whole flow
   // refers to ONE request. Holding the id here is what makes the contract screen
@@ -57,7 +59,7 @@ interface BookingState {
   setBookingMessage: (msg: string) => void
   setBookingPhotos: (photos: string[]) => void
   setAgreedToPolicy: (agreed: boolean) => void
-  setContractSigned: (contractId: string) => void
+  setContractSigned: (contractId: string, versionId: string | null) => void
   setDraftBookingId: (bookingId: string | null) => void
   setVerificationNoticeAcknowledged: (acknowledged: boolean) => void
   reset: () => void
@@ -77,6 +79,7 @@ export const useBookingStore = create<BookingState>((set) => ({
   agreedToPolicy: false,
   contractId: null,
   contractSigned: false,
+  contractVersionId: null,
   draftBookingId: null,
   verificationNoticeAcknowledged: false,
 
@@ -102,7 +105,8 @@ export const useBookingStore = create<BookingState>((set) => ({
   setBookingMessage: (msg) => set({ bookingMessage: msg }),
   setBookingPhotos: (photos) => set({ bookingPhotos: photos }),
   setAgreedToPolicy: (agreed) => set({ agreedToPolicy: agreed }),
-  setContractSigned: (contractId) => set({ contractId, contractSigned: true }),
+  setContractSigned: (contractId, versionId) =>
+    set({ contractId, contractSigned: true, contractVersionId: versionId }),
   setDraftBookingId: (bookingId) => set({ draftBookingId: bookingId }),
   setVerificationNoticeAcknowledged: (acknowledged) =>
     set({ verificationNoticeAcknowledged: acknowledged }),
@@ -120,6 +124,7 @@ export const useBookingStore = create<BookingState>((set) => ({
     agreedToPolicy: false,
     contractId: null,
     contractSigned: false,
+    contractVersionId: null,
     draftBookingId: null,
     verificationNoticeAcknowledged: false,
   }),

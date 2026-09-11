@@ -287,12 +287,27 @@ describe('client onboarding does not collect payment', () => {
   })
 
   it('numbers its steps over the two that exist', () => {
-    for (const rel of [
-      'app/onboarding/client/index.tsx',
-      'app/onboarding/client/uploads.tsx',
-    ]) {
-      expect(code(rel)).toMatch(/Step \d of 2/)
-      expect(code(rel)).not.toMatch(/of 3|of 4/)
+    // PD-081 locks client onboarding at TWO steps. The two are now the details
+    // screen and the preview, which is where the profile is actually created.
+    //
+    // `uploads.tsx` used to be the second and has been REMOVED: it was entirely
+    // placeholder — nine photo slots and two reel slots, every one raising
+    // "Coming soon" — promising a client media system the product does not have,
+    // in the flow where a client decides what this product is. Nothing was
+    // invented to replace it, which PD-081 also forbids.
+    expect(code('app/onboarding/client/index.tsx')).toMatch(/Step \d of 2/)
+    expect(code('app/onboarding/client/index.tsx')).not.toMatch(/of 3|of 4/)
+  })
+
+  it('has no client media placeholder left in onboarding', () => {
+    // The removed step is gone, not hidden. A surviving file or route would let
+    // it come back by accident, and a "Coming soon" media control in onboarding
+    // is a promise the product cannot keep.
+    expect(existsSync('app/onboarding/client/uploads.tsx')).toBe(false)
+    const idx = code('app/onboarding/client/index.tsx')
+    expect(idx).not.toMatch(/client\/uploads/)
+    for (const claim of ['Add reel', 'Add photo', 'Up to 60 seconds']) {
+      expect([claim, idx.includes(claim)]).toEqual([claim, false])
     }
   })
 
@@ -329,5 +344,62 @@ describe('no surface treats payment completion as platform-held accountability',
 
   it('the provider view of a client shows no payment stat', () => {
     expect(code('app/bookings/request/[id].tsx')).not.toMatch(/dimStats\.paymentCompleted/)
+  })
+})
+
+// ── BOOKING & ONBOARDING INTEGRITY ────────────────────────────────────────
+//
+// Each of these pins a claim that was live in the product and is now gone. A
+// guard is the only thing that stops a removed claim coming back the next time
+// someone writes marketing copy into a flow.
+
+describe('the booking flow does not say a thing happened before it happened', () => {
+  it('only the real submit control says a request is being sent', () => {
+    // The POLICY screen said "Send Request" and navigated to the contract. Two
+    // steps still stood between there and sending, so anyone who stopped after
+    // tapping it believed they had booked.
+    const policy = code('app/book/policy.tsx')
+    expect(policy).not.toMatch(/>\s*Send Request\s*</)
+    expect(code('app/book/payment.tsx')).toMatch(/Send Booking Request/)
+  })
+})
+
+describe('contract acceptance claims only what it can prove', () => {
+  it('the fake signature canvas is gone from the flow', () => {
+    // It rendered "Signature canvas — requires development build" beside a
+    // button labelled "Sign" and produced a null signature_url: a control that
+    // looked like evidence and was not.
+    const c = code('app/book/contract.tsx')
+    expect(c).not.toMatch(/requires development build/)
+    expect(c).not.toMatch(/Signature canvas/)
+  })
+
+  it('claims durable acceptance, not a legal signature', () => {
+    const c = code('app/book/contract.tsx')
+    for (const claim of ['legally binding', 'e-signature', 'notarized', 'witnessed signature',
+      'legally enforceable']) {
+      expect([claim, c.toLowerCase().includes(claim)]).toEqual([claim, false])
+    }
+    // And it says what it DOES record, including the limit. Whitespace is
+    // normalised because the copy wraps across source lines — a guard that only
+    // matches an unwrapped string fails the moment someone reformats the file,
+    // which teaches people to delete the guard.
+    const flat = c.replace(/\s+/g, ' ')
+    expect(flat).toMatch(/which version you accepted/)
+    expect(flat).toMatch(/not a witnessed or legally certified signature/)
+  })
+})
+
+describe('provider onboarding makes no unsupported claim', () => {
+  it('the invented reels statistic is gone', () => {
+    // "Providers with reels get 3x more profile views" had no product data
+    // behind it, and was being used to push a provider into an OPTIONAL step.
+    const r = code('app/onboarding/provider/reels.tsx')
+    expect(r).not.toMatch(/3x/)
+    expect(r).not.toMatch(/more profile views/)
+  })
+
+  it('and says plainly that media is optional', () => {
+    expect(code('app/onboarding/provider/reels.tsx')).toMatch(/optional/i)
   })
 })

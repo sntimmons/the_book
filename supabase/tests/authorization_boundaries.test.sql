@@ -474,23 +474,32 @@ select pg_temp.chk('authz', 'the signature UPDATE policy now carries a WITH CHEC
 select pg_temp.act_service();
 select set_config('b5b.ctr',
   (select id::text from public.contracts where provider_id = current_setting('b5b.pid')::uuid), true);
+-- The contract's version 1, resolved PRIVILEGED for the same reason the contract
+-- id is: `contract_versions` is readable by the contract's owner or by a client
+-- who already accepted that version, so a client who has not signed yet cannot
+-- look it up — correctly. In the app they never need to: `contract_for_booking`
+-- is SECURITY DEFINER and hands the version id back with the document. Here,
+-- resolving it as service_role is the equivalent.
+select set_config('b5b.ctrv',
+  (select id::text from public.contract_versions
+    where contract_id = current_setting('b5b.ctr')::uuid and version_no = 1), true);
 
 -- The legitimate path must still work. A harness that only proved denial would
 -- pass on a signing flow nobody can complete — which is how this slice's own
 -- Finding 3 stayed hidden.
 select pg_temp.act(current_setting('b5b.cu')::uuid);
 select pg_temp.chk_allowed('authz', 'the booking''s own client CAN sign the governing contract',
-  format('insert into public.contract_signatures(contract_id, booking_id, client_user_id, signature_url, signed_at, status)
-          values (%L, %L, %L, null, now(), ''signed'')',
-         current_setting('b5b.ctr'), current_setting('b5b.b_pend'), current_setting('b5b.cu')));
+  format('insert into public.contract_signatures(contract_id, contract_version_id, booking_id, client_user_id, signature_url, signed_at, status)
+          values (%L, %L, %L, %L, null, now(), ''signed'')',
+         current_setting('b5b.ctr'), current_setting('b5b.ctrv'), current_setting('b5b.b_pend'), current_setting('b5b.cu')));
 
 -- The reproduced attack, from the outsider's seat: their own booking would be the
 -- realistic vector, but even the blunt form — someone else's booking — must fail.
 select pg_temp.act(current_setting('b5b.ou')::uuid);
 select pg_temp.chk_blocked('authz', 'a stranger cannot sign someone else''s booking',
-  format('insert into public.contract_signatures(contract_id, booking_id, client_user_id, signature_url, signed_at, status)
-          values (%L, %L, %L, null, now(), ''signed'')',
-         current_setting('b5b.ctr'), current_setting('b5b.b_elig'), current_setting('b5b.ou')),
+  format('insert into public.contract_signatures(contract_id, contract_version_id, booking_id, client_user_id, signature_url, signed_at, status)
+          values (%L, %L, %L, %L, null, now(), ''signed'')',
+         current_setting('b5b.ctr'), current_setting('b5b.ctrv'), current_setting('b5b.b_elig'), current_setting('b5b.ou')),
   'row-level security');
 
 -- THE ACTUAL ATTACK THE SECURITY REVIEW TRACED: the forger uses a booking they
@@ -508,9 +517,9 @@ begin
 end $$;
 select pg_temp.act(current_setting('b5b.ou')::uuid);
 select pg_temp.chk_blocked('authz', 'a forger cannot pair their OWN booking with a stranger''s contract',
-  format('insert into public.contract_signatures(contract_id, booking_id, client_user_id, signature_url, signed_at, status)
-          values (%L, %L, %L, null, now(), ''signed'')',
-         current_setting('b5b.ctr'), current_setting('b5b.b_ou'), current_setting('b5b.ou')),
+  format('insert into public.contract_signatures(contract_id, contract_version_id, booking_id, client_user_id, signature_url, signed_at, status)
+          values (%L, %L, %L, %L, null, now(), ''signed'')',
+         current_setting('b5b.ctr'), current_setting('b5b.ctrv'), current_setting('b5b.b_ou'), current_setting('b5b.ou')),
   'row-level security');
 
 -- And the two downstream reads the forgery would have unlocked stay shut. This is
@@ -597,10 +606,32 @@ select pg_temp.chk('authz', 'anon holds nothing on any sequence in public', '0',
 
 -- Binding the booking alone is not enough: the contract must govern it. Here the
 -- caller owns the booking but names a contract belonging to a different provider.
+-- A REAL foreign contract, with a REAL version, so RLS is the only thing left to
+-- refuse it. The earlier form named `gen_random_uuid()` as the contract — which a
+-- foreign key would have stopped regardless, and which since 20261070000000 is
+-- stopped even earlier by the "name a version" rule. Neither refusal proves what
+-- this assertion is named for, so the fixture is made legitimate in every respect
+-- except the one under test.
+do $$
+declare v_fp uuid; v_fu uuid := gen_random_uuid(); v_fc uuid;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (v_fu);
+  insert into public.providers(user_id, display_name, username)
+    values (v_fu, 'Authz Foreign', 'azf_'||substr(v_fu::text,1,8)) returning id into v_fp;
+  insert into public.contracts(provider_id, user_id, title, body, contract_type)
+    values (v_fp, v_fu, 'Other Agreement', 'not yours', 'text') returning id into v_fc;
+  perform set_config('b5b.fctr', v_fc::text, true);
+  perform set_config('b5b.fctrv',
+    (select id::text from public.contract_versions
+      where contract_id = v_fc and version_no = 1), true);
+end $$;
+
 select pg_temp.act(current_setting('b5b.cu')::uuid);
 select pg_temp.chk_blocked('authz', 'a client cannot sign a contract that does not govern their booking',
-  format('insert into public.contract_signatures(contract_id, booking_id, client_user_id, signature_url, signed_at, status)
-          values (gen_random_uuid(), %L, %L, null, now(), ''signed'')',
+  format('insert into public.contract_signatures(contract_id, contract_version_id, booking_id, client_user_id, signature_url, signed_at, status)
+          values (%L, %L, %L, %L, null, now(), ''signed'')',
+         current_setting('b5b.fctr'), current_setting('b5b.fctrv'),
          current_setting('b5b.b_elig'), current_setting('b5b.cu')),
   'row-level security');
 

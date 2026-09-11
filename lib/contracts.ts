@@ -25,6 +25,15 @@ export interface Contract {
   isActive: boolean
   createdAt: string
   updatedAt: string | null
+  /**
+   * The version whose content this object is carrying.
+   *
+   * Set only by `contract_for_booking`, which is the booking-time read. It is
+   * what the acceptance BINDS to, so the record names the document the client
+   * actually saw rather than whatever is newest when the row is written.
+   */
+  currentVersionId?: string | null
+  currentVersionNo?: number | null
 }
 
 export interface ContractSignature {
@@ -60,6 +69,8 @@ interface RawContractRow {
   body: string
   contract_type: ContractType | null
   pdf_url: string | null
+  current_version_id?: string | null
+  current_version_no?: number | null
   pdf_filename: string | null
   is_active: boolean
   created_at: string
@@ -89,6 +100,8 @@ function mapContract(r: RawContractRow): Contract {
     body: r.body,
     contractType: r.contract_type === 'pdf' ? 'pdf' : 'text',
     pdfUrl: r.pdf_url,
+    currentVersionId: (r.current_version_id as string | null) ?? null,
+    currentVersionNo: (r.current_version_no as number | null) ?? null,
     pdfFilename: r.pdf_filename,
     isActive: r.is_active,
     createdAt: r.created_at,

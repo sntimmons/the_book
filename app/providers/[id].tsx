@@ -44,6 +44,10 @@ export default function ProviderProfilePage() {
   // Session 8. `null` = not known yet, and every control that depends on it
   // reads `=== true` so an unknown never hides a live provider's Book Now.
   const [blockedByMe, setBlockedByMe] = useState<boolean | null>(null)
+  // Requirement G: a provider presented as bookable must actually be bookable.
+  // `null` until known, and `=== false` is the only value that withdraws the
+  // control — an unread answer must never hide a live provider's Book Now.
+  const [bookable, setBookable] = useState<boolean | null>(null)
   const [reportOpen, setReportOpen] = useState(false)
   const [reporting, setReporting] = useState(false)
 
@@ -206,6 +210,19 @@ export default function ProviderProfilePage() {
       setReelVideos(
         rows.filter((r) => r.media_type === 'video').map((r) => r.media_url),
       )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [provider?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    const pid = provider?.id
+    if (!pid) return
+    ;(async () => {
+      const { data, error } = await supabase.rpc('provider_is_bookable', { p_provider_id: pid })
+      if (!cancelled) setBookable(error ? null : data === true)
     })()
     return () => {
       cancelled = true
@@ -391,7 +408,12 @@ export default function ProviderProfilePage() {
       // visible — discovery already filters them out. Without this the client
       // would be offered Book Now and only discover the refusal at the end of
       // the flow, as a database error.
-      acceptingBookings={provider.is_approved !== false}
+      // TWO CAUSES, ONE WITHDRAWAL. De-approval (item H) and "no availability
+      // configured" (requirement G) both mean the same thing to a client: this
+      // provider cannot take a booking right now. The profile, portfolio,
+      // reviews, message control and every existing booking stay exactly as they
+      // are in both cases — only the control that would lead nowhere is removed.
+      acceptingBookings={provider.is_approved !== false && bookable !== false}
       // QA-JOURNEY-002. A block must withdraw the act it exists to prevent.
       // Before this, Book Now stayed on the bar of someone you had blocked and
       // the refusal arrived at the END of the booking flow as a raw PT427.
