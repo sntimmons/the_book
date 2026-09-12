@@ -307,16 +307,11 @@ An operator can place a **hold on one class** of a specific request
 
 ## 7. Known limitations — read these before answering anyone
 
-- **There is no scheduler, and there is now a worker.** The two are different
-  things and the distinction is the whole of **OQ-088**. `scripts/account-deletion-worker.mjs`
-  does the job in one bounded command — sweep, drain the media queue through the
-  Storage API, confirm each delete, sweep again, report what is late — but
-  **nothing invokes it on a clock**. A person still has to run it (§ 9).
-  **Returned as a PRE-EXTERNAL-BETA BLOCKER**: a deletion request past its
-  promised completion date with no worker execution is not acceptable beta
-  behaviour, and choosing what runs the worker (`pg_cron`+`pg_net`, Supabase
-  scheduled functions, scheduled CI, or an external host) is an operational
-  decision, not an engineering one.
+- **Deletion finalisation is AUTOMATIC (PD-108).** `pg_cron` runs the worker
+  daily at 04:17 UTC. Nobody has to remember anything, and **OQ-088 is closed.**
+  What remains true is that the timer has never been *watched* firing — every
+  link in the chain it triggers has been proven end to end, which is a different
+  claim (§ 9).
 - **There is no email or push confirmation**, of the request or of completion.
   The app records the request durably and shows its status on the screen, and the
   screen says so in as many words. **Never tell a user a notification was sent.**
@@ -363,9 +358,116 @@ not a substitute for a policy document.
 
 ---
 
-## 9. New human operational obligation
+## 9. The automatic path (PD-108)
 
-**Someone has to run the worker.** One command, on a regular cadence:
+```
+pg_cron  →  public.invoke_account_deletion_worker()  →  pg_net
+         →  the account-deletion-worker Edge Function
+         →  the erasure engine and the Storage API
+         →  public.account_deletion_worker_runs
+```
+
+| | |
+|---|---|
+| **Scheduler** | `pg_cron`, job `account-deletion-worker` |
+| **Cadence** | daily, **04:17 UTC** — read it from `cron.job`, never from a comment |
+| **Changing it** | `select public.set_account_deletion_worker_schedule('<cron expr>');` as `service_role`. The only supported way. |
+| **What runs** | the `account-deletion-worker` Edge Function, which runs the same sequence as the CLI fallback, from the same file |
+| **Owner** | The Book operator/founder for the closed beta. **The execution is automatic; the owner watches it, they do not drive it.** |
+
+**A successful run** finalises every request past its grace date, deletes every
+queued storage object through the Storage API, confirms each one, sweeps again so
+`media_purge` can pass, and records a row in `account_deletion_worker_runs` with
+`ok = true` and `overdue_count = 0`.
+
+**What the promise to a user is.** A DATE, not a minute. A deletion scheduled for
+the 12th completes on the 12th's run. **Never quote a user a time of day**, and
+never say they will be emailed — no notification of any kind is sent, then or now.
+
+---
+
+## 10. When it fails — how Stephen checks
+
+**The one query that answers "did promised deletion work fail?"**
+
+```sql
+select * from public.overdue_account_deletion_work();
+```
+
+Empty is clean. Any row is a request past its grace date that nothing finalised,
+or a step that is failed, held or past due — each with its `last_error`.
+
+**Did it even run?**
+
+```sql
+select ran_at, source, ok, media_examined, media_deleted, media_failed, overdue_count
+  from public.account_deletion_worker_runs
+ order by ran_at desc limit 14;
+```
+
+A gap in `ran_at` means the scheduler did not fire — a different problem from a
+run that fired and failed, and the two need different fixes. `source` says
+whether it was the scheduler (`scheduled`) or a person (`manual`).
+
+**Why did the call itself fail?** `pg_net` records the HTTP result:
+
+```sql
+select id, status_code, error_msg, left(content, 500)
+  from net._http_response order by id desc limit 5;
+```
+
+A non-2xx `status_code` is the function telling you work is late — the body
+carries the counts. `error_msg` with no status means the call never arrived.
+
+**Is the job still scheduled?**
+
+```sql
+select jobname, schedule, active from cron.job;
+```
+
+**A non-clean result means somebody is waiting.** Someone asked to be deleted and
+has been told a date. Work the failures, then run the fallback until the overdue
+query is empty.
+
+---
+
+## 11. Manual fallback
+
+**Use it when the automatic path is failing, when a backlog must be drained now
+rather than tonight, or when you are diagnosing a run that did not come out
+clean. It is not the primary mechanism.**
+
+```bash
+cd /Users/stephentimmons/the-book-app
+set -a; . ./.env.tooling.local; set +a
+node scripts/account-deletion-worker.mjs            # --dry-run to look first
+```
+
+- **Environment:** `TEST_SUPABASE_URL` and `TEST_SUPABASE_SERVICE_ROLE_KEY` from
+  `.env.tooling.local` (never `EXPO_PUBLIC_*`, never committed).
+- **Production guard:** the script parses the project ref out of the URL and
+  **refuses to run against production**, and refuses any URL whose ref it cannot
+  positively identify. It is not a warning; it throws before connecting.
+- **Bounded:** `--max=<n>` caps how many objects one run deletes (default 200).
+- **Exit code:** non-zero whenever anything is late, any object failed to delete,
+  or any step errored. A clean run exits 0 and says so.
+
+**The recovery sequence when automation has failed:**
+
+1. Run the worker.
+2. Read `overdue_account_deletion_work()`.
+3. Resolve any media failures — `last_error` on `pending_media_deletions` says
+   what the Storage API refused.
+4. Re-run until the overdue query is empty.
+5. **Then find out why the scheduler did not.** A drained backlog with an
+   unexplained scheduler is the same outage tomorrow.
+
+---
+
+## 12. Standing operational obligations
+
+**Nobody has to run the worker.** It runs itself — see § 9. What follows is the
+FALLBACK, for when it does not.
 
 ```bash
 set -a; . ./.env.tooling.local; set +a
@@ -387,6 +489,10 @@ its grace date nothing finalised, or a step that is failed, held or past due.
 never ran is an account that was promised deletion and did not get it. The
 underlying calls are still available directly — `select public.sweep_account_deletions();`
 as `service_role` — if the worker cannot be run for some reason.
+
+**Someone has to watch the run log.** Automation removed the obligation to RUN
+the worker; it did not remove the obligation to notice that it stopped working.
+§ 10 is the whole of it.
 
 **Someone has to work held classes.** A hold is a decision to keep something; it
 needs revisiting and releasing, or it becomes an indefinite retention nobody

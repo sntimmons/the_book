@@ -2224,4 +2224,82 @@ begin
     (v_res->>'unbound_acceptances_forcing_retention'));
 end $$;
 
+
+-- ══ 18. THE SCHEDULER (PD-108, closing OQ-088) ══════════════════════════
+--
+-- Deletion finalisation is automatic now. The thing that makes that safe is that
+-- the privileged path is reachable by exactly one caller, and these assertions
+-- are what keep it that way.
+
+-- ── The job exists, and it is an allowlist of one ───────────────────────
+select pg_temp.chk('erasure', 'the deletion worker is scheduled and active', 'true',
+  (select (active and schedule is not null)::text
+     from cron.job where jobname = 'account-deletion-worker'));
+select pg_temp.chk('erasure', 'and it is the only scheduled job in this database', '1',
+  (select count(*)::text from cron.job));
+-- The cadence is read FROM cron.job rather than restated, because a second copy
+-- of a schedule is a second thing to be wrong.
+select pg_temp.chk('erasure', 'its command is the one-line invoke and nothing else',
+  'select public.invoke_account_deletion_worker();',
+  (select command from cron.job where jobname = 'account-deletion-worker'));
+
+-- ── NO SECRET IS IN THE JOB, WHICH IS WHY THE VAULT IS USED ─────────────
+--
+-- `cron.job.command` is a plain text column. A URL and a bearer token pasted into
+-- it would be readable by anything that can read the catalog, and would end up in
+-- every schema dump this repo produces.
+select pg_temp.chk('erasure', 'the scheduled command carries no url and no credential', '0',
+  (select count(*)::text from cron.job
+    where command ~* 'http|bearer|eyJ|secret|key|token'));
+
+-- ── NOT CLIENT-REACHABLE, IN EITHER DIRECTION ──────────────────────────
+select pg_temp.chk('erasure', 'no client role can invoke the worker', 'false',
+  (has_function_privilege('authenticated', 'public.invoke_account_deletion_worker()', 'EXECUTE')
+   or has_function_privilege('anon', 'public.invoke_account_deletion_worker()', 'EXECUTE'))::text);
+select pg_temp.chk('erasure', 'nor reschedule it', 'false',
+  (has_function_privilege('authenticated',
+     'public.set_account_deletion_worker_schedule(text)', 'EXECUTE')
+   or has_function_privilege('anon',
+     'public.set_account_deletion_worker_schedule(text)', 'EXECUTE'))::text);
+select pg_temp.chk('erasure', 'while service_role can do both', 'true',
+  (has_function_privilege('service_role', 'public.invoke_account_deletion_worker()', 'EXECUTE')
+   and has_function_privilege('service_role',
+     'public.set_account_deletion_worker_schedule(text)', 'EXECUTE'))::text);
+-- The run log names subject ids in its `result`, so it is restricted exactly like
+-- the step rows are (PD-105).
+select pg_temp.chk('erasure', 'and the run log is unreadable by every client role', 'false',
+  (has_table_privilege('authenticated', 'public.account_deletion_worker_runs', 'SELECT')
+   or has_table_privilege('anon', 'public.account_deletion_worker_runs', 'SELECT'))::text);
+select pg_temp.chk('erasure', 'nor writable by them', 'false',
+  (has_table_privilege('authenticated', 'public.account_deletion_worker_runs', 'INSERT')
+   or has_table_privilege('authenticated', 'public.account_deletion_worker_runs', 'UPDATE'))::text);
+
+-- ── THE DEFINER RULES THIS REPO APPLIES TO EVERY PRIVILEGED FUNCTION ────
+select pg_temp.chk('erasure', 'both new functions are definer, postgres-owned, search_path pinned',
+  '2',
+  (select count(*)::text from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+     join pg_roles r on r.oid = p.proowner
+    where n.nspname = 'public'
+      and p.proname in ('invoke_account_deletion_worker', 'set_account_deletion_worker_schedule')
+      and p.prosecdef
+      and r.rolname = 'postgres'
+      and array_to_string(coalesce(p.proconfig, '{}'), ',') like '%search_path=%'));
+
+-- ── A CALLER MAY NOT AIM IT ────────────────────────────────────────────
+--
+-- Neither function takes a subject, a bucket or a path. That is what makes
+-- granting the invoke to service_role safe: there is no parameter through which
+-- a caller could point the worker at somebody else's data, and the deletion
+-- authority stays where it has always been — `pending_media_deletions`, fed only
+-- by the erasure steps.
+select pg_temp.chk('erasure', 'the invoke takes no argument at all', '0',
+  (select coalesce(p.pronargs, 0)::text from pg_proc p
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'invoke_account_deletion_worker'));
+
+-- ── THE EXTENSIONS, NAMED ──────────────────────────────────────────────
+select pg_temp.chk('erasure', 'pg_cron and pg_net are installed, and nothing else new', '2',
+  (select count(*)::text from pg_extension where extname in ('pg_cron', 'pg_net')));
+
 select pg_temp.act_service();

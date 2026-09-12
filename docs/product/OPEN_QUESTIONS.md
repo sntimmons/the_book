@@ -1050,10 +1050,37 @@ the current behaviour is a decision.**
 ### OQ-088 — What runs the deletion worker on a clock?
 
 - **Area:** Operations / infrastructure
-- **Status: OPEN. Raised 2026-09-12 on PR #83, and returned as a
-  PRE-EXTERNAL-BETA BLOCKER. STILL OPEN AFTER THAT MERGE** — PR #83 is on `main` at `070f6df`,
-  and **merging it delivered the worker and not the scheduler**, which is the whole of this
-  question. A branch being opened to address it is not progress to record here; only a merge is.
+- **Status: CLOSED 2026-09-12 by [PD-108](PRODUCT_DECISIONS.md).** Raised the same day
+  on PR #83, returned as a PRE-EXTERNAL-BETA BLOCKER, and closed by building the scheduler
+  rather than by writing a runbook. **Closed on the strength of a working, verified
+  implementation — but on the `feat/account-erasure-scheduler` branch, not yet on `main`.**
+  The rule this ledger keeps still holds: only a merge makes it true of `main`, and this
+  entry must be re-read against `main` after that PR lands.
+
+  **The answer is native Supabase scheduling.** The platform decision this entry said was
+  not engineering's to make was made by the PM: `pg_cron` → `invoke_account_deletion_worker()`
+  → `pg_net` → the `account-deletion-worker` Edge Function → the erasure engine.
+  **Daily at 04:17 UTC**, with `cron.job` as the single source of truth for the cadence and
+  `set_account_deletion_worker_schedule(text)` the only supported way to change it. The CLI
+  worker this entry described remains, as the **fallback**.
+
+  **Proven end to end in non-production, through the exact command `cron.job` runs** rather
+  than a harness standing in for it: a fixture account holding a real storage object was
+  finalised, the object was actually removed from the bucket, the deletion was confirmed,
+  the request reached `completed`, and `overdue_account_deletion_work()` returned clean.
+  Three further invocations — two of them genuinely overlapping — were harmless no-ops that
+  left exactly one erasure record.
+
+  **One thing was NOT observed, and this entry says so rather than implying otherwise: the
+  timer itself has not been seen to fire.** The job is registered and active; what was
+  exercised is every link in the chain it triggers. Watching a real firing needs a calendar,
+  not a test.
+
+  **The three alternatives are recorded as not taken**, so the reasoning survives: scheduled
+  CI would have put production service-role credentials in the CI provider and made GitHub
+  the production scheduler; an external host would have been new infrastructure; and
+  Supabase's own scheduled-functions feature is the same two extensions underneath plus a
+  project configuration this repo does not hold.
 - **Why it matters:** PD-102 tells a person a date. `sweep_account_deletions()`
   finalises every request past that date and runs the two scheduled purges when
   their retention window expires; `pending_media_deletions` holds the storage

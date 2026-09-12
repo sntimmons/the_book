@@ -2663,6 +2663,91 @@ verified e-signature is made anywhere**, and none may be added without counsel.
 
 ---
 
+### PD-108 — Deletion finalisation is automatic, and the CLI is the fallback
+
+**Decided 2026-09-12. Closes OQ-088.**
+
+PD-102 tells a person a date. Until now nothing made that date happen: an
+operator ran a CLI worker, and **a retention promise that depends on somebody
+remembering is not a retention guarantee.** That is why OQ-088 was returned as a
+pre-external-beta blocker rather than closed with a runbook.
+
+**The mechanism is native Supabase scheduling**, chosen by PM over the
+alternatives:
+
+```
+pg_cron  →  public.invoke_account_deletion_worker()  →  pg_net
+         →  the account-deletion-worker Edge Function
+         →  the erasure engine and the Storage API
+         →  public.account_deletion_worker_runs
+```
+
+**Cadence: daily, 04:17 UTC.** Daily is the right cadence and hourly would be
+false precision — the promise to a user is a DATE, not a minute, and the
+closed-beta cohort is 25–30 people. A run an hour would add nothing anyone could
+perceive and twenty-four times the failure surface. The minute is deliberately
+not on the hour, where every other `0 * * * *` job on the instance lands.
+**`cron.job` is the single source of truth for the cadence** and
+`public.set_account_deletion_worker_schedule(text)` is the only supported way to
+change it; nothing restates it.
+
+#### What owns what
+
+| Layer | Owns |
+|---|---|
+| `pg_cron` | when |
+| `invoke_account_deletion_worker()` + `pg_net` | the call, and reading the secrets from the Vault |
+| the Edge Function | orchestration only — it decides nothing about what may be deleted |
+| the database functions | every deletion rule, unchanged |
+| `pending_media_deletions` | the sole authority for which bytes may be deleted |
+| `account_deletion_worker_runs` + `overdue_account_deletion_work()` | whether it worked |
+
+**Storage deletions are confirmed before completion, and that rule did not
+move.** `confirm_media_deleted` is called only when the Storage API actually
+returned the removed object — not when it merely failed to error — and
+`media_purge` refuses to pass while anything is unconfirmed.
+
+**The manual CLI worker stays.** `scripts/account-deletion-worker.mjs` is the
+emergency path for when the scheduler or the function is failing, when a backlog
+must be drained now rather than tonight, or when somebody is diagnosing a run
+that did not come out clean. **It is a fallback, not the primary mechanism**, and
+the operations note says so in those words.
+
+#### One engine, two runtimes
+
+Both callers run the same file — `supabase/functions/_shared/accountDeletionRun.mjs`
+— because two callers is exactly how a deletion engine acquires two slightly
+different meanings of "done". That module **imports nothing at all**, which is
+what lets Node and the Supabase Edge runtime load it unchanged, and a test
+asserts that emptiness: an import there is a fork with extra steps.
+
+#### The authorization, and why it is a separate secret
+
+The function holds `service_role`, so being callable is itself a privilege. Two
+gates: the platform verifies a project JWT, and then the function requires a
+**dedicated worker secret**, compared in constant time. The second is the real
+boundary — the anon key is public and ships in the app bundle. The secret is
+deliberately **not** the service-role key: if it leaks, the worst it buys is
+making the engine do work it was already going to do, idempotently, with no read
+of anything. Every secret lives in `vault.secrets`; `cron.job.command` carries
+none, because it is a plain text column.
+
+#### What this decision does NOT change
+
+**Nothing about retention durations.** **OQ-084** is still open and still
+counsel's: the accepted-contract and report/safety windows remain unset, and
+automating execution does not license inventing a number for the two classes that
+have none.
+
+**Nothing about what a scheduler may touch.** Two suites asserted since their
+first run that no scheduler extension existed — not because of erasure, but so
+that no clock could ever move a barter obligation's state (PD-072). Installing
+`pg_cron` removes that guarantee-by-absence, so it is **replaced, not deleted**:
+the suites now assert that the only scheduled job is this one and that neither it
+nor the function it calls names a barter object. Weakening those tests would have
+been the dishonest way to ship a changed decision.
+
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:
