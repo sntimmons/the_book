@@ -1,8 +1,11 @@
 # Account erasure and retention — Operations and support note
 
-**Status:** Authoritative for the branch `feat/account-erasure-retention-integrity`. **Not merged.**
-**Anchor:** `main` @ `fc14fe5` plus that branch.
-**Policy:** **PD-102** (closed-beta retention), **PD-103** (OQ-077 technical fixes).
+**Status:** Authoritative. **Merged to `main`** 2026-09-12 (PR #83, `070f6df`).
+**Anchor:** `main` @ `070f6df`.
+**Policy:** **PD-102** (closed-beta retention), **PD-103** (OQ-077 technical fixes),
+**PD-104** (the guarantee lives in the data, not the view), **PD-105** (an anonymized record is a
+relationship, not a person), **PD-106** (grace preserves resolution, not participation),
+**PD-107** (retention is the accepted artifact).
 
 Written for whoever answers *"delete my account"*, *"I changed my mind"*, *"why do
 you still have my contract"*, and *"the deletion failed"*. Limits sit beside
@@ -25,9 +28,16 @@ never be told that emailing support is the only way to delete their account.**
    what is **kept with the name removed**, and what is **kept as a record**.
 2. It lists any **unresolved bookings or trade obligations** — and does **not**
    block on them. They stay resolvable afterwards.
-3. Confirmation is two things: a **recent sign-in** (a token issued in the last
-   15 minutes; if theirs is older the screen asks for their password) and typing
-   **DELETE**.
+3. Confirmation is two things: a **recent authentication** and typing **DELETE**.
+   **PD-104 corrected what "recent" means here, and this note had the old
+   wording.** The gate reads the token's `amr` authentication timestamp where
+   there is one and falls back to `iat` where there is not — and those are **not
+   the same bar**: `iat` is restamped by an ordinary background
+   `refreshSession()` without anybody typing a password, so a token can be
+   minutes old and represent no fresh proof of identity. The screen asks for the
+   password when the bar is not met. **No claim is made that this is equivalent
+   to step-up authentication**; do not tell a user a stolen session could not
+   have done this.
 4. On submit, a **verified deletion request** is created. Nothing is erased yet.
 5. The screen then shows the **scheduled permanent-deletion date** and a
    **Restore my account** button, and says what is already true of the account.

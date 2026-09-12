@@ -1,5 +1,22 @@
 # Current State — what is true on `main` today
 
+**Account Erasure & Retention Integrity merged 2026-09-12 (`070f6df`, PR #83).** A person can
+delete their own account **from inside the app** — Settings → Account → Delete Account
+(`app/settings/index.tsx:288-289`, `app/settings/delete-account.tsx`) — and a verified request
+starts a **30-day grace period** during which the account is inactive and hidden and the user may
+restore it with one tap. Thirty migrations, `20261100000000` … `20261129000000`, and six locked
+decisions (**PD-102** … **PD-107**). Full detail is in § Account erasure and retention below; the
+policy itself is authoritative in [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) and the support
+answers in
+[ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md).
+
+**Two things travel with it and neither may be read away.** **OQ-084** is open — the retention
+**durations** for accepted-contract evidence and for report/safety evidence are **unset** pending
+attorney review, and nothing in this document, the schema or support copy may supply a number.
+**OQ-088 is open and was returned as a PRE-EXTERNAL-BETA BLOCKER** — `scripts/account-deletion-worker.mjs`
+does the whole job in one command, and **nothing runs it on a clock**, so today an operator runs
+it by hand.
+
 **Community Reshape merged 2026-09-11 (`8331941`, PR #82; test-margin fix `7826ca4`).**
 Community is a **service community for clients and providers** — it was provider-only by TABLE
 SHAPE, not by policy choice, so no client could ever be represented in it. Clients post *Looking
@@ -66,12 +83,59 @@ record bound to an immutable version; reference photos reach the provider and se
 request is sent; a provider presented as bookable is bookable. **Two limits travel with it:**
 acceptances predating `20261068000000` are the best available historical record and **not proof of
 exact original wording**, and erasure/retention for booking photos, contract evidence and booking
-records is **deliberately unresolved** (OQ-077) — support must not promise deletion of any of them.
+records was **deliberately unresolved** (OQ-077).
+
+> **Superseded in part, 2026-09-12 by PR #83 (`070f6df`).** OQ-077 is now **PARTIALLY CLOSED**:
+> the closed-beta retention treatment for all eleven data classes is ruled by **PD-102** and its
+> two technical defects are fixed by **PD-103** ([OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) § OQ-077).
+> Booking photos have a 90-day clock and are queued for deletion through the Storage API
+> (`20261100000000:86-90`), and an accepted contract's exact frozen version is retained by policy
+> rather than by accident (**PD-107**). **What is still open is the DURATION** for accepted-contract
+> and report/safety evidence — **OQ-084** — so support may state *what* is kept and must not state
+> *for how long*. The pre-`20261068000000` wording limit above is unchanged.
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `7826ca4` (2026-09-11) — squash-merge of **PR #82**, Community
-Reshape, plus a test-margin correction. The migration chain is now **138** files,
+**Reconciled against:** `main` @ `070f6df` (2026-09-12) — the squash-merge of **PR #83**, Account
+Erasure & Retention Integrity. The migration chain is now **168** files,
+`20260829000000` … `20261129000000` (counted with `Glob` over `supabase/migrations/*.sql` on this
+tree). The anchor moves because this document now asserts facts that did not exist before that
+merge: self-service account deletion, the 30-day grace period, the eleven-class retention policy
+and the relationship-pseudonym model.
+
+**What this run proved, and what it took on trust.** *Proven from files on this tree:*
+`.git/refs/heads/main` and `.git/refs/remotes/origin/main` both read
+`070f6df15b42e639c48402f2061b12ac8aec298f`; `.git/HEAD` resolves to `refs/heads/main`;
+`.git/logs/HEAD` records `main` moving `fc14fe5` → `070f6df` in **one fast-forward from
+`origin/main`**, with `fc14fe5` itself the documentation-only post-Community-Reshape
+reconciliation commit; and the thirty erasure migrations, `lib/accountDeletion.ts`,
+`app/settings/delete-account.tsx`, `scripts/account-deletion-worker.mjs` and
+`supabase/tests/account_erasure.test.sql` (registered at `scripts/db-security-test.mjs:65`) all
+exist.
+
+**The three things the reconciliation pass could not establish were each settled in the same
+session, and are recorded here as facts rather than left hedged:**
+
+- **`070f6df` IS the squash merge of PR #83**, merged 2026-09-12T22:00:29Z (`gh pr view 83` —
+  `state: MERGED`, `mergeCommit.oid: 070f6df15…`).
+- **CI on `070f6df` is green.** Both required jobs — `check` (typecheck, lint, Jest) and
+  `db-security` (B5B against a non-production database) — completed `success`. Note that CI ran on
+  the branch head `3ec31de` only after it was pushed; the five final commits had been local-only,
+  so the pre-merge check ran on exactly what was merged and not on an earlier head.
+- **The chain is `168` files and non-production is in step with it.**
+  `supabase migration list --linked` returns **168 applied rows against 168 local files, zero
+  mismatched**, newest `20261129000000`, on `wcoyjeklscuqsumpjpfo`. **Production
+  (`kxregomuawwcqvisuhtr`) was not connected to, linked, migrated or queried.**
+
+**Post-merge validation figures**, measured on the branch head that became this merge: B5B
+**2224/2224**, Jest **982/982** across 50 suites, the negotiation concurrency harness **224/224**,
+typecheck clean, `lint:ci` 0 errors / 209 warnings against a frozen baseline of 210. These are
+cited here because [MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) has **no dated apply
+section for `20261066000000` onwards** — four merged blocks now have no dated apply record, which
+is a real gap in that document and is its owner's to close.
+
+**Previously reconciled against:** `main` @ `7826ca4` (2026-09-11) — squash-merge of **PR #82**,
+Community Reshape, plus a test-margin correction. The chain was **138** files,
 `20260829000000` … `20261099000000`, applied to non-production `wcoyjeklscuqsumpjpfo` with local
 and remote in step and **no drift**.
 
@@ -139,9 +203,15 @@ superseded PR #75 and touching a file outside the Steward's five-file allowlist.
 this reconciliation is therefore that commit's tree, not `e5b9125`'s. No claim below depends on the
 difference, and it is stated rather than glossed.
 
-**Last edited by:** this reconciliation. **No PR number was supplied to it, so none is recorded.**
-The last numbered edit to this file that can be proven from the repository is **PR #71**
-(`224d609`), which set the header this one replaces; the § Security posture section below was added
+**Last edited by:** the post-PR-#83 state reconciliation (2026-09-12). **It was given no PR number
+of its own, so none is recorded** — and, unusually, it was **run with `.git/HEAD` pointing at
+`main` itself**, so its edits sit uncommitted in the working tree on `main` rather than on a
+branch. That is stated for the reviewer of the diff: the Steward has no shell and cannot create a
+branch, and whoever commits this must do so somewhere other than `main`.
+
+The edit before it was the post-Community-Reshape reconciliation, landed as `fc14fe5`
+(documentation only — `.git/logs/HEAD`). The last numbered edit to this file that can be proven
+from the repository is **PR #71** (`224d609`); the § Security posture section below was added
 afterwards by the Correction 2 merge `a125cd7`, whose PR number is not established.
 
 > **`Reconciled against:` is not the tip of `main`.** It is the last commit at which the
@@ -883,7 +953,20 @@ The same migration also **froze the obligation's contract fields against every w
 `service_role`** (Founder ruling 2026-09-06): agreement, participants, source term, description,
 `due_at` and `scheduled_at` can no longer be rewritten after the agreement exists, because they
 are now the read-scoping keys and the deadline anchor. Privileged DELETE is deliberately still
-permitted, so account-erasure cascades still work. **The same principle is now ruled to extend to
+permitted, so account-erasure cascades still work.
+
+> **Half of that last clause was superseded on 2026-09-12 by PR #83 (`070f6df`), and the
+> difference is a product fact rather than a schema detail.** Privileged DELETE is still permitted
+> — but **barter history is no longer cascaded away when a participant is erased**. Every barter
+> identity column moved from `ON DELETE CASCADE` to `ON DELETE SET NULL`
+> (`20261108000000_a_cascade_is_not_an_anonymization.sql:10-30`), because the cascade was
+> destroying **the counterparty's own record of a completed, adjudicated trade** when the other
+> party left — which policy H (anonymize, not destroy) forbids. Six append-only guards had to learn
+> that a referential `SET NULL` is not a client rewriting history (**PD-103**;
+> `20261106000000`, `20261109000000`, `20261110000000`). `enforce_barter_obligations_immutable` is
+> one of the six.
+
+**The same principle is now ruled to extend to
 core `barter_agreements` identity** (Founder, 2026-09-07), but is **not yet enforced there**:
 `enforce_barter_agreement_immutable` refuses ordinary callers absolutely while giving
 `service_role` and the no-JWT path an unconditional early return. That is a recorded bounded
@@ -1223,6 +1306,102 @@ Three Founder rulings on the finished branch, and two of them are requirements r
   NOT IMPLEMENTED**, and explicitly **not** Session 8B. Session 8 stopped at CONTACT: neither the
   feed nor the barter board filters a blocked person's content, so a blocker still sees them, can
   still tap Respond, and gets a refusal that points them at their own eligibility. Closes OQ-075.
+
+---
+
+## Account erasure and retention — PR #83 (`070f6df`, 2026-09-12)
+
+**The locked decisions are PD-102 … PD-107 in
+[PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) and are not restated here**, and the support answers —
+what to say to *"delete my account"*, *"I changed my mind"* and *"why do you still have my
+contract"* — are authoritative in
+[ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md). This section records
+only what is true on `main`, and two things above all: **the policy is built and the SCHEDULER is
+not**, and **two retention durations are deliberately unset**.
+
+Thirty migrations, `20261100000000_retention_is_configuration_not_code.sql` …
+`20261129000000_which_rule_speaks_first.sql`. The per-object record of what each one changed and
+which ones are forward corrections to the others is in
+[MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) § Function / trigger redefinition.
+
+| Capability | What is actually true | Where |
+|---|---|---|
+| **Self-service deletion, in the app** (PD-102) | Settings → Account → Delete Account. A verified request needs **recent proof of identity plus a typed confirmation**, and `request_account_deletion` **takes no user id**, so there is no parameter with which to name somebody else's account. Pressing the button twice does nothing twice. | `app/settings/index.tsx:288-289`; `app/settings/delete-account.tsx`; `lib/accountDeletion.ts:254-269` |
+| **30-day grace, then permanent** | The window is a **row, not a constant**: `retention_policy.account_grace_period = 30`. The user sees the scheduled date and may **restore with one tap** until the job starts finalising, after which restore is refused (`PT445`). After final deletion, restoration is impossible. | `20261100000000:80-84`; `lib/accountDeletion.ts:271-291`, `:229` |
+| **Deactivation is DERIVED, not a flag** | It is computed from the open request, so it takes effect the moment the request commits, cannot drift from it, and **cancelling the request IS the restoration** with nothing to repair. It deliberately does not touch `providers.is_approved`, so an operator's moderation decision and a user's own choice stay distinguishable. | PD-102; `20261101000000`, `20261102000000` |
+| **Eleven data classes, four different answers** | Delete now / delete later / anonymize / retain under restriction, per class — not the cascade-everything the schema had. The table is PD-102's and is not copied here. | [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) § PD-102 |
+| **Retention is configuration** | Every window is a row in `public.retention_policy`, read by the engine, the app and the support note, and `retention_days()` **raises on an unknown key** so a typo cannot read as "no retention". | `20261100000000:24-77` (the table, RLS and stamp trigger), `:80-145` (the approved values and `retention_days()`) |
+| **The two classes awaiting counsel ship with NO duration** | `accepted_contracts` and `reports_evidence` carry `days = NULL` and `legal_review_required = true`. NULL means *retain under interim policy* — **never zero and never infinite** — and an unset window produces a `held` step somebody has to decide rather than a guessed number. **OQ-084.** | `20261100000000:102-114` |
+| **Grace is read-only, with two exceptions** (PD-106) | Restoration, and the **minimum terminal-state actions that resolve a transaction which already existed**. New bookings, posts, reviews, likes, follows, barter proposals and agreements, contract acceptance, provider services and availability, and uploads into all five storage buckets are refused (`PT440`). **Messaging stays closed** — relaying is an Operations obligation, not a restored participation right. The gate that mattered most was a missing **verb**, not a missing table: the app sends a booking by UPDATING a draft's `submitted_at`, and the refusal was INSERT-only. | `20261102000000` (the original fourteen tables), `20261125000000` corrected by `20261127000000`; PD-106's enumerated Blocked/Allowed lists |
+| **An anonymized row is a RELATIONSHIP, not a person** (PD-105) | The pseudonym is allocated per **(subject, scope)** in `public.erasure_relationship_pseudonyms` — `provider` scope for bookings and both review tables, `conversation` scope for threads, `none` named explicitly rather than left NULL. The person-wide `erased_accounts.pseudonym_id` column is **dropped, not left dormant**. So PD-091/PD-092's distinct-client rule still holds inside one provider's review set while the public review list can no longer be walked from one provider to the next. | `20261124000000:74`, `:599` (the drop); corrected by `20261127000000` |
+| **Accepted-contract retention is the ACCEPTED artifact only** (PD-107) | The frozen accepted version, its canonical PDF, the acceptance timestamp and the minimum party identity. Abandoned drafts, superseded unaccepted PDFs and unused signature images go. **No signature image is retained because none has ever been written** — `contract_signatures.signature_url` is always NULL. | `20261126000000`; PD-107 |
+| **Evidence survives an erasure, and an erasure still succeeds** (PD-103) | Both OQ-077 technical defects are fixed **without deleting evidence to make a delete succeed**: `reports_target_check` now also accepts a retained restricted subject id, and six append-only guards learned that a referential `SET NULL` is not a client rewriting history. Retention became a property of the **sever** rather than of step ordering, so a raw `delete from auth.users` retains the evidence too. | `20261103000000`, `20261106000000`, `20261109000000`, `20261110000000` |
+| **No erasure reports success with the bytes still in the bucket** | SQL cannot delete a Supabase storage object at all, so objects are **queued** in `pending_media_deletions` and a final `media_purge` step **raises while any remain unconfirmed**. `completed` is recomputed from the step rows, so a failed or unrun step keeps a request out of it by existing. | `20261107000000`; `20261114000000` |
+| **The worker exists** | `scripts/account-deletion-worker.mjs` does the whole job in one bounded, idempotent command — sweep, drain the media queue through the Storage API, confirm each delete only after it succeeded, sweep again, and exit non-zero if `overdue_account_deletion_work()` returns anything. Same tooling env and the same hard production-ref guard as `db-security-test.mjs`. **No new infrastructure.** | `scripts/account-deletion-worker.mjs:8-32`, `:80`, `:93-158` |
+| **NOTHING RUNS IT ON A CLOCK — OQ-088** | This is the one sentence this section exists to keep straight. **OQ-088 is OPEN and was returned as a PRE-EXTERNAL-BETA BLOCKER.** Every way to supply a scheduler is a platform decision with an owner and a cadence to choose, and two committed suites currently **assert that no scheduler extension is installed**, which makes "no scheduler" a pinned property of this schema rather than an oversight. Today an operator runs the worker by hand — proportionate for a 25–30 cohort, **and not a retention guarantee**. | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) § OQ-088; `supabase/tests/receiver_window.test.sql:926`, `no_show_under_review.test.sql:259` |
+
+**What a stranger now sees of a departing account is nothing at all** (PD-104). The
+immediate-hiding promise had been built into the `_visible` views while `providers_public_read` was
+`USING (true)` underneath them, so one REST call returned the name, business name, bio, location and
+both photos of every provider who had asked to be deleted — and the app's own profile screen did
+exactly that. **The base tables now carry the rule**, with three carve-outs that are load-bearing
+rather than concessions: the owner, an operator, and a counterparty who already holds a booking or
+conversation. Their portfolio, Reels, Reel comments and Community content are gone from ordinary
+access, not merely from the feed. **That is a visible product change and it is the intended one.**
+
+**Two product-visible costs, recorded rather than buried.** A provider can **no longer open a
+departed client's booking reference photos**: `booking_reference_photos.storage_path` is
+`<auth uid>/<booking id>/<n>`, it was in the client column grant, and two providers comparing
+prefixes could have recovered the erased account's real auth id and rejoined the two relationship
+pseudonyms PD-105 exists to separate. Object access now resolves on a granted `erased/<row id>`
+path while the real path moves to a restricted column the purge reads, so the row survives on its
+90-day clock and the bytes still go on schedule (`20261128000000`, corrected by `20261129000000`).
+And **a deactivated account may still edit an unsubmitted booking draft** — only the submit
+transition is refused — which is not obviously "read-only"; it is recorded as a residual in PD-106
+rather than fixed, because gating `bookings` UPDATE more broadly risks breaking an allowed terminal
+action.
+
+**What is NOT closed, and must not be read as closed:**
+
+- **OQ-084 — the retention DURATIONS** for accepted-contract and report/safety evidence, plus the
+  **privacy-policy and beta-FAQ language**. Attorney review. **No number may be invented anywhere**,
+  because a number nobody decided becomes the answer support gives.
+- **OQ-088 — the scheduler.** Open, and a pre-external-beta blocker. It does **not** block the
+  closed beta.
+- **OQ-076 — the residual identity oracle.** The Founder ruling of 2026-09-12 makes **no
+  architectural change now**: `public.account_unavailable(uuid)` is granted to client roles because
+  an RLS policy is evaluated as the caller and there is no other mechanism, so "is this identity
+  unavailable" can still be asked one id at a time by someone who already holds an id. Enumeration
+  is closed and the answer is deliberately ambiguous across three causes — **neither of which closes
+  it**. PD-090 stands for the closed beta and this is carried to the pre-public-launch
+  privacy/security revisit.
+- **Physical-device QA of the whole flow** — the disclosure, the reauthentication prompt, the
+  scheduled-date display and the restore path **have not been exercised on a real device**. See
+  [ROADMAP.md](ROADMAP.md) § Physical-device / UX QA list.
+
+> **UNRESOLVED, RECORDED BY THE STEWARD RATHER THAN DECIDED — there is a SECOND "Delete Account"
+> control on `main`, and it deletes nothing.** `app/me/edit.tsx:428-442` renders an ACCOUNT →
+> **Delete Account** row (reached from `components/ClientMe.tsx:316` → `/me/edit`, and not behind
+> any condition other than the screen's own loading state). Its handler at `:248-269` shows
+> *"This permanently deletes your account and all your data. This cannot be undone."* and then
+> calls `supabase.auth.signOut()` — **no deletion request, no grace period, no restoration, and
+> nothing erased**. Its own comment says so: *"The current implementation signs the user out
+> only."*
+>
+> That cannot be squared with PD-102, which makes a verified request the only initiation path and
+> promises a 30-day window and restoration; and PD-104 exists precisely because copy that claims
+> something the code does not do is the failure mode this workstream was correcting. **This
+> document does not choose between them** — whether the old control is removed, repointed at
+> `/settings/delete-account`, or kept for some reason not recorded here is a product call, not a
+> reconciliation. Flagged here so a reader of the paragraph above does not conclude there is only
+> one deletion control in the app.
+
+**Regression coverage.** `supabase/tests/account_erasure.test.sql`, registered in the B5B runner at
+`scripts/db-security-test.mjs:65`; §§ 14, 15 and 16 (`:1511`, `:1657`, `:1811`) pin PD-105, PD-106
+and PD-107 respectively.
+**That these files exist does not establish that they pass** — this document runs nothing, and
+[MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md) records **no dated apply section for
+`20261066000000` onwards**, so no post-apply figure for this block is available to cite.
 
 ---
 

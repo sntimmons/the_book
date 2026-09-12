@@ -1,9 +1,29 @@
 # Open Questions
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
-**Reconciled against:** `main` @ `e5b912511829ecfa8793c2a5ad8feaba40dfa3a0` (2026-09-10) — for the
-**closure record only**; see the scope note below.
-**Last edited by:** the post-Session-8 state reconciliation. Before it, **PR #76** (`e5b9125`)
+
+**Reconciled against:** `main` @ `070f6df15b42e639c48402f2061b12ac8aec298f` (2026-09-12) — **PR #83**,
+Account Erasure & Retention Integrity — **for the erasure closure record only**: that **OQ-085**,
+**OQ-086** and **OQ-087** are closed by PD-105, PD-106 and PD-107 and that all three closures are
+**implemented on `main`**; that **OQ-084**, **OQ-076** and **OQ-088** are **Open**; and that
+**OQ-077** remains **PARTIALLY CLOSED**. It **re-verified no other entry**, and in particular
+re-verified nothing carried by **OQ-006**, **OQ-007**, **OQ-011**, **OQ-036**, **OQ-070** or
+**OQ-072**.
+
+**The three open erasure entries, stated here because they are the ones most easily read away by
+the word "merged":** **OQ-084** — the retention **durations** for accepted-contract and
+report/safety evidence are **unset**, pending counsel, and **no number may be invented**.
+**OQ-088** — **nothing runs the deletion worker on a clock**, returned as a **PRE-EXTERNAL-BETA
+BLOCKER**. **OQ-076** — the residual `account_unavailable(uuid)` identity oracle is carried to the
+pre-public-launch privacy/security revisit by Founder ruling of 2026-09-12; **no architectural
+change was made**.
+
+**Last edited by:** the post-**PR #83** reconciliation (2026-09-12), which **closed nothing** —
+PD-105, PD-106 and PD-107 had already closed OQ-085 … OQ-087 on 2026-09-12, and this edit only
+recorded the merge that carried them. It ran with `.git/HEAD` pointing at **`main` itself**, so its
+edits sit uncommitted in the working tree on `main`.
+
+Before it, the post-Session-8 state reconciliation. Before that, **PR #76** (`e5b9125`)
 carried OQ-073, OQ-074 and OQ-075 in with its own code and closed all three; **PR #74** (`0781f49`)
 opened OQ-072 and closed OQ-071. **The header still read `f5fd197` and named the post-Session-7
 reconciliation four merges later, because PR #75 — which would have corrected it — never merged.**
@@ -555,7 +575,8 @@ schema; the product rules around them do not. Each question below is separately 
   launch grounds.
 - **Status:** CLOSED — resolved by PD-090, 2026-09-10
 
-**2026-09-12 (Founder ruling on PR #83) — NO ARCHITECTURAL CHANGE NOW.** PD-090
+**2026-09-12 (Founder ruling on PR #83, merged to `main` as `070f6df`) — NO ARCHITECTURAL CHANGE
+NOW.** PD-090
 **stands accepted for the closed beta**, and the newly surfaced instance below is
 **recorded as part of the pre-public-launch privacy/security revisit** rather than
 acted on. The instance is `public.account_unavailable(uuid)`, granted to `anon`
@@ -609,7 +630,12 @@ scanner holding old ids plainly should not.
 - **Also recorded, because it is a limitation and not a defect:** acceptances that predate `20261068000000` are bound to the contract's content **at migration time**. If a provider edited between a client's acceptance and that migration, the original wording is gone — nothing recorded it. Those rows are the **best available historical record and are not proof of the exact original wording**, and support must not describe them as more than that.
 - **Also recorded here, found during Reviews Phase 2 and deliberately NOT fixed there** (account-erasure semantics were out of that session's scope, and inventing a retention policy is exactly what this question forbids): **(d) deleting a user who is the TARGET of a report can fail** — the report retains a reference that erasure does not resolve; **(e) deleting an operator can fail** because the append-only actor foreign-key update path conflicts with the deletion. Both are real defects in the erasure path, both surface as a failed delete rather than as silent data loss, and **neither can be fixed without first answering this question** — what a deletion is supposed to do to evidence a counterparty or an operator case still relies on. They are listed as the concrete cases the eventual policy has to cover, not as a backlog item to be cleared independently.
 - **Blocks:** nothing shipped. It blocks any claim about deletion, and it blocks answering a user who asks for their data to be removed. It now also blocks fixing (d) and (e), which is the correct order.
-- **Status:** **PARTIALLY CLOSED** — the two TECHNICAL defects are fixed by **PD-103** (2026-09-11) and the closed-beta retention treatment for every data class is ruled by **PD-102**. What remains open is the part that was always the blocker: the **retention DURATIONS for accepted-contract evidence and for report/safety evidence**, which need counsel. Tracked as **OQ-084**. The photo-orphan case in (a) is also addressed — media is now queued for deletion through the Storage API and an erasure cannot report success while any object is unconfirmed — but the storage drain has **no scheduler** and is operator-run, which is recorded in Operations.
+- **Status:** **PARTIALLY CLOSED** — the two TECHNICAL defects are fixed by **PD-103** (2026-09-11) and the closed-beta retention treatment for every data class is ruled by **PD-102**. What remains open is the part that was always the blocker: the **retention DURATIONS for accepted-contract evidence and for report/safety evidence**, which need counsel. Tracked as **OQ-084**. The photo-orphan case in (a) is also addressed — media is now queued for deletion through the Storage API and an erasure cannot report success while any object is unconfirmed — but the storage drain has **no scheduler** and is operator-run, now filed as **OQ-088** and recorded in Operations.
+- **Reconciliation note (2026-09-12):** all of the above **merged to `main` as `070f6df`**
+  (**PR #83**, attested). The merge changes none of this entry's status: the durations are still
+  unset (**OQ-084**) and the drain is still unscheduled (**OQ-088**). The (b) limitation about
+  acceptances predating `20261068000000` is also unchanged — **PD-107** decided what the retained
+  contract record CONSISTS OF, not what an older acceptance can prove.
 
 ### OQ-078 — Does "latest" mean the latest review WRITTEN or the latest service RECEIVED?
 - **Area:** Reviews / reputation
@@ -739,6 +765,14 @@ scanner holding old ids plainly should not.
 - **Blocks:** the privacy policy, the beta FAQ, and any statement to a user about how long these are
   kept. It does **not** block the deletion feature: everything else has a decided treatment and the
   two retained classes are already restricted.
+- **Reconciliation note (2026-09-12):** the erasure workstream **merged to `main` as `070f6df`**
+  (**PR #83**, attested) **with both windows still unset**, which is the decided behaviour and not
+  an omission — `retention_policy.days` is NULL and `legal_review_required` is true for
+  `accepted_contracts` and `reports_evidence`
+  (`supabase/migrations/20261100000000_retention_is_configuration_not_code.sql:102-114`). **PD-107**
+  settled the SCOPE of the contract record on the same date and explicitly left the duration here.
+  **Nothing in this repository, the app copy or the support note may supply a number**, and this
+  reconciliation supplies none.
 - **Status:** Open
 
 ---
@@ -771,9 +805,15 @@ say that was false.
 | **OQ-081** — Should a Community shoutout require a completed booking? | 2026-09-11 | **PD-098** — no; a verified link may show a factual indicator that changes no rating |
 | **OQ-082** — What happens to Community content when an operator needs it gone? | 2026-09-11 | **PD-099** — hide and restore, audited; never a delete |
 | **OQ-083** — Does PD-090 survive Community opening to everyone? | 2026-09-11 | **PD-100** — yes for the closed beta; revisit before broader launch |
-| **OQ-085** — How unlinkable does an anonymized row have to be? | 2026-09-12 | **PD-105** — unlinkable, not merely de-named; a per-RELATIONSHIP pseudonym. Implemented in `20261124000000` / `20261127000000` |
-| **OQ-086** — Which writes count as "new marketplace activity" for a deactivated account? | 2026-09-12 | **PD-106** — read-only except restoration and terminal resolution; messaging stays closed. Implemented in `20261125000000` / `20261127000000` |
-| **OQ-087** — Are contract-signature images and contract PDFs in scope for erasure? | 2026-09-12 | **PD-107** — only the canonical ACCEPTED artifact is retained; no signature image exists to retain. Implemented in `20261126000000`. Duration still **OQ-084** |
+| **OQ-085** — How unlinkable does an anonymized row have to be? | 2026-09-12 | **PD-105** — unlinkable, not merely de-named; a per-RELATIONSHIP pseudonym. Implemented in `20261124000000` / `20261127000000`, plus the storage-path half in `20261128000000` / `20261129000000`. **Merged to `main` as `070f6df` (PR #83, 2026-09-12)** |
+| **OQ-086** — Which writes count as "new marketplace activity" for a deactivated account? | 2026-09-12 | **PD-106** — read-only except restoration and terminal resolution; messaging stays closed. Implemented in `20261125000000` / `20261127000000`. **Merged to `main` as `070f6df` (PR #83, 2026-09-12)**. Two residuals recorded in PD-106, not fixed |
+| **OQ-087** — Are contract-signature images and contract PDFs in scope for erasure? | 2026-09-12 | **PD-107** — only the canonical ACCEPTED artifact is retained; no signature image exists to retain. Implemented in `20261126000000`, scoped by `20261128000000` / `20261129000000`. **Merged to `main` as `070f6df` (PR #83, 2026-09-12)**. **SCOPE only — the duration is still OQ-084** |
+
+**All three erasure closures above are implemented on `main`**, which is unusual in this index and
+is stated so it is not assumed of the rows above them: OQ-074 and OQ-075 are closed by decisions
+that were **not** built at the time they were closed. A question is closed by a decision; the
+decision is implemented, or not, on its own schedule — and **OQ-087's closure covers scope and not
+duration**, so "closed" there means less than it looks.
 
 **Three of those four closures are decisions the product has not yet built**, and the index says so
 in each row rather than letting "Closed" read as "done". A question is closed by a decision; the
@@ -1011,7 +1051,9 @@ the current behaviour is a decision.**
 
 - **Area:** Operations / infrastructure
 - **Status: OPEN. Raised 2026-09-12 on PR #83, and returned as a
-  PRE-EXTERNAL-BETA BLOCKER.**
+  PRE-EXTERNAL-BETA BLOCKER. STILL OPEN AFTER THAT MERGE** — PR #83 is on `main` at `070f6df`,
+  and **merging it delivered the worker and not the scheduler**, which is the whole of this
+  question. A branch being opened to address it is not progress to record here; only a merge is.
 - **Why it matters:** PD-102 tells a person a date. `sweep_account_deletions()`
   finalises every request past that date and runs the two scheduled purges when
   their retention window expires; `pending_media_deletions` holds the storage
@@ -1059,3 +1101,14 @@ the current behaviour is a decision.**
 this ledger is unchanged: a migration is an implementation, not an approval. **OQ-006**, **OQ-007**,
 **OQ-011**, **OQ-036**, **OQ-070** and **OQ-072** remain **Open**. Neither PD-088 nor PD-089 has an
 implementation, and neither may be read as shipped because its question is marked closed.
+
+**PR #83 (`070f6df`, 2026-09-12) followed the same pattern and is the clearest instance of it
+yet.** It opened **OQ-085**, **OQ-086**, **OQ-087** and **OQ-088** — four questions its own code
+raised and deliberately declined to answer — and the Founder then closed the first three on the
+finished branch as **PD-105**, **PD-106** and **PD-107**. **The migrations that implement those
+three rulings were written after the rulings, not instead of them.** The fourth, **OQ-088**, was
+returned **unanswered and as a PRE-EXTERNAL-BETA BLOCKER**, and merging the branch did not change
+that: the worker shipped, the scheduler did not. **OQ-084** likewise stayed open through the merge,
+and **OQ-076** was ruled explicitly to require **no architectural change now**. The post-merge
+reconciliation that recorded all of this **closed nothing itself**, which is the only thing a
+reconciliation is permitted to conclude here.

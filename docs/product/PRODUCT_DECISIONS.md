@@ -1,7 +1,23 @@
 # Product Decisions — locked
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
-**Last edited by:** **Session 8C** (safety hardening), which implemented PD-088 and PD-089 and
+
+**Last edited by:** the post-**PR #83** reconciliation (2026-09-12). It **recorded no decision and
+changed no ruling.** All it did was state, per entry, that **PD-102 … PD-107 are on `main`** at
+`070f6df` rather than on the branch they were written on, and supply the `Status` and `Evidence`
+lines PD-104 … PD-107 were missing. **Nothing in those four entries' text was altered.** Two
+things those entries say and this note repeats because they are the parts most easily read away:
+the retention **durations** for accepted-contract and report/safety evidence are **still unset**
+(**OQ-084**), and **nothing runs the deletion worker on a clock** (**OQ-088**, a pre-external-beta
+blocker) — neither of which the merge changed.
+
+Before it, the **account erasure & retention integrity** branch recorded **PD-102 … PD-107** and
+merged as `070f6df` (**PR #83**, attested). **PD-102** and **PD-103** were recorded on 2026-09-11;
+**PD-104** … **PD-107** are Founder rulings of 2026-09-12 on the finished branch, closing the three
+questions the branch filed rather than answered — **PD-105** (OQ-085), **PD-106** (OQ-086) and
+**PD-107** (OQ-087).
+
+Before that, **Session 8C** (safety hardening), which implemented PD-088 and PD-089 and
 recorded **PD-090** — the ruling that closes OQ-076: The Book builds no block-status oracle, and
 inference by a determined user comparing otherwise-authorized data is an **accepted closed-beta
 limitation** rather than a blocker. The broad booking/thread/review/contract read policies are
@@ -2294,9 +2310,11 @@ adjudicated outcomes are retained.
   any remain unconfirmed — **no erasure reports success with the bytes still in the bucket.**
 - **Retention is configuration.** Every window lives in `retention_policy`, read by the engine, the
   app and the support docs. The two awaiting counsel are NULL and flagged.
-- **Evidence:** `20261100000000` … `20261110000000`; `supabase/tests/account_erasure.test.sql`;
-  `lib/accountDeletion.ts`; `app/settings/delete-account.tsx`;
-  `docs/operations/ACCOUNT_ERASURE_OPERATIONS.md`.
+- **Evidence:** `20261100000000` … `20261110000000`; `supabase/tests/account_erasure.test.sql`
+  (registered at `scripts/db-security-test.mjs:65`); `lib/accountDeletion.ts`;
+  `app/settings/delete-account.tsx` (reached from `app/settings/index.tsx:288-289`);
+  `docs/operations/ACCOUNT_ERASURE_OPERATIONS.md`. **All of it is on `main`** at `070f6df`
+  (**PR #83**, 2026-09-12).
 
 #### Open for counsel, and not decided here
 Accepted-contract retention **duration**; report/evidence retention **duration**; privacy-policy
@@ -2330,7 +2348,10 @@ language; beta FAQ language. Recorded in **OQ-084**.
   counterparty's own record of a completed trade, deleted because the other party left. The
   negotiation suite's assertions encoded that; they are inverted, and the inversion is the ruling
   (class H: anonymize, not destroy).
-- **Status:** Locked; **implemented**.
+- **Evidence:** `20261103000000`, `20261106000000`, `20261108000000`, `20261109000000`,
+  `20261110000000`, `20261112000000`; `supabase/tests/account_erasure.test.sql` § 8 (`:610`).
+- **Status:** Locked; **implemented and merged to `main`** at `070f6df` (**PR #83**, 2026-09-12).
+  **OQ-077 is PARTIALLY closed by it, not closed** — the retention DURATIONS are **OQ-084**.
 
 ---
 
@@ -2410,6 +2431,18 @@ the full list of writes that count as "new marketplace activity" is **OQ-086**,
 and whether contract-signature images and PDFs are in erasure scope is
 **OQ-087**.
 
+- **Evidence:** `20261111000000` … `20261119000000` (the three HIGH and eight MEDIUM findings, two
+  of them corrections to the corrections), `20261115000000` (the `amr` / `iat` reauthentication
+  bar), `20261120000000`, `20261123000000`; `supabase/tests/account_erasure.test.sql` §§ 12–13
+  (`:782`, `:1261`); `lib/accountDeletion.ts`.
+- **Status:** Locked; **implemented and merged to `main`** at `070f6df` (**PR #83**, 2026-09-12).
+  The three questions this entry files are **closed by PD-105, PD-106 and PD-107 below**. The
+  residual `account_unavailable(uuid)` oracle is **not closed and is not claimed closed**: by
+  Founder ruling of 2026-09-12 there is **no architectural change now**, PD-090 stands for the
+  closed beta, and it is carried under **OQ-076** to the pre-public-launch privacy/security
+  revisit.
+
+---
 
 ### PD-105 — An anonymized record is a relationship, not a person
 
@@ -2489,6 +2522,15 @@ promise, and the alternative was publishing an erased person's auth id to
 everyone they had ever booked. **Recorded for the PM as a product-visible effect
 of this ruling rather than as an engineering detail.**
 
+- **Evidence:** `20261124000000_a_pseudonym_is_a_relationship_not_a_person.sql` — the
+  `public.erasure_relationship_pseudonyms` table at `:74`, and the drop of the person-wide
+  `erased_accounts.pseudonym_id` at `:599` — corrected by `20261127000000` (the guard permitted a
+  DELETE of the map); the storage-path half in `20261128000000`, corrected by `20261129000000`.
+  Pinned by `supabase/tests/account_erasure.test.sql` § 14 (`:1511`) and SEC-AUTHZ-002 (`:1964`).
+- **Status:** Locked; **implemented and merged to `main`** at `070f6df` (**PR #83**, 2026-09-12).
+  **Closes OQ-085.** One channel is stated rather than closed: `service_role` can read the reverse
+  index, the same trust class `PD-101` already records as trusted infrastructure.
+
 ---
 
 ### PD-106 — Deletion grace preserves resolution rights, not participation rights
@@ -2555,6 +2597,16 @@ social object and the account is hidden and de-approved, so the case resolves to
 nothing — and `operator_cases` is also written by the *allowed* barter review
 request and by report intake, so a blanket gate there would refuse both.
 
+- **Evidence:** `20261125000000_read_only_means_read_only.sql` — the five refusal functions, 21
+  triggers and eight `storage.objects` write policies — corrected by `20261127000000`, which drops
+  the one trigger on `barter_obligations` that added no coverage. The original INSERT-only gate is
+  `20261102000000`. Pinned by `supabase/tests/account_erasure.test.sql` § 15 (`:1657`), asserted as
+  the deactivated caller.
+- **Status:** Locked; **implemented and merged to `main`** at `070f6df` (**PR #83**, 2026-09-12).
+  **Closes OQ-086.** The **two residuals above are recorded, not fixed**: an unsubmitted booking
+  draft may still be edited, and `request_provider_review()` still opens an operator case from a
+  deactivated account.
+
 ---
 
 ### PD-107 — Accepted-contract retention is the accepted artifact, not everything beside it
@@ -2599,6 +2651,17 @@ review (OQ-084).** This decision settles scope, which is the half that is an
 engineering fact. **No claim of legal enforceability, legal sufficiency, or
 verified e-signature is made anywhere**, and none may be added without counsel.
 
+- **Evidence:** `20261126000000_the_accepted_artifact_is_the_evidence.sql` — the new
+  `adel_contract_artifacts` step — with its scoping corrected in both directions by
+  `20261128000000` and `20261129000000`. Pinned by `supabase/tests/account_erasure.test.sql` § 16
+  (`:1811`), which asserts the BEHAVIOUR for an unbound acceptance rather than
+  `count(unbound) = 0`.
+- **Status:** Locked **for the interim closed-beta policy**; implemented and merged to `main` at
+  `070f6df` (**PR #83**, 2026-09-12). **Closes OQ-087 on SCOPE only.** The **DURATION is OQ-084 and
+  remains unset**, and this decision **must be revisited before** any signature image is
+  reintroduced as part of what makes an acceptance evidence.
+
+---
 
 ## Not decisions
 

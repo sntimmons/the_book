@@ -1954,6 +1954,47 @@ handling a report about someone they happen to have blocked must still see them.
 B5B **1619/1619** with zero residue, Jest **929/929**, typecheck clean, lint 0
 errors, `supabase migration list` local == remote with no drift.
 
+## 2026-09-12 — `20261100000000` … `20261129000000` **APPLIED to non-production** (Account Erasure & Retention Integrity, PR #83, merged `070f6df`)
+
+Thirty files, and the single largest block in this ledger. They are documented
+individually in the reconciliation table above; this section records the **apply
+and validation** facts, which is what a dated section is for.
+
+**THIS SECTION ALSO CLOSES A GAP IT DID NOT CREATE.** The dated record stopped at
+`20261065000000` on 2026-09-10, and four merged blocks accumulated behind it —
+Booking & Onboarding Integrity, Reviews Phase 2, the Community Reshape, and this
+one. The 2026-09-12 post-merge state reconciliation found that absence and could
+not establish from the repository alone whether anything after `20261065000000`
+was applied anywhere. **A ledger that silently stops recording is worse than one
+that says it is behind**, because the next person reads the last entry as current.
+Only this block is recorded here; the three before it remain unrecorded and are
+their owner's to add.
+
+| Range | What it is |
+|---|---|
+| `20261100000000` … `20261110000000` | The approved closed-beta erasure and retention policy (PD-102, PD-103): retention as configuration, the deletion job with a memory, immediate deactivation, the engine, request/restore/finalize, the cascades that would have destroyed what the policy retains. |
+| `20261111000000` … `20261123000000` | The security review of `5977169` — three HIGH findings and eight more (PD-104). |
+| `20261124000000` … `20261127000000` | The final PM rulings: PD-105 (OQ-085), PD-106 (OQ-086), PD-107 (OQ-087), and the correction the suite found on its first run. |
+| `20261128000000`, `20261129000000` | The focused security review of the finished branch — one HIGH, four MEDIUM — and the correction to that correction. |
+
+**Validation** (non-production `wcoyjeklscuqsumpjpfo`; production untouched):
+B5B **2224/2224** with zero residue, Jest **982/982** across 50 suites, the
+negotiation concurrency harness **224/224** with zero residue, typecheck clean,
+`lint:ci` 0 errors and 209 warnings against a frozen baseline of 210, and
+`supabase migration list --linked` **168 local == 168 remote, zero mismatched**,
+newest `20261129000000`.
+
+**One validation note worth keeping**, because it looks like a failure and is
+not: the concurrency harness reported 223/224 on one run, and the single failure
+was its OWN overlap self-check in scenario A — the two sessions did not reach the
+server together, so that scenario proved nothing that run. Every outcome
+assertion in it passed and an immediate re-run was 224/224. The assertion is now
+annotated where it fires.
+
+**Production remains untouched and was not connected to.** Both `.env` and
+`.env.tooling.local` resolve to `wcoyjeklscuqsumpjpfo`; no production credential
+exists in the working environment.
+
 ## Production application policy
 
 Locked by Founder ruling, 2026-09-04. **No production reconciliation or migration work is
