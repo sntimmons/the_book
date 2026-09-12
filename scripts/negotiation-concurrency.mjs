@@ -587,6 +587,14 @@ async function raceCounters() {
   // reach the server together, a lock-free submit_barter_counter also produces three distinct
   // consecutive versions and every assertion below passes. Reporting that as proof of the lock
   // would be a false claim about what was tested.
+  //
+  // THIS ONE IS THE FLAKIEST ASSERTION IN THE FILE, and a failure here is not a product
+  // failure. The 1.5s window is measured between the two version rows, and the gap is the
+  // LAUNCH SKEW of two `supabase db query` processes — each authenticates over the network
+  // before it reaches the `pg_sleep`, and that round trip varies. Seen failing once against a
+  // run where every outcome assertion in this scenario passed (2026-09-12, PR #83), and passing
+  // on an immediate re-run with no change. If it fails alone, re-run before investigating: it
+  // says this scenario proved nothing THIS TIME, not that the lock is gone.
   const w = await runSql(`
 select (extract(epoch from (max(created_at) - min(created_at))) < 1.5) as overlapped
   from public.barter_proposal_versions
