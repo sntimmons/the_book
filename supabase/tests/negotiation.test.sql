@@ -1452,28 +1452,70 @@ begin
   perform pg_temp.chk('negotiation',
     'a participant with a live negotiation can still be erased', 'NO ERROR', v_code);
 
+  -- ══ THE NEGOTIATION NOW SURVIVES, AND THAT IS THE POLICY CHANGE ════════
+  --
+  -- These four assertions used to read "the negotiation cascades with them",
+  -- "leaving no orphan versions", "nor orphan acceptances", and "every
+  -- negotiation foreign key is ON DELETE CASCADE". They are INVERTED here rather
+  -- than deleted, because the inversion IS the ruling.
+  --
+  -- The cascade chain ran `barter_proposals` → `versions` → `barter_agreements`
+  -- (`accepted_version_id`) → `barter_obligations`. So erasing one participant
+  -- destroyed **the agreement and its adjudicated outcome** along with the
+  -- bargaining — including the counterparty's own record of a trade they
+  -- completed. The approved retention policy (class H) says barter history is
+  -- ANONYMIZED: terms, status and fulfilment outcome are preserved and the
+  -- personal identifiers come off. So the identity columns are `ON DELETE SET
+  -- NULL` and the history stays.
+  --
+  -- What still identifies the parties is `*_provider_id`, pointing at the
+  -- provider row — which account erasure EMPTIES rather than deletes, precisely
+  -- so records like these keep which business was involved.
   perform pg_temp.act_service();
   select count(*) into v_n from public.barter_proposals where id = pid;
-  perform pg_temp.chk('negotiation', 'and the negotiation cascades with them', '0', v_n::text);
+  perform pg_temp.chk('negotiation',
+    'the negotiation SURVIVES the participant (policy H: anonymize, not destroy)',
+    '1', v_n::text);
   select count(*) into v_n from public.barter_proposal_versions where proposal_id = pid;
-  perform pg_temp.chk('negotiation', 'leaving no orphan versions', '0', v_n::text);
+  perform pg_temp.chk('negotiation', 'its versions survive', '1', v_n::text);
   select count(*) into v_n from public.barter_version_acceptances where version_id = vid;
-  perform pg_temp.chk('negotiation', 'nor orphan acceptances', '0', v_n::text);
+  perform pg_temp.chk('negotiation', 'and its acceptances survive', '1', v_n::text);
+
+  -- BUT THE PERSON DOES NOT. This is the half that makes it an anonymization
+  -- rather than simply a retention.
+  select count(*) into v_n from public.barter_proposals
+   where id = pid and (owner_user_id = ru or responder_user_id = ru);
+  perform pg_temp.chk('negotiation', 'while the erased participant is severed from it',
+    '0', v_n::text);
+  -- Acceptance evidence keeps a RESTRICTED party identity, because policy H sends
+  -- accepted terms to the contract policy and an acceptance that cannot say who
+  -- accepted is not evidence of an agreement.
+  select count(*) into v_n from public.barter_version_acceptances
+   where version_id = vid and participant_user_id is null and participant_subject_id = ru;
+  perform pg_temp.chk('negotiation',
+    'and the acceptance keeps a restricted record of who accepted', '1', v_n::text);
 end $$;
 
--- Every FK on the negotiation chain cascades. A future RESTRICT would re-break erasure.
+-- The negotiation identity keys SEVER rather than cascade, so erasing a
+-- participant anonymises the history instead of destroying the counterparty's
+-- copy of it. A future CASCADE here would silently restore the old behaviour —
+-- which is why this pins the direction rather than only the count.
 do $$
 declare
-  v_n integer;
+  v_cascade integer;
 begin
-  select count(*) into v_n
+  select count(*) into v_cascade
     from pg_constraint c
+    join pg_class cl on cl.oid = c.conrelid
+    join pg_class rc on rc.oid = c.confrelid
+    join pg_namespace rn on rn.oid = rc.relnamespace
    where c.contype = 'f'
-     and c.conrelid::regclass::text in ('barter_proposals', 'barter_proposal_versions',
+     and cl.relname in ('barter_proposals', 'barter_proposal_versions',
          'barter_proposal_terms', 'barter_version_acceptances')
-     and c.confdeltype <> 'c';
+     and rn.nspname = 'auth' and rc.relname = 'users'
+     and c.confdeltype = 'c';
   perform pg_temp.chk('negotiation',
-    'every negotiation foreign key is ON DELETE CASCADE', '0', v_n::text);
+    'no negotiation identity key cascades a participant away any more', '0', v_cascade::text);
 end $$;
 
 -- ── The client-asserted-side signatures are GONE, and stay gone ────────────

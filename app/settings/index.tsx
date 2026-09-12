@@ -276,6 +276,21 @@ export default function SettingsScreen() {
           />
         </View>
 
+        {/* ACCOUNT — the way out of the product.
+            Self-service deletion has to live INSIDE the app: a product whose only
+            exit is emailing support is one people cannot leave, and the approved
+            closed-beta policy says so in as many words. It sits under Legal
+            rather than in Support because it is not a favour anyone grants. */}
+        <GroupLabel>Account</GroupLabel>
+        <View style={s.group}>
+          <NavRow
+            icon="trash-outline"
+            label="Delete Account"
+            onPress={() => router.push('/settings/delete-account' as never)}
+            isLast
+          />
+        </View>
+
         {/* SIGN OUT */}
         <TouchableOpacity
           style={s.signOutRow}
