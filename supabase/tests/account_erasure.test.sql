@@ -923,13 +923,19 @@ do $$
 declare f jsonb := pg_temp.ae_seed('retry'); cu uuid; v_req uuid; v_state text; v_sweep jsonb;
 begin
   cu := (f->>'cu')::uuid;
-  v_req := pg_temp.ae_request_due(cu);
   perform pg_temp.act_service();
+  -- THE PURGE HAS TO BE GENUINELY DUE. `finalize_account_deletion` recomputes
+  -- due_at from the conversation's own clock every time it runs, and the sweep now
+  -- re-finalises a request that has outstanding work — so a due date forced into
+  -- the past by hand is simply recalculated back to the future, and the test would
+  -- be asserting against a fixture rather than against the retry.
+  update public.conversation set last_message_at = now() - interval '400 days'
+   where id = (f->>'conv')::uuid;
+  v_req := pg_temp.ae_request_due(cu);
   v_state := public.finalize_account_deletion(v_req);
   -- Force the outcome a lock or a timeout would have produced.
   update public.account_deletion_steps
-     set status = 'failed', last_error = 'simulated transient failure',
-         due_at = now() - interval '1 minute'
+     set status = 'failed', last_error = 'simulated transient failure'
    where request_id = v_req and step_key = 'messages_purge';
   perform pg_temp.chk('erasure', 'a purge can fail', 'failed',
     (select status from public.account_deletion_steps
@@ -938,8 +944,13 @@ begin
   perform pg_temp.chk('erasure', 'and the next sweep retries it rather than leaving it', 'completed',
     (select status from public.account_deletion_steps
       where request_id = v_req and step_key = 'messages_purge'));
-  perform pg_temp.chk('erasure', 'and the sweep says it retried something', 'true',
-    ((v_sweep->>'retried')::integer >= 1)::text);
+  -- The sweep reports the purge, not necessarily a "retry": its re-queue pass
+  -- re-finalises a request with outstanding work, and finalisation reclassifies a
+  -- failed purge step back to `scheduled` with a freshly computed due date before
+  -- the purge loop reaches it. That reclassification IS the recovery, so the
+  -- property worth asserting is that the work happened.
+  perform pg_temp.chk('erasure', 'and the sweep reports doing the purge', 'true',
+    ((v_sweep->>'purged')::integer >= 1)::text);
   -- And the failure was visible to an operator while it lasted, which is the only
   -- reason anyone would ever have found it.
   perform pg_temp.chk('erasure', 'an overdue or failed step is reportable', 'true',
@@ -1228,6 +1239,257 @@ begin
     'grace_period', v_state);
   perform pg_temp.chk('erasure', 'and the account still exists', '1',
     (select count(*)::text from auth.users where id = cu));
+end $$;
+
+select pg_temp.act_service();
+
+-- ══ 13. WHAT THE RE-REVIEW FOUND, AND THE GENERIC FORMS THAT STOP #6 ══════
+
+-- ── 13a. The business that hung off the provider row (SEC-RLS-102) ───────
+--
+-- Section 12a asserted the five tables I had narrowed. It could not see the four
+-- I had not: services, availability, blocked dates and policies were still
+-- publicly readable for a departing provider AND survived a completed erasure,
+-- because the providers row is deliberately kept so its cascade never fires.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('business'); pu uuid; pid uuid; ou uuid;
+  v_req uuid; v_state text;
+begin
+  pu := (f->>'pu')::uuid; pid := (f->>'pid')::uuid; ou := (f->>'ou')::uuid;
+  perform pg_temp.act_service();
+  insert into public.provider_services(provider_id, name, price, duration_minutes)
+    values (pid, 'a signature service', 120, 60);
+  insert into public.provider_availability(provider_id, weekday, start_time, end_time)
+    values (pid, 1, '09:00', '17:00');
+  insert into public.provider_blocked_dates(provider_id, date, reason)
+    values (pid, current_date + 20, 'medical leave');
+  insert into public.provider_policies(provider_id) values (pid)
+    on conflict (provider_id) do nothing;
+  insert into public.provider_follows(provider_id, follower_user_id) values (pid, ou);
+  insert into public.account_deletion_requests
+    (subject_user_id, subject_id, status, grace_ends_at, disclosed_grace_days)
+  values (pu, pu, 'grace_period', now() + interval '30 days', 30);
+
+  -- A STRANGER, and then anon, on each base table.
+  perform pg_temp.act(ou);
+  perform pg_temp.chk('erasure', 'a departing provider''s service menu leaves public access',
+    '0', (select count(*)::text from public.provider_services where provider_id = pid));
+  perform pg_temp.chk('erasure', 'as do their working hours', '0',
+    (select count(*)::text from public.provider_availability where provider_id = pid));
+  perform pg_temp.chk('erasure', 'and their blocked dates, which carry a free-text reason', '0',
+    (select count(*)::text from public.provider_blocked_dates where provider_id = pid));
+  perform pg_temp.act(null, 'anon');
+  perform pg_temp.chk('erasure', 'and anon sees no menu either', '0',
+    (select count(*)::text from public.provider_services where provider_id = pid));
+
+  -- THE OWNER KEEPS THEIR OWN, because they are winding a business down.
+  perform pg_temp.act(pu);
+  perform pg_temp.chk('erasure', 'while the owner still reads their own menu', '1',
+    (select count(*)::text from public.provider_services where provider_id = pid));
+
+  -- AND FINALISATION ACTUALLY REMOVES THEM.
+  perform pg_temp.act_service();
+  update public.account_deletion_requests set grace_ends_at = now() - interval '1 second'
+   where subject_user_id = pu;
+  select id into v_req from public.account_deletion_requests where subject_user_id = pu;
+  insert into public.account_deletion_steps (request_id, step_key)
+  select v_req, k from unnest(public.account_deletion_step_keys()) k
+  on conflict (request_id, step_key) do nothing;
+  v_state := public.finalize_account_deletion(v_req);
+  perform pg_temp.chk('erasure', 'the erasure of a booked provider completes', 'completed', v_state);
+  perform pg_temp.chk('erasure', 'and the shell carries no service menu', '0',
+    (select count(*)::text from public.provider_services where provider_id = pid));
+  perform pg_temp.chk('erasure', 'no availability', '0',
+    (select count(*)::text from public.provider_availability where provider_id = pid));
+  perform pg_temp.chk('erasure', 'no blocked dates', '0',
+    (select count(*)::text from public.provider_blocked_dates where provider_id = pid));
+  perform pg_temp.chk('erasure', 'no policies', '0',
+    (select count(*)::text from public.provider_policies where provider_id = pid));
+  perform pg_temp.chk('erasure', 'and no follower list', '0',
+    (select count(*)::text from public.provider_follows where provider_id = pid));
+  perform pg_temp.chk('erasure', 'no booking preferences', '0',
+    (select count(*)::text from public.provider_booking_preferences where provider_id = pid));
+  perform pg_temp.chk('erasure', 'and no profile-view rows naming a viewer', '0',
+    (select count(*)::text from public.provider_profile_views where provider_id = pid));
+  -- THE BOOKING SURVIVES, which is why the FK had to become SET NULL rather than
+  -- the services surviving.
+  perform pg_temp.chk('erasure', 'the booking survives and still says what was booked', 'true',
+    (select (service_name is not null)::text from public.bookings
+      where id = (f->>'bk')::uuid));
+end $$;
+
+-- Generic: every table keyed on a provider is accounted for. This is the
+-- assertion that would have caught table five; the per-table block above could
+-- only catch the four somebody named.
+select pg_temp.chk('erasure',
+  'every table with a provider_id FK is either erased by a step or a known keeper', '',
+  (select coalesce(string_agg(t, ', ' order by t), '')
+     from (
+       select c.conrelid::regclass::text as t
+         from pg_constraint c
+         join pg_class r on r.oid = c.conrelid
+         join pg_namespace n on n.oid = r.relnamespace
+        where c.contype = 'f'
+          and c.confrelid = 'public.providers'::regclass
+          and n.nspname = 'public'
+          and c.conrelid::regclass::text not in (
+            -- Erased by adel_provider_content.
+            'provider_services', 'provider_availability', 'provider_blocked_dates',
+            'provider_policies', 'provider_follows', 'posts',
+            'provider_booking_preferences', 'provider_profile_views',
+            -- Retained on purpose, each with a recorded reason.
+            'bookings',                  -- policy B, the operational record
+            'contracts',                 -- policy C, accepted-contract evidence
+            'provider_reviews',          -- policy E, the honest public record
+            'client_reviews',            -- policy E
+            'conversation',              -- policy I, severed identity
+            'barter_offers', 'barter_interests',       -- policy H
+            'community_posts', 'community_replies',    -- policy K
+            'saved_providers', 'care_reminders',       -- other people's artefacts
+            'provider_booking_clicks', 'post_views',   -- analytics, viewer severed
+            'reports',                   -- policy F
+            'operator_cases',            -- policy G
+            'community_moderation_actions',            -- policy G
+            'barter_proposals', 'barter_proposal_terms', 'barter_agreements',
+            'barter_obligations', 'booking_reference_photos',
+            'barter_agreement_cancellations',        -- policy H, the trade outcome
+            'barter_obligation_no_show_reports',     -- policy H / PD-068 adjudication
+            -- Integer counts per date. No identity of any kind in the table, so
+            -- there is nothing in it to erase — a DECISION (20261123000000), not
+            -- an omission.
+            'provider_metrics_daily'
+          )
+     ) x));
+
+-- ── 13b. anon can harvest no account id from public (SEC-AUTHZ-101) ──────
+--
+-- `account_unavailable(uuid)` is granted to client roles because an RLS policy is
+-- evaluated as the caller. `20261111000000` argued the enumeration was closed
+-- because the provider listing no longer names them — and `post_likes.user_id` and
+-- `provider_follows.follower_user_id` were `USING (true)` with an anon grant the
+-- whole time, which is a supply of ids for every user who ever liked or followed.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('harvest'); cu uuid; pid uuid; ou uuid; v_post uuid;
+begin
+  cu := (f->>'cu')::uuid; pid := (f->>'pid')::uuid; ou := (f->>'ou')::uuid;
+  perform pg_temp.act_service();
+  select id into v_post from public.posts where provider_id = pid limit 1;
+  insert into public.post_likes(post_id, user_id) values (v_post, cu);
+  insert into public.provider_follows(provider_id, follower_user_id) values (pid, cu);
+
+  perform pg_temp.act(null, 'anon');
+  perform pg_temp.chk('erasure', 'anon can read no like row, so harvests no account id', '0',
+    (select count(*)::text from public.post_likes));
+  perform pg_temp.chk('erasure', 'and no follow row', '0',
+    (select count(*)::text from public.provider_follows));
+
+  -- A DIFFERENT signed-in person cannot either. The oracle needs ids; this is
+  -- where they were coming from.
+  perform pg_temp.act(ou);
+  perform pg_temp.chk('erasure', 'nor can another signed-in user read somebody else''s likes',
+    '0', (select count(*)::text from public.post_likes where user_id = cu));
+  perform pg_temp.chk('erasure', 'or their follows', '0',
+    (select count(*)::text from public.provider_follows where follower_user_id = cu));
+
+  -- AND THE OWNER STILL CAN, which is what the app actually reads.
+  perform pg_temp.act(cu);
+  perform pg_temp.chk('erasure', 'while your own like is still yours to see', '1',
+    (select count(*)::text from public.post_likes where user_id = cu));
+  perform pg_temp.act_service();
+  -- The public follower COUNT survives as a number rather than a list.
+  perform pg_temp.chk('erasure', 'and the follower count is still available as a number', '1',
+    public.provider_follower_count(pid)::text);
+end $$;
+
+-- ── 13c. Every SECURITY DEFINER function pins its search_path ────────────
+--
+-- `20261118000000` wrote this rule down while fixing five non-definer functions,
+-- and left a definer trigger on `providers` with no setting at all. The generic
+-- form is the only one that finds number two.
+select pg_temp.chk('erasure', 'no SECURITY DEFINER function in public leaves search_path unpinned',
+  '', (select coalesce(string_agg(p.proname, ', ' order by p.proname), '')
+         from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+        where n.nspname = 'public'
+          and p.prosecdef
+          and not exists (
+            select 1 from unnest(coalesce(p.proconfig, array[]::text[])) cfg
+             where cfg like 'search_path=%')));
+
+-- ── 13d. The operator arm of the split policy (SEC-COVERAGE-106) ─────────
+--
+-- Section 12a asserted two of the three parties PD-104 names. A
+-- `drop policy providers_operator_read` would have passed the whole suite.
+do $$
+declare f jsonb := pg_temp.ae_seed('operator'); pu uuid; pid uuid; op uuid := gen_random_uuid();
+begin
+  pu := (f->>'pu')::uuid; pid := (f->>'pid')::uuid;
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (op);
+  insert into public.operators(user_id) values (op) on conflict do nothing;
+  insert into public.account_deletion_requests
+    (subject_user_id, subject_id, status, grace_ends_at, disclosed_grace_days)
+  values (pu, pu, 'grace_period', now() + interval '30 days', 30);
+
+  perform pg_temp.act(op);
+  perform pg_temp.chk('erasure',
+    'an operator still reads a departing provider''s row — a case may be about them',
+    '1', (select count(*)::text from public.providers where id = pid));
+  perform pg_temp.act_service();
+end $$;
+
+-- ── 13e. A hold can be released, and the work resumes (SEC-DATA-103) ─────
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('hold'); cu uuid; v_req uuid; v_hold uuid; v_state text;
+begin
+  cu := (f->>'cu')::uuid;
+  v_req := pg_temp.ae_request_due(cu);
+  perform pg_temp.act_service();
+  insert into public.account_deletion_holds(request_id, record_class, reason)
+  values (v_req, 'community_content', 'an open safety matter') returning id into v_hold;
+
+  v_state := public.finalize_account_deletion(v_req);
+  perform pg_temp.chk('erasure', 'a held class does not keep the whole account alive', '0',
+    (select count(*)::text from auth.users where id = cu));
+  perform pg_temp.chk('erasure', 'and the held step says so', 'held',
+    (select status from public.account_deletion_steps
+      where request_id = v_req and step_key = 'community_content'));
+  perform pg_temp.chk('erasure', 'a held step is visible to operations', 'true',
+    (select exists (select 1 from public.overdue_account_deletion_work() w
+                     where w.step_key = 'community_content' and w.status = 'held'))::text);
+
+  -- RELEASE, and the work becomes runnable rather than staying held forever.
+  perform pg_temp.chk('erasure', 'the hold can be released', 'released',
+    public.release_account_deletion_hold(v_hold));
+  perform pg_temp.chk('erasure', 'which puts the step back in the queue', 'pending',
+    (select status from public.account_deletion_steps
+      where request_id = v_req and step_key = 'community_content'));
+  perform public.sweep_account_deletions();
+  perform pg_temp.chk('erasure', 'and the next sweep finishes it', 'completed',
+    (select status from public.account_deletion_steps
+      where request_id = v_req and step_key = 'community_content'));
+  perform pg_temp.chk('erasure', 'so the held content is gone', '0',
+    (select count(*)::text from public.community_posts where user_id = cu));
+end $$;
+
+-- And a request nobody ever swept — the failure the sweep's own comment calls the
+-- worst one — is finally visible to the query named as the detector.
+do $$
+declare f jsonb := pg_temp.ae_seed('unswept'); cu uuid; v_req uuid;
+begin
+  cu := (f->>'cu')::uuid;
+  perform pg_temp.act_service();
+  insert into public.account_deletion_requests
+    (subject_user_id, subject_id, status, grace_ends_at, disclosed_grace_days)
+  values (cu, cu, 'grace_period', now() - interval '2 days', 30) returning id into v_req;
+  insert into public.account_deletion_steps (request_id, step_key)
+  select v_req, k from unnest(public.account_deletion_step_keys()) k;
+  perform pg_temp.chk('erasure',
+    'a request past its grace date that nothing finalised is reported as overdue', 'true',
+    (select exists (select 1 from public.overdue_account_deletion_work() w
+                     where w.request_id = v_req))::text);
 end $$;
 
 select pg_temp.act_service();

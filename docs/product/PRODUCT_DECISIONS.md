@@ -2231,9 +2231,15 @@ A user can start deletion **inside the app** (Settings → Account → Delete Ac
 support must **not** be the only path. The control creates a **verified deletion request**; it does
 not erase immediately.
 
-Verification is two independent things: a token **issued in the last 15 minutes** (so a stale or
-stolen session cannot delete an account unattended) and a typed confirmation. The RPC takes **no
-user id**, so there is no parameter with which to delete somebody else's account.
+Verification is two independent things: **recent proof of identity** and a typed confirmation. The
+RPC takes **no user id**, so there is no parameter with which to delete somebody else's account.
+
+**Corrected 2026-09-12 (PD-104).** This paragraph said "a token issued in the last 15 minutes (so a
+stale or stolen session cannot delete an account unattended)". The parenthetical was false: any
+token issuance restamps `iat`, including the SDK's own background `refreshSession()`, which needs no
+password. The check now reads the token's `amr` authentication timestamp where there is one and falls
+back to `iat` where there is not. **Those are not the same bar**, and no claim is made that either is
+equivalent to step-up authentication.
 
 #### 30-day grace period
 On a verified request, **immediately**: the account is inactive, the public profile is hidden, no
@@ -2328,8 +2334,6 @@ language; beta FAQ language. Recorded in **OQ-084**.
 
 ---
 
-## Not decisions
-
 ### PD-104 — A guarantee enforced in the view is a guarantee about one query
 
 **Decided 2026-09-12. Applies to PD-102's immediate-deactivation promise.**
@@ -2391,12 +2395,23 @@ one. **No claim is made that this is equivalent to step-up authentication.**
 
 #### What is deliberately NOT decided here
 
-The residual identity oracle (`account_unavailable(uuid)` is granted to client
-roles because a policy needs it) is **not** claimed closed — it is the same
-question as **OQ-076** and recorded there. Pseudonym linkability is **OQ-085**,
+The residual identity oracle is **narrower than the first version of this record
+said, and is still not claimed closed.** `account_unavailable(uuid)` is granted to
+client roles because an RLS policy is evaluated as the caller and there is no other
+mechanism. The first draft argued the enumeration was closed "because the listing
+no longer names them" — **which was wrong**: `post_likes` and `provider_follows`
+were `USING (true)` with an `anon` grant, publishing a real account id for every
+like and every follow on the platform. Both are now own-rows-only (the visible like
+count comes from `posts.like_count`, and the follower count from a function that
+returns a number), so `public` hands out no account ids to harvest. What remains is
+that somebody holding an id from an earlier session can ask about it one at a time.
+That is the same question as **OQ-076** and is recorded there at that width. Pseudonym linkability is **OQ-085**,
 the full list of writes that count as "new marketplace activity" is **OQ-086**,
 and whether contract-signature images and PDFs are in erasure scope is
 **OQ-087**.
+
+
+## Not decisions
 
 Recorded so they are not mistaken for locked state:
 

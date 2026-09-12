@@ -562,7 +562,15 @@ so for a **pending-deletion or erased** subject the base table and the `_visible
 view now agree: both return nothing. The set-difference oracle is closed **for
 that cause** and remains open for a PD-089 block, which is the original question.
 
-What replaced it is smaller and is recorded rather than declared solved:
+**The id supply that made it enumerable is also closed, and the first version of
+this note got that wrong.** The claim was that a caller could only ask about ids it
+already held — while `post_likes` and `provider_follows` were `USING (true)` with an
+`anon` grant, publishing a real account id for every like and every follow on the
+platform. Both are own-rows-only now: the visible like count comes from
+`posts.like_count`, and the follower count from a function that returns a number
+rather than a list of people. Nothing in `public` hands out an account id to harvest.
+
+What remains is smaller and is recorded rather than declared solved:
 `public.account_unavailable(uuid)` is granted to `anon` and `authenticated`,
 because an RLS policy is evaluated as the CALLER and the tables holding the fact
 are themselves RLS-protected — a definer function is the only mechanism, and a

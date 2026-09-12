@@ -147,6 +147,15 @@ If the date has passed, or they say they cannot sign in: **their account is
 gone.** Say so plainly. **Do not imply it can be recovered.** They may sign up
 again, and it will be a new account with none of the old history.
 
+### What a departing provider stops showing
+
+At the request, and not only in the feed: their profile, portfolio, Reels, Reel
+comments, Community content, **service menu, working hours, cancellation and deposit
+policies, and blocked dates** all leave public access. At finalisation all of it is
+deleted along with the business settings and the follower list. The `providers` row
+itself is kept, emptied and ownerless, because bookings point at it — so a client's
+booking history stays readable and still says what was booked.
+
 ### Looking up somebody who is leaving
 
 **A departing or erased provider will not appear when you search the app as an
@@ -169,9 +178,12 @@ appears somewhere after the date.
    what is left runs, **and a failed purge is retried** rather than left behind.
 4. **`select * from public.overdue_account_deletion_work();`** (service_role) is
    the one query that answers "is anything being retained longer than it should
-   be": every step that is failed, held, or past due, with its error. Nothing else
-   surfaces this — no client role can read the steps table — so it belongs in the
-   same routine as the sweep.
+   be". It returns two kinds of row: **any request past its grace date that nothing
+   has finalised** — the row reads `(request never finalised)`, and this is the
+   case that matters most, because there is no scheduler — and **any step that is
+   failed, held, or past due**, with its error. Nothing else surfaces either: no
+   client role can read these tables, so this query belongs in the same routine as
+   the sweep.
 5. A step in `held` is **not** a failure — see § 6.
 6. A step in `scheduled` is **not** a failure — it is dated future work (§ 3).
 
@@ -204,7 +216,14 @@ An operator can place a **hold on one class** of a specific request
 - **A hold never keeps the whole account alive.** That is the point of it being
   per-class: one open report must not be a reason to keep somebody's profile
   photo.
-- Every hold records who placed it and why, and is released the same way.
+- Every hold records who placed it and why. **Release it with
+  `select public.release_account_deletion_hold('<hold id>');`** as `service_role` —
+  that marks it released, puts the held steps back in the queue, and returns the
+  request to a state the sweep picks up, so the next sweep finishes the work. Until
+  this function existed the note promised holds could be released and nothing in
+  the schema ever wrote `released_at`.
+- **An open hold stops the matching purge as well as the matching sever.** A hold on
+  `messages` or `booking_photos` now blocks that class's delayed purge too.
 - **A step can also be held without anyone placing a hold**: if a class's retention
   window is unset, the engine holds that step with the reason rather than guessing
   a number or silently skipping it. `overdue_account_deletion_work()` lists these.
