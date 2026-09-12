@@ -1578,6 +1578,20 @@ begin
         on c.id = m.conversation_id
       where m.conversation_id = conv and m.sender_id = c.client_id));
 
+  -- AND THE ONE COLUMN THAT COULD HAVE JOINED TWO THREADS BACK TOGETHER IS
+  -- EMPTY. `conversation.provider_pair_key` is `<provider id>:<provider id>`,
+  -- derived from `providers.user_id = client_id` — so for a departing person who
+  -- is ALSO a provider it would have carried their own provider id into every
+  -- thread and re-linked the conversations the relationship scope separates. It
+  -- does not, because `conversation_pair_key` fires BEFORE UPDATE as well as
+  -- INSERT and the pseudonym resolves to no provider, so the sever nulls it. That
+  -- is load-bearing and entirely implicit, which is why it is asserted here: a
+  -- future change making that trigger INSERT-only would reopen the join with no
+  -- other failing test.
+  perform pg_temp.chk('erasure', 'and the conversation pair key does not survive the sever', '0',
+    (select count(*)::text from public.conversation
+      where id in (conv, conv2) and provider_pair_key is not null));
+
   -- NOTHING RESOLVES BACK through an auth id, a profile, or a live account.
   perform pg_temp.chk('erasure', 'no pseudonym is an auth id', '0',
     (select count(*)::text from public.erasure_relationship_pseudonyms e
