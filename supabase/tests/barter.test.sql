@@ -2320,7 +2320,12 @@ begin
     -- refused before any other work is done, and certainly before the rate limiter
     -- charges the attempt against a budget. Same reasoning as zw_not_blocked below,
     -- one step earlier.
-    'b_barter_interests_refuse_when_inactive,'
+    -- `b_..._refuse_to_inactive_offer` joined with 20261111000000 and sorts ahead of
+    -- it on the same reasoning: an offer whose owner has been erased cannot be
+    -- responded to at all, so refusing that is cheaper and earlier than deciding
+    -- anything about the responder.
+    'b_barter_interests_refuse_to_inactive_offer,'
+      || 'b_barter_interests_refuse_when_inactive,'
       || 'barter_interests_write_integrity,barter_interests_zw_not_blocked,'
       || 'barter_interests_zx_no_release_after_agreement,'
       || 'barter_interests_zy_answer_open_offer,barter_interests_zz_rate_limit', v_order);

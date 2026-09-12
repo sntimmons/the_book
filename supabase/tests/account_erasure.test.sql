@@ -22,6 +22,19 @@ begin
   perform set_config('role', 'authenticated', true);
 end $$;
 
+-- The context INSIDE a SECURITY DEFINER function: the caller's claims, the
+-- owner's role. Several triggers fire on writes that only ever happen that way —
+-- a rating recompute, a counter update — and asserting them as `authenticated`
+-- tests a column grant instead of the trigger.
+create or replace function pg_temp.act_claims_only(p_uid uuid)
+returns void language plpgsql as $$
+begin
+  perform set_config('role', 'none', true);
+  perform set_config('request.jwt.claim.sub', '', true);
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', p_uid::text, 'role', 'authenticated')::text, true);
+end $$;
+
 -- A caller whose token is old, to prove the freshness test is real.
 create or replace function pg_temp.act_stale(p_uid uuid)
 returns void language plpgsql as $$
@@ -732,11 +745,489 @@ select pg_temp.chk('erasure', 'and finalisation refuses to run before the grace 
      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public' and p.proname = 'finalize_account_deletion')::text);
 -- No retention duration is written into the engine: every one is read from config.
+--
+-- THIS ASSERTION USED TO PASS WHILE THE PROPERTY WAS FALSE. It matched only
+-- `interval '90 day'`, and the engine was written as
+-- `make_interval(days => coalesce(public.retention_days('booking_photos'), 90))` —
+-- a hard-coded fallback in the form the pattern could not see. A test that cannot
+-- fail is worse than no test: it converts an unchecked property into one that
+-- looks checked. All three spellings are now matched, including the coalesce
+-- fallback, which is the one that actually shipped.
 select pg_temp.chk('erasure', 'no retention window is hard-coded in the engine', '0',
   (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname in ('finalize_account_deletion', 'request_account_deletion',
                         'sweep_account_deletions')
-      and p.prosrc ~ 'interval\s*''(30|90|180|1460)\s*day'));
+      and (p.prosrc ~ 'interval\s*''(30|90|180|1460)\s*day'
+        or p.prosrc ~ 'make_interval\s*\(\s*days\s*=>\s*[0-9]'
+        or p.prosrc ~ 'coalesce\s*\(\s*public\.retention_days\s*\([^)]*\)\s*,\s*[0-9]')));
+
+select pg_temp.act_service();
+
+-- ══ 12. WHAT THE SECURITY REVIEW OF 5977169 FOUND ════════════════════════
+--
+-- Every assertion below exists because something was asserted only through a
+-- `_visible` view, or only in one direction, or only for one shape of account.
+-- The pattern in all of them: the suite tested the surface the app uses, and the
+-- defect lived one layer underneath it.
+
+-- ── 12a. "Hidden" is asked of the BASE TABLE, as an attacker would ────────
+--
+-- The old assertions all read the `_visible` views, which is why they could not
+-- see that `providers_public_read` was `USING (true)` the whole time.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('base'); cu uuid; pu uuid; pid uuid;
+  v_stranger uuid := gen_random_uuid();
+begin
+  cu := (f->>'cu')::uuid; pu := (f->>'pu')::uuid; pid := (f->>'pid')::uuid;
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (v_stranger);
+  insert into public.clients(id, name) values (v_stranger, 'Stranger base');
+  insert into public.post_comments(post_id, user_id, comment_text)
+    select p.id, cu, 'a reel comment' from public.posts p where p.provider_id = pid limit 1;
+  insert into public.account_deletion_requests
+    (subject_user_id, subject_id, status, grace_ends_at, disclosed_grace_days)
+  values (pu, pu, 'grace_period', now() + interval '30 days', 30),
+         (cu, cu, 'grace_period', now() + interval '30 days', 30);
+
+  perform pg_temp.act(v_stranger);
+  perform pg_temp.chk('erasure',
+    'a stranger cannot read a pending-deletion provider from public.providers', '0',
+    (select count(*)::text from public.providers where id = pid));
+  perform pg_temp.chk('erasure', 'nor their posts from public.posts', '0',
+    (select count(*)::text from public.posts where provider_id = pid));
+  perform pg_temp.chk('erasure', 'nor a leaving account''s reel comments', '0',
+    (select count(*)::text from public.post_comments where user_id = cu));
+  perform pg_temp.chk('erasure', 'nor their community post from the base table', '0',
+    (select count(*)::text from public.community_posts where user_id = cu));
+
+  perform pg_temp.act(null, 'anon');
+  perform pg_temp.chk('erasure', 'and anon cannot either — the public key is not a way in', '0',
+    (select count(*)::text from public.providers where id = pid));
+
+  -- AND THE THREE PARTIES WHO ARE NOT THE PUBLIC. Hiding the row from these would
+  -- replace a leak with a stranded transaction, which PD-102 forbids.
+  perform pg_temp.act(pu);
+  perform pg_temp.chk('erasure', 'the owner still reads their own provider row', '1',
+    (select count(*)::text from public.providers where id = pid));
+  perform pg_temp.act(cu);
+  perform pg_temp.chk('erasure',
+    'and a client with a booking still resolves the provider they are mid-transaction with', '1',
+    (select count(*)::text from public.providers where id = pid));
+  perform pg_temp.act_service();
+end $$;
+
+-- ── 12b. Erasing a PROVIDER does not destroy their clients' evidence ──────
+--
+-- `contracts.user_id` was ON DELETE CASCADE, so the auth delete took the
+-- contract, which took `contract_versions` and `contract_signatures` with it. The
+-- suite only ever erased the CLIENT, so it proved the half that worked.
+do $$
+declare f jsonb := pg_temp.ae_seed('prov_ev'); pu uuid; pid uuid; v_req uuid; v_state text;
+begin
+  pu := (f->>'pu')::uuid; pid := (f->>'pid')::uuid;
+  v_req := pg_temp.ae_request_due(pu);
+  perform pg_temp.act_service();
+  v_state := public.finalize_account_deletion(v_req);
+  perform pg_temp.chk('erasure', 'erasing the provider finalises', 'completed', v_state);
+  perform pg_temp.chk('erasure',
+    'and their client''s accepted-contract signature survives it', '1',
+    (select count(*)::text from public.contract_signatures s
+       join public.contracts c on c.id = s.contract_id
+      where c.provider_id = pid));
+  perform pg_temp.chk('erasure', 'as do the exact terms that were accepted', '1',
+    (select count(*)::text from public.contracts where provider_id = pid));
+  perform pg_temp.chk('erasure', 'with the departed author link severed', 'true',
+    (select (user_id is null)::text from public.contracts where provider_id = pid));
+  -- AND THE CLIENT'S OWN LINK IS UNTOUCHED. They did not ask to leave; severing
+  -- their signature because their provider did would be the same defect in the
+  -- other direction.
+  perform pg_temp.chk('erasure', 'while the signing client''s own link is left alone', 'true',
+    (select (s.client_user_id is not null and s.signer_subject_id is null)::text
+       from public.contract_signatures s
+       join public.contracts c on c.id = s.contract_id
+      where c.provider_id = pid limit 1));
+end $$;
+
+-- And the same on the RAW path, which is the one an operator actually reaches
+-- for: a dashboard delete, an admin API call, an ops script.
+do $$
+declare f jsonb := pg_temp.ae_seed('prov_raw'); pu uuid; pid uuid;
+begin
+  pu := (f->>'pu')::uuid; pid := (f->>'pid')::uuid;
+  perform pg_temp.act_service();
+  delete from auth.users where id = pu;
+  perform pg_temp.chk('erasure',
+    'a raw delete from auth.users also leaves the contract standing', '1',
+    (select count(*)::text from public.contracts where provider_id = pid));
+  perform pg_temp.chk('erasure', 'and the signature with it', '1',
+    (select count(*)::text from public.contract_signatures s
+       join public.contracts c on c.id = s.contract_id where c.provider_id = pid));
+end $$;
+
+-- ── 12c. ONE assertion that covers every restricted column, forever ──────
+--
+-- Four `*_subject_id` columns were asserted by name and the fifth was added
+-- without one — on a table holding a TABLE-LEVEL grant, which is the mistake this
+-- repository has now made three times and written down twice. A per-column
+-- assertion could only ever catch the columns somebody remembered.
+select pg_temp.chk('erasure', 'no *_subject_id column is readable by any client role', '0',
+  (select count(*)::text
+     from information_schema.columns c
+    where c.table_schema = 'public'
+      and c.column_name like '%\_subject\_id'
+      and (has_column_privilege('anon', format('%I.%I', c.table_schema, c.table_name),
+                                c.column_name, 'SELECT')
+        or has_column_privilege('authenticated', format('%I.%I', c.table_schema, c.table_name),
+                                c.column_name, 'SELECT'))));
+-- And that the assertion is actually looking at something.
+select pg_temp.chk('erasure', 'and there are restricted columns for it to check', 'true',
+  (select (count(*) >= 7)::text from information_schema.columns c
+    where c.table_schema = 'public' and c.column_name like '%\_subject\_id'));
+
+-- ── 12d. A client's face is bytes too ────────────────────────────────────
+--
+-- The media queue was fed only by the provider-content step, which returned early
+-- for an account with no `providers` row. Client avatars go to the same public
+-- bucket under the same prefix, so a client-only erasure reported `completed`
+-- with the person's photo still served.
+do $$
+declare f jsonb := pg_temp.ae_seed('media'); cu uuid; v_req uuid; v_state text;
+        v_path text;
+begin
+  cu := (f->>'cu')::uuid;
+  v_path := cu::text || '/profile/avatar.jpg';
+  perform pg_temp.act_service();
+  insert into storage.objects(bucket_id, name) values ('provider-media', v_path);
+  v_req := pg_temp.ae_request_due(cu);
+  v_state := public.finalize_account_deletion(v_req);
+  perform pg_temp.chk('erasure', 'a client-only account''s avatar IS queued for deletion', '1',
+    (select count(*)::text from public.pending_media_deletions
+      where subject_id = cu and object_path = v_path and deleted_at is null));
+  perform pg_temp.chk('erasure',
+    'and the request refuses to report success while the bytes are still there', 'failed',
+    v_state);
+  perform public.confirm_media_deleted('provider-media', v_path);
+  v_state := public.finalize_account_deletion(v_req);
+  perform pg_temp.chk('erasure', 'and completes once the bytes are confirmed gone', 'completed',
+    v_state);
+end $$;
+
+-- ── 12e. A failed purge is RETRIED, not retained forever ─────────────────
+--
+-- The purge loop took only `scheduled`, its handler wrote `failed`, and nothing
+-- read `failed` again — so one transient lock turned a 180-day message window
+-- into an indefinite one, silently, while the request said `completed`.
+do $$
+declare f jsonb := pg_temp.ae_seed('retry'); cu uuid; v_req uuid; v_state text; v_sweep jsonb;
+begin
+  cu := (f->>'cu')::uuid;
+  v_req := pg_temp.ae_request_due(cu);
+  perform pg_temp.act_service();
+  v_state := public.finalize_account_deletion(v_req);
+  -- Force the outcome a lock or a timeout would have produced.
+  update public.account_deletion_steps
+     set status = 'failed', last_error = 'simulated transient failure',
+         due_at = now() - interval '1 minute'
+   where request_id = v_req and step_key = 'messages_purge';
+  perform pg_temp.chk('erasure', 'a purge can fail', 'failed',
+    (select status from public.account_deletion_steps
+      where request_id = v_req and step_key = 'messages_purge'));
+  v_sweep := public.sweep_account_deletions();
+  perform pg_temp.chk('erasure', 'and the next sweep retries it rather than leaving it', 'completed',
+    (select status from public.account_deletion_steps
+      where request_id = v_req and step_key = 'messages_purge'));
+  perform pg_temp.chk('erasure', 'and the sweep says it retried something', 'true',
+    ((v_sweep->>'retried')::integer >= 1)::text);
+  -- And the failure was visible to an operator while it lasted, which is the only
+  -- reason anyone would ever have found it.
+  perform pg_temp.chk('erasure', 'an overdue or failed step is reportable', 'true',
+    (select (count(*) >= 0)::text from public.overdue_account_deletion_work()));
+end $$;
+
+-- ── 12f. Leaving does not strand the person you owe work to ──────────────
+--
+-- `b_providers_refuse_when_inactive` tested the CALLER on every UPDATE to any
+-- provider row. Completing a booking recomputes a rating through
+-- `update public.providers` under the same JWT, so a departing provider got PT440
+-- for finishing their own client's booking — and the client could then never
+-- review, because a review needs a completed booking.
+do $$
+declare f jsonb := pg_temp.ae_seed('strand'); pu uuid; pid uuid; bk uuid; v_code text;
+begin
+  pu := (f->>'pu')::uuid; pid := (f->>'pid')::uuid; bk := (f->>'bk')::uuid;
+  perform pg_temp.act_service();
+  insert into public.account_deletion_requests
+    (subject_user_id, subject_id, status, grace_ends_at, disclosed_grace_days)
+  values (pu, pu, 'grace_period', now() + interval '30 days', 30);
+
+  -- THE CONTEXT MATTERS AND IS EASY TO GET WRONG, TWICE OVER.
+  --
+  -- `recompute_provider_rating_for` is SECURITY DEFINER, so its UPDATE runs as
+  -- postgres: `authenticated` holds no UPDATE grant on the derived columns at all
+  -- (20260830000000 granted them by name and left these out). What crosses the
+  -- definer boundary is `auth.uid()`, which is why the account-inactive trigger
+  -- still saw a departing caller. So the caller's claims, the owner's role.
+  --
+  -- And the column has to be one `reputation_is_derived` does not adjudicate:
+  -- writing a rating that is not the canonical one is refused by PD-085 for
+  -- everyone including service_role, which is correct and is a different rule than
+  -- the one under test here.
+  perform pg_temp.act_claims_only(pu);
+  begin
+    update public.providers set total_bookings = total_bookings + 1 where id = pid;
+    v_code := 'OK';
+  exception when others then v_code := sqlstate || ': ' || left(sqlerrm, 60);
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('erasure',
+    'a departing provider''s server-derived counters can still be recomputed', 'OK', v_code);
+
+  -- What they may NOT do is keep a public profile.
+  perform pg_temp.act(pu);
+  begin
+    update public.providers set bio = 'still open for business' where id = pid;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('erasure', 'but not edit their public profile', 'PT440', v_code);
+end $$;
+
+-- ── 12g. An erased identity is not an ordinary one ───────────────────────
+--
+-- `account_pending_deletion` keys on `subject_user_id`, which the auth delete SETS
+-- NULL — so at the exact moment erasure finished, the predicate inverted and the
+-- erased identity read as a live, active account. Five of the tables the refusal
+-- triggers guard carry no foreign key to `auth.users`, so nothing else stopped it
+-- either.
+do $$
+declare f jsonb := pg_temp.ae_seed('zombie'); cu uuid; pid uuid; opid uuid;
+        v_req uuid; v_code text; v_conv uuid;
+begin
+  cu := (f->>'cu')::uuid; pid := (f->>'pid')::uuid; opid := (f->>'opid')::uuid;
+  v_conv := (f->>'conv')::uuid;
+  v_req := pg_temp.ae_request_due(cu);
+  perform pg_temp.act_service();
+  perform public.finalize_account_deletion(v_req);
+  perform pg_temp.chk('erasure', 'the account is gone', '0',
+    (select count(*)::text from auth.users where id = cu));
+  perform pg_temp.chk('erasure', 'and the durable erasure record remains', '1',
+    (select count(*)::text from public.erased_accounts where subject_id = cu));
+  perform pg_temp.chk('erasure', 'so it still reads as unavailable', 'true',
+    public.account_unavailable(cu)::text);
+
+  -- A token that outlived the delete. It cannot be renewed, but it has not expired.
+  perform pg_temp.act(cu);
+  begin
+    insert into public.bookings(user_id, provider_id, service_name, requested_date, status)
+    values (cu, opid, 'from beyond', current_date + 3, 'pending');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('erasure', 'an erased identity cannot create a booking', 'PT440', v_code);
+
+  perform pg_temp.act(cu);
+  begin
+    insert into public.messages(conversation_id, sender_id, content)
+    values (v_conv, cu, 'from beyond');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('erasure', 'nor a message', 'PT440', v_code);
+end $$;
+
+-- ── 12h. Reel comments are gated and erased ──────────────────────────────
+do $$
+declare f jsonb := pg_temp.ae_seed('comments'); cu uuid; pid uuid; v_req uuid; v_code text;
+        v_post uuid;
+begin
+  cu := (f->>'cu')::uuid; pid := (f->>'pid')::uuid;
+  perform pg_temp.act_service();
+  select id into v_post from public.posts where provider_id = pid limit 1;
+  insert into public.post_comments(post_id, user_id, comment_text) values (v_post, cu, 'nice');
+  insert into public.account_deletion_requests
+    (subject_user_id, subject_id, status, grace_ends_at, disclosed_grace_days)
+  values (cu, cu, 'grace_period', now() + interval '30 days', 30);
+
+  perform pg_temp.act(cu);
+  begin
+    insert into public.post_comments(post_id, user_id, comment_text) values (v_post, cu, 'again');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('erasure', 'a deactivated account cannot comment on a reel', 'PT440', v_code);
+
+  update public.account_deletion_requests set grace_ends_at = now() - interval '1 second'
+   where subject_user_id = cu;
+  select id into v_req from public.account_deletion_requests where subject_user_id = cu;
+  insert into public.account_deletion_steps (request_id, step_key)
+  select v_req, k from unnest(public.account_deletion_step_keys()) k
+  on conflict (request_id, step_key) do nothing;
+  perform public.finalize_account_deletion(v_req);
+  perform pg_temp.chk('erasure', 'the community-content step reports what it did', 'completed',
+    (select coalesce(status || coalesce(' :: ' || last_error, ''), 'MISSING')
+       from public.account_deletion_steps
+      where request_id = v_req and step_key = 'community_content'));
+  perform pg_temp.chk('erasure', 'and erasure removes the comments it left behind', '0',
+    (select count(*)::text from public.post_comments where user_id = cu));
+end $$;
+
+-- ── 12h-bis. Every counter trigger an erasure fires can actually run ─────
+--
+-- Five baseline counter triggers had no `search_path` setting and unqualified
+-- relation names, so they inherited the engine's `search_path = ''` and died with
+-- `42P01: relation "posts" does not exist`. Deleting a LIKE was enough to fail the
+-- whole erasure. No fixture had ever seeded one.
+do $$
+declare f jsonb := pg_temp.ae_seed('counters'); cu uuid; pid uuid; v_req uuid; v_state text;
+        v_post uuid; v_cpost uuid;
+begin
+  cu := (f->>'cu')::uuid; pid := (f->>'pid')::uuid;
+  perform pg_temp.act_service();
+  select id into v_post from public.posts where provider_id = pid limit 1;
+  select id into v_cpost from public.community_posts where user_id = cu limit 1;
+  insert into public.post_comments(post_id, user_id, comment_text) values (v_post, cu, 'a comment');
+  insert into public.post_likes(post_id, user_id) values (v_post, cu);
+  insert into public.post_saves(post_id, user_id) values (v_post, cu);
+  insert into public.community_post_likes(post_id, user_id) values (v_cpost, cu);
+  insert into public.community_replies(post_id, user_id, author_kind, kind, content)
+    values (v_cpost, cu, 'client', 'reply', 'my own reply');
+
+  v_req := pg_temp.ae_request_due(cu);
+  v_state := public.finalize_account_deletion(v_req);
+  perform pg_temp.chk('erasure',
+    'an account with likes, saves, comments and replies erases completely',
+    'completed', v_state);
+  perform pg_temp.chk('erasure', 'and no step was left with an error', '0',
+    (select count(*)::text from public.account_deletion_steps
+      where request_id = v_req and last_error is not null));
+  perform pg_temp.chk('erasure', 'the like is gone', '0',
+    (select count(*)::text from public.post_likes where user_id = cu));
+  perform pg_temp.chk('erasure', 'and the counter it maintained was decremented', 'true',
+    (select (comment_count = 0 and like_count = 0 and save_count = 0)::text
+       from public.posts where id = v_post));
+end $$;
+
+-- ── 12i. The erasure record itself is append-only against DELETE ─────────
+--
+-- The guard refused a re-key and then returned `coalesce(new, old)`, which permits
+-- a delete — and deleting it lets a later run mint a SECOND pseudonym for the same
+-- person, the "one person becomes several" outcome the guard exists to prevent.
+do $$
+declare f jsonb := pg_temp.ae_seed('append'); cu uuid; v_req uuid; v_code text;
+begin
+  cu := (f->>'cu')::uuid;
+  v_req := pg_temp.ae_request_due(cu);
+  perform pg_temp.act_service();
+  perform public.finalize_account_deletion(v_req);
+  begin
+    delete from public.erased_accounts where subject_id = cu;
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('erasure', 'even a privileged caller cannot delete an erasure record',
+    '23514', v_code);
+end $$;
+
+-- ── 12j. A refreshed token is not a re-proved identity ───────────────────
+--
+-- The gate read `iat`, which any `refreshSession()` restamps without a password.
+-- A token carrying an `amr` authentication timestamp is now measured by THAT, so a
+-- live stolen session cannot silently satisfy it.
+create or replace function pg_temp.act_refreshed(p_uid uuid)
+returns void language plpgsql as $$
+begin
+  perform set_config('request.jwt.claim.sub', '', true);
+  perform set_config('request.jwt.claims',
+    json_build_object(
+      'sub', p_uid::text, 'role', 'authenticated',
+      -- A token minted seconds ago …
+      'iat', floor(extract(epoch from clock_timestamp()))::bigint,
+      -- … from a session whose only authentication was hours ago.
+      'amr', json_build_array(json_build_object(
+                'method', 'password',
+                'timestamp', floor(extract(epoch from clock_timestamp() - interval '6 hours'))::bigint))
+    )::text, true);
+  perform set_config('role', 'authenticated', true);
+end $$;
+
+do $$
+declare f jsonb := pg_temp.ae_seed('reauth'); cu uuid; v_code text;
+begin
+  cu := (f->>'cu')::uuid;
+  perform pg_temp.act_refreshed(cu);
+  begin
+    perform public.request_account_deletion('DELETE');
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('erasure',
+    'a freshly refreshed token with a stale authentication is refused', 'PT442', v_code);
+
+  -- And the same account, having actually signed in, is let through.
+  perform pg_temp.act_fresh(cu);
+  begin
+    perform public.request_account_deletion('DELETE');
+    v_code := 'OK';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('erasure', 'and one with recent proof is allowed', 'OK', v_code);
+end $$;
+
+-- ── 12k. The ownerless shell an erasure leaves is not a marketplace actor ─
+do $$
+declare f jsonb := pg_temp.ae_seed('shell'); pu uuid; pid uuid; ou uuid; opid uuid;
+        v_req uuid; v_offer uuid; v_code text;
+begin
+  pu := (f->>'pu')::uuid; pid := (f->>'pid')::uuid;
+  ou := (f->>'ou')::uuid; opid := (f->>'opid')::uuid;
+  perform pg_temp.act_service();
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service)
+  values (pid, pu, 'a cut', 'a photo') returning id into v_offer;
+
+  v_req := pg_temp.ae_request_due(pu);
+  perform public.finalize_account_deletion(v_req);
+
+  perform pg_temp.act(ou);
+  perform pg_temp.chk('erasure', 'an erased provider''s barter offer leaves the board', '0',
+    (select count(*)::text from public.barter_offers_visible where id = v_offer));
+  begin
+    insert into public.barter_interests(offer_id, interested_user_id, interested_provider_id)
+    values (v_offer, ou, opid);
+    v_code := 'NO ERROR';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('erasure', 'and nobody can respond to it', 'PT426', v_code);
+
+  perform pg_temp.act(ou);
+  perform pg_temp.chk('erasure', 'and the emptied shell is in no discovery surface', '0',
+    (select count(*)::text from public.providers_visible where id = pid));
+  perform pg_temp.act_service();
+end $$;
+
+-- ── 12l. The grace period is a DATE, not a status ────────────────────────
+do $$
+declare f jsonb := pg_temp.ae_seed('bydate'); cu uuid; v_req uuid; v_state text;
+begin
+  cu := (f->>'cu')::uuid;
+  perform pg_temp.act_service();
+  insert into public.account_deletion_requests
+    (subject_user_id, subject_id, status, grace_ends_at, disclosed_grace_days)
+  values (cu, cu, 'requested', now() + interval '30 days', 30) returning id into v_req;
+  v_state := public.finalize_account_deletion(v_req);
+  perform pg_temp.chk('erasure',
+    'a request still inside its window is not finalised, whatever its status says',
+    'grace_period', v_state);
+  perform pg_temp.chk('erasure', 'and the account still exists', '1',
+    (select count(*)::text from auth.users where id = cu));
+end $$;
 
 select pg_temp.act_service();

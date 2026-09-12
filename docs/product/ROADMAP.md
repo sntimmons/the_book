@@ -995,9 +995,22 @@ retain under restriction — rather than the cascade-everything the schema had.
 **OQ-077's two technical defects are closed** (PD-103), and closed without deleting evidence to make
 a delete succeed. Six append-only guards had to learn that a referential `SET NULL` is not a rewrite.
 
+**Security review found three HIGH defects and they are fixed** (PD-104): "hidden" was enforced
+only in the views while the base tables served every departing provider's profile to anyone;
+erasing a PROVIDER cascaded away every one of their clients' accepted-contract records; and Reel
+comments survived an erasure under the real account id. Nine further migrations
+(`20261111000000` … `20261119000000`) close those plus eight medium findings, and two of them are
+corrections to the corrections — the review loop earned its cost twice over.
+
 **Still open, and it is the part that always needed counsel: OQ-084** — the retention DURATIONS for
 accepted-contract evidence and report/safety evidence, plus the privacy-policy and beta-FAQ
 language. Both windows ship **unset and flagged** rather than guessed.
+
+**Three further product questions are now open rather than answered**: **OQ-085** (how unlinkable
+an anonymized row must be — constrained by PD-091/092's distinct-client rating rule), **OQ-086**
+(the full list of writes that count as "new marketplace activity" for a deactivated account), and
+**OQ-087** (whether contract-signature images and PDFs are in erasure scope). **OQ-076** gained a
+second instance and half of it closed by accident.
 
 **Owed before external beta:** physical-device QA of the whole flow, and two standing operator
 obligations that have no automation — running `sweep_account_deletions()`, and draining the media

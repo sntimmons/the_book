@@ -701,16 +701,22 @@ declare
 begin
   foreach t in array array['barter_proposals', 'barter_proposal_versions',
                            'barter_proposal_terms', 'barter_version_acceptances'] loop
+    -- `has_any_column_privilege`, NOT `has_table_privilege`. Since 20261113000000
+    -- the acceptances table is granted BY COLUMN — the table-level SELECT had to go
+    -- so `participant_subject_id` could be withheld — and a table-level test reads
+    -- a column-granted table as "no access at all". That would have passed this
+    -- loop while anon held a column grant. The any-column form is both the honest
+    -- read test and the stricter write test.
     perform pg_temp.chk('negotiation', 'anon cannot read ' || t,
-      'false', has_table_privilege('anon', 'public.' || t, 'select')::text);
+      'false', has_any_column_privilege('anon', 'public.' || t, 'select')::text);
     perform pg_temp.chk('negotiation', 'anon cannot write ' || t,
-      'false', has_table_privilege('anon', 'public.' || t, 'insert')::text);
-    -- The layer that was missing on the first pass: authenticated must hold SELECT and
-    -- nothing else, so grants and RLS are two independent refusals rather than one.
+      'false', has_any_column_privilege('anon', 'public.' || t, 'insert')::text);
+    -- authenticated must hold SELECT and nothing else, so grants and RLS are two
+    -- independent refusals rather than one.
     perform pg_temp.chk('negotiation', 'authenticated may only read ' || t,
-      'true', (has_table_privilege('authenticated', 'public.' || t, 'select')
-               and not has_table_privilege('authenticated', 'public.' || t, 'insert')
-               and not has_table_privilege('authenticated', 'public.' || t, 'update')
+      'true', (has_any_column_privilege('authenticated', 'public.' || t, 'select')
+               and not has_any_column_privilege('authenticated', 'public.' || t, 'insert')
+               and not has_any_column_privilege('authenticated', 'public.' || t, 'update')
                and not has_table_privilege('authenticated', 'public.' || t, 'delete'))::text);
   end loop;
 

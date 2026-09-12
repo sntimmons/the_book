@@ -2330,6 +2330,74 @@ language; beta FAQ language. Recorded in **OQ-084**.
 
 ## Not decisions
 
+### PD-104 — A guarantee enforced in the view is a guarantee about one query
+
+**Decided 2026-09-12. Applies to PD-102's immediate-deactivation promise.**
+
+PD-102 says a verified deletion request hides the profile at once, and
+`app/settings/delete-account.tsx` says so to the person in those words. That was
+built into the `_visible` views — and `providers_public_read` was
+`USING (true)` underneath them, `comments_public_read` likewise, with `anon`
+holding the public column grant. One REST call returned the display name,
+business name, username, bio, location and both photos of every provider who had
+asked to be deleted. **The app's own profile screen did exactly that**, by an
+explicit earlier decision that a directly-opened profile is not a discovery
+surface — correct for a PD-089 block, where the rule is per-viewer, and wrong for
+a deletion request, where the rule is about the row and applies to everyone.
+
+**The base tables now carry the rule.** Public read access ends at the request.
+Three parties keep it, and each is load-bearing rather than a concession:
+
+| Who | Why they keep access |
+|---|---|
+| **The owner** | They must still see their own business to wind it down, and the deletion screen itself reads their state. |
+| **An operator** | A case may be about exactly the person who is leaving. Given its own `TO authenticated` policy — see below. |
+| **A counterparty with an existing booking or conversation** | PD-102 is explicit that erasure must not strand a live transaction, and sixteen screens read this table directly to resolve one. |
+
+**What a stranger now sees is nothing at all** — a departing provider's
+directly-opened profile, their portfolio, their Reels, their Reel comments and
+their Community content are gone from ordinary access, not merely from the feed.
+That is a visible product change and it is the intended one.
+
+#### Four implementation facts worth keeping
+
+**An RLS policy is evaluated as the caller, and cannot borrow an owner's
+privileges.** A definer VIEW re-targets relation checks and not function checks;
+a POLICY re-targets nothing, because it has no owner. So the operator clause was
+split into its own `TO authenticated` policy: permissive policies combine with
+OR, and a role-scoped one is skipped entirely for `anon`, which cannot execute
+`is_operator()` and — two committed suites insist — must never be granted it.
+The first attempt granted it and was reverted within the hour.
+
+**"Pending deletion" was the wrong question.** The predicate keyed on a column the
+auth delete sets to NULL, so it inverted to `false` at the exact moment an account
+was erased, and an erased identity read as a live one. It now asks whether an
+identity can be interacted with at all — pending, erased, or ownerless — from
+`erased_accounts`, which is durable. One boolean over three causes, so it cannot
+be read as "this person is leaving".
+
+**The refusal is scoped to the caller's own row, and excludes the columns no
+person sets.** A blanket refusal on `providers` UPDATE stopped a departing
+provider from **completing their own client's booking**, because completion
+recomputes a rating through an UPDATE on that table under the same JWT. The
+client could then never review. Fail-closed, and still a broken promise.
+
+**The reauthentication bar is named honestly.** The gate read `iat`, which any
+background `refreshSession()` restamps without a password, while the code and the
+copy both claimed a stolen session could not use it. It now reads the token's
+`amr` authentication timestamp where there is one and falls back to `iat` where
+there is not — and says which bar is in force rather than asserting the stronger
+one. **No claim is made that this is equivalent to step-up authentication.**
+
+#### What is deliberately NOT decided here
+
+The residual identity oracle (`account_unavailable(uuid)` is granted to client
+roles because a policy needs it) is **not** claimed closed — it is the same
+question as **OQ-076** and recorded there. Pseudonym linkability is **OQ-085**,
+the full list of writes that count as "new marketplace activity" is **OQ-086**,
+and whether contract-signature images and PDFs are in erasure scope is
+**OQ-087**.
+
 Recorded so they are not mistaken for locked state:
 
 - **Paid / Trade / Hybrid** as a booking-type architecture — a working idea, **not approved**. (OQ-001 closed 2026-09-04 on the narrower question of where the trade flag lives; this architecture remains unapproved.)

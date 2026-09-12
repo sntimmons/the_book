@@ -147,6 +147,15 @@ If the date has passed, or they say they cannot sign in: **their account is
 gone.** Say so plainly. **Do not imply it can be recovered.** They may sign up
 again, and it will be a new account with none of the old history.
 
+### Looking up somebody who is leaving
+
+**A departing or erased provider will not appear when you search the app as an
+ordinary account.** That is deliberate (PD-104): their row leaves public access at
+the request, and stays visible only to them, to an operator, and to a client who
+already has a booking or a conversation with them. Use the operator surface, not
+an ordinary session, and do not tell a user "they don't exist" when what is true
+is that they are no longer visible.
+
 ### A deletion job failed
 Symptoms: the request sits in `failed`, or a user says their account still
 appears somewhere after the date.
@@ -157,9 +166,14 @@ appears somewhere after the date.
    its `status` and `last_error`.
 3. **The fix is to run the sweep again** — `select public.sweep_account_deletions();`
    as `service_role`. Every step is idempotent; completed steps no-op and only
-   what is left runs.
-4. A step in `held` is **not** a failure — see § 6.
-5. A step in `scheduled` is **not** a failure — it is dated future work (§ 3).
+   what is left runs, **and a failed purge is retried** rather than left behind.
+4. **`select * from public.overdue_account_deletion_work();`** (service_role) is
+   the one query that answers "is anything being retained longer than it should
+   be": every step that is failed, held, or past due, with its error. Nothing else
+   surfaces this — no client role can read the steps table — so it belongs in the
+   same routine as the sweep.
+5. A step in `held` is **not** a failure — see § 6.
+6. A step in `scheduled` is **not** a failure — it is dated future work (§ 3).
 
 **Tell the user only that it is being completed, and never a date you have not
 confirmed.** Do not say "it's done" while any step is outstanding.
@@ -191,6 +205,11 @@ An operator can place a **hold on one class** of a specific request
   per-class: one open report must not be a reason to keep somebody's profile
   photo.
 - Every hold records who placed it and why, and is released the same way.
+- **A step can also be held without anyone placing a hold**: if a class's retention
+  window is unset, the engine holds that step with the reason rather than guessing
+  a number or silently skipping it. `overdue_account_deletion_work()` lists these.
+  Today the only two unset windows are the ones awaiting counsel (§ 8), and neither
+  has an automated purge, so this is a safeguard rather than a live state.
 
 ---
 

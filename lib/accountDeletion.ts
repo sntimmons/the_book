@@ -48,7 +48,11 @@ export interface UnresolvedTransaction {
 /** What the deletion screen shows, all of it read from the server. */
 export interface DeletionOverview {
   request: DeletionRequest | null
-  graceDays: number
+  /**
+   * NULL when the window could not be read. Deliberately not defaulted: see
+   * `fetchGraceDays`. A caller must render an unavailable state, never a number.
+   */
+  graceDays: number | null
   unresolved: UnresolvedTransaction[]
 }
 
@@ -190,7 +194,10 @@ export async function fetchDeletionOverview(
     fetchGraceDays(),
     fetchUnresolvedTransactions(userId, providerId),
   ])
-  return { request, graceDays: graceDays ?? 0, unresolved }
+  // NOT `?? 0`. It was, and "permanently deleted after 0 days" is exactly the
+  // wrong promise to make out of a failed read (SEC-TRUTH-019d). The null
+  // travels to the screen, which refuses to offer the action at all.
+  return { request, graceDays, unresolved }
 }
 
 export interface DeletionActionResult {
@@ -235,10 +242,14 @@ function deletionError(err: { code?: string; message?: string } | null): Deletio
 /**
  * Ask for the account to be deleted.
  *
- * REAUTHENTICATION IS THE SERVER'S TEST, not this function's. It requires a
- * token issued in the last fifteen minutes, so a stolen or long-idle session
- * cannot do this unattended — and `PT442` is how it says so, which is why the
- * caller is handed `needsReauth` rather than a generic failure.
+ * RECENT PROOF OF IDENTITY IS THE SERVER'S TEST, not this function's, and the
+ * bar depends on what the access token carries: the `amr` authentication
+ * timestamp where there is one, and `iat` where there is not. Those are NOT the
+ * same bar — `iat` is only when a token was last issued, which the SDK's own
+ * background `refreshSession()` satisfies without a password. `PT442` is how the
+ * server asks for proof, which is why the caller is handed `needsReauth` rather
+ * than a generic failure. Do not describe this as reauthentication in
+ * user-facing copy beyond "confirm your password".
  */
 export async function requestAccountDeletion(
   confirmText: string,

@@ -119,9 +119,18 @@ export default function DeleteAccount() {
   }
 
   const req = overview?.request ?? null
-  const graceDays = req?.disclosedGraceDays ?? overview?.graceDays ?? 0
+  // The number DISCLOSED at request time wins, then the live window. Null means
+  // neither could be read, and the initiation screen refuses to proceed rather
+  // than showing a number nobody promised.
+  const graceDays = req?.disclosedGraceDays ?? overview?.graceDays ?? null
   const pending = req != null && ['requested', 'grace_period', 'finalizing'].includes(req.status)
-  const canSubmit = confirmText.trim() === 'DELETE' && !busy && (!needsReauth || password.length > 0)
+  // A NUMBER WE COULD NOT READ IS NOT A NUMBER WE MAY PROMISE. The grace window
+  // lives in `retention_policy`; if that read failed, this screen does not know
+  // how long the person has to change their mind, and starting a deletion under
+  // a guessed date is the one thing it must not do.
+  const windowKnown = graceDays !== null && graceDays > 0
+  const canSubmit =
+    windowKnown && confirmText.trim() === 'DELETE' && !busy && (!needsReauth || password.length > 0)
 
   // ── SCHEDULED STATE ─────────────────────────────────────────────────────
   if (pending) {
@@ -148,7 +157,10 @@ export default function DeleteAccount() {
 
           <Text style={s.h2}>What is already true</Text>
           <Bullet>Your profile is hidden. You do not appear in Discover, search or Community.</Bullet>
-          <Bullet>You cannot be booked or messaged, and you cannot start new activity.</Bullet>
+          <Bullet>
+            You cannot be booked, and you cannot send messages, post, or start anything new. You
+            can still read your existing conversations.
+          </Bullet>
           <Bullet>Your posts, Reels and Community content are no longer publicly visible.</Bullet>
           <Bullet>
             Existing bookings and trades are still here so you or the other person can finish or
@@ -199,16 +211,23 @@ export default function DeleteAccount() {
         keyboardShouldPersistTaps="handled"
       >
         <Text style={s.h1}>Delete your account</Text>
-        <Text style={s.body}>
-          Your account becomes inactive straight away, and is permanently deleted after{' '}
-          {graceDays} days. You can restore it at any point during those {graceDays} days.
-        </Text>
+        {windowKnown ? (
+          <Text style={s.body}>
+            Your account becomes inactive straight away, and is permanently deleted after{' '}
+            {graceDays} days. You can restore it at any point during those {graceDays} days.
+          </Text>
+        ) : (
+          <Text style={s.body}>
+            We can’t start a deletion right now, because we couldn’t confirm how long you would
+            have to change your mind. Please try again shortly.
+          </Text>
+        )}
 
         <Text style={s.h2}>Deleted permanently</Text>
         <Bullet>Your sign-in, contact details and profile.</Bullet>
         <Bullet>Your profile photo and any profile media.</Bullet>
         <Bullet>Your portfolio, Reels and captions.</Bullet>
-        <Bullet>Your Community posts and replies.</Bullet>
+        <Bullet>Your Community posts, replies and comments.</Bullet>
         <Bullet>Saved providers, follows, likes and bookmarks.</Bullet>
 
         <Text style={s.h2}>Kept, with your name removed</Text>
@@ -304,7 +323,7 @@ export default function DeleteAccount() {
         </TouchableOpacity>
         <Text style={s.small}>
           We do not send an email or notification about this. This screen is where you can check
-          the status and restore your account during the {graceDays} days.
+          the status and restore your account before the date it shows you.
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>
