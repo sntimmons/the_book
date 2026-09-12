@@ -981,9 +981,32 @@ engagement ranking, no operator content take-down, no barter redesign (PD-080's 
 Propose → Agree → Do it → Confirm simplification remains a later requirement), and no change to
 discovery or provider search.
 
-### NEXT DEDICATED WORKSTREAM — Account Erasure & Retention Integrity
+### Account Erasure & Retention Integrity — **IMPLEMENTED, pending merge** (`feat/account-erasure-retention-integrity`)
 
-**Status: RECORDED, NOT STARTED. Blocked on policy, not on engineering.**
+Eleven migrations, `20261100000000` … `20261110000000`, and two locked decisions
+(**PD-102**, **PD-103**). The policy input this workstream was blocked on has been given, and the
+approved closed-beta policy is built.
+
+**Self-service deletion is in the app** (Settings → Account → Delete Account), with a **30-day
+grace period**, immediate deactivation, and restoration at any point in the window. Each of the
+eleven data classes gets the treatment PD-102 specifies — delete now, delete later, anonymize, or
+retain under restriction — rather than the cascade-everything the schema had.
+
+**OQ-077's two technical defects are closed** (PD-103), and closed without deleting evidence to make
+a delete succeed. Six append-only guards had to learn that a referential `SET NULL` is not a rewrite.
+
+**Still open, and it is the part that always needed counsel: OQ-084** — the retention DURATIONS for
+accepted-contract evidence and report/safety evidence, plus the privacy-policy and beta-FAQ
+language. Both windows ship **unset and flagged** rather than guessed.
+
+**Owed before external beta:** physical-device QA of the whole flow, and two standing operator
+obligations that have no automation — running `sweep_account_deletions()`, and draining the media
+queue through the Storage API. Both are documented in
+[ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md).
+
+#### The original entry, kept for the reasoning that produced it
+
+**Status when recorded: NOT STARTED. Blocked on policy, not on engineering.**
 
 **Why it is next.** The product now retains several durable classes of evidence,
 each accumulated for a good reason and none of them with a decided deletion

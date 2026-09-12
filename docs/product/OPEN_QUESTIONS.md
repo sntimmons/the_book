@@ -561,7 +561,7 @@ schema; the product rules around them do not. Each question below is separately 
 - **Also recorded, because it is a limitation and not a defect:** acceptances that predate `20261068000000` are bound to the contract's content **at migration time**. If a provider edited between a client's acceptance and that migration, the original wording is gone — nothing recorded it. Those rows are the **best available historical record and are not proof of the exact original wording**, and support must not describe them as more than that.
 - **Also recorded here, found during Reviews Phase 2 and deliberately NOT fixed there** (account-erasure semantics were out of that session's scope, and inventing a retention policy is exactly what this question forbids): **(d) deleting a user who is the TARGET of a report can fail** — the report retains a reference that erasure does not resolve; **(e) deleting an operator can fail** because the append-only actor foreign-key update path conflicts with the deletion. Both are real defects in the erasure path, both surface as a failed delete rather than as silent data loss, and **neither can be fixed without first answering this question** — what a deletion is supposed to do to evidence a counterparty or an operator case still relies on. They are listed as the concrete cases the eventual policy has to cover, not as a backlog item to be cleared independently.
 - **Blocks:** nothing shipped. It blocks any claim about deletion, and it blocks answering a user who asks for their data to be removed. It now also blocks fixing (d) and (e), which is the correct order.
-- **Status:** Open
+- **Status:** **PARTIALLY CLOSED** — the two TECHNICAL defects are fixed by **PD-103** (2026-09-11) and the closed-beta retention treatment for every data class is ruled by **PD-102**. What remains open is the part that was always the blocker: the **retention DURATIONS for accepted-contract evidence and for report/safety evidence**, which need counsel. Tracked as **OQ-084**. The photo-orphan case in (a) is also addressed — media is now queued for deletion through the Storage API and an erasure cannot report success while any object is unconfirmed — but the storage drain has **no scheduler** and is operator-run, which is recorded in Operations.
 
 ### OQ-078 — Does "latest" mean the latest review WRITTEN or the latest service RECEIVED?
 - **Area:** Reviews / reputation
@@ -658,6 +658,40 @@ schema; the product rules around them do not. Each question below is separately 
 - **What is NOT at stake:** nothing is exposed to a stranger. Both tables remain closed to `anon` twice over (a `TO authenticated` policy and a revoked grant), and no private provider column rides in. The ordinary app path reads only the views. The current posture is pinned by `supabase/tests/community.test.sql` § 7 so that narrowing it later is a visible change rather than a silent one.
 - **Blocks:** nothing shipped. It blocks describing Community's block filter to a user as concealment rather than as absence from their ordinary surfaces.
 - **Status:** CLOSED — PD-090 stands for the closed beta; revisit before broader or public launch if safety, privacy, abuse evidence or legal review requires stronger concealment. Resolved by **PD-100**, 2026-09-11
+
+---
+
+### OQ-084 — How long may accepted-contract and report/safety evidence be retained?
+- **Area:** Legal / privacy / retention
+- **Why it matters:** PD-102 ships every other data class with a decided window. These two ship with
+  **no duration at all**, deliberately: `retention_policy.days` is NULL for `accepted_contracts` and
+  `reports_evidence`, and both rows carry `legal_review_required`. The engine treats NULL as *retain
+  under interim policy*, never as zero and never as infinite, and **refuses to invent a number** —
+  because a number nobody decided becomes the answer support gives and then the answer a user is
+  told.
+- **What is actually being retained, so counsel can weigh it:** for a contract, the exact accepted
+  version, the acceptance timestamp, the booking id and the **minimum party identity** needed to
+  establish who accepted it. For a report, the report, its evidence, operator decisions, appeals and
+  the **minimum reporter/subject identity** needed for a safety record. Both are readable only by
+  operators and `service_role` — the table-level SELECT is revoked from every client role and the
+  ordinary columns re-granted by name, because RLS cannot hide a column.
+- **What must NOT be read into the current state:** that the retention is legally required, that it
+  is legally sufficient, that it constitutes compliance with any regime, or that an accepted contract
+  is a **verified legal e-signature**. None of those is claimed anywhere in the product, the schema
+  or the support copy, and none should be added without counsel.
+- **Also needing legal language, not engineering:** the **privacy policy** text describing deletion
+  and retention, and the **beta FAQ** wording. The app currently states what happens in plain
+  operational terms and explicitly says the two classes are *"kept under our interim closed-beta
+  policy while we finish our legal review"* — truthful, and not a substitute for a policy document.
+- **What would change the answer:** counsel's view on dispute-window exposure for accepted terms;
+  any statutory minimum for safety records; whether a beta cohort of 25–30 changes the calculus; and
+  whether deletion must be offered at all before external beta (PD-102 says yes, as a product
+  decision, not as a legal one).
+- **This entry deliberately proposes no period.**
+- **Blocks:** the privacy policy, the beta FAQ, and any statement to a user about how long these are
+  kept. It does **not** block the deletion feature: everything else has a decided treatment and the
+  two retained classes are already restricted.
+- **Status:** Open
 
 ---
 
