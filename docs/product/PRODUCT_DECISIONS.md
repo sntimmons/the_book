@@ -2791,6 +2791,99 @@ committed test, which is why `account_deletion_worker_health()` exists. Retentio
 DURATIONS remain **OQ-084** and unset.
 
 
+### PD-109 — Proof of deletion is positive verification of absence
+
+**Decided 2026-09-12. Approved on the security review of the scheduler.**
+
+A media item **may** be confirmed deleted when Storage **positively verifies that
+the object is absent**.
+
+It may **not** be confirmed because:
+
+- a request failed for any generic reason,
+- the API returned no error, or
+- anything was assumed about a 404 without reading the actual Storage API result.
+
+And it may never be confirmed **before** checking.
+
+#### Why this needed a ruling rather than a preference
+
+`confirm_media_deleted` is the product's claim that bytes are gone, and
+`media_purge` refuses to let an erasure reach `completed` while any object is
+unconfirmed. Two opposite failures were both live:
+
+**Confirming too readily.** `remove()` answers `{ error: null, data: [] }` for a
+path that does not resolve, so treating the absence of an error as success wrote
+a claim about bytes nobody had checked — and the `media_purge` gate believed it.
+
+**Confirming too grudgingly.** Requiring the API to hand back the removed object
+meant an object that was **already** gone could never be confirmed at all: every
+later run failed the same way, `media_purge` raised for ever, and an erasure that
+was factually complete could never be **recorded** complete. Reached with no
+attacker — the delete succeeds and the confirming call errors.
+
+The rule threads both: **go and look.** The worker asks Storage whether the object
+is there and confirms only on an affirmative "it is not". That keeps the original
+property — a confirmation is a claim about bytes, never a shrug — while removing
+the state that had no exit. A lookup that itself fails reports "still there", so
+the object is retried rather than confirmed on a failed question.
+
+**Evidence:** `supabase/functions/_shared/accountDeletionRun.mjs` (`objectExists`
+and the confirm branch); `__tests__/lib/accountDeletionRun.test.ts`. Verified
+live against non-production: a queued path with no object in the bucket resolved
+as `1 deleted (1 already absent), 0 failed`, and the row is confirmed with
+`attempts = 0` and no error.
+
+**Status:** implemented; the conservative behaviour is the decided behaviour, not
+an interim.
+
+---
+
+### PD-110 — There is one deletion flow, and every control leads to it
+
+**Decided 2026-09-12. Fixes a contradiction that predated the erasure workstream.**
+
+Any control offering to delete an account must reach
+**`/settings/delete-account`**. No screen may implement deletion of its own, and
+no control may describe an outcome it does not produce.
+
+#### What was wrong
+
+`app/me/edit.tsx` carried a second **Delete Account** row. It said *"This
+permanently deletes your account and all your data. This cannot be undone."* and
+then called `supabase.auth.signOut()` and nothing else.
+
+**Two failures in one control, pointing opposite ways.** It was a promise the app
+did not keep — and it was also the reverse failure: somebody who wanted to be
+deleted was quietly signed out and had no way to tell. Its own comment said to
+wire it to an Edge Function "before App Store submission"; that flow now exists
+(PD-102), so the note was obsolete while the code was not.
+
+**It survived the entire erasure workstream** — eleven decisions, thirty
+migrations, three security reviews — because nothing in any of them pointed at
+that file. That is the lesson worth keeping: a second entry point to a decided
+flow is invisible to every test written about the flow itself.
+
+#### The shape of the fix
+
+The row navigates, and shows **no confirmation of its own**. The destination
+screen owns the disclosure — what is deleted, what is anonymized, what is kept,
+the 30-day grace, the restore path — and a summary Alert in front of it could
+only be a worse copy that drifts. The previous one drifted all the way to being
+false.
+
+**Evidence:** `app/me/edit.tsx`, same route and convention as
+`app/settings/index.tsx`. Pinned by
+`__tests__/app/deleteAccountEntryPoints.test.tsx`, which presses the real control
+and asserts where it goes, asserts that this screen signs nobody out, and asserts
+on the source of **every** screen offering such a control that none implements
+deletion itself — because a behavioural test on one screen cannot see a second
+implementation appearing on another. The net was verified by reintroducing the old
+handler and confirming three assertions fail.
+
+**Status:** implemented.
+
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

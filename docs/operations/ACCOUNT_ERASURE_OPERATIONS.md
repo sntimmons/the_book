@@ -333,6 +333,10 @@ An operator can place a **hold on one class** of a specific request
   transactions** and cannot start anything new.
 - **A client author is not told when their Community post was hidden** (from the
   moderation work) — unrelated to erasure, but the same screen gap.
+- **A deletion is confirmed only when Storage says the object is not there**
+  (PD-109). Not when a request fails, not because no error came back, and never
+  before checking. So a media object can legitimately show as outstanding for a
+  cycle while the worker retries it — that is the rule working, not a fault.
 - **The scheduler's own grants are a platform default we cannot remove.** See the
   standing rule in § 10. Not currently reachable; recorded because it depends on
   a setting outside this repository.
@@ -463,6 +467,18 @@ HTTP requests.
 The worker is built so that even then it leaks no identities: its response body
 is counts only, and the detail lives in `account_deletion_worker_runs`, which is
 `service_role`-only.
+
+**This is now a checkable release gate, not a hope:**
+
+```bash
+SUPABASE_URL=<project url> SUPABASE_ANON_KEY=<anon key> \
+  node scripts/check-api-schemas.mjs
+```
+
+It must print `OK` before any release. Verified on non-production 2026-09-12 —
+all five forbidden objects refused with `PGRST106`. See
+[MIGRATION_LEDGER.md](MIGRATION_LEDGER.md) § Production release configuration
+checks. **Production has not been checked; somebody authorized must.**
 
 **A non-clean result means somebody is waiting.** Someone asked to be deleted and
 has been told a date. Work the failures, then run the fallback until the overdue

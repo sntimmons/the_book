@@ -245,27 +245,24 @@ export default function EditProfileScreen() {
     )
   }
 
+  // THIS ROW USED TO LIE, AND IT IS THE ONLY KIND OF BUG THAT GETS WORSE WITH TIME.
+  //
+  // It showed "This permanently deletes your account and all your data. This
+  // cannot be undone." and then called `supabase.auth.signOut()` and nothing
+  // else. Two failures at once: a promise the app did not keep, and the opposite
+  // failure — somebody who wanted to be deleted was signed out instead and had
+  // no idea. Its own comment said to wire it to an Edge Function "before App
+  // Store submission"; that flow now exists (PD-102, PD-108), so the note was
+  // obsolete and the code was not.
+  //
+  // It navigates to the ONE deletion implementation. No second confirmation
+  // here on purpose: `/settings/delete-account` carries the whole disclosure —
+  // what is deleted, what is anonymized, what is kept, the 30-day grace and the
+  // restore path — and a summary Alert in front of it could only be a worse,
+  // drifting copy of that screen. Same route and same convention as
+  // Settings -> Account -> Delete Account (`app/settings/index.tsx:289`).
   function handleDeleteAccount() {
-    Alert.alert(
-      'Delete Account',
-      'This permanently deletes your account and all your data. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete Account',
-          style: 'destructive',
-          // Apple App Store requires account deletion to be available.
-          // The current implementation signs the user out only. Wire this
-          // to a Supabase Edge Function before App Store submission that
-          // hard-deletes the auth.users row + every related row keyed on
-          // it (clients, bookings, provider_follows, storage objects).
-          onPress: async () => {
-            await supabase.auth.signOut()
-            router.replace('/')
-          },
-        },
-      ],
-    )
+    router.push('/settings/delete-account' as never)
   }
 
   const avatarInitial =

@@ -2046,6 +2046,42 @@ all `401`. `GET` is `405`. A signed-in client calling
 `invoke_account_deletion_worker` or `sweep_account_deletions` through PostgREST
 gets `42501`.
 
+## Production release configuration checks
+
+Separate from migrations, and easy to forget for exactly that reason: some
+guarantees this repository relies on are **project settings**, not schema.
+
+### Exposed API schemas — REQUIRED before any production release
+
+```bash
+SUPABASE_URL=<project url> SUPABASE_ANON_KEY=<anon key> \
+  node scripts/check-api-schemas.mjs
+```
+
+Must print `OK`. It probes five objects that exist in the database and must not be
+reachable through the public API: `net.http_post`, `net._http_response`,
+`cron.job`, `cron.schedule` and `vault.decrypted_secrets`.
+
+**Why it is a release gate rather than a migration.** `pg_net` grants PUBLIC
+`EXECUTE` on `net.http_post` and ALL on `net._http_response`. `supabase_admin`
+made those grants and `postgres` is not a member of it, so **no migration here can
+revoke them** — `20261131000000` tried, applied cleanly, and did nothing;
+`20261132000000` records why. The only control left is PostgREST's exposed-schema
+list, which lives in the dashboard. This script is how a release fails on it
+instead of trusting it.
+
+The script is strictly **read-only** — it asks to be refused and expects
+`PGRST106` — so it is safe to point at production, which is the environment whose
+configuration matters most. It carries no production guard for that reason. An
+**inconclusive** probe exits non-zero: "we could not tell" must never read as
+"it is fine".
+
+**Verified 2026-09-12 on non-production `wcoyjeklscuqsumpjpfo`: all five PASS.**
+Production has **not** been checked, because production is outside this work's
+authorization — **somebody authorized must run it there before release.**
+
+---
+
 ## Production application policy
 
 Locked by Founder ruling, 2026-09-04. **No production reconciliation or migration work is
