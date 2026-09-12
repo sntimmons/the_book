@@ -555,13 +555,48 @@ schema; the product rules around them do not. Each question below is separately 
   launch grounds.
 - **Status:** CLOSED — resolved by PD-090, 2026-09-10
 
+**2026-09-12 — this question now has a second instance, and one half of it closed
+by accident.** Account erasure (PD-104) narrowed `providers_public_read`,
+`posts_public_read`, `comments_public_read` and the two Community read policies,
+so for a **pending-deletion or erased** subject the base table and the `_visible`
+view now agree: both return nothing. The set-difference oracle is closed **for
+that cause** and remains open for a PD-089 block, which is the original question.
+
+**The id supply that made it enumerable is also closed, and the first version of
+this note got that wrong.** The claim was that a caller could only ask about ids it
+already held — while `post_likes` and `provider_follows` were `USING (true)` with an
+`anon` grant, publishing a real account id for every like and every follow on the
+platform. Both are own-rows-only now: the visible like count comes from
+`posts.like_count`, and the follower count from a function that returns a number
+rather than a list of people. Nothing in `public` hands out an account id to harvest.
+
+What remains is smaller and is recorded rather than declared solved:
+`public.account_unavailable(uuid)` is granted to `anon` and `authenticated`,
+because an RLS policy is evaluated as the CALLER and the tables holding the fact
+are themselves RLS-protected — a definer function is the only mechanism, and a
+definer VIEW does not lend function privileges either. So the question "is this
+identity unavailable" can still be asked one id at a time. Three things bound it,
+and none of them closes it:
+
+- **Enumeration is gone.** The attack was to list `providers` as `anon`, collect
+  every `user_id`, and ask about each. The listing no longer contains them, so
+  the oracle only answers about an id the caller already holds.
+- **The answer is ambiguous**, deliberately: pending deletion, erased and
+  ownerless are one boolean.
+- **The content is gone regardless** — which was the actual promise made to the
+  person leaving.
+
+The product question is unchanged and still belongs here: **may a stranger learn
+that a specific account is unavailable?** A counterparty plainly needs to; a
+scanner holding old ids plainly should not.
+
 ### OQ-077 — What is the erasure and retention treatment for booking photos, contract evidence and booking records?
 - **Area:** Schema / data
 - **Why it matters:** Three artifacts now persist as transaction evidence and **none has a decided erasure story**, which is a different question from whether the rows cascade. **(a) `booking-photos` storage objects.** `booking_reference_photos` rows cascade from `bookings` and `auth.users`; **the objects in the bucket do not.** After a booking or an account is deleted, the bytes remain — readable by nobody (`can_read_booking_photo` returns false with no row, which is what makes an orphan harmless) but present, and they are client-supplied personal imagery. **(b) Historical contract evidence.** `contract_versions` is immutable and an accepted version cannot be deleted while the acceptance exists — deliberately, because that is the whole point of it. That directly conflicts with a deletion request that expects a contract's text to go. **(c) Booking records** generally, which carry service, date, message and now photos. **This entry deliberately proposes nothing.** Inventing a deletion or anonymisation timing here would be inventing policy with legal exposure attached, and the Founder ruling is explicit that it stays unresolved. It needs **Operations, legal and the account-deletion policy together**, and the three artifacts may well get different answers — evidence a counterparty may need to rely on is not the same as a photo the client attached for convenience.
 - **Also recorded, because it is a limitation and not a defect:** acceptances that predate `20261068000000` are bound to the contract's content **at migration time**. If a provider edited between a client's acceptance and that migration, the original wording is gone — nothing recorded it. Those rows are the **best available historical record and are not proof of the exact original wording**, and support must not describe them as more than that.
 - **Also recorded here, found during Reviews Phase 2 and deliberately NOT fixed there** (account-erasure semantics were out of that session's scope, and inventing a retention policy is exactly what this question forbids): **(d) deleting a user who is the TARGET of a report can fail** — the report retains a reference that erasure does not resolve; **(e) deleting an operator can fail** because the append-only actor foreign-key update path conflicts with the deletion. Both are real defects in the erasure path, both surface as a failed delete rather than as silent data loss, and **neither can be fixed without first answering this question** — what a deletion is supposed to do to evidence a counterparty or an operator case still relies on. They are listed as the concrete cases the eventual policy has to cover, not as a backlog item to be cleared independently.
 - **Blocks:** nothing shipped. It blocks any claim about deletion, and it blocks answering a user who asks for their data to be removed. It now also blocks fixing (d) and (e), which is the correct order.
-- **Status:** Open
+- **Status:** **PARTIALLY CLOSED** — the two TECHNICAL defects are fixed by **PD-103** (2026-09-11) and the closed-beta retention treatment for every data class is ruled by **PD-102**. What remains open is the part that was always the blocker: the **retention DURATIONS for accepted-contract evidence and for report/safety evidence**, which need counsel. Tracked as **OQ-084**. The photo-orphan case in (a) is also addressed — media is now queued for deletion through the Storage API and an erasure cannot report success while any object is unconfirmed — but the storage drain has **no scheduler** and is operator-run, which is recorded in Operations.
 
 ### OQ-078 — Does "latest" mean the latest review WRITTEN or the latest service RECEIVED?
 - **Area:** Reviews / reputation
@@ -658,6 +693,40 @@ schema; the product rules around them do not. Each question below is separately 
 - **What is NOT at stake:** nothing is exposed to a stranger. Both tables remain closed to `anon` twice over (a `TO authenticated` policy and a revoked grant), and no private provider column rides in. The ordinary app path reads only the views. The current posture is pinned by `supabase/tests/community.test.sql` § 7 so that narrowing it later is a visible change rather than a silent one.
 - **Blocks:** nothing shipped. It blocks describing Community's block filter to a user as concealment rather than as absence from their ordinary surfaces.
 - **Status:** CLOSED — PD-090 stands for the closed beta; revisit before broader or public launch if safety, privacy, abuse evidence or legal review requires stronger concealment. Resolved by **PD-100**, 2026-09-11
+
+---
+
+### OQ-084 — How long may accepted-contract and report/safety evidence be retained?
+- **Area:** Legal / privacy / retention
+- **Why it matters:** PD-102 ships every other data class with a decided window. These two ship with
+  **no duration at all**, deliberately: `retention_policy.days` is NULL for `accepted_contracts` and
+  `reports_evidence`, and both rows carry `legal_review_required`. The engine treats NULL as *retain
+  under interim policy*, never as zero and never as infinite, and **refuses to invent a number** —
+  because a number nobody decided becomes the answer support gives and then the answer a user is
+  told.
+- **What is actually being retained, so counsel can weigh it:** for a contract, the exact accepted
+  version, the acceptance timestamp, the booking id and the **minimum party identity** needed to
+  establish who accepted it. For a report, the report, its evidence, operator decisions, appeals and
+  the **minimum reporter/subject identity** needed for a safety record. Both are readable only by
+  operators and `service_role` — the table-level SELECT is revoked from every client role and the
+  ordinary columns re-granted by name, because RLS cannot hide a column.
+- **What must NOT be read into the current state:** that the retention is legally required, that it
+  is legally sufficient, that it constitutes compliance with any regime, or that an accepted contract
+  is a **verified legal e-signature**. None of those is claimed anywhere in the product, the schema
+  or the support copy, and none should be added without counsel.
+- **Also needing legal language, not engineering:** the **privacy policy** text describing deletion
+  and retention, and the **beta FAQ** wording. The app currently states what happens in plain
+  operational terms and explicitly says the two classes are *"kept under our interim closed-beta
+  policy while we finish our legal review"* — truthful, and not a substitute for a policy document.
+- **What would change the answer:** counsel's view on dispute-window exposure for accepted terms;
+  any statutory minimum for safety records; whether a beta cohort of 25–30 changes the calculus; and
+  whether deletion must be offered at all before external beta (PD-102 says yes, as a product
+  decision, not as a legal one).
+- **This entry deliberately proposes no period.**
+- **Blocks:** the privacy policy, the beta FAQ, and any statement to a user about how long these are
+  kept. It does **not** block the deletion feature: everything else has a decided treatment and the
+  two retained classes are already restricted.
+- **Status:** Open
 
 ---
 
@@ -775,6 +844,95 @@ than implement a decision made elsewhere.** Correction 3 closed **OQ-071** by PD
 declined to answer in code, and the Founder then closed all three on the finished branch as
 PD-087, PD-088 and PD-089. The same rulings **amended PD-068 to PARTIALLY SATISFIED**, which
 **opens no question**: PD-068 was never in doubt, only unfinished.
+
+### OQ-085 — How unlinkable does an anonymized row have to be?
+
+**Status: Open. Raised 2026-09-12 by the security review of the erasure branch.**
+
+Erasure replaces a departing person's id with **one pseudonym**, written across
+their bookings, conversations, messages and both review tables. The mapping in
+`erased_accounts` is unreadable by every client role and the pseudonym is a random
+uuid, so it cannot be guessed or resolved.
+
+It can still be **correlated**. `provider_reviews` is readable by `anon` for
+revealed reviews, and `adel_reviews` stamps `reviewer_display_name = 'Former
+member'` — which is a marker. A provider who had a booking with pseudonym X can
+read their own booking row, then follow X through the public review list and learn
+every other provider that person used, when, and what they wrote.
+
+**The same pivot works for a live user with their real id**, so erasure does not
+make this worse than the status quo. The question is whether it should make it
+BETTER — i.e. whether "anonymized" is meant to promise unlinkability or only
+de-naming.
+
+**Why engineering must not answer it:** the constraint is PD-091/PD-092. The
+public rating is the mean of the latest review from each DISTINCT client, so a
+pseudonym has to stay distinct WITHIN one provider's review set or every departed
+reviewer collapses into one voice and every affected provider's rating moves. A
+per-**(subject, provider)** pseudonym would satisfy that rule and break
+cross-provider correlation — so the choice is available, and it is a privacy
+promise, not an implementation detail.
+
+**Do not read the current state as a decision.** The migration comment claiming
+ordinary lookup is "permanently broken" overstates what is true, and is corrected.
+
+---
+
+### OQ-086 — Which writes count as "new marketplace activity" for a deactivated account?
+
+**Status: Open. Raised 2026-09-12 by the security review of the erasure branch.**
+
+PD-102's immediate effects are "no new bookings, messages, posts, or marketplace
+activity". That is enforced by BEFORE INSERT triggers on fourteen tables, plus
+the caller's own provider row. It is **not** enforced on:
+
+- UPDATE generally (editing an existing post's caption, or a Community post's body)
+- `provider_follows`, `saved_providers`, `post_likes`, `post_saves`,
+  `community_post_likes`, `community_bookmarks`
+- `clients` UPDATE (name, avatar)
+- `provider_services`, `provider_availability`, `provider_blocked_dates`,
+  `provider_policies`, `contracts`, `contract_versions`
+- `contract_signatures` INSERT (accepting somebody's terms)
+- every barter NEGOTIATION table and its RPCs, including
+  `finalize_barter_agreement`, which creates a new binding agreement with new
+  obligations
+- storage uploads, which are gated only on the folder matching `auth.uid()`
+
+Most of these rows are deleted at finalisation, so the residual is bounded. Two
+are not obviously bounded: **creating a barter agreement** is starting something
+new with a counterparty, and **uploading to a public bucket** puts bytes on the
+internet from an account the product says is hidden.
+
+**What is needed is the LIST, not more triggers.** Engineering can gate whatever
+is named; deciding that a like or a saved provider is or is not "activity" is a
+product call, and guessing it would either break a wind-down or quietly permit
+something the policy meant to stop.
+
+---
+
+### OQ-087 — Are contract-signature images and contract PDFs in scope for erasure?
+
+**Status: Open. Raised 2026-09-12 by the security review of the erasure branch.**
+
+The erasure engine queues every object under a departing account's own prefix in
+`provider-media` and `posts-media`, and deletes booking reference photos on their
+own clock. It queues **nothing** from `contract-signatures` or `contract-pdfs`,
+and both are keyed `<auth uid>/…`, so the erased account's original id persists in
+the object path indefinitely.
+
+That is not obviously wrong. PD-102 policy C retains the accepted contract record,
+and **the signature image may be part of the record rather than an artefact
+beside it** — deleting it could be deleting the evidence the policy keeps. It is
+also not obviously right: a path containing a real account id survives an erasure
+that was described as permanent.
+
+This sits inside **OQ-084** territory and cannot be settled without it: the
+question is what the retained contract record consists of, which is the same
+attorney review. Recorded separately because the operational answer differs — one
+is a duration, this is a scope.
+
+**Do not delete these objects to make an erasure look cleaner, and do not claim
+the current behaviour is a decision.**
 
 **Nothing in either merge closed a question by repository evidence**, and the rule that produced
 this ledger is unchanged: a migration is an implementation, not an approval. **OQ-006**, **OQ-007**,

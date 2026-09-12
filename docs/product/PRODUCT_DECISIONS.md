@@ -2218,6 +2218,199 @@ as locked decisions.
 
 ---
 
+### PD-102 — Account erasure: self-service, 30 days, and eleven different answers
+- **Decided:** 2026-09-11
+- **Status:** Locked for **CLOSED BETA**. Two classes are **interim policy pending attorney
+  review** and are marked as such below and in the schema.
+- **NO LEGAL CLAIM IS MADE BY THIS DECISION.** It does not assert legal enforceability, statutory
+  compliance, or that any retention period is legally required. It is a product policy for a closed
+  beta, and the two classes awaiting counsel carry **no duration at all** rather than a guessed one.
+
+#### Self-service initiation is required
+A user can start deletion **inside the app** (Settings → Account → Delete Account). Emailing
+support must **not** be the only path. The control creates a **verified deletion request**; it does
+not erase immediately.
+
+Verification is two independent things: **recent proof of identity** and a typed confirmation. The
+RPC takes **no user id**, so there is no parameter with which to delete somebody else's account.
+
+**Corrected 2026-09-12 (PD-104).** This paragraph said "a token issued in the last 15 minutes (so a
+stale or stolen session cannot delete an account unattended)". The parenthetical was false: any
+token issuance restamps `iat`, including the SDK's own background `refreshSession()`, which needs no
+password. The check now reads the token's `amr` authentication timestamp where there is one and falls
+back to `iat` where there is not. **Those are not the same bar**, and no claim is made that either is
+equivalent to step-up authentication.
+
+#### 30-day grace period
+On a verified request, **immediately**: the account is inactive, the public profile is hidden, no
+new bookings, messages, posts or content, no normal marketplace activity, provider and Community
+content leave public access, the scheduled deletion date is shown, and the user may **restore**
+at any point in the window. After final deletion, **restoration is impossible**.
+
+Deactivation is **DERIVED** from the open request rather than stored as a flag — so it takes effect
+the moment the request commits, it cannot drift from the request, and **cancelling the request IS
+the restoration** with nothing to repair. It deliberately does not touch `providers.is_approved`:
+conflating an operator's moderation decision with a user's own choice would leave restoration unable
+to tell them apart.
+
+#### Active transactions are never silently destroyed
+Existing bookings and barter obligations remain **visible and resolvable** by both sides during and
+after the grace period. The deletion flow **lists** unresolved ones so the choice is informed, and
+does **not** block initiation on them — the policy allows initiation even where records must be
+retained, and holding an account hostage to a booking the other side has not answered would be its
+own harm. **An erasure cannot be used to evade an active dispute obligation:** reports, evidence and
+adjudicated outcomes are retained.
+
+#### The eleven classes
+| Class | Treatment |
+|---|---|
+| **A. Profile / account** | **Delayed delete.** Inactive and hidden at once; at grace end the credentials, contact details, profile fields, profile media and personal artefacts are deleted, and analytics identity is severed. |
+| **B. Bookings** | **Anonymize.** Status, service snapshot and timestamps kept; the client's own words, safety notes and profile link removed. Displays as **"Former member"**. |
+| **C. Accepted contracts** | **INTERIM RESTRICTED RETENTION — LEGAL REVIEW REQUIRED.** The exact accepted version, acceptance timestamp, booking id and minimum party identity are retained under restricted access, never deleted by erasure, never exposed through a deleted profile. **Not a verified legal e-signature system.** |
+| **D. Booking photos** | **Delayed delete**, 90 days from booking completion/cancellation; on erasure the **later of** that and grace end. Out of normal user access immediately. |
+| **E. Reviews** | **Anonymize.** Rating, text and transaction linkage kept; author becomes **"Former member"**. Deletion does not erase legitimate transaction reputation. |
+| **F. Reports / evidence** | **INTERIM RESTRICTED RETENTION — LEGAL REVIEW REQUIRED.** Reports, evidence, operator decisions and minimum reporter/subject identity retained under restricted operator access. |
+| **G. Operator audit** | **Retain 4 years**, append-only: action, timestamp, reason, affected record, operator identity. **References** evidence rather than copying it. |
+| **H. Barter history** | **Anonymize.** Terms, status, fulfilment outcome and operator decisions kept; profile links and personal identifiers removed. Accepted terms follow class C; reported incidents follow class F. |
+| **I. Messages** | **Delayed delete**, 180 days after the conversation or booking closes; on erasure the **later of** that and grace end. Identity severed immediately. |
+| **J. Provider content** | **Delayed delete.** Portfolio, Reels and captions leave public access immediately; media deleted after the grace period. |
+| **K. Community content** | **Delayed delete.** Hidden immediately; deleted after the grace period, leaving a neutral **"Content removed"** tombstone only where thread structure requires one. |
+
+#### Three implementation decisions worth recording, because each had a wrong alternative
+- **Anonymize first, delete last.** Identity is rewritten across ten classes *before* the auth row
+  goes, so the cascades that would have destroyed contracts, reports, reviews, bookings and barter
+  history have nothing left to take. The starting state was cascade-everything.
+- **A pseudonym, not NULL, where distinctness carries meaning.** Nulling an erased reviewer would
+  merge every departed reviewer into one voice — the public rating averages one review per
+  **distinct** client (PD-091/PD-092) — and would silently move the rating of every provider they
+  had reviewed. **An erasure must not rewrite somebody else's reputation.** The pseudonym is not an
+  auth id, no FK points at it, and no profile exists for it.
+- **Holds are record-specific.** A global hold would turn one open report into a reason to keep
+  someone's credentials and contact details indefinitely, which the policy forbids. A hold names a
+  class; the engine skips it and finishes everything else.
+- **`completed` is a conclusion, not a claim.** It is recomputed from the step rows, so a failed or
+  unrun step keeps a request out of it by existing. Media cannot be deleted from SQL at all
+  (Supabase requires the Storage API), so objects are queued and a final step refuses to pass while
+  any remain unconfirmed — **no erasure reports success with the bytes still in the bucket.**
+- **Retention is configuration.** Every window lives in `retention_policy`, read by the engine, the
+  app and the support docs. The two awaiting counsel are NULL and flagged.
+- **Evidence:** `20261100000000` … `20261110000000`; `supabase/tests/account_erasure.test.sql`;
+  `lib/accountDeletion.ts`; `app/settings/delete-account.tsx`;
+  `docs/operations/ACCOUNT_ERASURE_OPERATIONS.md`.
+
+#### Open for counsel, and not decided here
+Accepted-contract retention **duration**; report/evidence retention **duration**; privacy-policy
+language; beta FAQ language. Recorded in **OQ-084**.
+
+---
+
+### PD-103 — OQ-077 is closed: erasure succeeds without destroying evidence
+- **Decided:** 2026-09-11 (closes **OQ-077**'s two technical defects)
+- **Decision.** Both recorded defects are fixed, and fixed **without** deleting report evidence or
+  operator audit history to make a delete succeed:
+  - **(1) Deleting a user who is the target of a report** failed `reports_target_check` — the
+    referential SET NULL emptied the only column satisfying it. The check now also accepts a
+    **retained restricted subject id**, so the delete succeeds *and* the safety record survives.
+  - **(2) Deleting an operator** failed because the append-only guard on `operator_case_events`
+    carved out `DELETE` and not `UPDATE`, while the column needing it is `ON DELETE SET NULL` — and
+    a set-null is an UPDATE. The carve-out had the right shape and the wrong verb.
+- **The generalisation, recorded because it recurred six times.** Every append-only and immutability
+  guard in this schema was written against a client trying to rewrite history, and **a referential
+  `SET NULL` looks exactly like one**. Six guards needed the same narrow allowance:
+  `operator_case_events`, `community_moderation_actions`, `barter_obligations`, `barter_offers`,
+  `barter_interests` and the negotiation chain. Each allowance is checked in full — the identity
+  column to NULL, every other column identical — so it can forget **who** and never change **what**.
+- **Retention is a property of the sever, not of step ordering.** The engine populated the restricted
+  identity before nulling the live column, so the supported path worked while a **raw**
+  `delete from auth.users` still failed. A trigger now captures the departing id in the same
+  statement, so the dashboard, the admin API and an ops script retain the evidence too. A guarantee
+  that depends on calling things in the right order is a convention with a test.
+- **What this changed that was previously accepted.** Erasing one barter participant used to cascade
+  away the proposal, its versions, the **agreement** and its **adjudicated obligations** — the
+  counterparty's own record of a completed trade, deleted because the other party left. The
+  negotiation suite's assertions encoded that; they are inverted, and the inversion is the ruling
+  (class H: anonymize, not destroy).
+- **Status:** Locked; **implemented**.
+
+---
+
+### PD-104 — A guarantee enforced in the view is a guarantee about one query
+
+**Decided 2026-09-12. Applies to PD-102's immediate-deactivation promise.**
+
+PD-102 says a verified deletion request hides the profile at once, and
+`app/settings/delete-account.tsx` says so to the person in those words. That was
+built into the `_visible` views — and `providers_public_read` was
+`USING (true)` underneath them, `comments_public_read` likewise, with `anon`
+holding the public column grant. One REST call returned the display name,
+business name, username, bio, location and both photos of every provider who had
+asked to be deleted. **The app's own profile screen did exactly that**, by an
+explicit earlier decision that a directly-opened profile is not a discovery
+surface — correct for a PD-089 block, where the rule is per-viewer, and wrong for
+a deletion request, where the rule is about the row and applies to everyone.
+
+**The base tables now carry the rule.** Public read access ends at the request.
+Three parties keep it, and each is load-bearing rather than a concession:
+
+| Who | Why they keep access |
+|---|---|
+| **The owner** | They must still see their own business to wind it down, and the deletion screen itself reads their state. |
+| **An operator** | A case may be about exactly the person who is leaving. Given its own `TO authenticated` policy — see below. |
+| **A counterparty with an existing booking or conversation** | PD-102 is explicit that erasure must not strand a live transaction, and sixteen screens read this table directly to resolve one. |
+
+**What a stranger now sees is nothing at all** — a departing provider's
+directly-opened profile, their portfolio, their Reels, their Reel comments and
+their Community content are gone from ordinary access, not merely from the feed.
+That is a visible product change and it is the intended one.
+
+#### Four implementation facts worth keeping
+
+**An RLS policy is evaluated as the caller, and cannot borrow an owner's
+privileges.** A definer VIEW re-targets relation checks and not function checks;
+a POLICY re-targets nothing, because it has no owner. So the operator clause was
+split into its own `TO authenticated` policy: permissive policies combine with
+OR, and a role-scoped one is skipped entirely for `anon`, which cannot execute
+`is_operator()` and — two committed suites insist — must never be granted it.
+The first attempt granted it and was reverted within the hour.
+
+**"Pending deletion" was the wrong question.** The predicate keyed on a column the
+auth delete sets to NULL, so it inverted to `false` at the exact moment an account
+was erased, and an erased identity read as a live one. It now asks whether an
+identity can be interacted with at all — pending, erased, or ownerless — from
+`erased_accounts`, which is durable. One boolean over three causes, so it cannot
+be read as "this person is leaving".
+
+**The refusal is scoped to the caller's own row, and excludes the columns no
+person sets.** A blanket refusal on `providers` UPDATE stopped a departing
+provider from **completing their own client's booking**, because completion
+recomputes a rating through an UPDATE on that table under the same JWT. The
+client could then never review. Fail-closed, and still a broken promise.
+
+**The reauthentication bar is named honestly.** The gate read `iat`, which any
+background `refreshSession()` restamps without a password, while the code and the
+copy both claimed a stolen session could not use it. It now reads the token's
+`amr` authentication timestamp where there is one and falls back to `iat` where
+there is not — and says which bar is in force rather than asserting the stronger
+one. **No claim is made that this is equivalent to step-up authentication.**
+
+#### What is deliberately NOT decided here
+
+The residual identity oracle is **narrower than the first version of this record
+said, and is still not claimed closed.** `account_unavailable(uuid)` is granted to
+client roles because an RLS policy is evaluated as the caller and there is no other
+mechanism. The first draft argued the enumeration was closed "because the listing
+no longer names them" — **which was wrong**: `post_likes` and `provider_follows`
+were `USING (true)` with an `anon` grant, publishing a real account id for every
+like and every follow on the platform. Both are now own-rows-only (the visible like
+count comes from `posts.like_count`, and the follower count from a function that
+returns a number), so `public` hands out no account ids to harvest. What remains is
+that somebody holding an id from an earlier session can ask about it one at a time.
+That is the same question as **OQ-076** and is recorded there at that width. Pseudonym linkability is **OQ-085**,
+the full list of writes that count as "new marketplace activity" is **OQ-086**,
+and whether contract-signature images and PDFs are in erasure scope is
+**OQ-087**.
+
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:
