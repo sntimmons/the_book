@@ -2132,6 +2132,46 @@ select pg_temp.chk('erasure', 'while the relationship map is service_role only',
    and not has_table_privilege('authenticated', 'public.erasure_relationship_pseudonyms', 'SELECT')
    and not has_table_privilege('anon', 'public.erasure_relationship_pseudonyms', 'SELECT'))::text);
 
+-- AND THE SAME THING EXERCISED RATHER THAN INSPECTED. `SET LOCAL ROLE` really
+-- becomes the role, so this is the worker's exact posture: the service_role JWT
+-- claim AND the service_role database role. A privilege assertion proves the
+-- grant; this proves the call. The role is reset on BOTH paths — the suite is one
+-- transaction, and a block that failed to reset would run everything after it as
+-- service_role and fail in a way nobody could read.
+do $$
+declare v_err text := ''; v_who text; v_denied text := '';
+begin
+  perform set_config('request.jwt.claims', '{"role":"service_role"}', true);
+  execute 'set local role service_role';
+  v_who := current_user;
+  begin
+    perform public.sweep_account_deletions();
+    perform count(*) from public.overdue_account_deletion_work();
+    perform count(*) from public.pending_media_deletions;
+    perform public.confirm_media_deleted('booking-photos', 'a-path-that-does-not-exist');
+  exception when others then v_err := sqlstate || ': ' || left(sqlerrm, 120);
+  end;
+  -- NEGATIVE CONTROL, so this block cannot pass vacuously. If `set local role`
+  -- had silently not taken, or the exception capture were broken, an empty v_err
+  -- above would look like success — and this refusal, which the map's guard makes
+  -- for EVERY caller including service_role, would also come back empty.
+  begin
+    delete from public.erasure_relationship_pseudonyms where subject_id = gen_random_uuid();
+    delete from public.erasure_relationship_pseudonyms
+     where pseudonym_id in (select pseudonym_id from public.erasure_relationship_pseudonyms limit 1);
+  exception when others then v_denied := 'refused';
+  end;
+  execute 'reset role';
+
+  perform pg_temp.chk('erasure', 'the harness really becomes service_role', 'service_role', v_who);
+  perform pg_temp.chk('erasure',
+    'and the worker''s entry points run AS the real service_role, not as the owner',
+    '', v_err);
+  perform pg_temp.chk('erasure',
+    'while the map refuses a delete even to that role (and the capture above is real)',
+    'refused', v_denied);
+end $$;
+
 -- ── SEC-COVERAGE-001. A set, not a count ────────────────────────────────
 --
 -- The previous form pinned the literal `8`, which fails identically whether a new
