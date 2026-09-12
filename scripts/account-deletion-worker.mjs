@@ -110,17 +110,29 @@ async function drainMedia() {
   let deleted = 0
   let failed = 0
   for (const r of rows) {
-    const { error: rmError } = await db.storage.from(r.bucket_id).remove([r.object_path])
-    if (rmError) {
+    // `remove()` returns the objects it ACTUALLY removed. A path that does not
+    // resolve — bucket renamed, a leading slash, an object already moved — comes
+    // back as `{ error: null, data: [] }`, and confirming on the absence of an
+    // error would write exactly the lie this function's contract forbids: the
+    // media_purge gate would then pass with the bytes still in the bucket.
+    // Inspect the payload, not just the error.
+    const { data: removed, error: rmError } = await db.storage
+      .from(r.bucket_id)
+      .remove([r.object_path])
+    const reallyGone = !rmError && Array.isArray(removed) && removed.length > 0
+    if (!reallyGone) {
+      const why = rmError
+        ? rmError.message
+        : 'the Storage API removed nothing for this path — it may not exist in this bucket'
       failed += 1
       // The attempt and the reason are recorded on the row, so a repeatedly
       // failing object is visible in overdue_account_deletion_work() rather than
       // only in whatever terminal happened to be open.
       await db
         .from('pending_media_deletions')
-        .update({ attempts: (r.attempts ?? 0) + 1, last_error: String(rmError.message).slice(0, 4000) })
+        .update({ attempts: (r.attempts ?? 0) + 1, last_error: String(why).slice(0, 4000) })
         .eq('id', r.id)
-      line(`  FAILED ${r.bucket_id}/${r.object_path}: ${rmError.message}`)
+      line(`  FAILED ${r.bucket_id}/${r.object_path}: ${why}`)
       continue
     }
     const { data: confirmed, error: confirmError } = await db.rpc('confirm_media_deleted', {

@@ -247,22 +247,33 @@ export default function DeleteAccount() {
           name is removed.
         </Bullet>
         <Bullet>Trades: the terms and the outcome stay, your identity does not.</Bullet>
-        {/* PD-105. The records are unlinkable ACROSS providers, which is a real
-            change and a promise — stated as what it is, with no claim that the
-            records themselves disappear. */}
+        {/* PD-105. The records are unlinkable ACROSS providers THROUGH THE APP.
+            The earlier wording here said "nobody" — and "nobody" includes us,
+            which is false: the reverse index is permanent by necessity, because
+            the scheduled purges find their rows through it. The claim is scoped
+            to what is actually enforced. */}
         <Bullet>
-          What is kept at one provider is not linked to what is kept at another. Nobody can put
-          them back together into a history of where you went.
+          What is kept at one provider is not linked to what is kept at another. Nobody using The
+          Book — including the people you dealt with — can put them back together into a history
+          of where you went.
         </Bullet>
+        {/* SEC-TRUTH-002. `adel_messages_sever` runs at FINALISATION, not at
+            request — during the grace period the sender id is still the real one,
+            because the account can still be restored and a severed thread cannot
+            be put back. Saying "straight away" was wrong by thirty days. */}
         <Bullet>
           Messages are kept for a while after a conversation closes, then deleted. Your name comes
-          off them straight away.
+          off them when the deletion completes.
         </Bullet>
 
         <Text style={s.h2}>Kept as a record</Text>
+        {/* SEC-TRUTH-002. The other party keeps their copy: the erasure severs
+            the live link and retains the record, it does not withdraw the
+            agreement from the person you made it with. "Nobody but The Book" was
+            false in the one direction that matters to the reader. */}
         <Bullet>
           Contracts you accepted, and when you accepted them. These are kept as evidence of an
-          agreement and are not visible to anyone but The Book.
+          agreement — by us, and by the provider you agreed with — with your name removed.
         </Bullet>
         <Bullet>
           Safety reports and their outcomes, so a report cannot be erased by deleting an account.

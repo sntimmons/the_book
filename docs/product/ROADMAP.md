@@ -983,7 +983,7 @@ discovery or provider search.
 
 ### Account Erasure & Retention Integrity — **IMPLEMENTED, pending merge** (`feat/account-erasure-retention-integrity`)
 
-Twenty-eight migrations, `20261100000000` … `20261127000000`, and six locked decisions
+Thirty migrations, `20261100000000` … `20261129000000`, and six locked decisions
 (**PD-102**, **PD-103**, **PD-104**, **PD-105**, **PD-106**, **PD-107**). The policy input this workstream was blocked on has been given, and the
 approved closed-beta policy is built.
 
@@ -1021,6 +1021,16 @@ language. Both windows ship **unset and flagged** rather than guessed.
 - **OQ-087 → PD-107.** Retention is the canonical ACCEPTED artifact only. Abandoned drafts,
   superseded unaccepted PDFs and their storage objects go. No signature image is retained because
   none has ever been written.
+
+A **focused security review of the finished branch** found one HIGH and four MEDIUMs and all are
+fixed (`20261128000000`, `20261129000000`). The HIGH was a seam rather than new code: a booking
+photo's `storage_path` had never been bound to the uploader's own storage prefix, which was inert
+until the new worker gave it a `service_role` Storage delete to reach. The same column was also
+publishing an erased account's real auth id to every provider it had ever booked — PD-105 holding in
+every identity COLUMN and broken in a column nobody had read as an identity. **One review claim did
+not survive checking**: the erasure RPCs were reported as unreachable by `service_role` for want of
+a grant; `has_function_privilege` says otherwise, and the suite now asserts it in both directions,
+because the harness's `act_service()` runs as the table owner and could never have seen it.
 
 **OQ-076** gained a second instance and half of it closed by accident; the Founder ruling of
 2026-09-12 makes **no architectural change now** — PD-090 stands for the closed beta and the

@@ -2468,6 +2468,27 @@ step retried from `failed` or released from `held` would then find nothing,
 delete nothing and report success — a retention window silently becoming forever.
 The guard refuses that delete outright, including for `service_role`.
 
+#### A path is an identity, and it cost a product capability to say so
+
+The security review found the rule holding in every identity COLUMN and broken in
+a column nobody had read as an identity. `booking_reference_photos.storage_path`
+is `<auth uid>/<booking id>/<n>`, and it was in the client column grant — so a
+counterparty provider could read the departed account's **real auth id** out of
+it, and two providers comparing prefixes could rejoin the two relationship
+pseudonyms this decision exists to separate.
+
+The sever now covers the path as well as the id: the real path moves to a
+restricted column the purge reads, and the granted column becomes
+`erased/<row id>`.
+
+**The consequence is visible and is not hidden here.** Object access resolves on
+the granted path, so **a provider can no longer open a departed client's
+reference photos.** The row survives on its 90-day clock so the bytes are deleted
+on schedule, which is what policy D is about; continued viewing was never the
+promise, and the alternative was publishing an erased person's auth id to
+everyone they had ever booked. **Recorded for the PM as a product-visible effect
+of this ruling rather than as an engineering detail.**
+
 ---
 
 ### PD-106 — Deletion grace preserves resolution rights, not participation rights
@@ -2523,7 +2544,12 @@ so a deactivated account holding a draft could send a real new request with no
 refusal. The block workstream had the identical hole and fixed it in
 `20261058000000`; this is the same shape found twice.
 
-**Residual, recorded rather than decided:** `request_provider_review()` still
+**Two residuals, recorded rather than decided.** A deactivated account may still
+EDIT an unsubmitted booking draft — only the submit transition is refused — so the
+service name, date and message on a draft can change. Nothing reaches a
+counterparty and the draft is deleted at erasure, but it is not obviously
+"read-only" either, and gating `bookings` UPDATE more broadly risks the higher-stakes
+failure of breaking an allowed terminal action. And `request_provider_review()` still
 opens an operator case from a deactivated account. It creates no marketplace or
 social object and the account is hidden and de-approved, so the case resolves to
 nothing — and `operator_cases` is also written by the *allowed* barter review
@@ -2557,6 +2583,16 @@ signature canvas was removed, the booking flow writes the column as an explicit
 account's prefix there is an unused signature image by definition. **If a
 signature image is ever reintroduced as part of what makes an acceptance
 evidence, this decision must be revisited before that ships**, not after.
+
+**When we cannot tell which version an acceptance accepted, we keep them all.**
+`contract_signatures.contract_version_id` is held non-null by a trigger and a
+one-off backfill, not by a column constraint — so an unbound acceptance is
+possible, and an unbound acceptance points at *no* version, which would make
+every version of its contract look unaccepted and delete the exact frozen
+evidence this decision keeps. One unbound acceptance therefore makes every
+version of its contract undeletable, and the erasure reports that it did so. That
+is the same instinct as PD-103: **do not delete evidence to make an erasure
+succeed.**
 
 **Final retention DURATION remains unset and configurable pending attorney
 review (OQ-084).** This decision settles scope, which is the half that is an

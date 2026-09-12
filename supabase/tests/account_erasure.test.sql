@@ -1890,4 +1890,298 @@ select pg_temp.chk('erasure', 'and the step is not client-callable', 'false',
 select pg_temp.chk('erasure', 'no signature image is on file anywhere', '0',
   (select count(*)::text from public.contract_signatures where signature_url is not null));
 
+
+-- ══ 17. THE SECURITY REVIEW OF 0d5d4be, PINNED ══════════════════════════
+--
+-- Every assertion here exists because a reviewer found the absence of it.
+
+-- ── SEC-AUTHZ-001. A reference photo may only name YOUR OWN object ───────
+--
+-- `booking_photos_client_insert` pinned the uploader and the booking and left
+-- `storage_path` as free text — and that column feeds a `service_role` Storage
+-- delete, which bypasses every storage policy. A row naming somebody else's
+-- object was an insertable cross-user delete primitive.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('forgery');
+  cu uuid; opid uuid; draft uuid; victim_path text; au uuid := gen_random_uuid();
+begin
+  cu := (f->>'cu')::uuid; opid := (f->>'opid')::uuid;
+  victim_path := cu::text || '/' || gen_random_uuid()::text || '/0.jpg';
+
+  -- A FRESH attacker. `ae_seed`'s `ou` OWNS `opid`, and `reject_self_provider_action`
+  -- refuses a self-referential booking — so the attacker has to be somebody who
+  -- could really book that provider.
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au);
+  insert into public.clients(id, name) values (au, 'Forger') on conflict (id) do nothing;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status)
+  values (au, opid, 'a drafted service', current_date + 7, 'pending') returning id into draft;
+
+  perform pg_temp.act(au);
+  perform pg_temp.chk_blocked('erasure',
+    'a reference photo cannot name another account''s object',
+    format('insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
+              values (%L, %L, %L)', draft, victim_path, au),
+    'your own folder');
+  perform pg_temp.chk_allowed('erasure', 'but it can name your own',
+    format('insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
+              values (%L, %L, %L)', draft, au::text || '/' || draft::text || '/0.jpg', au));
+  perform pg_temp.act_service();
+end $$;
+
+-- And a row forged BEFORE that trigger existed is inert: the purge enqueues only
+-- paths under the subject's own prefix, and reports the rest rather than acting.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('forged_purge');
+  cu uuid; opid uuid; draft uuid; victim_path text; v_id uuid; v_res jsonb;
+  au uuid := gen_random_uuid();
+begin
+  cu := (f->>'cu')::uuid; opid := (f->>'opid')::uuid;
+  victim_path := cu::text || '/stolen/0.jpg';
+
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (au);
+  insert into public.clients(id, name) values (au, 'Forger') on conflict (id) do nothing;
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status)
+  values (au, opid, 'a drafted service', current_date + 7, 'pending') returning id into draft;
+  -- service_role writes it, exactly as a pre-trigger row would already exist.
+  insert into public.booking_reference_photos(booking_id, storage_path, uploaded_by_user_id)
+  values (draft, victim_path, au);
+
+  v_id := pg_temp.ae_request_due(au);
+  perform public.finalize_account_deletion(v_id);
+  v_res := public.adel_booking_photos_purge(au);
+
+  perform pg_temp.chk('erasure', 'a forged path is never queued for deletion', '0',
+    (select count(*)::text from public.pending_media_deletions
+      where object_path = victim_path));
+  perform pg_temp.chk('erasure', 'and it is reported rather than silently dropped', '1',
+    (v_res->>'foreign_paths_skipped'));
+end $$;
+
+-- ── SEC-AUTHZ-002. The PATH is an identity too (PD-105) ──────────────────
+--
+-- `storage_path` is `<auth uid>/<booking id>/<n>`, and it was in the column
+-- grant. Two providers comparing prefixes recovered both the link between two
+-- relationship pseudonyms and the erased account's real auth id.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('pathid'); cu uuid; bk uuid; v_id uuid;
+begin
+  cu := (f->>'cu')::uuid; bk := (f->>'bk')::uuid;
+  v_id := pg_temp.ae_request_due(cu);
+  perform pg_temp.chk('erasure', 'the photo-path erasure completes', 'completed',
+    public.finalize_account_deletion(v_id));
+
+  perform pg_temp.chk('erasure',
+    'no readable photo path still contains the erased account''s auth id', '0',
+    (select count(*)::text from public.booking_reference_photos
+      where booking_id = bk and storage_path like '%' || cu::text || '%'));
+  perform pg_temp.chk('erasure', 'while the purge can still find the real one', 'true',
+    (select (storage_path_restricted like cu::text || '/%')::text
+       from public.booking_reference_photos where booking_id = bk));
+end $$;
+
+select pg_temp.chk('erasure', 'and the real path is withheld from every client role', 'false',
+  (has_column_privilege('authenticated', 'public.booking_reference_photos',
+                        'storage_path_restricted', 'SELECT')
+   or has_column_privilege('anon', 'public.booking_reference_photos',
+                           'storage_path_restricted', 'SELECT'))::text);
+
+-- THE GENERIC FORM, which is what would have found SEC-AUTHZ-002 unprompted:
+-- after an erasure, no value in ANY column a client role may read equals or
+-- contains the subject's auth id as text. Catalogue-driven, in the spirit of
+-- 20261123000000 — the assertion that found three tables nobody had named.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('novestige'); cu uuid; v_id uuid; r record;
+  v_hits text := ''; v_n bigint;
+begin
+  cu := (f->>'cu')::uuid;
+  v_id := pg_temp.ae_request_due(cu);
+  perform public.finalize_account_deletion(v_id);
+
+  for r in
+    select c.table_name as t, c.column_name as col
+      from information_schema.columns c
+      join information_schema.tables tb
+        on tb.table_schema = c.table_schema and tb.table_name = c.table_name
+     where c.table_schema = 'public'
+       and tb.table_type = 'BASE TABLE'
+       and c.data_type in ('text', 'uuid', 'character varying')
+       and has_column_privilege('authenticated', 'public.' || c.table_name, c.column_name, 'SELECT')
+  loop
+    execute format('select count(*) from public.%I where %I::text like %L',
+                   r.t, r.col, '%' || cu::text || '%') into v_n;
+    if v_n > 0 then
+      v_hits := v_hits || r.t || '.' || r.col || '(' || v_n || ') ';
+    end if;
+  end loop;
+
+  -- `account_deletion_requests` is the deletion JOB's own record, not an
+  -- anonymized historical record, and operations reads it to answer "was this
+  -- account deleted". It resolves nothing forward: the map from a subject to its
+  -- pseudonyms is unreadable, so knowing the id finds none of the rows.
+  -- The ONE surviving occurrence is the deletion JOB's own record, and it is the
+  -- sanctioned one: operations reads `account_deletion_requests` to answer "was
+  -- this account deleted". It resolves nothing FORWARD — the map from a subject
+  -- to its pseudonyms is unreadable by every client role — so it identifies the
+  -- erasure, never the erased person's retained rows. `subject_user_id` is absent
+  -- because it is ON DELETE SET NULL and the auth row is gone; `subject_id`
+  -- carries no FK, which is exactly why it is the durable one.
+  perform pg_temp.chk('erasure',
+    'after erasure the subject''s auth id survives in no other client-readable column',
+    'account_deletion_requests.subject_id(1) ',
+    v_hits);
+end $$;
+
+-- ── SEC-DATA-001. A third party cannot pin an erased account's PDF ───────
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('pdfpin');
+  pu uuid; ou uuid; pid uuid; opid uuid; v_id uuid; obj text; other_c uuid;
+begin
+  pu := (f->>'pu')::uuid; ou := (f->>'ou')::uuid;
+  pid := (f->>'pid')::uuid; opid := (f->>'opid')::uuid;
+  obj := pu::text || '/contract_' || floor(extract(epoch from clock_timestamp()))::bigint::text || '.pdf';
+
+  perform pg_temp.act_service();
+  insert into storage.objects(bucket_id, name, owner_id)
+    values ('contract-pdfs', obj, pu::text) on conflict do nothing;
+
+  -- SOMEBODY ELSE points their own contract at the departing account's object.
+  insert into public.contracts(provider_id, user_id, title, body, contract_type, pdf_url)
+  values (opid, ou, 'mine', 'body', 'pdf',
+          'https://x/storage/v1/object/public/contract-pdfs/' || obj)
+  returning id into other_c;
+
+  v_id := pg_temp.ae_request_due(pu);
+  perform public.finalize_account_deletion(v_id);
+
+  perform pg_temp.chk('erasure',
+    'a third party''s pdf_url cannot keep an erased account''s object alive', '1',
+    (select count(*)::text from public.pending_media_deletions
+      where bucket_id = 'contract-pdfs' and object_path = obj));
+end $$;
+
+-- ── SEC-DATA-003 / SEC-DATA-004. A hold holds, and a purge cannot finish
+--    before the sever it depends on ─────────────────────────────────────
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('holdclass'); cu uuid; v_id uuid; v_hold uuid;
+begin
+  cu := (f->>'cu')::uuid;
+  v_id := pg_temp.ae_request_due(cu);
+
+  perform pg_temp.act_service();
+  insert into public.account_deletion_holds(request_id, record_class, reason)
+  values (v_id, 'accepted_contracts', 'counsel') returning id into v_hold;
+  insert into public.account_deletion_holds(request_id, record_class, reason)
+  values (v_id, 'messages', 'counsel');
+
+  perform public.finalize_account_deletion(v_id);
+  perform pg_temp.chk('erasure', 'the contract-artifact step answers to the contract hold', 'held',
+    (select status from public.account_deletion_steps
+      where request_id = v_id and step_key = 'contract_artifacts'));
+  -- AND THE PURGE DID NOT REPORT SUCCESS. Its sever is held, so it has nothing
+  -- to find; writing `completed` would pin it forever and the release below
+  -- would run the sever and never the purge.
+  perform pg_temp.chk('erasure', 'a purge whose sever is held is held, not completed', 'held',
+    (select status from public.account_deletion_steps
+      where request_id = v_id and step_key = 'messages_purge'));
+
+  -- THE SWEEP MUST NOT UN-HOLD IT. The class mapping was missing here, so the
+  -- step was re-queued on every pass and the request flipped completed→failed.
+  perform public.sweep_account_deletions();
+  perform pg_temp.chk('erasure', 'and the sweep leaves a held step held', 'held',
+    (select status from public.account_deletion_steps
+      where request_id = v_id and step_key = 'contract_artifacts'));
+
+  -- RELEASE, through the supported path, matches the step it should free.
+  perform pg_temp.chk('erasure', 'releasing the contract hold frees its step', 'released',
+    public.release_account_deletion_hold(v_hold));
+  perform pg_temp.chk('erasure', 'which puts the contract-artifact step back in the queue',
+    'pending',
+    (select status from public.account_deletion_steps
+      where request_id = v_id and step_key = 'contract_artifacts'));
+end $$;
+
+-- ── SEC-ENV-001. The privileges the WORKER actually runs with ────────────
+--
+-- `pg_temp.act_service()` sets the service_role JWT CLAIM and resets the
+-- database role to the table owner, so every assertion in this file that "runs as
+-- service_role" is really running as postgres — and a missing GRANT to the real
+-- `service_role` role is invisible to all of them. The worker is the first caller
+-- that is genuinely that role. Asserted on the privilege itself, in both
+-- directions, so neither a missing grant nor a widened one passes.
+select pg_temp.chk('erasure', 'the worker''s entry points are executable by service_role', 'true',
+  (has_function_privilege('service_role', 'public.sweep_account_deletions()', 'EXECUTE')
+   and has_function_privilege('service_role', 'public.confirm_media_deleted(text, text)', 'EXECUTE')
+   and has_function_privilege('service_role', 'public.overdue_account_deletion_work()', 'EXECUTE')
+   and has_function_privilege('service_role', 'public.finalize_account_deletion(uuid)', 'EXECUTE')
+   and has_function_privilege('service_role', 'public.run_account_deletion_step(uuid, text)', 'EXECUTE')
+   and has_function_privilege('service_role', 'public.release_account_deletion_hold(uuid)', 'EXECUTE'))::text);
+select pg_temp.chk('erasure', 'and the media queue is readable and writable by it', 'true',
+  (has_table_privilege('service_role', 'public.pending_media_deletions', 'SELECT')
+   and has_table_privilege('service_role', 'public.pending_media_deletions', 'UPDATE'))::text);
+-- The map stays closed even to service_role's neighbours: only that role.
+select pg_temp.chk('erasure', 'while the relationship map is service_role only', 'true',
+  (has_table_privilege('service_role', 'public.erasure_relationship_pseudonyms', 'SELECT')
+   and not has_table_privilege('authenticated', 'public.erasure_relationship_pseudonyms', 'SELECT')
+   and not has_table_privilege('anon', 'public.erasure_relationship_pseudonyms', 'SELECT'))::text);
+
+-- ── SEC-COVERAGE-001. A set, not a count ────────────────────────────────
+--
+-- The previous form pinned the literal `8`, which fails identically whether a new
+-- bucket policy CARRIES the predicate or OMITS it — the one case that matters.
+select pg_temp.chk('erasure',
+  'every storage policy that accepts new bytes asks whether the account is leaving', '',
+  (select coalesce(string_agg(policyname || ':' || cmd, ', ' order by policyname), '')
+     from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and cmd in ('INSERT', 'UPDATE')
+      and 'authenticated' = any(roles)
+      and coalesce(qual, '') || coalesce(with_check, '') not like '%caller_account_unavailable%'));
+
+-- ── SEC-COVERAGE-001(b). AN UNBOUND ACCEPTANCE KEEPS EVERY VERSION ──────
+--
+-- Step (b) deletes a version no signature points at — and a signature with a NULL
+-- `contract_version_id` points at none, so for a contract carrying one, EVERY
+-- version looks unaccepted and the step would delete the exact frozen evidence
+-- PD-107 keeps. The binding is held by a trigger and a one-off backfill, not by a
+-- column constraint, so it can be absent.
+--
+-- Asserted as the BEHAVIOUR rather than as `count(unbound) = 0`: the live table
+-- holds none today, but that is a fact about today's data, and the suite's own
+-- fixtures create unbound rows freely — so the count form measured fixture
+-- hygiene and would have gone green while the hazard remained.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('unbound'); pu uuid; pid uuid; bk uuid;
+  cid uuid; v1 uuid; v2 uuid; v_id uuid; v_res jsonb;
+begin
+  pu := (f->>'pu')::uuid; pid := (f->>'pid')::uuid; bk := (f->>'bk')::uuid;
+  perform pg_temp.act_service();
+  select id into cid from public.contracts where provider_id = pid limit 1;
+  insert into public.contract_versions(contract_id, version_no, title, body, contract_type)
+  values (cid, 80, 'v80', 'body', 'text') returning id into v1;
+  insert into public.contract_versions(contract_id, version_no, title, body, contract_type)
+  values (cid, 81, 'v81', 'body', 'text') returning id into v2;
+  -- The seed's acceptance is deliberately left UNBOUND.
+  update public.contract_signatures set contract_version_id = null where booking_id = bk;
+
+  v_id := pg_temp.ae_request_due(pu);
+  perform public.finalize_account_deletion(v_id);
+  select result into v_res from public.account_deletion_steps
+   where request_id = v_id and step_key = 'contract_artifacts';
+
+  perform pg_temp.chk('erasure',
+    'an acceptance that does not say WHICH version keeps them all', '2',
+    (select count(*)::text from public.contract_versions where id in (v1, v2)));
+  perform pg_temp.chk('erasure', 'and the erasure reports that it retained them', '1',
+    (v_res->>'unbound_acceptances_forcing_retention'));
+end $$;
+
 select pg_temp.act_service();

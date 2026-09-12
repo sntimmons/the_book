@@ -139,12 +139,23 @@ one identity an operator CAN still resolve is the party on a retained accepted
 contract or a retained safety report, which is the single exception the policy
 keeps and is itself restricted (§ 8, OQ-084).
 
+**A provider loses access to a departed client's reference photos.** The photo
+path contains the client's account id, so the erasure severs the path the same way
+it severs the id (PD-105) — and object access resolves through that path. The
+photo row survives on its own 90-day clock so the bytes are deleted on schedule,
+but it can no longer be opened. **If a provider asks why the photos on an old
+booking stopped loading, this is why**, and it is not a fault. They keep the
+booking, its status, its service and its dates.
+
 **Contract artifacts are narrowed, not kept wholesale (PD-107).** What is
 retained is the accepted evidence: the exact version that was accepted, its PDF
 where that is the stored artifact, the acceptance timestamp and the minimum party
 identity. Abandoned drafts, superseded versions nobody accepted, and the PDFs
 behind them are deleted with everything else. **No signature image is retained
-because none exists** — this product has never written one. If support is ever
+because none exists** — this product has never written one. One exception runs
+the other way: where an acceptance does not record WHICH version it accepted,
+every version of that contract is kept, because any of them could be the one.
+The erasure reports when it has done that. If support is ever
 asked to produce "the signed copy", the honest answer is the accepted version and
 its timestamp, and **never that a signature was captured**.
 
