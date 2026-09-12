@@ -166,6 +166,13 @@ export default function DeleteAccount() {
             Existing bookings and trades are still here so you or the other person can finish or
             cancel them.
           </Bullet>
+          {/* PD-106. Messaging is closed during grace and is NOT reopened by an
+              existing transaction — so the screen says who to ask instead, rather
+              than leaving someone to discover the refusal mid-booking. */}
+          <Bullet>
+            If you need to get a message to someone about a booking or a trade, contact support
+            and we will pass it on.
+          </Bullet>
 
           {!finalising ? (
             <>
@@ -240,6 +247,13 @@ export default function DeleteAccount() {
           name is removed.
         </Bullet>
         <Bullet>Trades: the terms and the outcome stay, your identity does not.</Bullet>
+        {/* PD-105. The records are unlinkable ACROSS providers, which is a real
+            change and a promise — stated as what it is, with no claim that the
+            records themselves disappear. */}
+        <Bullet>
+          What is kept at one provider is not linked to what is kept at another. Nobody can put
+          them back together into a history of where you went.
+        </Bullet>
         <Bullet>
           Messages are kept for a while after a conversation closes, then deleted. Your name comes
           off them straight away.

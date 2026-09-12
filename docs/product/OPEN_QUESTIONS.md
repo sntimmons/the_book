@@ -555,6 +555,19 @@ schema; the product rules around them do not. Each question below is separately 
   launch grounds.
 - **Status:** CLOSED — resolved by PD-090, 2026-09-10
 
+**2026-09-12 (Founder ruling on PR #83) — NO ARCHITECTURAL CHANGE NOW.** PD-090
+**stands accepted for the closed beta**, and the newly surfaced instance below is
+**recorded as part of the pre-public-launch privacy/security revisit** rather than
+acted on. The instance is `public.account_unavailable(uuid)`, granted to `anon`
+and `authenticated` because an RLS policy is evaluated as the CALLER and the
+tables holding the fact are themselves RLS-protected — a definer function is the
+only mechanism, and a definer VIEW lends no function privilege either. So "is this
+identity unavailable" can still be asked one id at a time by a caller who already
+holds an id. Enumeration is closed, the answer is deliberately ambiguous across
+three causes, and nothing in `public` hands out an account id to harvest. **None
+of that closes it, and none of it is claimed to.** It is carried to the
+pre-public-launch revisit, beside PD-100's own "revisit before broader launch".
+
 **2026-09-12 — this question now has a second instance, and one half of it closed
 by accident.** Account erasure (PD-104) narrowed `providers_public_read`,
 `posts_public_read`, `comments_public_read` and the two Community read policies,
@@ -758,6 +771,9 @@ say that was false.
 | **OQ-081** — Should a Community shoutout require a completed booking? | 2026-09-11 | **PD-098** — no; a verified link may show a factual indicator that changes no rating |
 | **OQ-082** — What happens to Community content when an operator needs it gone? | 2026-09-11 | **PD-099** — hide and restore, audited; never a delete |
 | **OQ-083** — Does PD-090 survive Community opening to everyone? | 2026-09-11 | **PD-100** — yes for the closed beta; revisit before broader launch |
+| **OQ-085** — How unlinkable does an anonymized row have to be? | 2026-09-12 | **PD-105** — unlinkable, not merely de-named; a per-RELATIONSHIP pseudonym. Implemented in `20261124000000` / `20261127000000` |
+| **OQ-086** — Which writes count as "new marketplace activity" for a deactivated account? | 2026-09-12 | **PD-106** — read-only except restoration and terminal resolution; messaging stays closed. Implemented in `20261125000000` / `20261127000000` |
+| **OQ-087** — Are contract-signature images and contract PDFs in scope for erasure? | 2026-09-12 | **PD-107** — only the canonical ACCEPTED artifact is retained; no signature image exists to retain. Implemented in `20261126000000`. Duration still **OQ-084** |
 
 **Three of those four closures are decisions the product has not yet built**, and the index says so
 in each row rather than letting "Closed" read as "done". A question is closed by a decision; the
@@ -847,7 +863,25 @@ PD-087, PD-088 and PD-089. The same rulings **amended PD-068 to PARTIALLY SATISF
 
 ### OQ-085 — How unlinkable does an anonymized row have to be?
 
-**Status: Open. Raised 2026-09-12 by the security review of the erasure branch.**
+**Status: CLOSED 2026-09-12 by [PD-105](PRODUCT_DECISIONS.md). Raised the same day
+by the security review of the erasure branch.**
+
+**The answer is unlinkability, not de-naming.** An anonymized record must not
+remain resolvable to the deleted user through normal application data, an auth
+id, a profile FK, email, phone, a public identifier, or ordinary operator
+lookup. Where history needs stable grouping, the key is a **non-user
+pseudonymous RELATIONSHIP identifier** — specifically permitted for the
+PD-091/PD-092 distinct-client rule. The per-**(subject, provider)** option this
+entry named as available is the one that was taken, with conversations scoped
+narrower still. The only person-identifying exception left is the separately
+restricted contract/report evidence store (OQ-084).
+
+Implemented in `20261124000000_a_pseudonym_is_a_relationship_not_a_person.sql`,
+corrected by `20261127000000`. The person-wide `erased_accounts.pseudonym_id`
+column is **dropped**, not left dormant. Pinned in
+`supabase/tests/account_erasure.test.sql` § 14.
+
+_The original question follows, unedited._
 
 Erasure replaces a departing person's id with **one pseudonym**, written across
 their bookings, conversations, messages and both review tables. The mapping in
@@ -880,7 +914,26 @@ ordinary lookup is "permanently broken" overstates what is true, and is correcte
 
 ### OQ-086 — Which writes count as "new marketplace activity" for a deactivated account?
 
-**Status: Open. Raised 2026-09-12 by the security review of the erasure branch.**
+**Status: CLOSED 2026-09-12 by [PD-106](PRODUCT_DECISIONS.md). Raised the same day
+by the security review of the erasure branch.**
+
+**The list arrived, and it is a rule rather than an enumeration.** During grace
+the account is READ-ONLY except for secure restoration and the minimum state
+transitions that resolve a transaction which existed before the request. A like,
+a follow, a saved provider and a bookmark ARE activity and are blocked; so are
+provider services, availability, contracts, contract acceptance, post and
+Community edits, every barter negotiation RPC including
+`finalize_barter_agreement`, and storage uploads into all five buckets. New
+free-form messaging is NOT reopened by the existence of a transaction — that is
+an Operations obligation. The audit behind the ruling also found a hole this
+entry did not name: **sending a booking is an UPDATE of a draft's
+`submitted_at`, and the gate was INSERT-only.**
+
+Implemented in `20261125000000_read_only_means_read_only.sql`, corrected by
+`20261127000000`. Pinned in `supabase/tests/account_erasure.test.sql` § 15,
+asserted as the deactivated caller.
+
+_The original question follows, unedited._
 
 PD-102's immediate effects are "no new bookings, messages, posts, or marketplace
 activity". That is enforced by BEFORE INSERT triggers on fourteen tables, plus
@@ -912,7 +965,24 @@ something the policy meant to stop.
 
 ### OQ-087 — Are contract-signature images and contract PDFs in scope for erasure?
 
-**Status: Open. Raised 2026-09-12 by the security review of the erasure branch.**
+**Status: CLOSED 2026-09-12 by [PD-107](PRODUCT_DECISIONS.md), for the interim
+closed-beta policy. Raised the same day by the security review of the erasure branch.**
+
+**Retention is the accepted ARTIFACT, not everything beside it.** The frozen
+accepted version, the canonical accepted PDF, the acceptance timestamp and the
+minimum party identity are kept; abandoned drafts, superseded unaccepted PDFs,
+unused signature images and redundant copies are not. The signature-artifact
+condition — *only if the implementation actually relies on it* — **is not met**:
+`signature_url` is always NULL, so nothing in `contract-signatures` is evidence.
+
+This entry's caution was right that the two questions are linked, and wrong that
+scope could not be settled without the duration. **The DURATION is still OQ-084
+and still unset.**
+
+Implemented in `20261126000000_the_accepted_artifact_is_the_evidence.sql`.
+Pinned in `supabase/tests/account_erasure.test.sql` § 16.
+
+_The original question follows, unedited._
 
 The erasure engine queues every object under a departing account's own prefix in
 `provider-media` and `posts-media`, and deletes booking reference photos on their
@@ -933,6 +1003,57 @@ is a duration, this is a scope.
 
 **Do not delete these objects to make an erasure look cleaner, and do not claim
 the current behaviour is a decision.**
+
+
+---
+
+### OQ-088 — What runs the deletion worker on a clock?
+
+- **Area:** Operations / infrastructure
+- **Status: OPEN. Raised 2026-09-12 on PR #83, and returned as a
+  PRE-EXTERNAL-BETA BLOCKER.**
+- **Why it matters:** PD-102 tells a person a date. `sweep_account_deletions()`
+  finalises every request past that date and runs the two scheduled purges when
+  their retention window expires; `pending_media_deletions` holds the storage
+  objects SQL cannot delete; `confirm_media_deleted(...)` records that each one
+  actually went; `overdue_account_deletion_work()` reports what is late.
+  **Nothing invokes any of it on a schedule.** A deletion request past its
+  promised completion date with no worker execution is not acceptable beta
+  behaviour, and that is the current state.
+- **What was determined on PR #83, as the ruling asked:** the existing
+  architecture supports the **worker** and does **not** support the
+  **scheduler**, and those are different things.
+  - The worker is `scripts/account-deletion-worker.mjs` — a bounded, idempotent
+    Node runner in the directory that already holds `db-security-test.mjs` and
+    `seed-nonprod.mjs`, using the same `TEST_SUPABASE_*` tooling env and the same
+    hard production-ref guard. It sweeps, drains the media queue through the
+    Storage API, confirms each delete only after it succeeded, sweeps again so
+    `media_purge` can pass, and exits non-zero if anything is late. **No new
+    infrastructure and no new platform primitive.**
+  - The scheduler is the missing capability, and every way to supply it is a
+    platform decision that is not engineering's to make:
+    **(a)** `pg_cron` + `pg_net` — new database extensions, and
+    `supabase/tests/receiver_window.test.sql:926` and
+    `no_show_under_review.test.sql:259` currently ASSERT that no scheduler
+    extension is installed, which makes "no scheduler" a deliberately pinned
+    property of this schema rather than an oversight;
+    **(b)** Supabase's scheduled-functions feature — the same extensions
+    underneath, plus a project-level configuration this repo has never held
+    (there is no `supabase/config.toml`);
+    **(c)** a scheduled GitHub Actions workflow — puts production service-role
+    credentials in CI and makes the CI provider the production scheduler;
+    **(d)** any external host or queue — new infrastructure outright.
+- **What is needed to close it:** an operational decision naming **one** of
+  those, with an owner and a cadence. The work after that decision is small: the
+  worker exists and is already invocable.
+- **The interim, which is real but is not a resolution:** an operator runs the
+  worker by hand and treats a non-zero exit as a page. That is documented in
+  [../operations/ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md).
+  **It depends on a person remembering, and a retention promise that depends on
+  someone remembering is not a retention guarantee.**
+- **Blocks:** external beta. It does **not** block the closed beta, where the
+  cohort is 25–30 and an operator running one command is a proportionate control.
+- **This entry deliberately proposes no answer.**
 
 **Nothing in either merge closed a question by repository evidence**, and the rule that produced
 this ledger is unchanged: a migration is an implementation, not an approval. **OQ-006**, **OQ-007**,

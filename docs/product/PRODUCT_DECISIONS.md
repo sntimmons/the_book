@@ -2411,6 +2411,159 @@ and whether contract-signature images and PDFs are in erasure scope is
 **OQ-087**.
 
 
+### PD-105 — An anonymized record is a relationship, not a person
+
+**Decided 2026-09-12. Closes OQ-085.**
+
+An anonymized historical record **must not remain resolvable to the deleted
+user** — not through normal application data, an auth id, a profile foreign key,
+an email, a phone number, a public identifier, or ordinary operator lookup.
+
+Where historical integrity genuinely requires stable grouping, the grouping key
+is a **non-user pseudonymous RELATIONSHIP identifier** that preserves the
+grouping, cannot resolve back to the erased account, and is not an auth or
+profile identifier. That is specifically permitted for **PD-091/PD-092**
+distinct-client reputation continuity, which is the one place the grouping is
+load-bearing: the public rating is the mean of the latest review from each
+distinct client, so merging erased reviewers would move the rating of every
+provider they had reviewed.
+
+**The only person-identifying exception that survives an erasure** is the
+separately restricted contract and report evidence store under the interim
+retention policy (PD-102 policies C and F, duration still unset — **OQ-084**).
+
+#### What was wrong, in one sentence
+
+Erasure wrote **one** pseudonym across a departing person's bookings,
+conversations, messages and both review tables — so a provider holding a single
+booking row could read the pseudonym off it and walk the `anon`-readable review
+list to learn every other provider that person had used, when, and what they
+wrote. De-named, and fully linkable.
+
+#### The scope is the counterparty
+
+| Scope | Applies to | Why that width |
+|---|---|---|
+| **`provider`** | `bookings`, `provider_reviews`, `client_reviews` | Within one provider the departed client stays exactly one distinct person, so PD-091/PD-092 hold and no rating moves. Across providers the ids share nothing. |
+| **`conversation`** | `conversation`, `messages` | Narrower still, and all a thread needs: one consistent participant inside a thread, nothing joinable between two. |
+| **`none`** | a conversation with no provider | Named rather than left NULL, so a missing scope can never become a bucket several relationships quietly share. |
+
+Bookings and reviews deliberately share the provider-scoped id. It discloses
+nothing new — a review already names its booking — and keeping them consistent is
+what makes the retained operational record coherent for the provider who keeps it.
+
+#### What can still resolve one, said plainly
+
+The reverse index is permanent, because the two scheduled purges run up to 180
+days after the account is gone and locate their rows through it. It is
+RLS-enabled with every privilege revoked from `public`, `anon` and
+`authenticated` — **and an operator is an `authenticated` caller**, so operator
+lookup cannot reach it. What can read it is `service_role`: the same trust class
+as `erased_accounts`, which **PD-101** already records as trusted infrastructure
+rather than a product surface. That is stated rather than glossed, and it is the
+one channel the ruling's list does not close.
+
+**Deleting the map when a request completes would be worse, not better.** A purge
+step retried from `failed` or released from `held` would then find nothing,
+delete nothing and report success — a retention window silently becoming forever.
+The guard refuses that delete outright, including for `service_role`.
+
+---
+
+### PD-106 — Deletion grace preserves resolution rights, not participation rights
+
+**Decided 2026-09-12. Closes OQ-086.**
+
+During the 30-day grace period the account is **read-only**, with two exceptions
+and no others:
+
+- **A. Secure account restoration**, and
+- **B. the minimum state transitions necessary to resolve transactions that
+  existed before deletion was requested.**
+
+A deactivated account **must not create** new bookings, barter interests or
+proposals, messages, reviews, Community posts or replies, Reels or content,
+provider services, provider availability or content, likes, follows, bookmarks,
+or any other new marketplace or social object.
+
+For an already-existing active booking or barter transaction, only the **minimum
+existing terminal-state actions the current workflow already has** are permitted —
+cancel, decline, complete, acknowledge, and their barter equivalents.
+
+**New free-form messaging is not reopened merely because an existing transaction
+exists.** If communication is needed during deletion grace, that is an
+**Operations/support obligation**, not a restored participation right.
+
+#### The list, because engineering must not guess it
+
+**Blocked** — booking draft→submit (the send), likes, saves, follows, bookmarks,
+Community post edits, Reel edits, contract authoring, contract acceptance,
+provider services, availability, blocked dates, policies and booking
+preferences, care reminders, profile renaming, barter offer edits, barter
+proposals, counters, version acceptances and **agreements**, booking reference
+photos, feature interest, and uploads into all five storage buckets.
+
+**Allowed** — booking accept/decline/cancel/complete/no-show; obligation
+deliver / confirm received / report not received / report no-show / ask for
+review; cancel an agreement; decline or release an interest; close an offer;
+mark a message read; every delete of one's own rows; safety reports and blocks;
+and the deletion request, its cancellation and the reauthentication that
+restores the account.
+
+#### Two facts this cost
+
+**A comment in `20261102000000` said a departing person may still "message
+about" an existing booking.** The code never permitted it and, under this
+ruling, should not. The comment described an intention the migration did not
+implement; the code was right.
+
+**Sending a booking is an UPDATE, not an INSERT.** The original gate was BEFORE
+INSERT only, and the app sends a booking by updating a draft's `submitted_at` —
+so a deactivated account holding a draft could send a real new request with no
+refusal. The block workstream had the identical hole and fixed it in
+`20261058000000`; this is the same shape found twice.
+
+**Residual, recorded rather than decided:** `request_provider_review()` still
+opens an operator case from a deactivated account. It creates no marketplace or
+social object and the account is hidden and de-approved, so the case resolves to
+nothing — and `operator_cases` is also written by the *allowed* barter review
+request and by report intake, so a blanket gate there would refuse both.
+
+---
+
+### PD-107 — Accepted-contract retention is the accepted artifact, not everything beside it
+
+**Decided 2026-09-12. Closes OQ-087 for the interim closed-beta policy.**
+
+Accepted-contract retention includes **only the artifacts that form part of the
+canonical accepted evidence**:
+
+- the exact frozen accepted contract version and its content
+- the canonical accepted PDF, where that is the stored accepted artifact
+- the acceptance timestamp
+- the minimum party identity
+- a signature artifact **only if** the current implementation actually relies on
+  it as part of the accepted evidence
+
+**Not retained under the contract policy:** abandoned drafts, superseded
+unaccepted PDFs, decorative or unused signature images, and redundant copies
+that add no evidentiary value.
+
+**The signature condition is not met, as a matter of fact.**
+`contract_signatures.signature_url` is always NULL in this implementation — the
+signature canvas was removed, the booking flow writes the column as an explicit
+`null`, and `lib/storage.ts` records the bucket as unwritten. So nothing in
+`contract-signatures` is accepted evidence, and any object found under an erased
+account's prefix there is an unused signature image by definition. **If a
+signature image is ever reintroduced as part of what makes an acceptance
+evidence, this decision must be revisited before that ships**, not after.
+
+**Final retention DURATION remains unset and configurable pending attorney
+review (OQ-084).** This decision settles scope, which is the half that is an
+engineering fact. **No claim of legal enforceability, legal sufficiency, or
+verified e-signature is made anywhere**, and none may be added without counsel.
+
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

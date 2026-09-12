@@ -122,9 +122,61 @@ removed), reviews (rating, text and transaction linkage kept), barter history
 evidence (**both INTERIM, pending attorney review**), and the operator audit
 trail (4 years).
 
-**Anonymization is not a renaming.** The ordinary link back to the account is
-broken: the account row is gone, the profile row is gone, and the id on the
-retained rows resolves to no account and no profile.
+**Anonymization is not a renaming, and since PD-105 it is not one identity
+either.** The ordinary link back to the account is broken — the account row is
+gone, the profile row is gone, and the id on a retained row resolves to no
+account and no profile. **And the id is per RELATIONSHIP**: the same departed
+person carries a different id in each provider's records and in each
+conversation, so one provider's booking history cannot be used to follow them
+through the public review list to every other provider they used. Within one
+provider they remain one distinct client, which is what keeps that provider's
+rating unchanged (PD-091/PD-092).
+
+**What an operator can and cannot resolve.** An operator cannot look a pseudonym
+up. The map lives in a table revoked from every client role, and an operator is
+a client role — so "who was this?" has no answer through any ordinary tool. The
+one identity an operator CAN still resolve is the party on a retained accepted
+contract or a retained safety report, which is the single exception the policy
+keeps and is itself restricted (§ 8, OQ-084).
+
+**Contract artifacts are narrowed, not kept wholesale (PD-107).** What is
+retained is the accepted evidence: the exact version that was accepted, its PDF
+where that is the stored artifact, the acceptance timestamp and the minimum party
+identity. Abandoned drafts, superseded versions nobody accepted, and the PDFs
+behind them are deleted with everything else. **No signature image is retained
+because none exists** — this product has never written one. If support is ever
+asked to produce "the signed copy", the honest answer is the accepted version and
+its timestamp, and **never that a signature was captured**.
+
+---
+
+## 4a. What a deactivated account may still do (PD-106)
+
+During the 30-day grace period the account is **read-only**, with two exceptions
+and no others: **restoring the account**, and **the minimum actions that finish a
+transaction which already existed** when the request was made.
+
+**They CAN still**: cancel, accept, decline or complete an existing booking;
+report a no-show; mark a barter obligation delivered, confirm or dispute receipt,
+report a no-show, ask for a review, cancel an agreement; decline or release a
+barter interest; close a barter offer; mark a message read; delete their own
+content; file a safety report or block someone; and cancel the deletion.
+
+**They CANNOT**: send a new booking (including one they had drafted earlier), send
+a message, write a review, post in Community, edit a post or a Reel, like, follow,
+save or bookmark, add or change services, availability, policies or contracts,
+accept somebody's contract, start or finalise a barter agreement, upload anything,
+or change their own name or photo.
+
+**Messaging is closed, deliberately.** If a counterparty needs to reach someone
+mid-deletion, or vice versa, **that is ours to relay** — it is a support
+obligation, not a reason to reopen the channel. Do not tell a user to "just
+message them".
+
+**What they see when they try**: *"This account is scheduled for deletion and
+cannot start new activity."* A counterparty aiming at them sees the ordinary
+*"not currently available for new bookings"* instead, which is deliberate — a
+distinct message would disclose that somebody is deleting their account.
 
 ---
 
@@ -234,18 +286,26 @@ An operator can place a **hold on one class** of a specific request
 
 ## 7. Known limitations — read these before answering anyone
 
-- **There is no scheduler.** `sweep_account_deletions()` is run by a **person**.
-  Nothing finalises automatically when a grace period ends. **This is the single
-  biggest operational obligation this feature creates** (§ 9).
+- **There is no scheduler, and there is now a worker.** The two are different
+  things and the distinction is the whole of **OQ-088**. `scripts/account-deletion-worker.mjs`
+  does the job in one bounded command — sweep, drain the media queue through the
+  Storage API, confirm each delete, sweep again, report what is late — but
+  **nothing invokes it on a clock**. A person still has to run it (§ 9).
+  **Returned as a PRE-EXTERNAL-BETA BLOCKER**: a deletion request past its
+  promised completion date with no worker execution is not acceptable beta
+  behaviour, and choosing what runs the worker (`pg_cron`+`pg_net`, Supabase
+  scheduled functions, scheduled CI, or an external host) is an operational
+  decision, not an engineering one.
 - **There is no email or push confirmation**, of the request or of completion.
   The app records the request durably and shows its status on the screen, and the
   screen says so in as many words. **Never tell a user a notification was sent.**
 - **Media bytes cannot be deleted from the database.** Supabase requires the
-  Storage API, so objects are queued in `pending_media_deletions` and an
-  **operator must delete them through the Storage API and then call
-  `confirm_media_deleted`**. Until every object is confirmed, the request cannot
-  reach `completed` — which is deliberate: an erasure must not report success with
-  the bytes still in the bucket.
+  Storage API, so objects are queued in `pending_media_deletions` and something
+  must delete them through the Storage API and then call `confirm_media_deleted`.
+  The worker does exactly that; before it existed this was dashboard clicking.
+  Until every object is confirmed, the request cannot reach `completed` — which is
+  deliberate: an erasure must not report success with the bytes still in the
+  bucket.
 - **Access tokens during the grace period.** Refresh tokens die with the auth row
   at final deletion, so a session cannot be renewed afterwards. During the grace
   period an already-issued access token keeps working until it expires — but the
@@ -284,16 +344,28 @@ not a substitute for a policy document.
 
 ## 9. New human operational obligation
 
-**Someone has to run the sweep.** `select public.sweep_account_deletions();` as
-`service_role`, on a regular cadence. It finalises every request whose grace
-period has ended and runs every purge that has come due, and it is safe to run
-repeatedly. **Nothing else will do it.** A request whose grace period passed and
-whose sweep never ran is an account that was promised deletion and did not get it.
+**Someone has to run the worker.** One command, on a regular cadence:
 
-**Someone has to drain the media queue.** Read `pending_media_deletions` where
-`deleted_at is null`, delete each object through the Storage API, and call
-`confirm_media_deleted(bucket, path)`. Until that is done the deletion is not
-complete, and the system correctly refuses to say it is.
+```bash
+set -a; . ./.env.tooling.local; set +a
+node scripts/account-deletion-worker.mjs            # --dry-run to look first
+```
+
+It sweeps (finalising every request whose grace period has ended and running
+every purge that has come due), drains `pending_media_deletions` through the
+Storage API, calls `confirm_media_deleted` **only after each delete actually
+succeeded**, sweeps again so `media_purge` can pass, and prints
+`overdue_account_deletion_work()`. It is safe to run repeatedly, it refuses to
+run against the production project ref, and `--max=<n>` bounds how many objects
+one run will delete.
+
+**Treat a non-zero exit as a page.** It means something is late: a request past
+its grace date nothing finalised, or a step that is failed, held or past due.
+
+**Nothing else will do it.** A request whose grace period passed and whose worker
+never ran is an account that was promised deletion and did not get it. The
+underlying calls are still available directly — `select public.sweep_account_deletions();`
+as `service_role` — if the worker cannot be run for some reason.
 
 **Someone has to work held classes.** A hold is a decision to keep something; it
 needs revisiting and releasing, or it becomes an indefinite retention nobody

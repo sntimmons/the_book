@@ -198,7 +198,7 @@ begin
   perform pg_temp.chk('erasure', 'with the server''s scheduled date, 30 days out', 'true',
     (select (grace_ends_at between now() + interval '29 days' and now() + interval '31 days')::text
        from public.account_deletion_requests where id = v_id));
-  perform pg_temp.chk('erasure', 'and every step written up front, none of them run', '12',
+  perform pg_temp.chk('erasure', 'and every step written up front, none of them run', '13',
     (select count(*)::text from public.account_deletion_steps
       where request_id = v_id and status = 'pending'));
 
@@ -385,7 +385,11 @@ begin
   v_id := pg_temp.ae_request_due(cu);
   v_res := public.finalize_account_deletion(v_id);
   perform pg_temp.chk('erasure', 'finalisation completes', 'completed', v_res);
-  select pseudonym_id into v_pseudo from public.erased_accounts where subject_id = cu;
+  -- The RELATIONSHIP pseudonym for this provider (OQ-085). There is no
+  -- person-wide one any more, and asking for one is how this assertion would
+  -- silently start passing against a reintroduced global id.
+  select pseudonym_id into v_pseudo from public.erasure_relationship_pseudonyms
+   where subject_id = cu and scope_kind = 'provider' and scope_id = pid;
 
   -- A. PROFILE / ACCOUNT — gone.
   perform pg_temp.chk('erasure', 'the credentials are deleted', '0',
@@ -426,6 +430,11 @@ begin
   perform pg_temp.chk('erasure', 'the reviewer is a pseudonym, so distinct clients stay distinct',
     'true', (select (reviewer_user_id = v_pseudo)::text
                from public.provider_reviews where booking_id = bk));
+  -- AND IT IS SCOPED TO THIS PROVIDER. The booking and the review share it —
+  -- provider_reviews.booking_id already ties them together, so nothing new is
+  -- disclosed and the retained operational record stays coherent.
+  perform pg_temp.chk('erasure', 'the booking carries the same provider-scoped id',
+    'true', (select (user_id = v_pseudo)::text from public.bookings where id = bk));
 
   -- C. ACCEPTED CONTRACTS — retained under restriction.
   perform pg_temp.chk('erasure', 'the accepted contract survives account erasure', '1',
@@ -528,10 +537,10 @@ end $$;
 -- ══ 6. THE JOB IS IDEMPOTENT AND SAFE TO RETRY ═══════════════════════════
 do $$
 declare
-  f jsonb := pg_temp.ae_seed('retry'); cu uuid; bk uuid; v_id uuid;
+  f jsonb := pg_temp.ae_seed('retry'); cu uuid; bk uuid; pid uuid; v_id uuid;
   v_first text; v_second text; v_attempts integer; v_completed timestamptz;
 begin
-  cu := (f->>'cu')::uuid; bk := (f->>'bk')::uuid;
+  cu := (f->>'cu')::uuid; bk := (f->>'bk')::uuid; pid := (f->>'pid')::uuid;
   v_id := pg_temp.ae_request_due(cu);
 
   v_first := public.finalize_account_deletion(v_id);
@@ -556,9 +565,14 @@ begin
       where request_id = v_id and step_key = 'bookings'));
 
   -- THE PSEUDONYM IS STABLE ACROSS RUNS. If it were not, one person would become
-  -- several and the distinct-client rating rule would count them separately.
-  perform pg_temp.chk('erasure', 'exactly one pseudonym exists for this account', '1',
+  -- several WITHIN one provider's review set and the distinct-client rating rule
+  -- would count them separately.
+  perform pg_temp.chk('erasure', 'exactly one erasure record exists for this account', '1',
     (select count(*)::text from public.erased_accounts where subject_id = cu));
+  perform pg_temp.chk('erasure', 'and exactly one pseudonym per relationship', '1',
+    (select count(distinct pseudonym_id)::text
+       from public.erasure_relationship_pseudonyms
+      where subject_id = cu and scope_kind = 'provider' and scope_id = pid));
 end $$;
 
 -- ══ 7. A FAILURE IS DETECTABLE, AND THE JOB CANNOT CLAIM SUCCESS ═════════
@@ -710,9 +724,10 @@ begin
     (select count(*)::text from public.bookings where user_id = nu));
   perform pg_temp.chk('erasure', 'nor the erased reviews', '0',
     (select count(*)::text from public.provider_reviews where reviewer_user_id = nu));
-  perform pg_temp.chk('erasure', 'and no live account holds the pseudonym', '0',
+  perform pg_temp.chk('erasure', 'and no live account holds any of the pseudonyms', '0',
     (select count(*)::text from auth.users u
-      join public.erased_accounts e on e.pseudonym_id = u.id where e.subject_id = cu));
+      join public.erasure_relationship_pseudonyms e on e.pseudonym_id = u.id
+     where e.subject_id = cu));
   -- Nor can a new account be created AS the old identity while the record stands.
   perform pg_temp.chk('erasure', 'and the erasure record cannot be re-keyed', 'true',
     (select exists (select 1 from public.erased_accounts where subject_id = cu))::text);
@@ -729,7 +744,7 @@ select pg_temp.chk('erasure', 'the auth row goes second-to-last', 'profile_accou
   (public.account_deletion_step_keys())[array_length(public.account_deletion_step_keys(), 1) - 1]);
 select pg_temp.chk('erasure', 'and the media gate is last of all', 'media_purge',
   (public.account_deletion_step_keys())[array_length(public.account_deletion_step_keys(), 1)]);
-select pg_temp.chk('erasure', 'and every data class has a step', '12',
+select pg_temp.chk('erasure', 'and every data class has a step', '13',
   array_length(public.account_deletion_step_keys(), 1)::text);
 -- Completion is RECOMPUTED from the step rows, not asserted. A function that set
 -- `completed` without consulting them could claim success over a failure.
@@ -1491,5 +1506,374 @@ begin
     (select exists (select 1 from public.overdue_account_deletion_work() w
                      where w.request_id = v_req))::text);
 end $$;
+
+
+-- ══ 14. OQ-085: AN ANONYMIZED ROW IS A RELATIONSHIP, NOT A PERSON ════════
+--
+-- The pivot the security review described: hold ONE booking row for a departed
+-- client, read the pseudonym off it, then walk the `anon`-readable review list
+-- for that same id and learn every other provider they used. It worked because
+-- every anonymized row carried the same id. These assertions are what stop it
+-- coming back.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('unlink');
+  cu uuid; pu uuid; ou uuid; pid uuid; opid uuid; bk uuid; conv uuid;
+  bk2 uuid; conv2 uuid; v_id uuid; v_here uuid; v_there uuid;
+begin
+  cu := (f->>'cu')::uuid; pu := (f->>'pu')::uuid; ou := (f->>'ou')::uuid;
+  pid := (f->>'pid')::uuid; opid := (f->>'opid')::uuid;
+  bk := (f->>'bk')::uuid; conv := (f->>'conv')::uuid;
+
+  -- A SECOND provider, so there is something to correlate ACROSS.
+  perform pg_temp.act_service();
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status,
+                              submitted_at, completed_at)
+  values (cu, opid, 'another service', current_date - 8, 'completed',
+          now() - interval '8 days', now() - interval '8 days')
+  returning id into bk2;
+  insert into public.provider_reviews(booking_id, provider_id, reviewer_user_id, rating,
+                                      review_text, created_at)
+  values (bk2, opid, cu, 4, 'also fine', now() - interval '7 days');
+  insert into public.conversation(client_id, provider_id, last_message_at)
+    values (cu, opid, now() - interval '7 days') returning id into conv2;
+  insert into public.messages(conversation_id, sender_id, content)
+    values (conv2, cu, 'a second thread');
+
+  v_id := pg_temp.ae_request_due(cu);
+  perform pg_temp.chk('erasure', 'the two-provider erasure completes', 'completed',
+    public.finalize_account_deletion(v_id));
+
+  select user_id into v_here  from public.bookings where id = bk;
+  select user_id into v_there from public.bookings where id = bk2;
+
+  -- THE WHOLE POINT.
+  perform pg_temp.chk('erasure',
+    'the same person is a DIFFERENT id at a different provider', 'true',
+    (v_here is distinct from v_there)::text);
+  perform pg_temp.chk('erasure',
+    'and the public review list cannot be walked from one provider to the other', '0',
+    (select count(*)::text from public.provider_reviews
+      where reviewer_user_id = v_here and provider_id = opid));
+
+  -- AND GROUPING SURVIVES, which is the constraint PD-091/PD-092 impose. Within
+  -- ONE provider the booking and the review are still the same distinct client,
+  -- so no rating moved.
+  perform pg_temp.chk('erasure',
+    'within one provider the booking and the review are still one client', 'true',
+    (select (reviewer_user_id = v_here)::text
+       from public.provider_reviews where booking_id = bk));
+  perform pg_temp.chk('erasure',
+    'and the same holds at the other provider', 'true',
+    (select (reviewer_user_id = v_there)::text
+       from public.provider_reviews where booking_id = bk2));
+
+  -- THREADS ARE SCOPED NARROWER STILL, and a thread reads as one participant.
+  perform pg_temp.chk('erasure', 'two conversations do not share an id', 'true',
+    (select (c1.client_id is distinct from c2.client_id)::text
+       from public.conversation c1, public.conversation c2
+      where c1.id = conv and c2.id = conv2));
+  perform pg_temp.chk('erasure', 'and a message matches its own thread''s participant', '1',
+    (select count(*)::text from public.messages m join public.conversation c
+        on c.id = m.conversation_id
+      where m.conversation_id = conv and m.sender_id = c.client_id));
+
+  -- NOTHING RESOLVES BACK through an auth id, a profile, or a live account.
+  perform pg_temp.chk('erasure', 'no pseudonym is an auth id', '0',
+    (select count(*)::text from public.erasure_relationship_pseudonyms e
+      join auth.users u on u.id = e.pseudonym_id where e.subject_id = cu));
+  perform pg_temp.chk('erasure', 'no pseudonym is a profile id', '0',
+    (select count(*)::text from public.erasure_relationship_pseudonyms e
+      join public.clients c on c.id = e.pseudonym_id where e.subject_id = cu));
+  perform pg_temp.chk('erasure', 'and no pseudonym is a provider account', '0',
+    (select count(*)::text from public.erasure_relationship_pseudonyms e
+      join public.providers p on p.user_id = e.pseudonym_id where e.subject_id = cu));
+end $$;
+
+-- THE MAP IS THE ONLY REVERSE INDEX, AND IT IS NOT AN OPERATOR LOOKUP. An
+-- operator is an `authenticated` caller, so a revoke from `authenticated` is what
+-- makes "not resolvable by ordinary operator lookup" true — asserted on the
+-- privilege, because that is where it actually lives.
+select pg_temp.chk('erasure',
+  'the relationship map is unreadable by every client role', 'false',
+  (has_table_privilege('authenticated', 'public.erasure_relationship_pseudonyms', 'SELECT')
+   or has_table_privilege('anon', 'public.erasure_relationship_pseudonyms', 'SELECT'))::text);
+select pg_temp.chk('erasure', 'and unwritable by them', 'false',
+  (has_table_privilege('authenticated', 'public.erasure_relationship_pseudonyms', 'INSERT')
+   or has_table_privilege('authenticated', 'public.erasure_relationship_pseudonyms', 'UPDATE')
+   or has_table_privilege('authenticated', 'public.erasure_relationship_pseudonyms', 'DELETE'))::text);
+select pg_temp.chk('erasure', 'the allocator is not client-callable', 'false',
+  (has_function_privilege('authenticated',
+     'public.erasure_relationship_pseudonym(uuid, text, uuid)', 'EXECUTE')
+   or has_function_privilege('authenticated', 'public.erasure_pseudonyms_for(uuid)', 'EXECUTE')
+   or has_function_privilege('authenticated', 'public.record_erased_account(uuid)', 'EXECUTE'))::text);
+-- THE PERSON-WIDE PSEUDONYM IS GONE, not dormant. A column left in place is one
+-- `create or replace` away from being written again.
+select pg_temp.chk('erasure', 'no person-wide pseudonym column survives', '0',
+  (select count(*)::text from information_schema.columns
+    where table_schema = 'public' and table_name = 'erased_accounts'
+      and column_name = 'pseudonym_id'));
+select pg_temp.chk('erasure', 'and its allocator is dropped', '0',
+  (select count(*)::text from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'erasure_pseudonym'));
+
+-- Append-only, and never re-keyed: a repointed pseudonym would reattach one
+-- person's retained history to somebody else's identity.
+do $$
+declare cu uuid := gen_random_uuid(); v_p uuid;
+begin
+  perform pg_temp.act_service();
+  v_p := public.erasure_relationship_pseudonym(cu, 'provider', gen_random_uuid());
+  perform pg_temp.chk('erasure', 'an allocation is idempotent', 'true',
+    (v_p = public.erasure_relationship_pseudonym(cu, 'provider',
+       (select scope_id from public.erasure_relationship_pseudonyms
+         where pseudonym_id = v_p)))::text);
+  perform pg_temp.chk_blocked('erasure', 'a relationship pseudonym cannot be re-keyed',
+    format('update public.erasure_relationship_pseudonyms set pseudonym_id = %L
+             where pseudonym_id = %L', gen_random_uuid(), v_p),
+    'cannot be re-keyed');
+  -- NOT EVEN BY service_role: the two scheduled purges find their rows through
+  -- this map up to 180 days after the account is gone, so deleting it would turn
+  -- a retention window into forever while every surface still reported success.
+  perform pg_temp.chk_blocked('erasure', 'nor deleted, by anyone at all',
+    format('delete from public.erasure_relationship_pseudonyms where pseudonym_id = %L', v_p),
+    'cannot be deleted');
+end $$;
+
+-- ══ 15. OQ-086: DELETION GRACE PRESERVES RESOLUTION, NOT PARTICIPATION ═══
+--
+-- Asserted AS THE CALLER, because a gate that only holds for `service_role` is
+-- not a gate. Every refusal below is a real statement run as the deactivated
+-- account with its own JWT in scope.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('grace');
+  cu uuid; pu uuid; ou uuid; pid uuid; opid uuid; bk uuid; conv uuid;
+  draft uuid; cid uuid; v_req uuid;
+begin
+  cu := (f->>'cu')::uuid; pu := (f->>'pu')::uuid; ou := (f->>'ou')::uuid;
+  pid := (f->>'pid')::uuid; opid := (f->>'opid')::uuid;
+  bk := (f->>'bk')::uuid; conv := (f->>'conv')::uuid;
+
+  -- A DRAFT that exists BEFORE the deletion request, which is the exact shape
+  -- the INSERT-only gate could not see.
+  perform pg_temp.act_service();
+  insert into public.bookings(user_id, provider_id, service_name, requested_date, status)
+  values (cu, opid, 'a drafted service', current_date + 7, 'pending')
+  returning id into draft;
+  select id into cid from public.contracts where provider_id = pid limit 1;
+
+  -- The request. Not finalised: this is the GRACE period.
+  insert into public.account_deletion_requests
+    (subject_user_id, subject_id, status, grace_ends_at, disclosed_grace_days)
+  values (cu, cu, 'grace_period', now() + interval '30 days', 30) returning id into v_req;
+
+  perform pg_temp.act(cu);
+  perform pg_temp.chk('erasure', 'the account reads as deactivated', 'true',
+    public.caller_account_unavailable()::text);
+
+  -- THE ONE THAT WAS OPEN: sending a booking is an UPDATE, not an INSERT.
+  perform pg_temp.chk_blocked('erasure',
+    'a deactivated account cannot SEND a booking it drafted earlier',
+    format('update public.bookings set submitted_at = now() where id = %L', draft),
+    'scheduled for deletion');
+
+  -- Likes, follows, bookmarks, saves — named in the ruling.
+  perform pg_temp.chk_blocked('erasure', 'nor like a post',
+    format('insert into public.post_likes(user_id, post_id) select %L, id
+              from public.posts where provider_id = %L limit 1', cu, pid),
+    'scheduled for deletion');
+  perform pg_temp.chk_blocked('erasure', 'nor follow a provider',
+    format('insert into public.provider_follows(follower_user_id, provider_id)
+              values (%L, %L)', cu, opid), 'scheduled for deletion');
+  perform pg_temp.chk_blocked('erasure', 'nor save a provider',
+    format('insert into public.saved_providers(user_id, provider_id)
+              values (%L, %L)', cu, opid), 'scheduled for deletion');
+  perform pg_temp.chk_blocked('erasure', 'nor bookmark a Community post',
+    format('insert into public.community_bookmarks(user_id, post_id)
+              select %L, id from public.community_posts where user_id = %L limit 1', cu, cu),
+    'scheduled for deletion');
+
+  -- Editing existing content is authoring, not resolving.
+  perform pg_temp.chk_blocked('erasure', 'nor edit an existing Community post',
+    format('update public.community_posts set content = ''edited'' where user_id = %L', cu),
+    'scheduled for deletion');
+
+  -- Accepting somebody's terms starts something.
+  perform pg_temp.chk_blocked('erasure', 'nor accept a contract',
+    format('insert into public.contract_signatures(contract_id, booking_id, client_user_id, status)
+              values (%L, %L, %L, ''signed'')', cid, draft, cu),
+    'scheduled for deletion');
+
+  -- A personal object is still a new object.
+  perform pg_temp.chk_blocked('erasure', 'nor create a care reminder',
+    format('insert into public.care_reminders(client_user_id, provider_id, service_name, interval_days)
+              values (%L, %L, ''a service'', 30)', cu, opid),
+    'scheduled for deletion');
+
+  -- Profile editing is neither restoration nor resolution.
+  perform pg_temp.chk_blocked('erasure', 'nor rename themselves',
+    format('update public.clients set name = ''A New Name'' where id = %L', cu),
+    'scheduled for deletion');
+
+  -- AND THE RESOLUTION RIGHTS SURVIVE, which is the other half of the ruling and
+  -- the half a blanket refusal would have destroyed.
+  perform pg_temp.chk_allowed('erasure',
+    'but an existing booking can still be cancelled',
+    format('update public.bookings set status = ''cancelled_by_client'',
+              cancellation_actor = ''client'', cancelled_by = %L, cancelled_at = now()
+             where id = %L', cu::text, draft));
+  perform pg_temp.chk_allowed('erasure', 'and a message can still be marked read',
+    format('update public.messages set is_read = true where conversation_id = %L', conv));
+  perform pg_temp.chk_allowed('erasure', 'and the deletion itself can be cancelled',
+    'select public.cancel_account_deletion()');
+end $$;
+
+-- THE PROVIDER SIDE, and the barter chain the RPCs reach through.
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('gracep');
+  cu uuid; pu uuid; pid uuid; opid uuid; v_req uuid; v_offer uuid;
+begin
+  cu := (f->>'cu')::uuid; pu := (f->>'pu')::uuid;
+  pid := (f->>'pid')::uuid; opid := (f->>'opid')::uuid;
+
+  perform pg_temp.act_service();
+  insert into public.barter_offers(provider_id, user_id, offering_service, seeking_service, is_active)
+  values (pid, pu, 'cuts', 'nails', true) returning id into v_offer;
+  insert into public.account_deletion_requests
+    (subject_user_id, subject_id, status, grace_ends_at, disclosed_grace_days)
+  values (pu, pu, 'grace_period', now() + interval '30 days', 30) returning id into v_req;
+
+  perform pg_temp.act(pu);
+  perform pg_temp.chk_blocked('erasure', 'a deactivated provider cannot add a service',
+    format('insert into public.provider_services(provider_id, name, price)
+              values (%L, ''a new service'', 50)', pid), 'scheduled for deletion');
+  perform pg_temp.chk_blocked('erasure', 'nor publish availability',
+    format('insert into public.provider_availability(provider_id, weekday, start_time, end_time)
+              values (%L, 1, ''09:00'', ''17:00'')', pid), 'scheduled for deletion');
+  perform pg_temp.chk_blocked('erasure', 'nor author a new contract',
+    format('insert into public.contracts(provider_id, user_id, title, body)
+              values (%L, %L, ''new terms'', ''body'')', pid, pu),
+    'scheduled for deletion');
+  perform pg_temp.chk_blocked('erasure', 'nor edit an existing Reel',
+    format('update public.posts set caption = ''edited'' where provider_id = %L', pid),
+    'scheduled for deletion');
+  perform pg_temp.chk_blocked('erasure', 'nor rewrite the terms of a live barter offer',
+    format('update public.barter_offers set seeking_service = ''something else''
+             where id = %L', v_offer), 'scheduled for deletion');
+  -- BUT CLOSING THE OFFER IS WINDING DOWN, and must stay possible.
+  perform pg_temp.chk_allowed('erasure', 'but the offer can still be closed',
+    format('update public.barter_offers set is_active = false where id = %L', v_offer));
+
+  -- A BINDING AGREEMENT is the one that mattered most: `finalize_barter_agreement`
+  -- is SECURITY DEFINER and checked nothing, so the gate is on the TABLE it
+  -- writes. `authenticated` holds no INSERT grant there, so asserting it as an
+  -- ordinary caller would prove a grant rather than the trigger — this runs in
+  -- the context the RPC actually creates: the caller's claims, the owner's role.
+  perform pg_temp.act_claims_only(pu);
+  perform pg_temp.chk_blocked('erasure', 'nor enter a new barter agreement',
+    format('insert into public.barter_agreements(offer_id, owner_user_id, owner_provider_id,
+              responder_user_id, responder_provider_id)
+             values (%L, %L, %L, %L, %L)', v_offer, pu, pid, cu, opid),
+    'scheduled for deletion');
+  perform pg_temp.chk_blocked('erasure', 'nor open a new proposal',
+    format('insert into public.barter_proposals(offer_id, owner_user_id, responder_user_id)
+             values (%L, %L, %L)', v_offer, pu, cu),
+    'scheduled for deletion');
+  perform pg_temp.act_service();
+end $$;
+
+-- The storage half, asserted on the POLICY rather than by uploading bytes: the
+-- harness has no Storage API, and a policy that does not mention the predicate
+-- cannot be enforcing it.
+select pg_temp.chk('erasure',
+  'every bucket that accepts new bytes asks whether the account is leaving', '8',
+  (select count(*)::text from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+      and cmd in ('INSERT', 'UPDATE')
+      and coalesce(qual, '') || coalesce(with_check, '') like '%caller_account_unavailable%'));
+
+-- ══ 16. OQ-087: ONLY THE ACCEPTED ARTIFACT IS EVIDENCE ═══════════════════
+do $$
+declare
+  f jsonb := pg_temp.ae_seed('artifact');
+  cu uuid; pu uuid; pid uuid; bk uuid; v_id uuid;
+  accepted_c uuid; accepted_v uuid; stale_v uuid;
+begin
+  cu := (f->>'cu')::uuid; pu := (f->>'pu')::uuid;
+  pid := (f->>'pid')::uuid; bk := (f->>'bk')::uuid;
+
+  perform pg_temp.act_service();
+  select id into accepted_c from public.contracts where provider_id = pid limit 1;
+
+  -- An ACCEPTED version, bound to the signature the seed already created.
+  insert into public.contract_versions(contract_id, version_no, title, body, contract_type, pdf_url)
+  values (accepted_c, 90, 'accepted terms', 'body', 'pdf',
+          'https://x/storage/v1/object/public/contract-pdfs/' || pu::text || '/kept.pdf')
+  returning id into accepted_v;
+  update public.contract_signatures set contract_version_id = accepted_v where booking_id = bk;
+
+  -- A SUPERSEDED version nobody bound to, on the same contract.
+  insert into public.contract_versions(contract_id, version_no, title, body, contract_type, pdf_url)
+  values (accepted_c, 91, 'later terms', 'body', 'pdf',
+          'https://x/storage/v1/object/public/contract-pdfs/' || pu::text || '/stale.pdf')
+  returning id into stale_v;
+
+  -- NOTE `contracts_provider_id_key`: a provider has exactly ONE contract row and
+  -- its history is the version chain, so "an abandoned draft" is a contract
+  -- nobody ever signed — asserted in its own block below, on a provider who has
+  -- one. Here the draft is a SUPERSEDED VERSION, which is the shape this
+  -- schema actually produces.
+
+  v_id := pg_temp.ae_request_due(pu);
+  perform pg_temp.chk('erasure', 'the provider erasure completes', 'completed',
+    public.finalize_account_deletion(v_id));
+
+  perform pg_temp.chk('erasure', 'the accepted contract is retained', '1',
+    (select count(*)::text from public.contracts where id = accepted_c));
+  perform pg_temp.chk('erasure', 'and the exact version that was accepted with it', '1',
+    (select count(*)::text from public.contract_versions where id = accepted_v));
+  perform pg_temp.chk('erasure', 'but not the superseded version nobody accepted', '0',
+    (select count(*)::text from public.contract_versions where id = stale_v));
+  -- THE PROVIDER left, not the client — so the acceptance keeps its live client
+  -- link and loses the AUTHOR link, which is the direction 20261112000000 fixed.
+  perform pg_temp.chk('erasure', 'and the acceptance still says who accepted and when', 'true',
+    (select (client_user_id = cu and status = 'signed')::text
+       from public.contract_signatures where booking_id = bk));
+  perform pg_temp.chk('erasure', 'while the author link is severed', 'true',
+    (select (user_id is null)::text from public.contracts where id = accepted_c));
+end $$;
+
+-- AN ABANDONED DRAFT: the provider's one contract, which nobody ever signed.
+do $$
+declare nu uuid := gen_random_uuid(); npid uuid; draft_c uuid; v_id uuid;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (nu);
+  insert into public.providers(user_id, display_name, username, is_approved)
+    values (nu, 'Draft Only', 'aed'||substr(nu::text,1,8), true) returning id into npid;
+  insert into public.contracts(provider_id, user_id, title, body)
+    values (npid, nu, 'never accepted', 'body') returning id into draft_c;
+
+  v_id := pg_temp.ae_request_due(nu);
+  perform pg_temp.chk('erasure', 'the draft-only provider erasure completes', 'completed',
+    public.finalize_account_deletion(v_id));
+  perform pg_temp.chk('erasure', 'and a contract nobody ever signed is not retained', '0',
+    (select count(*)::text from public.contracts where id = draft_c));
+end $$;
+
+-- The step exists, runs in the right place, and answers to the right hold.
+select pg_temp.chk('erasure', 'contract artifacts are narrowed before the owner link is severed',
+  'true',
+  (select (array_position(public.account_deletion_step_keys(), 'contract_artifacts')
+           < array_position(public.account_deletion_step_keys(), 'accepted_contracts'))::text));
+select pg_temp.chk('erasure', 'and the step is not client-callable', 'false',
+  has_function_privilege('authenticated', 'public.adel_contract_artifacts(uuid)', 'EXECUTE')::text);
+-- The signature artifact is out of scope because nothing writes it. Asserted so
+-- that reintroducing the canvas trips this rather than silently shipping an
+-- artifact the retention decision never considered.
+select pg_temp.chk('erasure', 'no signature image is on file anywhere', '0',
+  (select count(*)::text from public.contract_signatures where signature_url is not null));
 
 select pg_temp.act_service();

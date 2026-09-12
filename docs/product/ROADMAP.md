@@ -983,8 +983,8 @@ discovery or provider search.
 
 ### Account Erasure & Retention Integrity — **IMPLEMENTED, pending merge** (`feat/account-erasure-retention-integrity`)
 
-Eleven migrations, `20261100000000` … `20261110000000`, and two locked decisions
-(**PD-102**, **PD-103**). The policy input this workstream was blocked on has been given, and the
+Twenty-eight migrations, `20261100000000` … `20261127000000`, and six locked decisions
+(**PD-102**, **PD-103**, **PD-104**, **PD-105**, **PD-106**, **PD-107**). The policy input this workstream was blocked on has been given, and the
 approved closed-beta policy is built.
 
 **Self-service deletion is in the app** (Settings → Account → Delete Account), with a **30-day
@@ -1006,15 +1006,40 @@ corrections to the corrections — the review loop earned its cost twice over.
 accepted-contract evidence and report/safety evidence, plus the privacy-policy and beta-FAQ
 language. Both windows ship **unset and flagged** rather than guessed.
 
-**Three further product questions are now open rather than answered**: **OQ-085** (how unlinkable
-an anonymized row must be — constrained by PD-091/092's distinct-client rating rule), **OQ-086**
-(the full list of writes that count as "new marketplace activity" for a deactivated account), and
-**OQ-087** (whether contract-signature images and PDFs are in erasure scope). **OQ-076** gained a
-second instance and half of it closed by accident.
+**The three product questions the branch opened are now CLOSED by ruling, and built**
+(`20261124000000` … `20261127000000`):
 
-**Owed before external beta:** physical-device QA of the whole flow, and two standing operator
-obligations that have no automation — running `sweep_account_deletions()`, and draining the media
-queue through the Storage API. Both are documented in
+- **OQ-085 → PD-105.** An anonymized row must be UNLINKABLE, not merely de-named. The person-wide
+  pseudonym is replaced by a **relationship** pseudonym — per provider for bookings and both review
+  tables, per conversation for threads — so PD-091/092's distinct-client rule still holds within one
+  provider while the public review list can no longer be walked from one provider to the next. The
+  person-wide column is dropped, not left dormant.
+- **OQ-086 → PD-106.** Deletion grace preserves RESOLUTION rights, not participation rights. The
+  full write surface was enumerated and gated; the one that mattered most was a missing VERB, not a
+  missing table — the app sends a booking by UPDATING a draft's `submitted_at`, and the gate was
+  INSERT-only. Messaging stays closed and relaying is a support obligation.
+- **OQ-087 → PD-107.** Retention is the canonical ACCEPTED artifact only. Abandoned drafts,
+  superseded unaccepted PDFs and their storage objects go. No signature image is retained because
+  none has ever been written.
+
+**OQ-076** gained a second instance and half of it closed by accident; the Founder ruling of
+2026-09-12 makes **no architectural change now** — PD-090 stands for the closed beta and the
+residual `account_unavailable(uuid)` oracle is carried to the pre-public-launch privacy/security
+revisit.
+
+**Owed before external beta**, and one of them is a **BLOCKER**:
+
+- **OQ-088 — nothing runs the deletion worker on a clock.** `scripts/account-deletion-worker.mjs`
+  now does the whole job in one bounded command (sweep, drain the media queue through the Storage
+  API, confirm, sweep again, report what is late) using only what the stack already has. **What is
+  missing is the scheduler**, and every way to supply one — `pg_cron`+`pg_net`, Supabase scheduled
+  functions, scheduled CI, an external host — is a platform decision with an owner and a cadence to
+  choose. Until then an operator runs it by hand, which is proportionate for a 25–30 cohort and is
+  not a retention guarantee.
+- **Physical-device QA of the whole flow** — the disclosure, the reauthentication prompt, the
+  scheduled-date display and the restore path have not been exercised on a real device.
+
+Both are documented in
 [ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md).
 
 #### The original entry, kept for the reasoning that produced it
