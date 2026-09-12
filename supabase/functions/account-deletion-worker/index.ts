@@ -35,7 +35,7 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
-import { runAccountDeletionWorker } from '../_shared/accountDeletionRun.mjs'
+import { runAccountDeletionWorker, summarizeRun } from '../_shared/accountDeletionRun.mjs'
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -134,7 +134,8 @@ serve(async (req: Request) => {
       result: { error: message },
       log: lines.join('\n').slice(0, 20000),
     })
-    return json({ ok: false, error: message }, 500)
+    // No stack, no detail — an error body is a response body.
+    return json({ ok: false, error: 'the run failed; see account_deletion_worker_runs' }, 500)
   }
 
   await db.from('account_deletion_worker_runs').insert({
@@ -151,5 +152,9 @@ serve(async (req: Request) => {
   // A NON-2xx WHEN WORK IS LATE. pg_net records the status, so "some promised
   // deletion did not happen" is visible in the database without anyone reading
   // a log. The body says which of the two it was.
-  return json(result, result.ok ? 200 : 500)
+  //
+  // COUNTS ONLY. The body lands in `net._http_response`, which pg_net grants to
+  // PUBLIC on a Supabase project; the full result names subject ids and stays in
+  // the service_role-only runs table. See `summarizeRun`.
+  return json(summarizeRun(result), result.ok ? 200 : 500)
 })

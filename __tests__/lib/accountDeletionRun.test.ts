@@ -9,7 +9,10 @@
 // Every assertion here is about a property somebody could plausibly refactor
 // away: the second sweep, confirming only after a real removal, and the
 // definition of a clean run.
-import { runAccountDeletionWorker } from '@/supabase/functions/_shared/accountDeletionRun.mjs'
+import {
+  runAccountDeletionWorker,
+  summarizeRun,
+} from '@/supabase/functions/_shared/accountDeletionRun.mjs'
 
 type Row = { id: string; bucket_id: string; object_path: string; attempts: number | null }
 
@@ -264,5 +267,55 @@ describe('parity — one engine, two runtimes', () => {
     // unchanged, so an import here is a fork with extra steps.
     expect(src).not.toMatch(/^\s*import\s/m)
     expect(src).not.toMatch(/require\(/)
+  })
+})
+
+describe('summarizeRun — a run result is not a response body', () => {
+  // The worker's HTTP response is stored by pg_net in `net._http_response`, and
+  // that table is granted to PUBLIC by the extension itself — a grant `postgres`
+  // cannot revoke, because `supabase_admin` made it. It is unreachable only
+  // because PostgREST exposes `public` and `graphql_public`, which is a project
+  // setting that lives nowhere in this repo. So the body must not carry
+  // identities, and this is the assertion that keeps it that way.
+  const full = {
+    ok: false,
+    startedAt: 'a',
+    finishedAt: 'b',
+    dryRun: false,
+    max: 200,
+    sweeps: [{ finalized: 1 }],
+    mediaExamined: 2,
+    mediaDeleted: 1,
+    mediaFailed: 1,
+    overdueCount: 1,
+    overdue: [
+      {
+        request_id: '11111111-1111-1111-1111-111111111111',
+        subject_id: '22222222-2222-2222-2222-222222222222',
+        step_key: 'messages_purge',
+        last_error: 'boom',
+      },
+    ],
+    errors: ['sweep 1: permission denied'],
+  }
+
+  it('carries no subject id, no overdue rows and no error text', () => {
+    const body = JSON.stringify(summarizeRun(full))
+    expect(body).not.toContain('22222222-2222-2222-2222-222222222222')
+    expect(body).not.toContain('11111111-1111-1111-1111-111111111111')
+    expect(body).not.toContain('subject_id')
+    expect(body).not.toContain('overdue"')
+    expect(body).not.toContain('permission denied')
+  })
+
+  it('still carries everything a caller needs to decide whether to wake somebody', () => {
+    expect(summarizeRun(full)).toMatchObject({
+      ok: false,
+      mediaExamined: 2,
+      mediaDeleted: 1,
+      mediaFailed: 1,
+      overdueCount: 1,
+      errorCount: 1,
+    })
   })
 })

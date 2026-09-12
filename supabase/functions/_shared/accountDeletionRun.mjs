@@ -170,3 +170,37 @@ export async function runAccountDeletionWorker(io, opts = {}) {
   result.finishedAt = new Date().toISOString()
   return result
 }
+
+/**
+ * The part of a run that is safe to hand back over HTTP.
+ *
+ * ══ WHY A RUN RESULT IS NOT A RESPONSE BODY ══════════════════════════════
+ *
+ * The full result carries `overdue`, and `overdue_account_deletion_work()`
+ * returns a **subject id** per row — the one thing PD-105 keeps out of every
+ * role but `service_role`. When the caller is `pg_net`, the response body is
+ * stored in `net._http_response`, and on a Supabase project that table is
+ * granted to PUBLIC by the extension itself (`=arwdDxtm/supabase_admin`). It is
+ * unreachable today only because PostgREST exposes `public` and
+ * `graphql_public` and not `net` — a project setting that lives nowhere in this
+ * repository.
+ *
+ * So the body carries COUNTS and the durable, `service_role`-only
+ * `account_deletion_worker_runs` row carries the detail. The status code and the
+ * counts are everything a caller needs to know whether to wake somebody; the
+ * names of the people involved are not.
+ */
+export function summarizeRun(result) {
+  return {
+    ok: result.ok,
+    startedAt: result.startedAt,
+    finishedAt: result.finishedAt,
+    dryRun: result.dryRun,
+    mediaExamined: result.mediaExamined,
+    mediaDeleted: result.mediaDeleted,
+    mediaFailed: result.mediaFailed,
+    overdueCount: result.overdueCount,
+    errorCount: result.errors.length,
+    sweeps: result.sweeps,
+  }
+}

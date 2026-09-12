@@ -329,6 +329,9 @@ An operator can place a **hold on one class** of a specific request
   transactions** and cannot start anything new.
 - **A client author is not told when their Community post was hidden** (from the
   moderation work) — unrelated to erasure, but the same screen gap.
+- **The scheduler's own grants are a platform default we cannot remove.** See the
+  standing rule in § 10. Not currently reachable; recorded because it depends on
+  a setting outside this repository.
 - **Backups.** Deleted data may persist in provider-managed backups until those
   backups age out. **The current infrastructure does not expose a retention or
   expiry window for them**, so this document states no number. Getting one is a
@@ -424,6 +427,22 @@ carries the counts. `error_msg` with no status means the call never arrived.
 ```sql
 select jobname, schedule, active from cron.job;
 ```
+
+### A standing rule the scheduler created
+
+**Do not add `net` or `cron` to the project's exposed PostgREST schemas.**
+
+Installing `pg_net` grants PUBLIC `EXECUTE` on `net.http_post` and ALL
+privileges on `net._http_response`. Those grants were made by `supabase_admin`,
+so **`postgres` cannot revoke them and no migration in this repository can** — it
+was attempted, and the revoke was a silent no-op. What keeps them out of reach is
+that PostgREST exposes `public` and `graphql_public` only. Exposing `net` would
+hand every signed-in account the ability to make the database issue arbitrary
+HTTP requests.
+
+The worker is built so that even then it leaks no identities: its response body
+is counts only, and the detail lives in `account_deletion_worker_runs`, which is
+`service_role`-only.
 
 **A non-clean result means somebody is waiting.** Someone asked to be deleted and
 has been told a date. Work the failures, then run the fallback until the overdue
