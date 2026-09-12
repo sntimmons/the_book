@@ -2315,9 +2315,25 @@ begin
     -- refuses never happened, and charging it against a limit would punish someone for an act
     -- they were not permitted to perform. It was first named `barter_interests_not_blocked`,
     -- which sorted FIRST and broke this assertion; the guard caught it the same minute.
-    'barter_interests_write_integrity,barter_interests_zw_not_blocked,'
+    -- `b_..._refuse_when_inactive` joined with account erasure (20261102000000) and
+    -- sorts FIRST, which is intended: an account scheduled for deletion should be
+    -- refused before any other work is done, and certainly before the rate limiter
+    -- charges the attempt against a budget. Same reasoning as zw_not_blocked below,
+    -- one step earlier.
+    -- `b_..._refuse_to_inactive_offer` joined with 20261111000000 and sorts ahead of
+    -- it on the same reasoning: an offer whose owner has been erased cannot be
+    -- responded to at all, so refusing that is cheaper and earlier than deciding
+    -- anything about the responder.
+    'b_barter_interests_refuse_to_inactive_offer,'
+      || 'b_barter_interests_refuse_when_inactive,'
+      || 'barter_interests_write_integrity,barter_interests_zw_not_blocked,'
       || 'barter_interests_zx_no_release_after_agreement,'
-      || 'barter_interests_zy_answer_open_offer,barter_interests_zz_rate_limit', v_order);
+      || 'barter_interests_zy_answer_open_offer,barter_interests_zz_rate_limit,'
+      -- 20261125000000 (OQ-086). Sorts LAST on purpose: it decides whether a
+      -- deactivated caller may make this write at all, and it must see the write
+      -- the integrity rules already accepted rather than pre-empting their
+      -- SQLSTATE.
+      || 'zz_barter_interests_edit_when_inactive', v_order);
 
   select string_agg(t.tgname, ',' order by t.tgname) into v_order
     from pg_trigger t
@@ -2325,7 +2341,10 @@ begin
      and not t.tgisinternal
      and (t.tgtype & 2) <> 0 and (t.tgtype & 20) <> 0;
   perform pg_temp.chk('barter', 'barter_offers BEFORE write triggers fire in the intended order',
-    'barter_offers_write_integrity,barter_offers_zy_active_one_way', v_order);
+    'b_barter_offers_refuse_when_inactive,barter_offers_write_integrity,'
+    || 'barter_offers_zy_active_one_way,'
+    -- 20261125000000 (OQ-086), last for the same reason as the interests gate.
+    || 'zz_barter_offers_edit_when_inactive', v_order);
 end $$;
 
 -- ── An ILLEGAL transition on a CLOSED post is refused by the rule that owns it ──

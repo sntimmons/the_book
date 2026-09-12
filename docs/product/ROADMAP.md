@@ -981,9 +981,80 @@ engagement ranking, no operator content take-down, no barter redesign (PD-080's 
 Propose → Agree → Do it → Confirm simplification remains a later requirement), and no change to
 discovery or provider search.
 
-### NEXT DEDICATED WORKSTREAM — Account Erasure & Retention Integrity
+### Account Erasure & Retention Integrity — **IMPLEMENTED, pending merge** (`feat/account-erasure-retention-integrity`)
 
-**Status: RECORDED, NOT STARTED. Blocked on policy, not on engineering.**
+Thirty migrations, `20261100000000` … `20261129000000`, and six locked decisions
+(**PD-102**, **PD-103**, **PD-104**, **PD-105**, **PD-106**, **PD-107**). The policy input this workstream was blocked on has been given, and the
+approved closed-beta policy is built.
+
+**Self-service deletion is in the app** (Settings → Account → Delete Account), with a **30-day
+grace period**, immediate deactivation, and restoration at any point in the window. Each of the
+eleven data classes gets the treatment PD-102 specifies — delete now, delete later, anonymize, or
+retain under restriction — rather than the cascade-everything the schema had.
+
+**OQ-077's two technical defects are closed** (PD-103), and closed without deleting evidence to make
+a delete succeed. Six append-only guards had to learn that a referential `SET NULL` is not a rewrite.
+
+**Security review found three HIGH defects and they are fixed** (PD-104): "hidden" was enforced
+only in the views while the base tables served every departing provider's profile to anyone;
+erasing a PROVIDER cascaded away every one of their clients' accepted-contract records; and Reel
+comments survived an erasure under the real account id. Nine further migrations
+(`20261111000000` … `20261119000000`) close those plus eight medium findings, and two of them are
+corrections to the corrections — the review loop earned its cost twice over.
+
+**Still open, and it is the part that always needed counsel: OQ-084** — the retention DURATIONS for
+accepted-contract evidence and report/safety evidence, plus the privacy-policy and beta-FAQ
+language. Both windows ship **unset and flagged** rather than guessed.
+
+**The three product questions the branch opened are now CLOSED by ruling, and built**
+(`20261124000000` … `20261127000000`):
+
+- **OQ-085 → PD-105.** An anonymized row must be UNLINKABLE, not merely de-named. The person-wide
+  pseudonym is replaced by a **relationship** pseudonym — per provider for bookings and both review
+  tables, per conversation for threads — so PD-091/092's distinct-client rule still holds within one
+  provider while the public review list can no longer be walked from one provider to the next. The
+  person-wide column is dropped, not left dormant.
+- **OQ-086 → PD-106.** Deletion grace preserves RESOLUTION rights, not participation rights. The
+  full write surface was enumerated and gated; the one that mattered most was a missing VERB, not a
+  missing table — the app sends a booking by UPDATING a draft's `submitted_at`, and the gate was
+  INSERT-only. Messaging stays closed and relaying is a support obligation.
+- **OQ-087 → PD-107.** Retention is the canonical ACCEPTED artifact only. Abandoned drafts,
+  superseded unaccepted PDFs and their storage objects go. No signature image is retained because
+  none has ever been written.
+
+A **focused security review of the finished branch** found one HIGH and four MEDIUMs and all are
+fixed (`20261128000000`, `20261129000000`). The HIGH was a seam rather than new code: a booking
+photo's `storage_path` had never been bound to the uploader's own storage prefix, which was inert
+until the new worker gave it a `service_role` Storage delete to reach. The same column was also
+publishing an erased account's real auth id to every provider it had ever booked — PD-105 holding in
+every identity COLUMN and broken in a column nobody had read as an identity. **One review claim did
+not survive checking**: the erasure RPCs were reported as unreachable by `service_role` for want of
+a grant; `has_function_privilege` says otherwise, and the suite now asserts it in both directions,
+because the harness's `act_service()` runs as the table owner and could never have seen it.
+
+**OQ-076** gained a second instance and half of it closed by accident; the Founder ruling of
+2026-09-12 makes **no architectural change now** — PD-090 stands for the closed beta and the
+residual `account_unavailable(uuid)` oracle is carried to the pre-public-launch privacy/security
+revisit.
+
+**Owed before external beta**, and one of them is a **BLOCKER**:
+
+- **OQ-088 — nothing runs the deletion worker on a clock.** `scripts/account-deletion-worker.mjs`
+  now does the whole job in one bounded command (sweep, drain the media queue through the Storage
+  API, confirm, sweep again, report what is late) using only what the stack already has. **What is
+  missing is the scheduler**, and every way to supply one — `pg_cron`+`pg_net`, Supabase scheduled
+  functions, scheduled CI, an external host — is a platform decision with an owner and a cadence to
+  choose. Until then an operator runs it by hand, which is proportionate for a 25–30 cohort and is
+  not a retention guarantee.
+- **Physical-device QA of the whole flow** — the disclosure, the reauthentication prompt, the
+  scheduled-date display and the restore path have not been exercised on a real device.
+
+Both are documented in
+[ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md).
+
+#### The original entry, kept for the reasoning that produced it
+
+**Status when recorded: NOT STARTED. Blocked on policy, not on engineering.**
 
 **Why it is next.** The product now retains several durable classes of evidence,
 each accumulated for a good reason and none of them with a decided deletion

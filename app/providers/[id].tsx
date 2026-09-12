@@ -59,13 +59,16 @@ export default function ProviderProfilePage() {
     const providerId = provider?.id
     if (!providerId) return
     ;(async () => {
-      // Live follower count — count rows rather than trusting the stale
-      // providers.follower_count column (no trigger maintains it).
-      const { count } = await supabase
-        .from('provider_follows')
-        .select('*', { count: 'exact', head: true })
-        .eq('provider_id', providerId)
-      if (!cancelled && count != null) setFollowerCount(count)
+      // Live follower count, through an RPC rather than a row count. The rows
+      // carry real account ids, so `provider_follows` is readable only for your
+      // OWN follows now — a public `count` over other people's rows was handing
+      // anyone a supply of account identifiers. The number is still live, and
+      // still preferred over the stale providers.follower_count column (which no
+      // trigger maintains).
+      const { data: followers } = await supabase.rpc('provider_follower_count', {
+        p_provider_id: providerId,
+      })
+      if (!cancelled && typeof followers === 'number') setFollowerCount(followers)
 
       // Does THIS user already follow?
       if (user?.id) {

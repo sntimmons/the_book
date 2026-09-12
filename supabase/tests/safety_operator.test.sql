@@ -884,10 +884,21 @@ select pg_temp.chk('safety', 'and the conversation gate after its update rule', 
   ('zz_conversation_reopen_not_blocked' > 'enforce_conversation_update')::text);
 
 -- And the same fact read off the live schema, not off the names in this file.
-select pg_temp.chk('safety', 'and it is literally last on the table', 'zz_bookings_submit_not_blocked',
-  (select tgname from pg_trigger
-    where tgrelid = 'public.bookings'::regclass and not tgisinternal
-    order by tgname desc limit 1));
+--
+-- There are now TWO submit gates and both must sort after write integrity: the
+-- block one here, and `zz_bookings_submit_when_inactive` (20261125000000, OQ-086),
+-- which refuses the same draft->submitted transition for an account that has
+-- asked to be deleted. The assertion therefore names the pair rather than a
+-- single last trigger — narrowing it to one would have gone green the moment
+-- either was removed.
+select pg_temp.chk('safety', 'and both submit gates are literally last on the table',
+  'zz_bookings_submit_not_blocked,zz_bookings_submit_when_inactive',
+  (select string_agg(tgname, ',' order by tgname) from (
+     select tgname from pg_trigger
+      where tgrelid = 'public.bookings'::regclass and not tgisinternal
+      order by tgname desc limit 2) t));
+select pg_temp.chk('safety', 'and the deactivation gate sorts after write integrity too', 'true',
+  ('zz_bookings_submit_when_inactive' > 'enforce_booking_write_integrity')::text);
 select pg_temp.chk('safety', 'the conversation block gate is last on its table too',
   'zz_conversation_reopen_not_blocked',
   (select tgname from pg_trigger

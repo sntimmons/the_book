@@ -1461,7 +1461,14 @@ select pg_temp.chk('community', 'only the named functions read a community table
         'operator_set_community_visibility',
         'operator_community_content',
         -- Report intake validating that a report names its target's content.
-        'enforce_report_content_reference'
+        'enforce_report_content_reference',
+        -- Account erasure (20261104000000 / 20261106000000). These read community
+        -- tables to DELETE the leaver's content and to sever an identity — they
+        -- rank nothing, and the `only the named functions` rule is about a
+        -- discovery or ranking function quietly learning to read the feed.
+        'adel_community_content',
+        'adel_profile_account',
+        'retain_identity_on_sever'
       )));
 select pg_temp.chk('community', 'and providers_open_today reads availability, not posts', 'false',
   (select (p.prosrc ~* 'community') from pg_proc p join pg_namespace n on n.oid = p.pronamespace
