@@ -2732,6 +2732,30 @@ making the engine do work it was already going to do, idempotently, with no read
 of anything. Every secret lives in `vault.secrets`; `cron.job.command` carries
 none, because it is a plain text column.
 
+#### Three things the security review of this work changed
+
+**A promise that cannot tell you it broke.** `invoke_account_deletion_worker` was
+fire-and-forget, and the run row was written by the Edge Function *after* the
+secret gate — so a wrong vault secret, a rotated worker secret or an undelivered
+call wrote **nothing anywhere**, while `cron` reported SUCCESS because the SQL
+succeeded. PD-108 replaced "somebody has to remember" with "somebody has to
+notice", and that is only better if the system can tell them. A **dispatch** is
+now recorded before the call goes out, the run stamps the dispatch it answers, and
+`account_deletion_worker_health()` turns every absence into a row.
+
+**Overlapping runs invented failures.** The drain loop took no lock, unlike the
+purge loop beside it. Two runs could list the same object; the loser reported a
+media FAILURE for an object the winner had just deleted. Rows are now claimed
+under a lease, and a failure can no longer be written onto a row somebody else
+confirmed.
+
+**An already-absent object wedged the erasure forever.** Confirmation required
+the Storage API to hand back the removed object, so an object that was already
+gone could never be confirmed and `media_purge` would raise for ever. The fix is
+**not** to assume absence means deletion — it is to go and look, and confirm only
+on positive evidence that the object is not in the bucket. The rule that a
+confirmation is a claim about bytes, never a shrug, is intact.
+
 #### What this decision does NOT change
 
 **Nothing about retention durations.** **OQ-084** is still open and still
@@ -2746,6 +2770,25 @@ that no clock could ever move a barter obligation's state (PD-072). Installing
 the suites now assert that the only scheduled job is this one and that neither it
 nor the function it calls names a barter object. Weakening those tests would have
 been the dishonest way to ship a changed decision.
+
+**Evidence:** `supabase/migrations/20261130000000_the_deletion_runs_itself.sql`,
+corrected by `20261131000000`, `20261132000000` and `20261133000000`;
+`supabase/functions/account-deletion-worker/index.ts`;
+`supabase/functions/_shared/accountDeletionRun.mjs`;
+`scripts/account-deletion-worker.mjs`; pinned in
+`supabase/tests/account_erasure.test.sql` § 18 and
+`__tests__/lib/accountDeletionRun.test.ts`. Operations:
+[ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md)
+§§ 9–12.
+
+**Status:** implemented and verified end to end against non-production, **on the
+`feat/account-erasure-scheduler` branch — NOT YET MERGED to `main`.** Until it
+merges, `main` has no scheduler and OQ-088's blocker stands for anything reading
+`main`. **The timer has not been watched firing**; every link in the chain it
+triggers has been exercised through the exact command `cron.job` runs, by hand,
+once, and **nothing in CI exercises it** — a wrong vault secret would fail no
+committed test, which is why `account_deletion_worker_health()` exists. Retention
+DURATIONS remain **OQ-084** and unset.
 
 
 ## Not decisions

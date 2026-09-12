@@ -21,10 +21,17 @@
 //   2. drain  — SQL cannot delete a storage object (Supabase answers `42501:
 //               Direct deletion from storage tables is not allowed`), so the
 //               engine queues them and only the Storage API can empty the queue.
-//   3. confirm — and ONLY after the API actually removed the object. `remove()`
-//               reports `{ error: null, data: [] }` for a path that does not
-//               resolve, so confirming on the absence of an error writes a lie
-//               the `media_purge` gate would then believe.
+//               Rows are CLAIMED under a lease, not merely listed: two runs that
+//               list the same row make the loser report a failure for an object
+//               the winner deleted successfully.
+//   3. confirm — and ONLY on evidence. `remove()` reports
+//               `{ error: null, data: [] }` for a path that does not resolve, so
+//               confirming on the absence of an error writes a lie the
+//               `media_purge` gate would then believe. When nothing was removed
+//               the worker GOES AND LOOKS: an object the API says is not there is
+//               gone, and saying so is a fact rather than a shrug. Without that
+//               check an already-absent object could never be confirmed, and the
+//               erasure could never reach `completed`.
 //   4. sweep  — again, deliberately. `media_purge` could not pass before the
 //               drain, so without a second sweep every erasure would sit one run
 //               behind, reporting `failed` until somebody ran the worker twice.
@@ -37,7 +44,8 @@
  * @param {object} io  Runtime adapters. Each returns `{ data, error }` in the
  *   supabase-js shape so neither caller has to translate.
  * @param {() => Promise<{data:any,error:any}>} io.sweep
- * @param {(limit:number) => Promise<{data:any[],error:any}>} io.listPendingMedia
+ * @param {(limit:number) => Promise<{data:any[],error:any}>} io.claimPendingMedia
+ * @param {(bucket:string, path:string) => Promise<boolean>} io.objectExists
  * @param {(bucket:string, path:string) => Promise<{data:any,error:any}>} io.removeObject
  * @param {(bucket:string, path:string) => Promise<{data:any,error:any}>} io.confirmDeleted
  * @param {(row:object, message:string) => Promise<void>} io.recordFailure
@@ -63,6 +71,7 @@ export async function runAccountDeletionWorker(io, opts = {}) {
     mediaExamined: 0,
     mediaDeleted: 0,
     mediaFailed: 0,
+    mediaAlreadyGone: 0,
     overdueCount: 0,
     overdue: [],
     errors: [],
@@ -88,7 +97,9 @@ export async function runAccountDeletionWorker(io, opts = {}) {
   }
 
   // ── 2. Drain the media queue through the Storage API ───────────────────
-  const { data: rows, error: listError } = await io.listPendingMedia(max)
+  const { data: rows, error: listError } = dryRun
+    ? await io.listPendingMedia(max)
+    : await io.claimPendingMedia(max)
   if (listError) {
     fail('media', listError.message ?? listError)
   } else {
@@ -105,11 +116,27 @@ export async function runAccountDeletionWorker(io, opts = {}) {
         // THE PAYLOAD, NOT JUST THE ERROR. A path that does not resolve comes
         // back as `{ error: null, data: [] }`, and treating that as success
         // confirms a deletion that never happened.
-        const reallyGone = !rmError && Array.isArray(removed) && removed.length > 0
+        let reallyGone = !rmError && Array.isArray(removed) && removed.length > 0
+
+        if (!reallyGone && !rmError) {
+          // NOTHING WAS REMOVED, SO GO AND LOOK. If the object is genuinely not
+          // in the bucket then the bytes are gone and confirming it is a FACT —
+          // and refusing to confirm would wedge the erasure forever, because
+          // every later run would reach exactly this point again and
+          // `media_purge` would keep raising. This is the one case where absence
+          // is evidence, and it is evidence we went and gathered rather than
+          // assumed.
+          reallyGone = await io.objectExists(r.bucket_id, r.object_path) === false
+          if (reallyGone) {
+            result.mediaAlreadyGone += 1
+            log(`  already absent, confirming ${r.bucket_id}/${r.object_path}`)
+          }
+        }
+
         if (!reallyGone) {
           const why = rmError
             ? (rmError.message ?? String(rmError))
-            : 'the Storage API removed nothing for this path — it may not exist in this bucket'
+            : 'the Storage API removed nothing and the object is still in the bucket'
           result.mediaFailed += 1
           await io.recordFailure(r, why)
           log(`  FAILED ${r.bucket_id}/${r.object_path}: ${why}`)
@@ -126,7 +153,11 @@ export async function runAccountDeletionWorker(io, opts = {}) {
         }
         if (confirmed) result.mediaDeleted += 1
       }
-      log(`media: ${result.mediaDeleted} deleted, ${result.mediaFailed} failed, ${queued.length} examined (cap ${max})`)
+      log(
+        `media: ${result.mediaDeleted} deleted` +
+          (result.mediaAlreadyGone ? ` (${result.mediaAlreadyGone} already absent)` : '') +
+          `, ${result.mediaFailed} failed, ${queued.length} examined (cap ${max})`,
+      )
     }
   }
 
@@ -199,6 +230,7 @@ export function summarizeRun(result) {
     mediaExamined: result.mediaExamined,
     mediaDeleted: result.mediaDeleted,
     mediaFailed: result.mediaFailed,
+    mediaAlreadyGone: result.mediaAlreadyGone,
     overdueCount: result.overdueCount,
     errorCount: result.errors.length,
     sweeps: result.sweeps,

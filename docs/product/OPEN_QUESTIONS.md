@@ -5,7 +5,8 @@
 **Reconciled against:** `main` @ `070f6df15b42e639c48402f2061b12ac8aec298f` (2026-09-12) — **PR #83**,
 Account Erasure & Retention Integrity — **for the erasure closure record only**: that **OQ-085**,
 **OQ-086** and **OQ-087** are closed by PD-105, PD-106 and PD-107 and that all three closures are
-**implemented on `main`**; that **OQ-084**, **OQ-076** and **OQ-088** are **Open**; and that
+**implemented on `main`**; that **OQ-084** and **OQ-076** are **Open** and **OQ-088** is closed by
+PD-108 **on a branch that has not merged**; and that
 **OQ-077** remains **PARTIALLY CLOSED**. It **re-verified no other entry**, and in particular
 re-verified nothing carried by **OQ-006**, **OQ-007**, **OQ-011**, **OQ-036**, **OQ-070** or
 **OQ-072**.
@@ -13,8 +14,9 @@ re-verified nothing carried by **OQ-006**, **OQ-007**, **OQ-011**, **OQ-036**, *
 **The three open erasure entries, stated here because they are the ones most easily read away by
 the word "merged":** **OQ-084** — the retention **durations** for accepted-contract and
 report/safety evidence are **unset**, pending counsel, and **no number may be invented**.
-**OQ-088** — **nothing runs the deletion worker on a clock**, returned as a **PRE-EXTERNAL-BETA
-BLOCKER**. **OQ-076** — the residual `account_unavailable(uuid)` identity oracle is carried to the
+**OQ-088** — **closed by PD-108, on the `feat/account-erasure-scheduler` branch and NOT YET ON
+`main`.** Until that merges, `main` still has no scheduler and the blocker still stands for
+anything reading `main`. **OQ-076** — the residual `account_unavailable(uuid)` identity oracle is carried to the
 pre-public-launch privacy/security revisit by Founder ruling of 2026-09-12; **no architectural
 change was made**.
 

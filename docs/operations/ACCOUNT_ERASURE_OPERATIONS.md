@@ -5,7 +5,8 @@
 **Policy:** **PD-102** (closed-beta retention), **PD-103** (OQ-077 technical fixes),
 **PD-104** (the guarantee lives in the data, not the view), **PD-105** (an anonymized record is a
 relationship, not a person), **PD-106** (grace preserves resolution, not participation),
-**PD-107** (retention is the accepted artifact).
+**PD-107** (retention is the accepted artifact), **PD-108** (finalisation is automatic; the CLI is
+the fallback — **on the `feat/account-erasure-scheduler` branch, not yet merged**).
 
 Written for whoever answers *"delete my account"*, *"I changed my mind"*, *"why do
 you still have my contract"*, and *"the deletion failed"*. Limits sit beside
@@ -253,7 +254,8 @@ appears somewhere after the date.
    the one query that answers "is anything being retained longer than it should
    be". It returns two kinds of row: **any request past its grace date that nothing
    has finalised** — the row reads `(request never finalised)`, and this is the
-   case that matters most, because there is no scheduler — and **any step that is
+   case that matters most — a request whose scheduled run never happened; see § 10
+   for how that is now detected rather than waited for — and **any step that is
    failed, held, or past due**, with its error. Nothing else surfaces either: no
    client role can read these tables, so this query belongs in the same routine as
    the sweep.
@@ -309,9 +311,11 @@ An operator can place a **hold on one class** of a specific request
 
 - **Deletion finalisation is AUTOMATIC (PD-108).** `pg_cron` runs the worker
   daily at 04:17 UTC. Nobody has to remember anything, and **OQ-088 is closed.**
-  What remains true is that the timer has never been *watched* firing — every
-  link in the chain it triggers has been proven end to end, which is a different
-  claim (§ 9).
+  What remains true is that the timer has never been *watched* firing. Every link
+  in the chain it triggers has been proven end to end **by hand, once, against
+  non-production** — which is a different claim, and **nothing in CI exercises
+  it**: a wrong vault secret or a rotated worker secret would fail no committed
+  test. § 10 is how you find that out.
 - **There is no email or push confirmation**, of the request or of completion.
   The app records the request durably and shows its status on the screen, and the
   screen says so in as many words. **Never tell a user a notification was sent.**
@@ -391,7 +395,7 @@ never say they will be emailed — no notification of any kind is sent, then or 
 
 ## 10. When it fails — how Stephen checks
 
-**The one query that answers "did promised deletion work fail?"**
+**Two queries. The first answers "is there deletion work outstanding?"**
 
 ```sql
 select * from public.overdue_account_deletion_work();
@@ -421,6 +425,22 @@ select id, status_code, error_msg, left(content, 500)
 
 A non-2xx `status_code` is the function telling you work is late — the body
 carries the counts. `error_msg` with no status means the call never arrived.
+
+**The query that turns an ABSENCE into a row.** Nobody notices a missing row, so
+"the scheduler stopped" is itself reported:
+
+```sql
+select * from public.account_deletion_worker_health();
+```
+
+Empty is healthy. It reports four things, each a positive signal:
+
+| `problem` | What it means |
+|---|---|
+| `dispatch_never_answered` | The job fired and the Edge Function never recorded a run — a wrong vault secret, a rotated worker secret, an undelivered call. **`cron` will have reported SUCCESS**, because the SQL succeeded. |
+| `no_successful_run` | No successful run in over two days. The scheduler has stopped. |
+| `run_failed` | A run arrived and did not come out clean. |
+| `media_stuck` | One object has failed three or more times. Somebody has to look at that one. |
 
 **Is the job still scheduled?**
 

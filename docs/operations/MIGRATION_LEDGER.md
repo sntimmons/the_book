@@ -2020,10 +2020,24 @@ exactly one erasure record and one queue row, still confirmed.
 every link in the chain it triggers is proven. Watching a real firing needs a
 calendar.
 
+**Corrected by `20261131000000`, `20261132000000` and `20261133000000`**, all on
+the same branch and all from the security review of the first commit:
+
+| File | What it corrects |
+|---|---|
+| `20261131000000` | Tried to revoke the client grants `pg_net` installs. **It is a no-op** — see the next row. |
+| `20261132000000` | **A REVOKE BY A NON-GRANTOR IS A NO-OP.** `pg_net` grants PUBLIC execute on `net.http_post` and ALL on `net._http_response`; `supabase_admin` made those grants, these migrations run as `postgres`, and `postgres` is not a member of it. There is no SQL this repository can run that removes them. A migration that looks like a fix and is not is worse than none — the same shape as `20261103000000`'s column-level revoke. What bounds it is that PostgREST exposes `public` and `graphql_public` only, probed live; **that setting is not in this repository.** So the mitigation became the one we control: the worker's response body is **counts only**, because that body lands in `net._http_response` and a failing run's full result names subject ids (PD-105). |
+| `20261133000000` | **A PROMISE THAT COULD NOT TELL YOU IT BROKE**, in three parts. (a) `invoke_account_deletion_worker` was fire-and-forget and the run row was written by the Edge Function *after* the secret gate — so a wrong vault secret, a rotated worker secret or an undelivered call wrote **nothing anywhere** while `cron` reported SUCCESS, because the SQL succeeded. A **dispatch** is now recorded before the call, the run stamps the dispatch it answers, and `account_deletion_worker_health()` turns every absence into a positive row. (b) The drain loop took **no lock**, unlike the purge loop beside it: two runs could list the same object and the loser reported a media FAILURE for an object the winner had just deleted, annotating an already-confirmed row. Rows are now claimed under a 15-minute lease with `for update skip locked`, and a failure cannot be written onto a confirmed row. (c) An **already-absent object wedged the erasure permanently** — confirmation required the API to hand back the removed object, so every later run failed and `media_purge` raised for ever. The fix is **not** to assume absence means deletion; the worker goes and looks, and confirms only on positive evidence the object is not in the bucket. Also: three live comments still said **"THERE IS NO SCHEDULER"** on the objects the scheduler drives, and a generic assertion now fails if any does. |
+
 **Validation** (non-production `wcoyjeklscuqsumpjpfo`; production untouched):
-B5B **2241/2241** with zero residue, Jest **999/999**, typecheck clean, `lint:ci`
-0 errors, negotiation concurrency **224/224**, and `supabase migration list
---linked` **169 local == 169 remote, zero mismatched**.
+B5B **2253/2253** with zero residue, Jest **1003/1003**, typecheck clean,
+`lint:ci` 0 errors, negotiation concurrency **224/224**, and `supabase migration
+list --linked` **172 local == 172 remote, zero mismatched**.
+
+**The wedge fix proven live, not reasoned about:** a queue row naming an object
+that is not in the bucket was resolved on the next run — `1 deleted (1 already
+absent), 0 failed` — and the row is confirmed with `attempts = 0` and no error,
+rather than failing for ever.
 
 **Unauthorized callers, probed against the live function rather than reasoned
 about:** no auth, the anon key, a signed-in CLIENT's JWT, a signed-in PROVIDER's

@@ -2302,4 +2302,115 @@ select pg_temp.chk('erasure', 'the invoke takes no argument at all', '0',
 select pg_temp.chk('erasure', 'pg_cron and pg_net are installed, and nothing else new', '2',
   (select count(*)::text from pg_extension where extname in ('pg_cron', 'pg_net')));
 
+-- ── THE ALLOWLIST ASSERTION MUST NOT PASS VACUOUSLY ─────────────────────
+--
+-- SEC-COVERAGE-009. `count(*) from cron.job = 1` is now the only thing carrying
+-- PD-072's guarantee that no clock moves a barter obligation. pg_cron can enable
+-- RLS on `cron.job` with a `username = current_user` policy — and if the reading
+-- role neither bypasses RLS nor owns the row, a job scheduled by ANY other role
+-- is invisible and the count passes while saying nothing. That is the precise way
+-- this guarantee could retire itself silently.
+select pg_temp.chk('erasure', 'the job inventory is actually visible to the reader', 'true',
+  (select (not c.relrowsecurity
+           or (select rolbypassrls from pg_roles where rolname = current_user)
+           or exists (select 1 from cron.job))::text
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'cron' and c.relname = 'job'));
+
+-- ── THE ONE CONTROL ON THE EXTENSIONS' UNREVOCABLE GRANTS ───────────────
+--
+-- `pg_net` grants PUBLIC execute on `net.http_post` and ALL on
+-- `net._http_response`, and `20261132000000` establishes that `postgres` cannot
+-- revoke them because `supabase_admin` made them. `cron` withholds schema USAGE
+-- instead, and that IS the gate — so it is asserted rather than assumed, because
+-- "protected by a grant somebody forgot to make" is the shape that breaks when
+-- somebody makes it for an unrelated reason.
+select pg_temp.chk('erasure', 'no client role has USAGE on the cron schema', 'false',
+  (has_schema_privilege('authenticated', 'cron', 'USAGE')
+   or has_schema_privilege('anon', 'cron', 'USAGE'))::text);
+
+-- ── THE EXECUTION HEALTH SURFACE (SEC-DATA-002) ─────────────────────────
+select pg_temp.chk('erasure', 'execution health is not client-readable', 'false',
+  (has_function_privilege('authenticated', 'public.account_deletion_worker_health()', 'EXECUTE')
+   or has_function_privilege('anon', 'public.account_deletion_worker_health()', 'EXECUTE'))::text);
+select pg_temp.chk('erasure', 'nor are dispatches, claims or failure records', 'false',
+  (has_table_privilege('authenticated', 'public.account_deletion_worker_dispatches', 'SELECT')
+   or has_function_privilege('authenticated',
+        'public.claim_pending_media_deletions(integer)', 'EXECUTE')
+   or has_function_privilege('authenticated',
+        'public.record_media_deletion_failure(uuid, text)', 'EXECUTE'))::text);
+
+-- A DISPATCH NOBODY ANSWERED IS A ROW, NOT AN ABSENCE. This is the failure that
+-- used to be invisible: cron reports SUCCESS because the SQL succeeded, and the
+-- run table is written by the function that never ran.
+do $$
+declare v_d uuid;
+begin
+  perform pg_temp.act_service();
+  insert into public.account_deletion_worker_dispatches(dispatched_at)
+  values (now() - interval '1 hour') returning id into v_d;
+  perform pg_temp.chk('erasure',
+    'a dispatch no run answered is reported as a positive problem', 'true',
+    (select exists (select 1 from public.account_deletion_worker_health() h
+                     where h.problem = 'dispatch_never_answered'
+                       and h.detail like '%' || v_d::text || '%'))::text);
+
+  -- And it stops being reported once the run that answers it exists.
+  insert into public.account_deletion_worker_runs(dispatch_id, source, ok)
+  values (v_d, 'scheduled', true);
+  perform pg_temp.chk('erasure', 'and it stops being reported once answered', 'false',
+    (select exists (select 1 from public.account_deletion_worker_health() h
+                     where h.problem = 'dispatch_never_answered'
+                       and h.detail like '%' || v_d::text || '%'))::text);
+end $$;
+
+-- A CLAIM IS EXCLUSIVE. Two runs listing the same row is what made the loser
+-- report a media failure for an object the winner had just deleted.
+do $$
+declare v_first integer; v_second integer;
+begin
+  perform pg_temp.act_service();
+  insert into public.pending_media_deletions(bucket_id, object_path, subject_id)
+  values ('booking-photos', 'claimtest/' || gen_random_uuid()::text || '.jpg', gen_random_uuid());
+  select count(*) into v_first from public.claim_pending_media_deletions(500);
+  select count(*) into v_second from public.claim_pending_media_deletions(500);
+  perform pg_temp.chk('erasure', 'a claim returns outstanding rows', 'true', (v_first > 0)::text);
+  perform pg_temp.chk('erasure',
+    'and a second claim in the same lease window returns none of them', '0', v_second::text);
+end $$;
+
+-- A FAILURE MAY NOT BE WRITTEN ONTO A ROW SOMEBODY ELSE CONFIRMED.
+do $$
+declare v_id uuid;
+begin
+  perform pg_temp.act_service();
+  insert into public.pending_media_deletions(bucket_id, object_path, subject_id, deleted_at)
+  values ('booking-photos', 'done/' || gen_random_uuid()::text || '.jpg', gen_random_uuid(), now())
+  returning id into v_id;
+  perform pg_temp.chk('erasure',
+    'a confirmed row cannot be annotated with a failure', 'false',
+    public.record_media_deletion_failure(v_id, 'the Storage API removed nothing')::text);
+  perform pg_temp.chk('erasure', 'and its error stays empty', 'true',
+    (select (last_error is null)::text from public.pending_media_deletions where id = v_id));
+end $$;
+
+-- ── NO LIVE COMMENT STILL CLAIMS THERE IS NO SCHEDULER (SEC-TRUTH-006) ──
+--
+-- The generic form, because the specific form is how three of them were missed:
+-- `20261130000000` refreshed no comment on any pre-existing object.
+select pg_temp.chk('erasure', 'no erasure object comment still denies the scheduler', '0',
+  (select count(*)::text
+     from pg_description d
+     join pg_proc p on p.oid = d.objoid
+     join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and d.description ~* 'no scheduler|there is no scheduler'));
+select pg_temp.chk('erasure', 'nor does any table comment', '0',
+  (select count(*)::text
+     from pg_description d
+     join pg_class c on c.oid = d.objoid
+     join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and d.objsubid = 0
+      and d.description ~* 'no scheduler|NO SCHEDULER DRAINS'));
+
 select pg_temp.act_service();

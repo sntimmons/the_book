@@ -27,6 +27,7 @@ function makeIo(
     confirm?: (bucket: string, path: string) => { data: unknown; error: unknown }
     sweep?: () => { data: unknown; error: unknown }
     overdue?: () => { data: unknown; error: unknown }
+    exists?: (path: string) => boolean
   } = {},
 ) {
   const calls: string[] = []
@@ -40,6 +41,14 @@ function makeIo(
     listPendingMedia: jest.fn(async (_limit: number) => {
       calls.push('list')
       return { data: cfg.pending ?? [], error: null }
+    }),
+    claimPendingMedia: jest.fn(async (_limit: number) => {
+      calls.push('claim')
+      return { data: cfg.pending ?? [], error: null }
+    }),
+    objectExists: jest.fn(async (_b: string, p: string) => {
+      calls.push(`exists:${p}`)
+      return cfg.exists ? cfg.exists(p) : true
     }),
     removeObject: jest.fn(async (bucket: string, path: string) => {
       calls.push(`remove:${path}`)
@@ -81,7 +90,7 @@ describe('runAccountDeletionWorker — the order is the architecture', () => {
     // dependency this workstream exists to remove.
     expect(calls).toEqual([
       'sweep',
-      'list',
+      'claim',
       'remove:subject/1.jpg',
       'confirm:subject/1.jpg',
       'sweep',
@@ -94,7 +103,10 @@ describe('runAccountDeletionWorker — the order is the architecture', () => {
   it('does not sweep or delete at all in a dry run', async () => {
     const { io, calls } = makeIo({ pending: [row(1)] })
     const result = await runAccountDeletionWorker(io as never, { dryRun: true })
+    // A dry run LISTS and never CLAIMS: claiming takes a lease on rows it has no
+    // intention of touching, which would stall the next real run.
     expect(calls).toEqual(['list', 'overdue'])
+    expect(io.claimPendingMedia as jest.Mock).not.toHaveBeenCalled()
     expect(result.mediaDeleted).toBe(0)
     expect(io.removeObject as jest.Mock).not.toHaveBeenCalled()
   })
@@ -109,6 +121,7 @@ describe('runAccountDeletionWorker — a confirmation is a claim about bytes', (
     const { io, confirmed, failures } = makeIo({
       pending: [row(1)],
       remove: () => ({ data: [], error: null }),
+      exists: () => true, // it is STILL THERE — so this is a real failure
     })
     const result = await runAccountDeletionWorker(io as never)
 
@@ -116,7 +129,7 @@ describe('runAccountDeletionWorker — a confirmation is a claim about bytes', (
     expect(confirmed).toEqual([])
     expect(result.mediaDeleted).toBe(0)
     expect(result.mediaFailed).toBe(1)
-    expect(failures[0].message).toMatch(/removed nothing/i)
+    expect(failures[0].message).toMatch(/still in the bucket/i)
     expect(result.ok).toBe(false)
   })
 
@@ -136,6 +149,7 @@ describe('runAccountDeletionWorker — a confirmation is a claim about bytes', (
       pending: [row(1), row(2), row(3)],
       remove: (_b, p) =>
         p.endsWith('2.jpg') ? { data: [], error: null } : { data: [{ name: p }], error: null },
+      exists: () => true,
     })
     const result = await runAccountDeletionWorker(io as never)
     expect(confirmed).toEqual(['subject/1.jpg', 'subject/3.jpg'])
@@ -192,13 +206,13 @@ describe('runAccountDeletionWorker — repeatable, bounded, overlap-safe', () =>
     // is a job that times out halfway and reports nothing.
     const { io } = makeIo()
     await runAccountDeletionWorker(io as never, { max: 25 })
-    expect(io.listPendingMedia as jest.Mock).toHaveBeenCalledWith(25)
+    expect(io.claimPendingMedia as jest.Mock).toHaveBeenCalledWith(25)
   })
 
   it('clamps an absurd cap rather than trusting the caller', async () => {
     const { io } = makeIo()
     await runAccountDeletionWorker(io as never, { max: 10_000_000 })
-    expect(io.listPendingMedia as jest.Mock).toHaveBeenCalledWith(5000)
+    expect(io.claimPendingMedia as jest.Mock).toHaveBeenCalledWith(5000)
   })
 
   it('two overlapping runs both behave, because the ordering is the same', async () => {
@@ -317,5 +331,39 @@ describe('summarizeRun — a run result is not a response body', () => {
       overdueCount: 1,
       errorCount: 1,
     })
+  })
+})
+
+describe('an object that is already absent must not wedge the erasure', () => {
+  // `reallyGone` required the Storage API to hand back the removed object, so an
+  // object that was ALREADY gone could never be confirmed: every later run got
+  // `data: []`, `media_purge` kept raising, and the request could never reach
+  // `completed`. Reached with no attacker — the delete succeeds and the
+  // confirming RPC errors, and the bytes are gone while the row says otherwise.
+  it('goes and looks, and confirms on evidence of absence', async () => {
+    const { io, confirmed, failures } = makeIo({
+      pending: [row(1)],
+      remove: () => ({ data: [], error: null }),
+      exists: () => false, // the API says it is not in the bucket
+    })
+    const result = await runAccountDeletionWorker(io as never)
+
+    expect(io.objectExists as jest.Mock).toHaveBeenCalledWith('booking-photos', 'subject/1.jpg')
+    expect(confirmed).toEqual(['subject/1.jpg'])
+    expect(result.mediaAlreadyGone).toBe(1)
+    expect(result.mediaDeleted).toBe(1)
+    expect(failures).toEqual([])
+    expect(result.ok).toBe(true)
+  })
+
+  it('does NOT look when the API returned a real error — that is not absence', async () => {
+    const { io } = makeIo({
+      pending: [row(1)],
+      remove: () => ({ data: null, error: { message: 'permission denied' } }),
+    })
+    const result = await runAccountDeletionWorker(io as never)
+    expect(io.objectExists as jest.Mock).not.toHaveBeenCalled()
+    expect(result.mediaAlreadyGone).toBe(0)
+    expect(result.ok).toBe(false)
   })
 })

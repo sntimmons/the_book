@@ -51,7 +51,13 @@ function secretsMatch(a: string, b: string): boolean {
   const enc = new TextEncoder()
   const x = enc.encode(a)
   const y = enc.encode(b)
-  // Compare a fixed number of bytes so the loop count does not reveal the length.
+  // The VALUE comparison is data-independent: the length difference is folded
+  // into `diff`, so a mismatched length cannot short-circuit. The loop count is
+  // max(len(a), len(b)) rather than a constant, so the timing inflection still
+  // reveals the SECRET's length — which is stated rather than glossed, because
+  // the previous comment claimed a fixed count and that was not true. A length
+  // oracle on a 64-hex-character random secret is not a practical attack, and no
+  // JS engine offers a constant-time guarantee anyway.
   const len = Math.max(x.length, y.length)
   let diff = x.length ^ y.length
   for (let i = 0; i < len; i++) {
@@ -94,10 +100,15 @@ serve(async (req: Request) => {
   }
   const max = Number(body.max ?? 0) || 200
   const dryRun = body.dryRun === true
+  // The dispatch id travels with the scheduled call so the run can name the
+  // dispatch it answers; a dispatch with no run is a call that never arrived.
+  const dispatchId = typeof body.dispatch_id === 'string' ? body.dispatch_id : null
 
   const lines: string[] = []
   const io = {
     sweep: () => db.rpc('sweep_account_deletions'),
+    // A dry run LOOKS; a real run CLAIMS. Claiming under a lease is what stops
+    // two overlapping runs holding the same object.
     listPendingMedia: (limit: number) =>
       db
         .from('pending_media_deletions')
@@ -105,14 +116,25 @@ serve(async (req: Request) => {
         .is('deleted_at', null)
         .order('enqueued_at', { ascending: true })
         .limit(limit),
+    claimPendingMedia: (limit: number) =>
+      db.rpc('claim_pending_media_deletions', { p_limit: limit }),
+    objectExists: async (bucket: string, path: string) => {
+      const slash = path.lastIndexOf('/')
+      const folder = slash === -1 ? '' : path.slice(0, slash)
+      const name = slash === -1 ? path : path.slice(slash + 1)
+      const { data, error } = await db.storage.from(bucket).list(folder, { search: name })
+      // On an error we cannot claim to know, so we report "still there" and the
+      // object is retried rather than confirmed on a failed lookup.
+      if (error) return true
+      return (data ?? []).some((o: { name: string }) => o.name === name)
+    },
     removeObject: (bucket: string, path: string) => db.storage.from(bucket).remove([path]),
     confirmDeleted: (bucket: string, path: string) =>
       db.rpc('confirm_media_deleted', { p_bucket: bucket, p_path: path }),
-    recordFailure: async (row: { id: string; attempts: number | null }, message: string) => {
-      await db
-        .from('pending_media_deletions')
-        .update({ attempts: (row.attempts ?? 0) + 1, last_error: String(message).slice(0, 4000) })
-        .eq('id', row.id)
+    recordFailure: async (row: { id: string }, message: string) => {
+      // Through the RPC, which refuses to annotate a row somebody else already
+      // confirmed and releases the claim so the next run may retry.
+      await db.rpc('record_media_deletion_failure', { p_id: row.id, p_error: String(message) })
     },
     overdue: () => db.rpc('overdue_account_deletion_work'),
     log: (line: string) => {
@@ -130,6 +152,7 @@ serve(async (req: Request) => {
     // trace is indistinguishable from a run that never fired.
     await db.from('account_deletion_worker_runs').insert({
       source: 'scheduled',
+      dispatch_id: dispatchId,
       ok: false,
       result: { error: message },
       log: lines.join('\n').slice(0, 20000),
@@ -138,16 +161,29 @@ serve(async (req: Request) => {
     return json({ ok: false, error: 'the run failed; see account_deletion_worker_runs' }, 500)
   }
 
-  await db.from('account_deletion_worker_runs').insert({
-    source: 'scheduled',
-    ok: result.ok,
-    media_examined: result.mediaExamined,
-    media_deleted: result.mediaDeleted,
-    media_failed: result.mediaFailed,
-    overdue_count: result.overdueCount,
-    result,
-    log: lines.join('\n').slice(0, 20000),
-  })
+  // A DRY RUN RECORDS NOTHING — it changed nothing, and the CLI has always
+  // behaved this way. Recording it would put a `scheduled | ok | 0 deleted` row
+  // in front of an operator that is indistinguishable from a clean night.
+  if (!dryRun) {
+    const { error: logError } = await db.from('account_deletion_worker_runs').insert({
+      source: 'scheduled',
+      dispatch_id: dispatchId,
+      ok: result.ok,
+      media_examined: result.mediaExamined,
+      media_deleted: result.mediaDeleted,
+      media_failed: result.mediaFailed,
+      overdue_count: result.overdueCount,
+      result,
+      log: lines.join('\n').slice(0, 20000),
+    })
+    // NOT SWALLOWED. A run that completed and was not recorded is
+    // indistinguishable from a run that never fired, which is the exact failure
+    // this table exists to make visible.
+    if (logError) {
+      console.log(`the run is not recorded: ${logError.message}`)
+      return json({ ...summarizeRun(result), recorded: false }, 500)
+    }
+  }
 
   // A NON-2xx WHEN WORK IS LATE. pg_net records the status, so "some promised
   // deletion did not happen" is visible in the database without anyone reading

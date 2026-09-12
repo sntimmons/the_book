@@ -1,5 +1,68 @@
 # Supabase Edge Functions — The Book
 
+> **TWO functions live here.** This document was written for `rate-limit` and
+> still describes only it. The second is **`account-deletion-worker`** — see
+> below before deploying anything, because it holds `service_role` and the
+> `supabase link` command in STEP 2 names the **production** project ref.
+
+## account-deletion-worker (PD-108)
+
+The scheduled half of account erasure. `pg_cron` calls
+`public.invoke_account_deletion_worker()`, which POSTs here through `pg_net`; this
+function runs the canonical sequence in `_shared/accountDeletionRun.mjs` — the
+same file `scripts/account-deletion-worker.mjs` runs, so the manual fallback and
+the scheduled path cannot drift.
+
+**It holds `service_role`, so being callable is itself a privilege.** Two gates:
+
+1. The platform gateway verifies a project JWT. `verify_jwt` is deliberately left
+   at its **default (true)** — no `config.toml` override — but this proves little
+   on its own, because the anon key is public and ships in the app bundle.
+2. **`x-worker-secret`**, compared in constant time against
+   `ACCOUNT_DELETION_WORKER_SECRET`, and **failing closed when unset**. This is
+   the real boundary. It is deliberately a *separate* secret from the service-role
+   key: if it leaks, the worst it buys is making the engine do work it was already
+   going to do, idempotently, with no read of anything.
+
+### Secrets it needs
+
+| Where | Name | What |
+|---|---|---|
+| Function secret | `ACCOUNT_DELETION_WORKER_SECRET` | the shared secret above |
+| Function env | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | auto-provisioned by Supabase |
+| `vault.secrets` | `account_deletion_worker_url` | this function's endpoint |
+| `vault.secrets` | `account_deletion_worker_secret` | must equal the function secret |
+| `vault.secrets` | `account_deletion_worker_anon_key` | for the gateway check only |
+
+**If the two copies of the worker secret drift, every nightly run 401s and cron
+reports SUCCESS.** That is what `public.account_deletion_worker_health()` is for;
+see `docs/operations/ACCOUNT_ERASURE_OPERATIONS.md` § 10.
+
+### Deploying it is an environment action
+
+```bash
+supabase functions deploy account-deletion-worker --project-ref <NON-PROD REF>
+supabase secrets set ACCOUNT_DELETION_WORKER_SECRET=<secret> --project-ref <NON-PROD REF>
+```
+
+**Name the ref explicitly.** STEP 2 below links the CLI to
+`kxregomuawwcqvisuhtr`, which `scripts/prodRef.mjs` and `lib/supabaseTarget.ts`
+both name as **PRODUCTION**. Deploying this function, or setting its secret,
+against production is a production action and falls under the authorization policy
+in `docs/operations/MIGRATION_LEDGER.md`.
+
+### Do not add `net` or `cron` to the exposed schemas
+
+`pg_net` grants PUBLIC `EXECUTE` on `net.http_post` and ALL on
+`net._http_response`, and those grants cannot be revoked from this repository —
+`supabase_admin` made them. They are unreachable only because PostgREST exposes
+`public` and `graphql_public`. See `20261132000000`.
+
+---
+
+## rate-limit
+
+
 ## `rate-limit`
 
 Server-side, cannot-be-bypassed rate limiter. The app calls it (via

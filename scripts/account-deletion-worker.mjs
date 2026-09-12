@@ -75,14 +75,20 @@ const io = {
       .is('deleted_at', null)
       .order('enqueued_at', { ascending: true })
       .limit(limit),
+  claimPendingMedia: (limit) => db.rpc('claim_pending_media_deletions', { p_limit: limit }),
+  objectExists: async (bucket, path) => {
+    const slash = path.lastIndexOf('/')
+    const folder = slash === -1 ? '' : path.slice(0, slash)
+    const name = slash === -1 ? path : path.slice(slash + 1)
+    const { data, error } = await db.storage.from(bucket).list(folder, { search: name })
+    if (error) return true
+    return (data ?? []).some((o) => o.name === name)
+  },
   removeObject: (bucket, path) => db.storage.from(bucket).remove([path]),
   confirmDeleted: (bucket, path) =>
     db.rpc('confirm_media_deleted', { p_bucket: bucket, p_path: path }),
   recordFailure: async (row, message) => {
-    await db
-      .from('pending_media_deletions')
-      .update({ attempts: (row.attempts ?? 0) + 1, last_error: String(message).slice(0, 4000) })
-      .eq('id', row.id)
+    await db.rpc('record_media_deletion_failure', { p_id: row.id, p_error: String(message) })
   },
   overdue: () => db.rpc('overdue_account_deletion_work'),
   log: (line) => {
