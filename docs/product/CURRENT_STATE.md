@@ -248,11 +248,19 @@ superseded PR #75 and touching a file outside the Steward's five-file allowlist.
 this reconciliation is therefore that commit's tree, not `e5b9125`'s. No claim below depends on the
 difference, and it is stated rather than glossed.
 
-**Last edited by:** the post-PR-#83 state reconciliation (2026-09-12). **It was given no PR number
-of its own, so none is recorded** — and, unusually, it was **run with `.git/HEAD` pointing at
-`main` itself**, so its edits sit uncommitted in the working tree on `main` rather than on a
-branch. That is stated for the reviewer of the diff: the Steward has no shell and cannot create a
-branch, and whoever commits this must do so somewhere other than `main`.
+**Last edited by: PR #86** — the post-cleanup reconciliation (2026-09-13), which corrected this
+document's claim that the `judgeExposedList` debt was unfixed.
+
+**This is the first edit to this file that can fill in that field, and the reason is worth keeping.**
+The three reconciliations before it were committed **directly to `main`** — `fc14fe5`, `7d174a1` and
+`2a8d986` — so none had a PR number to record. Two of them were carrying, in this very block, the
+instruction *"whoever commits this must do so somewhere other than `main`"*, which was then not
+followed. **PR #85 closed that gap in `CONTRIBUTING.md`**: documentation-only work and state
+reconciliations go branch → PR → CI → merge like everything else, with no exception.
+
+Before PR #86: the post-**PR #84** reconciliation (`2a8d986`, 2026-09-13) and the post-**PR #83**
+reconciliation (`7d174a1`, 2026-09-12), **neither given a PR number, both committed on `main`
+itself.**
 
 The edit before it was the post-Community-Reshape reconciliation, landed as `fc14fe5`
 (documentation only — `.git/logs/HEAD`). The last numbered edit to this file that can be proven

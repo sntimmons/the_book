@@ -46,10 +46,15 @@ files; and the merge order `224d609` → `6a3fb69` → `a125cd7` → `0781f49` �
 `.git/logs/HEAD`. **The PR numbers for `6a3fb69` and `a125cd7` were not supplied and are recorded as
 not established**, not guessed. PR #76 and PR #74 were supplied.
 
-**Last edited by:** the post-PR-#83 reconciliation (2026-09-12), which was **not given its own PR
-number**, and which ran with `.git/HEAD` pointing at **`main` itself** — so its edits sit
-uncommitted in the working tree on `main`. The Steward has no shell and cannot create a branch;
-whoever commits this diff must do so somewhere other than `main`. The edit before it landed as
+**Last edited by: PR #86** — the post-cleanup reconciliation (2026-09-13), which struck the
+`judgeExposedList` item from § STILL OWED and from audit step 1's inputs.
+
+**This is the first edit to this file that can fill in that field.** The reconciliations before it
+were committed **directly to `main`** and so had no PR number to record — including the two that were
+themselves carrying the instruction *"whoever commits this diff must do so somewhere other than
+`main`"*. **PR #85 removed the ambiguity** in `CONTRIBUTING.md`: there is no direct-to-main exception,
+documentation and reconciliations included. Before PR #86: the post-**PR #84** reconciliation
+(`2a8d986`) and the post-**PR #83** reconciliation (`7d174a1`), neither numbered. The edit before it landed as
 `fc14fe5` (documentation only). The last numbered edit to this file that can be proven is
 **PR #71** (`224d609`), the post-Session-7 reconciliation; PR #75, which would have carried the
 post-Correction-3 edit, **never merged**.
