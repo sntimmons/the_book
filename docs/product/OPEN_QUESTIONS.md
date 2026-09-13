@@ -2,28 +2,34 @@
 
 **Status:** Authoritative for what is **undecided**. Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `070f6df15b42e639c48402f2061b12ac8aec298f` (2026-09-12) — **PR #83**,
-Account Erasure & Retention Integrity — **for the erasure closure record only**: that **OQ-085**,
-**OQ-086** and **OQ-087** are closed by PD-105, PD-106 and PD-107 and that all three closures are
-**implemented on `main`**; that **OQ-084** and **OQ-076** are **Open** and **OQ-088** is closed by
-PD-108 **on a branch that has not merged**; and that
-**OQ-077** remains **PARTIALLY CLOSED**. It **re-verified no other entry**, and in particular
-re-verified nothing carried by **OQ-006**, **OQ-007**, **OQ-011**, **OQ-036**, **OQ-070** or
-**OQ-072**.
+**Reconciled against:** `main` @ `719d8f952b4fe01a1ea14672efda87256a9a9bc3` (2026-09-13) — **PR #84**,
+Account erasure scheduled execution — **for the erasure closure record only**: that **OQ-088** is
+closed by **PD-108** and that the closure is now **implemented on `main`**; that **OQ-084** remains
+**Open** and needs counsel; and that **OQ-076**'s residual is still **carried** to the
+pre-public-launch revisit. The previous anchor — `070f6df` (**PR #83**, 2026-09-12) — verified that
+**OQ-085**, **OQ-086** and **OQ-087** are closed by PD-105, PD-106 and PD-107 and implemented on
+`main`, and that **OQ-077** remains **PARTIALLY CLOSED**; **this pass did not re-verify those.** It
+**re-verified no other entry**, and in particular re-verified nothing carried by **OQ-006**,
+**OQ-007**, **OQ-011**, **OQ-036**, **OQ-070** or **OQ-072**.
 
-**The three open erasure entries, stated here because they are the ones most easily read away by
+**OQ-088 IS NOW CLOSED ON `main`, AND THIS IS THE MERGE THAT MADE IT SO.** The previous anchor said
+PD-108 had closed it *"on a branch that has not merged"*, and that caveat is now spent: **PR #84**
+squash-merged as **`719d8f9`** on 2026-09-13. The scheduler is on `main`, and the
+**pre-external-beta blocker this entry carried is LIFTED**.
+
+**The open erasure entries, stated here because they are the ones most easily read away by
 the word "merged":** **OQ-084** — the retention **durations** for accepted-contract and
-report/safety evidence are **unset**, pending counsel, and **no number may be invented**.
-**OQ-088** — **closed by PD-108, on the `feat/account-erasure-scheduler` branch and NOT YET ON
-`main`.** Until that merges, `main` still has no scheduler and the blocker still stands for
-anything reading `main`. **OQ-076** — the residual `account_unavailable(uuid)` identity oracle is carried to the
-pre-public-launch privacy/security revisit by Founder ruling of 2026-09-12; **no architectural
-change was made**.
+report/safety evidence are **unset**, pending counsel, and **no number may be invented**; the
+**privacy-policy and beta-FAQ wording** is part of the same question and is legal language, not
+engineering. **OQ-076** — the residual `account_unavailable(uuid)` identity oracle is **accepted for
+the closed beta** and carried to the pre-public-launch privacy/security revisit by Founder ruling of
+2026-09-12; **no architectural change was made**, and none is claimed here.
 
-**Last edited by:** the post-**PR #83** reconciliation (2026-09-12), which **closed nothing** —
-PD-105, PD-106 and PD-107 had already closed OQ-085 … OQ-087 on 2026-09-12, and this edit only
-recorded the merge that carried them. It ran with `.git/HEAD` pointing at **`main` itself**, so its
-edits sit uncommitted in the working tree on `main`.
+**Last edited by:** the post-**PR #84** reconciliation (2026-09-13), which **closed nothing** —
+PD-108 had already closed OQ-088 on 2026-09-12, and this edit only recorded the merge that carried
+it onto `main`. Before it, the post-**PR #83** reconciliation (2026-09-12), which likewise closed
+nothing and recorded the merge that carried PD-105 … PD-107; it was committed to `main` as
+`7d174a1`.
 
 Before it, the post-Session-8 state reconciliation. Before that, **PR #76** (`e5b9125`)
 carried OQ-073, OQ-074 and OQ-075 in with its own code and closed all three; **PR #74** (`0781f49`)
@@ -638,6 +644,12 @@ scanner holding old ids plainly should not.
   unset (**OQ-084**) and the drain is still unscheduled (**OQ-088**). The (b) limitation about
   acceptances predating `20261068000000` is also unchanged — **PD-107** decided what the retained
   contract record CONSISTS OF, not what an older acceptance can prove.
+- **Reconciliation note (2026-09-13):** **the drain is no longer unscheduled.** **PD-108** merged to
+  `main` as `719d8f9` (**PR #84**), so `pg_cron` drives the media drain daily at 04:17 UTC and
+  **OQ-088 is closed**. That moves the (a) photo-orphan case from *"queued, and drained when an
+  operator remembers"* to *"queued, and drained on a clock"*. **It changes nothing else here:** the
+  retention **durations** are still unset (**OQ-084**), and that is what keeps OQ-077 PARTIALLY
+  CLOSED rather than closed.
 
 ### OQ-078 — Does "latest" mean the latest review WRITTEN or the latest service RECEIVED?
 - **Area:** Reviews / reputation
@@ -1052,12 +1064,12 @@ the current behaviour is a decision.**
 ### OQ-088 — What runs the deletion worker on a clock?
 
 - **Area:** Operations / infrastructure
-- **Status: CLOSED 2026-09-12 by [PD-108](PRODUCT_DECISIONS.md).** Raised the same day
-  on PR #83, returned as a PRE-EXTERNAL-BETA BLOCKER, and closed by building the scheduler
-  rather than by writing a runbook. **Closed on the strength of a working, verified
-  implementation — but on the `feat/account-erasure-scheduler` branch, not yet on `main`.**
-  The rule this ledger keeps still holds: only a merge makes it true of `main`, and this
-  entry must be re-read against `main` after that PR lands.
+- **Status: CLOSED 2026-09-12 by [PD-108](PRODUCT_DECISIONS.md), and ON `main` since
+  2026-09-13.** Raised the same day on PR #83, returned as a PRE-EXTERNAL-BETA BLOCKER, and
+  closed by building the scheduler rather than by writing a runbook. **Merged to `main` as
+  `719d8f9` (PR #84, 2026-09-13)**, which is what discharges the rule this ledger keeps: only a
+  merge makes it true of `main`, and the previous anchor was explicit that the closure was
+  branch-only until then. **The pre-external-beta blocker is LIFTED.**
 
   **The answer is native Supabase scheduling.** The platform decision this entry said was
   not engineering's to make was made by the PM: `pg_cron` → `invoke_account_deletion_worker()`
@@ -1083,6 +1095,12 @@ the current behaviour is a decision.**
   the production scheduler; an external host would have been new infrastructure; and
   Supabase's own scheduled-functions feature is the same two extensions underneath plus a
   project configuration this repo does not hold.
+
+  **EVERYTHING BELOW IS THE QUESTION AS IT WAS ASKED ON PR #83, KEPT VERBATIM** so the reasoning
+  that produced PD-108 stays legible. Its present tense — *"nothing invokes any of it on a
+  schedule"*, *"the scheduler is the missing capability"*, the interim and the blocker — describes
+  `main` **before `719d8f9`**, not `main` today. Read it as the record of a question, not as
+  current state.
 - **Why it matters:** PD-102 tells a person a date. `sweep_account_deletions()`
   finalises every request past that date and runs the two scheduled purges when
   their retention window expires; `pending_media_deletions` holds the storage
@@ -1141,3 +1159,11 @@ that: the worker shipped, the scheduler did not. **OQ-084** likewise stayed open
 and **OQ-076** was ruled explicitly to require **no architectural change now**. The post-merge
 reconciliation that recorded all of this **closed nothing itself**, which is the only thing a
 reconciliation is permitted to conclude here.
+
+**PR #84 (`719d8f9`, 2026-09-13) is the other half of that pattern, and it is the case the rule was
+written for.** OQ-088 was answered by **PD-108** on the branch, and this ledger still refused to call
+it true of `main` — the entry and the header both said, in as many words, *closed on the branch, not
+yet on `main`*. The merge discharged that, and **the merge closed nothing by itself**: PD-108 did the
+closing a day earlier, and `719d8f9` only made it true of `main`. **OQ-084 and OQ-076 passed through
+this merge unchanged**, which is what happened at `070f6df` and for the same reason — neither is an
+engineering question, and a merge cannot answer one.

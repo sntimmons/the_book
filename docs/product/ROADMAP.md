@@ -2,23 +2,30 @@
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `070f6df` (2026-09-12) — **PR #83**, Account Erasure & Retention
-Integrity — **for the § Next erasure entry, the § Physical-device / UX QA list and the header
-statements below, and for nothing else.** A narrow anchor, deliberately, on the convention
-[OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) already uses: the 2026-09-12 reconciliation verified the
-thirty erasure migrations, the 168-file chain, the worker script, the erasure B5B suite and its
-registration line, and the two no-scheduler assertions. It **re-verified nothing in the § Completed
-table and nothing in § Current**, both of which still speak as of `e5b9125`.
+**Reconciled against:** `main` @ `719d8f9` (2026-09-13) — **PR #84**, Account erasure scheduled
+execution — **for the § Next erasure entries, the § Physical-device / UX QA list, § The remaining
+sequence to closed beta and the header statements below, and for nothing else.** A narrow anchor,
+deliberately, on the convention [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) already uses: this
+reconciliation verified the four scheduler migrations (`20261130000000` … `20261133000000`), the
+**172**-file chain, the Edge Function and the shared engine, the schema gate and its unit test, the
+repointed second deletion control, and that the two no-scheduler assertions were **reversed and
+replaced rather than deleted**. It **re-verified nothing in the § Completed table and nothing in
+§ Current**, both of which still speak as of `e5b9125`.
 
-> **THE § COMPLETED TABLE IS BEHIND BY SIX CAPABILITY MERGES, AND NO ROW WAS ADDED FOR ANY OF
-> THEM — INCLUDING PR #83.** `2da313a` (Booking & Onboarding Integrity), `a253c3f` (PR #81, Reviews
-> Phase 2), `8331941` (PR #82, Community Reshape), `c4afee5` (Session 8B), `0b1f563` (Session 8C)
-> and now `070f6df` (PR #83) are each recorded as a **MERGED** entry under § Next, which is the
-> convention every post-Session-8 reconciliation has followed, and **none has a Completed row**.
-> Under CHECKLIST § E each of the six earns one. Filling six rows retrospectively, with provenance
-> this run cannot confirm without a shell, is more than a reconciliation should do unasked — so the
-> gap is **stated here rather than silently carried**, and closing it is a deliberate, separately
-> authorised pass. `git log --oneline --merges e5b9125..070f6df` supplies the list in one command.
+**Previously reconciled against:** `main` @ `070f6df` (2026-09-12) — **PR #83**, Account Erasure &
+Retention Integrity, which verified the thirty erasure migrations, the 168-file chain, the worker
+script, the erasure B5B suite and its registration line, and the two no-scheduler assertions that
+PR #84 has since reversed.
+
+> **THE § COMPLETED TABLE IS BEHIND BY SEVEN CAPABILITY MERGES, AND NO ROW WAS ADDED FOR ANY OF
+> THEM — INCLUDING PR #84.** `2da313a` (Booking & Onboarding Integrity), `a253c3f` (PR #81, Reviews
+> Phase 2), `8331941` (PR #82, Community Reshape), `c4afee5` (Session 8B), `0b1f563` (Session 8C),
+> `070f6df` (PR #83) and now `719d8f9` (PR #84) are each recorded as a **MERGED** entry under
+> § Next, which is the convention every post-Session-8 reconciliation has followed, and **none has a
+> Completed row**. Under CHECKLIST § E each of the seven earns one. Filling seven rows
+> retrospectively is more than a reconciliation should do unasked — so the gap is **stated here
+> rather than silently carried**, and closing it is a deliberate, separately authorised pass.
+> `git log --oneline e5b9125..719d8f9` supplies the list in one command.
 
 **Previously reconciled against:** `main` @ `e5b9125` (2026-09-10) — squash-merge of **PR #76**, Session 8
 (safety, trust and operator handling), which earns a Completed row below and therefore moves this
@@ -908,7 +915,9 @@ observed any of it**, and none of it has been.
 |---|---|---|
 | `components/ReportSheet.tsx` on the smallest supported device, **with the keyboard open**, using the 9-reason provider taxonomy | The component exists because Android's `Alert.alert` silently drops buttons past the third — it once showed 3 of 9 reasons and **no Cancel**. It then nearly reproduced that by a different mechanism: React Native's Yoga defaults `flexShrink` to **0**, so a non-shrinking list pushed the notes field and the Submit button past the sheet's 85% cap, where a `View` clips them. Fixed and guarded by an arithmetic height-budget test plus a `flexShrink: 1` pin — **but jsdom does not run Yoga**, so nothing has measured a rendered layout. The failure mode is a report picker whose Submit control does not exist, which looks identical to the bug the component was built to fix. | **Outstanding.** Removed as a merge gate for PR #76 by Founder ruling, 2026-09-09, and moved here. |
 | The operator queue and case detail on a small device | Session 8B's screens have unit and B5B coverage and no device pass. The case-detail screen renders a variable-length facts blob and a history list inside one scroll view. | **Outstanding**, never gated. |
-| The **account-deletion flow end to end** — `app/settings/delete-account.tsx`: the three-group disclosure, the unresolved-transaction list, the **reauthentication prompt**, the typed `DELETE` confirmation, the scheduled-date display and the **restore** path | This is the one irreversible action a user can take on themselves, and the screen makes a promise (*hidden at once, restorable until a date*) that a person has to be able to READ and REACH before they act on it. The disclosure is long and the reauthentication prompt is conditional, which is exactly the combination that puts a control past a scroll cap — the failure this list exists for. Nothing here has been observed; the automated coverage proves the server rules, not that the screen is usable. | **Outstanding.** Merged unobserved with PR #83 (`070f6df`, 2026-09-12). |
+| The **account-deletion flow end to end** — `app/settings/delete-account.tsx`: the three-group disclosure, the unresolved-transaction list, the **reauthentication prompt**, the typed `DELETE` confirmation, the scheduled-date display and the **restore** path | This is the one irreversible action a user can take on themselves, and the screen makes a promise (*hidden at once, restorable until a date*) that a person has to be able to READ and REACH before they act on it. The disclosure is long and the reauthentication prompt is conditional, which is exactly the combination that puts a control past a scroll cap — the failure this list exists for. Nothing here has been observed; the automated coverage proves the server rules, not that the screen is usable. | **Outstanding.** Merged unobserved with PR #83 (`070f6df`, 2026-09-12), and **still unobserved after PR #84** (`719d8f9`, 2026-09-13) — automating *execution* exercises none of this screen. |
+
+| **Broader end-to-end app flows on a real device / TestFlight** — discovery → provider → booking → contract → payment placeholder → completion → review, and the Community and barter surfaces alongside them | Every slice above this line was proven by server-side rules and unit tests. **No journey has been walked end to end on hardware**, and the backend-integrity phase is now complete enough that this is the largest unobserved surface left rather than one item on a list. It is its own step in § The remaining sequence to closed beta below. | **Outstanding**, never gated, never observed. |
 
 **Why this is a list rather than a sentence.** An automated suite can prove a control EXISTS in the
 tree; only a device can prove a person can REACH it. Those are different claims, and this repository
@@ -1016,8 +1025,8 @@ approved closed-beta policy is built **and on `main`**.
 `.git/refs/remotes/origin/main` both read `070f6df15b42e639c48402f2061b12ac8aec298f`, and
 `.git/logs/HEAD` records `main` moving **`fc14fe5` → `070f6df` in one fast-forward from
 `origin/main`** — `fc14fe5` being the documentation-only post-Community-Reshape reconciliation.
-The chain is **168** files, `20260829000000` … `20261129000000`, with all thirty erasure
-migrations present. *Attested only, as supplied to a reconciliation with **no shell**:* that
+The chain **was 168** files at this merge, `20260829000000` … `20261129000000`, with all thirty
+erasure migrations present (**172** after PR #84). *Attested only, as supplied to a reconciliation with **no shell**:* that
 `070f6df` is **PR #83**, and that the merge was a squash. *Neither supplied nor found:* any CI run
 for `070f6df`, and **any post-apply B5B, concurrency or Jest figure** — the ledger carries no dated
 apply section for `20261066000000` onwards.
@@ -1072,22 +1081,19 @@ because the harness's `act_service()` runs as the table owner and could never ha
 residual `account_unavailable(uuid)` oracle is carried to the pre-public-launch privacy/security
 revisit.
 
-**STILL OWED AFTER THE MERGE, and one of them is a PRE-EXTERNAL-BETA BLOCKER.** Merging PR #83
+**STILL OWED AFTER THE MERGE, and one of them WAS a PRE-EXTERNAL-BETA BLOCKER.** Merging PR #83
 discharged neither, and neither may be read as carried by it:
 
-- **OQ-088 — nothing runs the deletion worker on a clock. OPEN, and the BLOCKER.**
-  `scripts/account-deletion-worker.mjs` does the whole job in one bounded command (sweep, drain the
-  media queue through the Storage API, confirm, sweep again, report what is late) using only what
-  the stack already has. **What is missing is the scheduler**, and every way to supply one —
-  `pg_cron`+`pg_net`, Supabase scheduled functions, scheduled CI, an external host — is a platform
-  decision with an owner and a cadence to choose. `supabase/tests/receiver_window.test.sql:926-927`
-  and `no_show_under_review.test.sql:259` currently **assert that no scheduler extension is
-  installed**, so "no scheduler" is a pinned property of this schema rather than an oversight.
-  Until a decision is made an operator runs the worker by hand, which is proportionate for a 25–30
-  cohort and is **not a retention guarantee**. It blocks **external** beta; it does not block the
-  closed beta. Full entry: [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) § OQ-088.
-  **A branch is being started to address this; that is not progress to record here, and nothing
-  below moves out of "owed" until it merges.**
+- ~~**OQ-088 — nothing runs the deletion worker on a clock. OPEN, and the BLOCKER.**~~
+  **DISCHARGED by PR #84 (`719d8f9`, 2026-09-13), one day later.** At the time this entry was
+  written the scheduler was the missing capability and every way to supply one was a platform
+  decision with an owner and a cadence to choose; the two suites at
+  `supabase/tests/receiver_window.test.sql` and `no_show_under_review.test.sql` **asserted that no
+  scheduler extension was installed**, making "no scheduler" a pinned property of the schema rather
+  than an oversight. **PD-108 chose `pg_cron` + `pg_net` and built it**, and those two assertions
+  were **reversed and replaced, not deleted**. The CLI worker described here remains as the
+  **fallback**. Full entry: [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) § OQ-088; the merged state is in
+  § Account erasure — scheduled execution below.
 - **Physical-device QA of the whole flow** — the disclosure, the reauthentication prompt, the
   scheduled-date display and the restore path **have not been exercised on a real device**, and
   nothing automated can observe any of them. Carried on the standing § Physical-device / UX QA list
@@ -1097,12 +1103,14 @@ discharged neither, and neither may be read as carried by it:
   ship unset and flagged rather than guessed.
 
 All of the above are documented in
-[ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md), **whose own header
-still describes itself as authoritative "for the branch … Not merged" and anchored at `fc14fe5`**.
-That is now false and is recorded here rather than corrected: the operations document has another
-owner, its automation sections are about to be rewritten by the OQ-088 scheduler workstream, and
-§ 1 step 3 additionally still describes the reauthentication bar as *"a token issued in the last 15
-minutes"*, which **PD-104 explicitly corrected**.
+[ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md). **The complaint this
+entry used to carry about that document's header — that it still called itself authoritative "for the
+branch … Not merged" and anchored itself at `fc14fe5` — is resolved:** it is anchored at `719d8f9`
+and carries the automatic path in § 9 and the failure drill in § 10. **The second half of that
+complaint is resolved too, and was checked rather than assumed:** § 1 step 3 no longer describes the
+reauthentication bar as *"a token issued in the last 15 minutes"* — it carries PD-104's correction
+explicitly, naming `amr` with an `iat` fallback, saying the two are **not the same bar**, and
+refusing to claim equivalence with step-up authentication.
 
 #### The original entry, kept for the reasoning that produced it
 
@@ -1164,6 +1172,78 @@ product may promise a user that their account can be deleted**, and
 
 **Not authorised to start.** Recorded here so the next session inherits the
 question rather than the surprise.
+
+### Account erasure — scheduled execution — **MERGED** (`719d8f9`, PR #84, 2026-09-13)
+
+Four migrations, `20261130000000` … `20261133000000`, and **PD-108** (finalisation is automatic; the
+CLI is the fallback) with **PD-109** (what counts as evidence that an object is gone). **This closes
+OQ-088**, the pre-external-beta blocker the PR #83 entry above returned, one day after it was
+returned.
+
+**How this merge is evidenced.** `git rev-parse HEAD` on `main` is
+`719d8f952b4fe01a1ea14672efda87256a9a9bc3`, `git rev-list --left-right --count origin/main...HEAD`
+returns `0 0`, and the working tree was clean. `gh pr view 84` returns `state: MERGED`,
+`mergeCommit.oid: 719d8f95…`, merged 2026-09-13T15:28:18Z, squash. **CI is green on the merged
+tree** — `check` and `db-security` both `pass` on run `34765579908`, which ran on branch head
+`fd13e54`; `git diff fd13e54 719d8f9` is **empty**. The chain is **172** files,
+`20260829000000` … `20261133000000`. **Validation re-run on the merged tree:** typecheck clean,
+`lint:ci` 0 errors / 209 warnings against the frozen 210 baseline, Jest **1030/1030** across **53**
+suites. **Not re-run and therefore not claimed fresh:** B5B (**2253/2253** on the branch) and the
+negotiation concurrency harness (**224/224**).
+
+**The engine runs itself.** `pg_cron` → `invoke_account_deletion_worker()` → `pg_net` → the
+`account-deletion-worker` Edge Function → the shared deletion engine → the unchanged DB deletion
+functions → Storage removal or confirmed absence → `account_deletion_worker_runs` and health
+monitoring. **Daily at 04:17 UTC.** The full merged state, including the `pg_net` grant problem this
+surfaced and the release gate that now guards it, is in
+[CURRENT_STATE.md](CURRENT_STATE.md) § Account erasure — scheduled execution.
+
+**The calendar trigger has NOT been seen to fire.** The job is registered and active, and every link
+in the chain was exercised manually through the exact command `cron.job` runs. **Watching a real
+firing needs a calendar, not a test** — do not let a later reading of this entry convert "the path
+was exercised" into "the timer was observed".
+
+**STILL OWED AFTER THIS MERGE:**
+
+- **OQ-084** — the retention **durations** and the privacy-policy / beta-FAQ language. **Not owed by
+  engineering**; it needs counsel, and a scheduler cannot answer a legal question.
+- **OQ-076**'s residual identity oracle, carried to the pre-public-launch privacy/security revisit.
+- **Physical-device QA** of the deletion flow — the disclosure, the reauthentication prompt, the
+  scheduled-date display and the restore path. Automating execution exercises none of them.
+- **LOW technical debt, recorded not fixed:** `judgeExposedList` in `scripts/check-api-schemas.mjs`
+  uses the **first** exposed-schema list any probe returns and does not fail when the three probes
+  return **different** lists. They currently target the same project and should agree, so **this is
+  not a known live defect** — it is a release gate resolving a disagreement silently. **Candidate for
+  the independent whole-app audit below; do not fix it inline in unrelated work.**
+
+---
+
+### The remaining sequence to closed beta
+
+**The major backend-integrity construction phase is now effectively COMPLETE for the closed-beta
+engineering scope.** Safety and trust, the operator surface, booking and onboarding integrity,
+reviews, community, barter adjudication, account erasure and now its scheduled execution are all on
+`main`. What remains before a Houston closed beta is **not more backend construction** — it is
+adversarial verification, the two product surfaces still owed, and everything that can only be
+judged on real hardware.
+
+**This is a sequence, and the order is the point.** Each step's output is the next step's input;
+running them concurrently is how a UI pass gets built on a surface an audit is about to change.
+
+| # | Step | Why it sits here |
+|---|---|---|
+| **1** | **Independent whole-app adversarial audit** | First, because everything after it is built on the assumption that what is on `main` is sound. It is independent so it is not marking its own homework, and adversarial because the suites already here prove the rules that were thought of. The `judgeExposedList` item above is one input; § WHOLE-APP AUDIT ROUND 2 is the standing entry. |
+| **2** | **Discovery / Fairness** | The marketplace surface's ordering and exposure rules — the last substantial backend product decision owed, and the one a provider's experience of the beta turns on. **Not started, and nothing in this document may be read as having decided it.** |
+| **3** | **Cross-App UX simplification** | Before any design pass. Simplifying flows after they have been styled means throwing away the styling. |
+| **4** | **UI implementation / design-system pass** | The app is functionally built and visually unfinished. This is where that is addressed, on flows step 3 has settled. |
+| **5** | **Physical-device / TestFlight hardening** | Everything on § Physical-device / UX QA list, plus the broader end-to-end journeys. Only a device can prove a person can reach a control. |
+| **6** | **Production / launch readiness** | Production has **never** been a target of development or test tooling and is unreconciled by deliberate policy. Release process, environment promotion, Sentry, analytics, support and break-it testing land here. |
+
+**Sessions 9–15 below predate this framing** and are retained because their content is still owed;
+where a session number and a step number disagree, the sequence above is the ordering and the session
+entries are the detail.
+
+---
 
 ### Sessions 9–10 — Reviews, remaining
 Structured signals (PD-028) and the conduct/reliability layer that `no_show` feeds (PD-027).

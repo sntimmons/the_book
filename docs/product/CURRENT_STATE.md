@@ -1,5 +1,15 @@
 # Current State — what is true on `main` today
 
+**Account erasure SCHEDULED EXECUTION merged 2026-09-13 (`719d8f9`, PR #84).** The erasure engine
+**runs itself.** `pg_cron` calls `invoke_account_deletion_worker()`, which uses `pg_net` to invoke
+the `account-deletion-worker` Edge Function, which runs the shared deletion engine against the
+unchanged database functions — **daily at 04:17 UTC**. Four migrations, `20261130000000` …
+`20261133000000`, and three locked decisions — **PD-108** (finalisation is automatic), **PD-109**
+(what counts as evidence that an object is gone) and **PD-110** (there is one deletion flow, and
+every control leads to it). **OQ-088 is CLOSED and its pre-external-beta blocker is LIFTED.** The CLI worker
+remains as the **fallback**, not the mechanism. Full detail is in § Account erasure — scheduled
+execution below.
+
 **Account Erasure & Retention Integrity merged 2026-09-12 (`070f6df`, PR #83).** A person can
 delete their own account **from inside the app** — Settings → Account → Delete Account
 (`app/settings/index.tsx:288-289`, `app/settings/delete-account.tsx`) — and a verified request
@@ -10,12 +20,12 @@ policy itself is authoritative in [PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) a
 answers in
 [ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md).
 
-**Two things travel with it and neither may be read away.** **OQ-084** is open — the retention
+**One thing travels with it and may not be read away.** **OQ-084** is open — the retention
 **durations** for accepted-contract evidence and for report/safety evidence are **unset** pending
 attorney review, and nothing in this document, the schema or support copy may supply a number.
-**OQ-088 is open and was returned as a PRE-EXTERNAL-BETA BLOCKER** — `scripts/account-deletion-worker.mjs`
-does the whole job in one command, and **nothing runs it on a clock**, so today an operator runs
-it by hand.
+**OQ-088 no longer travels with it:** it was open and a PRE-EXTERNAL-BETA BLOCKER at `070f6df`, and
+**PD-108 closed it at `719d8f9`**. Any sentence in this document reading *"nothing runs it on a
+clock"* describes `main` before that merge; where one survives below it is marked as such.
 
 **Community Reshape merged 2026-09-11 (`8331941`, PR #82; test-margin fix `7826ca4`).**
 Community is a **service community for clients and providers** — it was provider-only by TABLE
@@ -96,14 +106,44 @@ records was **deliberately unresolved** (OQ-077).
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `070f6df` (2026-09-12) — the squash-merge of **PR #83**, Account
-Erasure & Retention Integrity. The migration chain is now **168** files,
-`20260829000000` … `20261129000000` (counted with `Glob` over `supabase/migrations/*.sql` on this
-tree). The anchor moves because this document now asserts facts that did not exist before that
-merge: self-service account deletion, the 30-day grace period, the eleven-class retention policy
-and the relationship-pseudonym model.
+**Reconciled against:** `main` @ `719d8f952b4fe01a1ea14672efda87256a9a9bc3` (2026-09-13) — the
+squash-merge of **PR #84**, Account erasure scheduled execution. The migration chain is now **172**
+files, `20260829000000` … `20261133000000` (counted over `supabase/migrations/*.sql` on this tree).
+The anchor moves because this document's central claim about erasure **reversed**: it said the
+scheduler was not built, and it is.
 
-**What this run proved, and what it took on trust.** *Proven from files on this tree:*
+**What this run proved.** `git rev-parse HEAD` is `719d8f952b4fe01a1ea14672efda87256a9a9bc3` on
+`main`, with `git rev-list --left-right --count origin/main...HEAD` returning `0 0` and a clean
+working tree. `gh pr view 84` returns `state: MERGED`, `mergeCommit.oid:
+719d8f952b4fe01a1ea14672efda87256a9a9bc3`, merged 2026-09-13T15:28:18Z. **CI on the merged head is
+green** — `check` (typecheck, lint, Jest) and `db-security` (B5B against a non-production database)
+both `pass`, on run `34765579908`, which ran on branch head **`fd13e54`**, the commit `719d8f9`
+squashed. `git diff fd13e54 719d8f9` is **empty**, so `main`'s tree is identical to the head CI
+tested. **Production (`kxregomuawwcqvisuhtr`) was not connected to, linked, migrated or queried by
+this run.**
+
+**Validation figures re-run on the merged tree** (not carried from a prior session): typecheck
+clean; `lint:ci` **0 errors / 209 warnings** against the frozen baseline of 210; Jest
+**1030/1030** across **53** suites. **Not re-run, and therefore not asserted fresh:** the B5B
+harness (**2253/2253** as last measured on the branch) and the negotiation concurrency harness
+(**224/224**), both of which need non-production credentials and cover surfaces PR #84 did not
+touch. `db-security` in CI is the standing DB gate.
+
+**A process note this anchor exists to carry, because it nearly produced a false record.** When this
+work resumed, a handoff stated that the branch and `origin` agreed and that PR #84's CI was green.
+The second half was true and the first was not: `origin` was one commit behind, so **the green check
+belonged to a stale remote head** and covered neither the last commit nor the then-uncommitted
+fixes. A PR's green check is evidence about *the commit it ran on*, never about a local tree. On
+resumed work, verify both `git rev-list --left-right --count origin/<branch>...HEAD` **and**
+`gh pr view <n> --json headRefOid` before treating PR CI as coverage of the local head.
+
+**Previously reconciled against:** `main` @ `070f6df` (2026-09-12) — the squash-merge of **PR #83**,
+Account Erasure & Retention Integrity. The chain was **168** files,
+`20260829000000` … `20261129000000`. That anchor moved because this document then asserted facts that
+did not exist before that merge: self-service account deletion, the 30-day grace period, the
+eleven-class retention policy and the relationship-pseudonym model.
+
+**What the PR #83 run proved, and what it took on trust.** *Proven from files on this tree:*
 `.git/refs/heads/main` and `.git/refs/remotes/origin/main` both read
 `070f6df15b42e639c48402f2061b12ac8aec298f`; `.git/HEAD` resolves to `refs/heads/main`;
 `.git/logs/HEAD` records `main` moving `fc14fe5` → `070f6df` in **one fast-forward from
@@ -1309,6 +1349,62 @@ Three Founder rulings on the finished branch, and two of them are requirements r
 
 ---
 
+## Account erasure — scheduled execution — PR #84 (`719d8f9`, 2026-09-13)
+
+**The decisions are PD-108** (finalisation is automatic; the CLI is the fallback), **PD-109** (what
+counts as evidence that an object is gone) **and PD-110** (there is one deletion flow, and every
+control leads to it), all in
+[PRODUCT_DECISIONS.md](PRODUCT_DECISIONS.md) and not restated here. The support answers — how to
+check it ran, and what to say when it did not — are authoritative in
+[ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md) §§ 9–10. **This closes
+OQ-088**, which was returned on PR #83 as a pre-external-beta blocker.
+
+**The chain on `main`:**
+
+```
+pg_cron  →  public.invoke_account_deletion_worker()  →  pg_net
+         →  the account-deletion-worker Edge Function
+         →  the shared deletion engine  →  the unchanged DB deletion functions
+         →  Storage removal / confirmed absence
+         →  public.account_deletion_worker_runs  →  health monitoring
+```
+
+| What is true | Evidence |
+|---|---|
+| **Daily at 04:17 UTC** | Daily because the promise to a user is a **DATE**, and hourly would be false precision at a cohort of 25–30. 04:17 because a job on the hour shares its slot with every other `0 * * * *` on the instance. **`cron.job` is the single source of truth for the cadence — never a comment**, and `set_account_deletion_worker_schedule(text)` is the only supported way to change it. | `20261130000000`; ACCOUNT_ERASURE_OPERATIONS § 9 |
+| **One engine, two runtimes** | The sequence lives in `supabase/functions/_shared/accountDeletionRun.mjs`, which **imports nothing at all** — that emptiness is what lets Node and the Supabase Edge runtime load the same file unchanged, and a test asserts it, because an import there is a fork with extra steps. | `supabase/functions/_shared/accountDeletionRun.mjs`; `__tests__/lib/accountDeletionRun.test.ts` |
+| **The job command carries no secret** | `cron.job.command` is a plain text column, so a URL and a bearer token pasted into it would ride into every schema dump. The command is one line — `select public.invoke_account_deletion_worker();` — and a suite assertion fails if it ever matches `http\|bearer\|eyJ\|secret\|key\|token`. Every secret is in the vault, and the worker secret is deliberately **separate from the service-role key**: if it leaks, the worst it buys is making the engine do idempotent work it was already going to do. | `20261130000000`; `supabase/tests/account_erasure.test.sql` |
+| **A promise that can tell you it broke** | PD-108 traded *"somebody has to remember to run it"* for *"somebody has to notice it stopped"*, and that is only a better promise if the system can say so. `invoke_account_deletion_worker` is fire-and-forget, so an invocation that never arrived would have left no trace. `account_deletion_worker_runs` records each run with its counts and `source` (`scheduled` or `manual`), and **`account_deletion_worker_health()` turns an ABSENCE into a row** — nobody notices a missing row. | `20261133000000`; ACCOUNT_ERASURE_OPERATIONS § 10 |
+| **An extension grants what it likes, and `pg_net` is generous** | `create extension pg_net` grants `USAGE` on schema `net` and `EXECUTE` on `net.http_post` to **`anon` and `authenticated`** — nothing in this repo asked for it and nothing needs it. `net.http_post` from a client role is an **SSRF primitive**; `net._http_response` holds the response bodies of every pg_net call. | `20261131000000` |
+| **AND NO MIGRATION IN THIS REPOSITORY CAN REVOKE THEM** | `20261131000000` revoked those grants, applied cleanly, reported success and **changed nothing** — verified by re-reading `has_schema_privilege` afterwards. **A REVOKE only removes grants made by the role issuing it**: these migrations run as `postgres`, and the extension's grants were made by `supabase_admin`, which `postgres` is not a member of. `20261132000000` records the failed attempt rather than deleting it. | `20261131000000`, `20261132000000` |
+| **What actually keeps `net` unreachable is a PROJECT SETTING, not this repo** | PostgREST's exposed-schema list. If `net` were added to it, every signed-in account would gain `net.http_post` and the stored bodies in `net._http_response`. That setting lives in the Supabase dashboard. **`npm run check:api-schemas` is the release gate for it** — it probes `net`, `cron` and `vault`, requires HTTP 406 **and** a parsed `PGRST106`, and additionally asserts the exposed list is exactly `[public, graphql_public]` so a typo cannot pass. It identifies the project through the canonical `refFromTarget`, refuses a ref it cannot positively identify, says PRODUCTION or NON-PRODUCTION, and requires `--allow-non-prod`. | `scripts/check-api-schemas.mjs`; `__tests__/lib/apiSchemaGate.test.ts` |
+| **The barter no-scheduler assertion was REVERSED and REPLACED, not deleted** | `receiver_window.test.sql` and `no_show_under_review.test.sql` had asserted since their first run that no scheduler extension existed — never about erasure, but so that **no clock could move a barter obligation's state** (PD-072). Guarantee-by-absence became **guarantee-by-inspection**: the only scheduled job is this one, and neither it nor the function it calls names a barter object. A second job fails those assertions and somebody has to justify it. | `supabase/tests/receiver_window.test.sql`, `no_show_under_review.test.sql` |
+
+**What was NOT observed, stated here rather than implied away: the calendar trigger has not been
+seen to fire.** The job is registered and active, and **every link in the chain it triggers was
+exercised manually through the exact command `cron.job` runs** — a fixture account holding a real
+storage object was finalised in non-production, the object was actually removed from the bucket, the
+deletion was confirmed, the request reached `completed`, and `overdue_account_deletion_work()`
+returned clean; further invocations, two of them genuinely overlapping, were harmless no-ops leaving
+exactly one erasure record. **Watching a real firing needs a calendar, not a test**, and nothing in
+this document may be read as saying it was watched.
+
+**Recorded as LOW technical debt — an independent-audit candidate, deliberately NOT fixed here.**
+`judgeExposedList` in `scripts/check-api-schemas.mjs` takes the **first** exposed-schema list any
+probe returns and does not fail if the three probes return **different** lists. The three currently
+target the same project and should agree, so **this is not a known live defect** — but it is a
+release gate resolving a disagreement silently in favour of whichever probe answered first. Left for
+the independent whole-app audit; **do not fix it inline in unrelated work.**
+
+**What is NOT closed by this merge:** **OQ-084** (the retention durations, and the privacy-policy and
+beta-FAQ language) is untouched — a scheduler cannot answer a legal question. **OQ-076**'s residual
+identity oracle is likewise untouched and still carried to the pre-public-launch revisit. And the
+**physical-device QA** owed for the deletion flow is unchanged: automating execution does not
+exercise the disclosure, the reauthentication prompt, the scheduled-date display or the restore path
+on a real device.
+
+---
+
 ## Account erasure and retention — PR #83 (`070f6df`, 2026-09-12)
 
 **The locked decisions are PD-102 … PD-107 in
@@ -1316,8 +1412,10 @@ Three Founder rulings on the finished branch, and two of them are requirements r
 what to say to *"delete my account"*, *"I changed my mind"* and *"why do you still have my
 contract"* — are authoritative in
 [ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md). This section records
-only what is true on `main`, and two things above all: **the policy is built and the SCHEDULER is
-not**, and **two retention durations are deliberately unset**.
+only what is true on `main`, and two things above all: **the policy is built**, and **two retention
+durations are deliberately unset**. *(At the time this section was written the scheduler was NOT
+built. It is now — see § Account erasure — scheduled execution. The row below that said so has been
+replaced rather than deleted.)*
 
 Thirty migrations, `20261100000000_retention_is_configuration_not_code.sql` …
 `20261129000000_which_rule_speaks_first.sql`. The per-object record of what each one changed and
@@ -1337,8 +1435,8 @@ which ones are forward corrections to the others is in
 | **Accepted-contract retention is the ACCEPTED artifact only** (PD-107) | The frozen accepted version, its canonical PDF, the acceptance timestamp and the minimum party identity. Abandoned drafts, superseded unaccepted PDFs and unused signature images go. **No signature image is retained because none has ever been written** — `contract_signatures.signature_url` is always NULL. | `20261126000000`; PD-107 |
 | **Evidence survives an erasure, and an erasure still succeeds** (PD-103) | Both OQ-077 technical defects are fixed **without deleting evidence to make a delete succeed**: `reports_target_check` now also accepts a retained restricted subject id, and six append-only guards learned that a referential `SET NULL` is not a client rewriting history. Retention became a property of the **sever** rather than of step ordering, so a raw `delete from auth.users` retains the evidence too. | `20261103000000`, `20261106000000`, `20261109000000`, `20261110000000` |
 | **No erasure reports success with the bytes still in the bucket** | SQL cannot delete a Supabase storage object at all, so objects are **queued** in `pending_media_deletions` and a final `media_purge` step **raises while any remain unconfirmed**. `completed` is recomputed from the step rows, so a failed or unrun step keeps a request out of it by existing. | `20261107000000`; `20261114000000` |
-| **The worker exists** | `scripts/account-deletion-worker.mjs` does the whole job in one bounded, idempotent command — sweep, drain the media queue through the Storage API, confirm each delete only after it succeeded, sweep again, and exit non-zero if `overdue_account_deletion_work()` returns anything. Same tooling env and the same hard production-ref guard as `db-security-test.mjs`. **No new infrastructure.** | `scripts/account-deletion-worker.mjs:8-32`, `:80`, `:93-158` |
-| **NOTHING RUNS IT ON A CLOCK — OQ-088** | This is the one sentence this section exists to keep straight. **OQ-088 is OPEN and was returned as a PRE-EXTERNAL-BETA BLOCKER.** Every way to supply a scheduler is a platform decision with an owner and a cadence to choose, and two committed suites currently **assert that no scheduler extension is installed**, which makes "no scheduler" a pinned property of this schema rather than an oversight. Today an operator runs the worker by hand — proportionate for a 25–30 cohort, **and not a retention guarantee**. | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) § OQ-088; `supabase/tests/receiver_window.test.sql:926`, `no_show_under_review.test.sql:259` |
+| **The worker exists — and since `719d8f9` it is the FALLBACK, not the mechanism** | `scripts/account-deletion-worker.mjs` does the whole job in one bounded, idempotent command — sweep, drain the media queue through the Storage API, confirm each delete only after it succeeded, sweep again, and exit non-zero if `overdue_account_deletion_work()` returns anything. Same tooling env and the same hard production-ref guard as `db-security-test.mjs`. **No new infrastructure.** | `scripts/account-deletion-worker.mjs:8-32`, `:80`, `:93-158` |
+| **SOMETHING NOW RUNS IT ON A CLOCK — OQ-088 CLOSED** | **This row previously said the opposite, and that is why it is replaced rather than deleted.** At `070f6df` nothing invoked the worker on a schedule, OQ-088 was OPEN and returned as a PRE-EXTERNAL-BETA BLOCKER, and two committed suites asserted that no scheduler extension was installed — *"no scheduler"* was a pinned property of the schema, not an oversight. **PD-108 changed that at `719d8f9` (PR #84, 2026-09-13):** `pg_cron` → `invoke_account_deletion_worker()` → `pg_net` → the `account-deletion-worker` Edge Function → the same engine, **daily at 04:17 UTC**. The two suite assertions were **reversed and replaced, not deleted** — guarantee-by-absence became guarantee-by-inspection: the only scheduled job is this one, and neither it nor the function it calls names a barter object, so no clock can move a barter obligation's state (PD-072). **The blocker is LIFTED.** | § Account erasure — scheduled execution below; [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) § OQ-088; `20261130000000`; `supabase/tests/receiver_window.test.sql`, `no_show_under_review.test.sql` |
 
 **What a stranger now sees of a departing account is nothing at all** (PD-104). The
 immediate-hiding promise had been built into the `_visible` views while `providers_public_read` was
@@ -1366,8 +1464,6 @@ action.
 - **OQ-084 — the retention DURATIONS** for accepted-contract and report/safety evidence, plus the
   **privacy-policy and beta-FAQ language**. Attorney review. **No number may be invented anywhere**,
   because a number nobody decided becomes the answer support gives.
-- **OQ-088 — the scheduler.** Open, and a pre-external-beta blocker. It does **not** block the
-  closed beta.
 - **OQ-076 — the residual identity oracle.** The Founder ruling of 2026-09-12 makes **no
   architectural change now**: `public.account_unavailable(uuid)` is granted to client roles because
   an RLS policy is evaluated as the caller and there is no other mechanism, so "is this identity
@@ -1379,22 +1475,26 @@ action.
   scheduled-date display and the restore path **have not been exercised on a real device**. See
   [ROADMAP.md](ROADMAP.md) § Physical-device / UX QA list.
 
-> **UNRESOLVED, RECORDED BY THE STEWARD RATHER THAN DECIDED — there is a SECOND "Delete Account"
-> control on `main`, and it deletes nothing.** `app/me/edit.tsx:428-442` renders an ACCOUNT →
-> **Delete Account** row (reached from `components/ClientMe.tsx:316` → `/me/edit`, and not behind
-> any condition other than the screen's own loading state). Its handler at `:248-269` shows
-> *"This permanently deletes your account and all your data. This cannot be undone."* and then
-> calls `supabase.auth.signOut()` — **no deletion request, no grace period, no restoration, and
-> nothing erased**. Its own comment says so: *"The current implementation signs the user out
-> only."*
+> **RESOLVED at `719d8f9` — the second "Delete Account" control now leads to the one deletion
+> flow.** This block previously recorded, unresolved, that `app/me/edit.tsx` rendered an ACCOUNT →
+> **Delete Account** row whose handler showed *"This permanently deletes your account and all your
+> data. This cannot be undone."* and then called `supabase.auth.signOut()` — no request, no grace
+> period, no restoration, nothing erased. It could not be squared with PD-102, and PD-104 existed
+> because copy claiming what the code does not do was the failure this workstream was correcting.
 >
-> That cannot be squared with PD-102, which makes a verified request the only initiation path and
-> promises a 30-day window and restoration; and PD-104 exists precisely because copy that claims
-> something the code does not do is the failure mode this workstream was correcting. **This
-> document does not choose between them** — whether the old control is removed, repointed at
-> `/settings/delete-account`, or kept for some reason not recorded here is a product call, not a
-> reconciliation. Flagged here so a reader of the paragraph above does not conclude there is only
-> one deletion control in the app.
+> **The product call was made: repoint it, don't remove it.** `app/me/edit.tsx:265` now pushes
+> `/settings/delete-account`, so **both** entry points reach the single disclosure screen and
+> **neither signs anybody out**. There are still two controls and deliberately **one flow**.
+>
+> **This is pinned, and the pin is behavioural rather than textual.**
+> `__tests__/app/deleteAccountEntryPoints.test.tsx` presses the real control on **both** screens and
+> asserts where each goes; asserts the adjacent Sign Out row is a different control that does not
+> delete; **discovers** the entry points by walking `app/` rather than naming them, so a third
+> screen added later is guarded without anybody remembering that file; and reads
+> **comment-stripped** source, because an earlier version of the test matched the explanatory
+> comment in `app/me/edit.tsx` that describes the very bug it guards against — it passed on a
+> comment. Verified by reintroducing the old handler on each screen: three assertions fail for
+> `me/edit.tsx`, two for `settings/index.tsx`.
 
 **Regression coverage.** `supabase/tests/account_erasure.test.sql`, registered in the B5B runner at
 `scripts/db-security-test.mjs:65`; §§ 14, 15 and 16 (`:1511`, `:1657`, `:1811`) pin PD-105, PD-106

@@ -1,12 +1,16 @@
 # Account erasure and retention — Operations and support note
 
-**Status:** Authoritative. **Merged to `main`** 2026-09-12 (PR #83, `070f6df`).
-**Anchor:** `main` @ `070f6df`.
+**Status:** Authoritative. **Merged to `main`** 2026-09-13 (PR #84, `719d8f9`); the retention and
+deletion policy it documents merged 2026-09-12 (PR #83, `070f6df`).
+**Anchor:** `main` @ `719d8f9`.
 **Policy:** **PD-102** (closed-beta retention), **PD-103** (OQ-077 technical fixes),
 **PD-104** (the guarantee lives in the data, not the view), **PD-105** (an anonymized record is a
 relationship, not a person), **PD-106** (grace preserves resolution, not participation),
 **PD-107** (retention is the accepted artifact), **PD-108** (finalisation is automatic; the CLI is
-the fallback — **on the `feat/account-erasure-scheduler` branch, not yet merged**).
+the fallback), **PD-109** (proof of deletion is positive verification of absence) and **PD-110**
+(there is one deletion flow, and every control leads to it). **PD-108 … PD-110 are on `main`** at
+`719d8f9` — the *"not yet merged"* caveat this header used to carry is spent, and **OQ-088 is
+closed**.
 
 Written for whoever answers *"delete my account"*, *"I changed my mind"*, *"why do
 you still have my contract"*, and *"the deletion failed"*. Limits sit beside

@@ -2,14 +2,18 @@
 
 **Status:** Authoritative. Owner: Founder (Stephen). Maintained by the Project State Steward.
 
-**Last edited by:** the post-**PR #83** reconciliation (2026-09-12). It **recorded no decision and
-changed no ruling.** All it did was state, per entry, that **PD-102 … PD-107 are on `main`** at
-`070f6df` rather than on the branch they were written on, and supply the `Status` and `Evidence`
-lines PD-104 … PD-107 were missing. **Nothing in those four entries' text was altered.** Two
-things those entries say and this note repeats because they are the parts most easily read away:
+**Last edited by:** the post-**PR #84** reconciliation (2026-09-13). It **recorded no decision and
+changed no ruling.** All it did was state that **PD-108, PD-109 and PD-110 are on `main`** at
+`719d8f9` rather than on the branch they were written on. **Nothing in those three entries'
+reasoning was altered.** One thing this note repeats because it is the part most easily read away:
 the retention **durations** for accepted-contract and report/safety evidence are **still unset**
-(**OQ-084**), and **nothing runs the deletion worker on a clock** (**OQ-088**, a pre-external-beta
-blocker) — neither of which the merge changed.
+(**OQ-084**), and a scheduler cannot answer a legal question. **What DID change with the merge is
+OQ-088**, which is now closed by PD-108 on `main` — the header below used to say *"nothing runs the
+deletion worker on a clock"*, and that is no longer true of `main`.
+
+Before it, the post-**PR #83** reconciliation (2026-09-12), which likewise recorded no decision: it
+stated that **PD-102 … PD-107 are on `main`** at `070f6df` and supplied the `Status` and `Evidence`
+lines PD-104 … PD-107 were missing.
 
 Before it, the **account erasure & retention integrity** branch recorded **PD-102 … PD-107** and
 merged as `070f6df` (**PR #83**, attested). **PD-102** and **PD-103** were recorded on 2026-09-11;
@@ -2781,14 +2785,16 @@ corrected by `20261131000000`, `20261132000000` and `20261133000000`;
 [ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md)
 §§ 9–12.
 
-**Status:** implemented and verified end to end against non-production, **on the
-`feat/account-erasure-scheduler` branch — NOT YET MERGED to `main`.** Until it
-merges, `main` has no scheduler and OQ-088's blocker stands for anything reading
-`main`. **The timer has not been watched firing**; every link in the chain it
+**Status:** Locked; **implemented and merged to `main`** at `719d8f9` (**PR #84**,
+2026-09-13), and verified end to end against non-production. **OQ-088 is closed
+and its pre-external-beta blocker is lifted.** The previous wording of this line
+said the work was on the `feat/account-erasure-scheduler` branch and NOT YET
+MERGED, and that `main` had no scheduler until it merged — that caveat is now
+spent. **The timer has still not been watched firing**; every link in the chain it
 triggers has been exercised through the exact command `cron.job` runs, by hand,
-once, and **nothing in CI exercises it** — a wrong vault secret would fail no
-committed test, which is why `account_deletion_worker_health()` exists. Retention
-DURATIONS remain **OQ-084** and unset.
+and **nothing in CI exercises it** — a wrong vault secret would fail no committed
+test, which is why `account_deletion_worker_health()` exists. Retention DURATIONS
+remain **OQ-084** and unset.
 
 
 ### PD-109 — Proof of deletion is positive verification of absence
@@ -2850,8 +2856,8 @@ itself errors. Verified live against non-production: a queued path with no objec
 in the bucket resolved as `1 deleted (1 already absent), 0 failed`, and the row is
 confirmed with `attempts = 0` and no error.
 
-**Status:** implemented; the conservative behaviour is the decided behaviour, not
-an interim.
+**Status:** Locked; **implemented and merged to `main`** at `719d8f9` (**PR #84**,
+2026-09-13). The conservative behaviour is the decided behaviour, not an interim.
 
 ---
 
@@ -2907,7 +2913,11 @@ false.
 Verified by reintroducing the old handler on each screen: three assertions fail
 for `me/edit.tsx`, two for `settings/index.tsx`.
 
-**Status:** implemented.
+**Status:** Locked; **implemented and merged to `main`** at `719d8f9` (**PR #84**,
+2026-09-13). `app/me/edit.tsx:265` pushes `/settings/delete-account`, so both
+controls reach the one flow and neither signs anybody out. This **resolves** the
+contradiction CURRENT_STATE.md had carried as unresolved — a second Delete Account
+control that promised permanent deletion and called `signOut()`.
 
 
 ## Not decisions

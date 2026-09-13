@@ -14,6 +14,12 @@ keep changes safe and reviewable. Read [README.md](README.md) and
   it reviewed) before merge. Do not merge unreviewed work.
 - **Run `npm run check` before every commit** (`tsc --noEmit` + ESLint). The
   build must typecheck cleanly.
+- **A green PR check is evidence about the commit it ran on, not about your local
+  tree.** If local commits are unpushed, the PR's green tick belongs to a **stale
+  remote head**. On resumed work, before treating PR CI as coverage, verify both:
+  `git rev-list --left-right --count origin/<branch>...HEAD` (expect `0	0`) and
+  `gh pr view <n> --json headRefOid`. This is written down because a handoff once
+  reported the two in agreement when they were not.
 
 ## Database and Supabase
 
