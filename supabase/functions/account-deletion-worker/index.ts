@@ -118,16 +118,11 @@ serve(async (req: Request) => {
         .limit(limit),
     claimPendingMedia: (limit: number) =>
       db.rpc('claim_pending_media_deletions', { p_limit: limit }),
-    objectExists: async (bucket: string, path: string) => {
-      const slash = path.lastIndexOf('/')
-      const folder = slash === -1 ? '' : path.slice(0, slash)
-      const name = slash === -1 ? path : path.slice(slash + 1)
-      const { data, error } = await db.storage.from(bucket).list(folder, { search: name })
-      // On an error we cannot claim to know, so we report "still there" and the
-      // object is retried rather than confirmed on a failed lookup.
-      if (error) return true
-      return (data ?? []).some((o: { name: string }) => o.name === name)
-    },
+    // RAW LISTING ONLY. Whether an error means "absent" is a deletion rule, and
+    // deletion rules live in the shared module (`objectIsAbsent`) so there is one
+    // of them rather than one per runtime.
+    listObjects: (bucket: string, folder: string, name: string) =>
+      db.storage.from(bucket).list(folder, { search: name }),
     removeObject: (bucket: string, path: string) => db.storage.from(bucket).remove([path]),
     confirmDeleted: (bucket: string, path: string) =>
       db.rpc('confirm_media_deleted', { p_bucket: bucket, p_path: path }),

@@ -10,6 +10,7 @@
 // away: the second sweep, confirming only after a real removal, and the
 // definition of a clean run.
 import {
+  objectIsAbsent,
   runAccountDeletionWorker,
   summarizeRun,
 } from '@/supabase/functions/_shared/accountDeletionRun.mjs'
@@ -46,9 +47,10 @@ function makeIo(
       calls.push('claim')
       return { data: cfg.pending ?? [], error: null }
     }),
-    objectExists: jest.fn(async (_b: string, p: string) => {
-      calls.push(`exists:${p}`)
-      return cfg.exists ? cfg.exists(p) : true
+    listObjects: jest.fn(async (_b: string, folder: string, name: string) => {
+      calls.push(`exists:${folder ? `${folder}/` : ''}${name}`)
+      const present = cfg.exists ? cfg.exists(`${folder}/${name}`) : true
+      return { data: present ? [{ name }] : [], error: null }
     }),
     removeObject: jest.fn(async (bucket: string, path: string) => {
       calls.push(`remove:${path}`)
@@ -348,7 +350,7 @@ describe('an object that is already absent must not wedge the erasure', () => {
     })
     const result = await runAccountDeletionWorker(io as never)
 
-    expect(io.objectExists as jest.Mock).toHaveBeenCalledWith('booking-photos', 'subject/1.jpg')
+    expect(io.listObjects as jest.Mock).toHaveBeenCalledWith('booking-photos', 'subject', '1.jpg')
     expect(confirmed).toEqual(['subject/1.jpg'])
     expect(result.mediaAlreadyGone).toBe(1)
     expect(result.mediaDeleted).toBe(1)
@@ -362,8 +364,52 @@ describe('an object that is already absent must not wedge the erasure', () => {
       remove: () => ({ data: null, error: { message: 'permission denied' } }),
     })
     const result = await runAccountDeletionWorker(io as never)
-    expect(io.objectExists as jest.Mock).not.toHaveBeenCalled()
+    expect(io.listObjects as jest.Mock).not.toHaveBeenCalled()
     expect(result.mediaAlreadyGone).toBe(0)
     expect(result.ok).toBe(false)
+  })
+})
+
+describe('objectIsAbsent — the failed-lookup rule, which is the dangerous one', () => {
+  // PD-109's safety-critical half: a confirmation must never follow a question
+  // nobody answered. This lived copied verbatim in both runtime adapters, with no
+  // test, inside the very design that exists to stop business logic being
+  // duplicated. One copy now, and this is its test.
+  const io = (result: { data: unknown; error: unknown }) => ({
+    listObjects: jest.fn(async () => result),
+  })
+
+  it('is TRUE only when a successful listing does not contain the object', async () => {
+    await expect(objectIsAbsent(io({ data: [], error: null }), 'b', 'sub/x.jpg')).resolves.toBe(true)
+    await expect(
+      objectIsAbsent(io({ data: [{ name: 'other.jpg' }], error: null }), 'b', 'sub/x.jpg'),
+    ).resolves.toBe(true)
+  })
+
+  it('is FALSE when the object is listed', async () => {
+    await expect(
+      objectIsAbsent(io({ data: [{ name: 'x.jpg' }], error: null }), 'b', 'sub/x.jpg'),
+    ).resolves.toBe(false)
+  })
+
+  it('is FALSE when the LOOKUP failed — a failed question is not an answer', async () => {
+    // The line that matters. `true` here would confirm a deletion because a list
+    // call errored, which is "generic request failure as proof of deletion" —
+    // exactly what PD-109 forbids.
+    await expect(
+      objectIsAbsent(io({ data: null, error: { message: 'permission denied' } }), 'b', 'sub/x.jpg'),
+    ).resolves.toBe(false)
+    await expect(objectIsAbsent(io({ data: null, error: null }), 'b', 'sub/x.jpg')).resolves.toBe(
+      false,
+    )
+  })
+
+  it('splits the path the way Storage expects, including a bucket-root object', async () => {
+    const a = io({ data: [], error: null })
+    await objectIsAbsent(a, 'bkt', 'uid/booking/0.jpg')
+    expect(a.listObjects).toHaveBeenCalledWith('bkt', 'uid/booking', '0.jpg')
+    const b = io({ data: [], error: null })
+    await objectIsAbsent(b, 'bkt', 'root.jpg')
+    expect(b.listObjects).toHaveBeenCalledWith('bkt', '', 'root.jpg')
   })
 })

@@ -55,8 +55,11 @@ jest.mock('@/lib/supabase', () => ({
 
 jest.mock('@/components/NeighborhoodPicker', () => 'NeighborhoodPicker')
 
+jest.mock('@/lib/operator', () => ({ amIOperator: jest.fn(async () => false) }))
+
 import { router } from 'expo-router'
 import EditProfileScreen from '@/app/me/edit'
+import SettingsScreen from '@/app/settings'
 
 const DELETION_ROUTE = '/settings/delete-account'
 
@@ -87,6 +90,38 @@ describe('app/me/edit.tsx — the Delete Account row', () => {
   })
 })
 
+describe('app/settings/index.tsx — the PRIMARY Delete Account row', () => {
+  // This screen had no behavioural test at all: its only coverage was a source
+  // scan, and it is the entry point most likely to be edited. It also has a
+  // legitimate Sign Out row right beside the Delete Account one, which is exactly
+  // the substitution that would go unnoticed — press Delete Account, get signed
+  // out, and every source assertion still passes because the file is *allowed* to
+  // contain `signOut`.
+  it('routes to the deletion flow and does not sign out', async () => {
+    const { getByText } = render(<SettingsScreen />)
+    await waitFor(() => getByText('Delete Account'))
+
+    fireEvent.press(getByText('Delete Account'))
+
+    expect(router.push).toHaveBeenCalledWith(DELETION_ROUTE)
+    expect(mockSignOut).not.toHaveBeenCalled()
+  })
+
+  it('and its Sign Out row is a different control that does NOT delete', async () => {
+    const { getByText } = render(<SettingsScreen />)
+    await waitFor(() => getByText('Sign Out'))
+
+    const alertSpy = jest.spyOn(Alert, 'alert')
+    fireEvent.press(getByText('Sign Out'))
+
+    // Sign Out confirms and does not navigate to the deletion flow. Asserting the
+    // pair is the point: the two controls must not be able to swap places.
+    expect(alertSpy).toHaveBeenCalled()
+    expect(router.push).not.toHaveBeenCalledWith(DELETION_ROUTE)
+    alertSpy.mockRestore()
+  })
+})
+
 describe('no screen offers a second deletion implementation', () => {
   const read = (p: string) =>
     (require('fs') as typeof import('fs')).readFileSync(
@@ -103,13 +138,40 @@ describe('no screen offers a second deletion implementation', () => {
       .filter((l) => !l.trim().startsWith('//'))
       .join('\n')
 
-  // Every screen that offers the words "Delete Account" outside the deletion flow
-  // itself. A new one added without a route to `/settings/delete-account` is the
-  // defect this file exists for.
-  const ENTRY_POINTS = ['app/me/edit.tsx', 'app/settings/index.tsx']
+  // DISCOVERED, NOT LISTED. A hardcoded list is invisible to exactly the thing
+  // PD-110 exists to prevent — a THIRD screen growing a Delete Account control
+  // tomorrow. The list is found by walking `app/`, so a new one is included
+  // without anybody remembering to add it here.
+  const walk = (dir: string): string[] => {
+    const fs = require('fs') as typeof import('fs')
+    const path = require('path') as typeof import('path')
+    const root = path.join(__dirname, '..', '..')
+    return fs.readdirSync(path.join(root, dir), { withFileTypes: true }).flatMap((e) => {
+      const rel = `${dir}/${e.name}`
+      if (e.isDirectory()) return walk(rel)
+      return e.isFile() && /\.tsx$/.test(e.name) ? [rel] : []
+    })
+  }
 
-  it.each(ENTRY_POINTS)('%s routes to the deletion flow', (file) => {
-    expect(read(file)).toContain(DELETION_ROUTE)
+  const DELETION_SCREEN = 'app/settings/delete-account.tsx'
+  const ENTRY_POINTS = walk('app')
+    .filter((f) => f !== DELETION_SCREEN)
+    .filter((f) => /Delete Account|delete-account/i.test(code(f)))
+
+  it('the discovery found the entry points it is supposed to guard', () => {
+    // A discovery that silently finds NOTHING would make every case below pass
+    // vacuously — which is the failure mode of a generated list.
+    expect(ENTRY_POINTS).toEqual(
+      expect.arrayContaining(['app/me/edit.tsx', 'app/settings/index.tsx']),
+    )
+  })
+
+  it.each(ENTRY_POINTS)('%s routes to the deletion flow in CODE, not in a comment', (file) => {
+    // `code`, not `read`. This file built the comment stripper because a comment
+    // defeated an earlier assertion, and then failed to use it here — and
+    // `app/me/edit.tsx` carries the route string inside an explanatory comment,
+    // so the raw-source form passed on prose.
+    expect(code(file)).toContain(DELETION_ROUTE)
   })
 
   it.each(ENTRY_POINTS)('%s implements no deletion of its own', (file) => {
@@ -118,7 +180,9 @@ describe('no screen offers a second deletion implementation', () => {
     // the wrong thing. What must not exist is a SECOND way to delete an account:
     // a screen reaching the engine directly, or a privileged user delete.
     const src = code(file)
-    expect(src).not.toMatch(/request_account_deletion|deleteUser|admin\.deleteUser/)
+    expect(src).not.toMatch(
+      /request_account_deletion|requestAccountDeletion|deleteUser|admin\.deleteUser/,
+    )
   })
 
   it('app/me/edit.tsx no longer signs out at all', () => {

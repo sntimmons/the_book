@@ -2822,17 +2822,33 @@ later run failed the same way, `media_purge` raised for ever, and an erasure tha
 was factually complete could never be **recorded** complete. Reached with no
 attacker — the delete succeeds and the confirming call errors.
 
-The rule threads both: **go and look.** The worker asks Storage whether the object
-is there and confirms only on an affirmative "it is not". That keeps the original
-property — a confirmation is a claim about bytes, never a shrug — while removing
-the state that had no exit. A lookup that itself fails reports "still there", so
-the object is retried rather than confirmed on a failed question.
+The rule threads both, and it admits **two kinds of evidence and no others**:
 
-**Evidence:** `supabase/functions/_shared/accountDeletionRun.mjs` (`objectExists`
-and the confirm branch); `__tests__/lib/accountDeletionRun.test.ts`. Verified
-live against non-production: a queued path with no object in the bucket resolved
-as `1 deleted (1 already absent), 0 failed`, and the row is confirmed with
-`attempts = 0` and no error.
+1. **Storage returned the object it removed.** `remove()` answers with the objects
+   it actually deleted, so a non-empty payload is Storage reporting what it did.
+   This is the normal path and it involves no second lookup.
+2. **Storage positively reports the object absent.** Used only when the first
+   produced nothing — then the worker goes and looks, and confirms on an
+   affirmative "it is not there".
+
+What is **not** evidence: the mere absence of an error, an empty payload on its
+own, or a lookup that itself failed — that last one reports "still there", so the
+object is retried rather than confirmed on a question nobody answered.
+
+**An earlier version of this record said "only when Storage says the object is not
+there", which described the fallback and not the primary path.** The behaviour was
+right and the sentence was wrong; a decision record that overstates its own rule is
+how the rule gets reimplemented incorrectly later.
+
+**Evidence:** `supabase/functions/_shared/accountDeletionRun.mjs` — the confirm
+branch and `objectIsAbsent`, which is where the failed-lookup rule lives. It lives
+there and nowhere else **because the security review found it duplicated verbatim
+in both runtime adapters with no test**, inside the one module whose whole purpose
+is that business logic is not duplicated per runtime. Covered by
+`__tests__/lib/accountDeletionRun.test.ts`, including the case where the lookup
+itself errors. Verified live against non-production: a queued path with no object
+in the bucket resolved as `1 deleted (1 already absent), 0 failed`, and the row is
+confirmed with `attempts = 0` and no error.
 
 **Status:** implemented; the conservative behaviour is the decided behaviour, not
 an interim.
@@ -2874,12 +2890,22 @@ false.
 
 **Evidence:** `app/me/edit.tsx`, same route and convention as
 `app/settings/index.tsx`. Pinned by
-`__tests__/app/deleteAccountEntryPoints.test.tsx`, which presses the real control
-and asserts where it goes, asserts that this screen signs nobody out, and asserts
-on the source of **every** screen offering such a control that none implements
-deletion itself — because a behavioural test on one screen cannot see a second
-implementation appearing on another. The net was verified by reintroducing the old
-handler and confirming three assertions fail.
+`__tests__/app/deleteAccountEntryPoints.test.tsx`, which:
+
+- presses the real control on **both** screens and asserts where each goes and
+  that neither signs out — the settings row had no behavioural test at all until
+  the security review said so, and it is the one most likely to be edited;
+- asserts that the Sign Out row beside it is a different control that does not
+  delete, so the two cannot swap places unnoticed;
+- **DISCOVERS** the entry points by walking `app/` for a deletion control rather
+  than naming them, so a third screen added tomorrow is guarded without anybody
+  remembering this file — a hardcoded list would have been blind to exactly the
+  defect this decision exists to prevent;
+- reads **comment-stripped** source, because the first version matched its own
+  explanatory comment describing the bug it guards against.
+
+Verified by reintroducing the old handler on each screen: three assertions fail
+for `me/edit.tsx`, two for `settings/index.tsx`.
 
 **Status:** implemented.
 

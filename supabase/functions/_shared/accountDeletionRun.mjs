@@ -45,7 +45,7 @@
  *   supabase-js shape so neither caller has to translate.
  * @param {() => Promise<{data:any,error:any}>} io.sweep
  * @param {(limit:number) => Promise<{data:any[],error:any}>} io.claimPendingMedia
- * @param {(bucket:string, path:string) => Promise<boolean>} io.objectExists
+ * @param {(bucket:string, folder:string, name:string) => Promise<{data:any[],error:any}>} io.listObjects
  * @param {(bucket:string, path:string) => Promise<{data:any,error:any}>} io.removeObject
  * @param {(bucket:string, path:string) => Promise<{data:any,error:any}>} io.confirmDeleted
  * @param {(row:object, message:string) => Promise<void>} io.recordFailure
@@ -126,7 +126,7 @@ export async function runAccountDeletionWorker(io, opts = {}) {
           // `media_purge` would keep raising. This is the one case where absence
           // is evidence, and it is evidence we went and gathered rather than
           // assumed.
-          reallyGone = await io.objectExists(r.bucket_id, r.object_path) === false
+          reallyGone = (await objectIsAbsent(io, r.bucket_id, r.object_path)) === true
           if (reallyGone) {
             result.mediaAlreadyGone += 1
             log(`  already absent, confirming ${r.bucket_id}/${r.object_path}`)
@@ -235,4 +235,30 @@ export function summarizeRun(result) {
     errorCount: result.errors.length,
     sweeps: result.sweeps,
   }
+}
+
+/**
+ * Is this object absent from the bucket?
+ *
+ * ══ THE FAILED-LOOKUP RULE LIVES HERE, ONCE ══════════════════════════════
+ *
+ * `true` only on a successful listing that does not contain the object. **A
+ * lookup that itself failed returns `false` — "still there"** — so the object is
+ * RETRIED rather than confirmed on a question nobody answered. Confirming on a
+ * failed lookup would be exactly the "generic failure as proof of deletion" that
+ * PD-109 forbids, and it is the most dangerous line in this file.
+ *
+ * It lived in both adapters, copied verbatim, until the security review pointed
+ * out that the one safety-critical branch of PD-109 was duplicated in the very
+ * design that exists to stop business logic being duplicated — and that neither
+ * copy had a test. Now there is one copy, and it has one.
+ */
+export async function objectIsAbsent(io, bucket, path) {
+  const slash = path.lastIndexOf('/')
+  const folder = slash === -1 ? '' : path.slice(0, slash)
+  const name = slash === -1 ? path : path.slice(slash + 1)
+  const { data, error } = await io.listObjects(bucket, folder, name)
+  if (error) return false
+  if (!Array.isArray(data)) return false
+  return !data.some((o) => o?.name === name)
 }

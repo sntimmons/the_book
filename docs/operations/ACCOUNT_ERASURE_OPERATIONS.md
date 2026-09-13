@@ -333,10 +333,12 @@ An operator can place a **hold on one class** of a specific request
   transactions** and cannot start anything new.
 - **A client author is not told when their Community post was hidden** (from the
   moderation work) — unrelated to erasure, but the same screen gap.
-- **A deletion is confirmed only when Storage says the object is not there**
-  (PD-109). Not when a request fails, not because no error came back, and never
-  before checking. So a media object can legitimately show as outstanding for a
-  cycle while the worker retries it — that is the rule working, not a fault.
+- **A deletion is confirmed on evidence from Storage, and on nothing else**
+  (PD-109): either Storage returned the object it removed, or Storage positively
+  reports the object absent. **Not** because a request failed, **not** because no
+  error came back, and never before checking — a lookup that itself fails counts
+  as "still there". So a media object can legitimately show as outstanding for a
+  cycle while the worker retries it; that is the rule working, not a fault.
 - **The scheduler's own grants are a platform default we cannot remove.** See the
   standing rule in § 10. Not currently reachable; recorded because it depends on
   a setting outside this repository.
@@ -472,11 +474,16 @@ is counts only, and the detail lives in `account_deletion_worker_runs`, which is
 
 ```bash
 SUPABASE_URL=<project url> SUPABASE_ANON_KEY=<anon key> \
-  node scripts/check-api-schemas.mjs
+  npm run check:api-schemas
 ```
 
-It must print `OK` before any release. Verified on non-production 2026-09-12 —
-all five forbidden objects refused with `PGRST106`. See
+It must print `OK` **and say PRODUCTION in its header line** before any release.
+It refuses to run against a project it cannot positively identify, and refuses a
+non-production project unless you pass `--allow-non-prod` — so it cannot quietly
+check the wrong thing and be recorded as having checked production.
+
+Verified on non-production 2026-09-12: all three probes refused, and the exposed
+schema list PostgREST names is exactly `[public, graphql_public]`. See
 [MIGRATION_LEDGER.md](MIGRATION_LEDGER.md) § Production release configuration
 checks. **Production has not been checked; somebody authorized must.**
 

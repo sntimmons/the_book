@@ -2055,12 +2055,22 @@ guarantees this repository relies on are **project settings**, not schema.
 
 ```bash
 SUPABASE_URL=<project url> SUPABASE_ANON_KEY=<anon key> \
-  node scripts/check-api-schemas.mjs
+  npm run check:api-schemas
 ```
 
-Must print `OK`. It probes five objects that exist in the database and must not be
-reachable through the public API: `net.http_post`, `net._http_response`,
-`cron.job`, `cron.schedule` and `vault.decrypted_secrets`.
+Must print `OK`, and the header line must say **PRODUCTION**. It reads one object
+per forbidden schema — `net._http_response`, `cron.job`,
+`vault.decrypted_secrets` — and then **asserts the exposed list PostgREST names in
+its own refusal is exactly `[public, graphql_public]`**. That second half is what
+makes it typo-proof: `PGRST106` comes back for any schema not in the list,
+including a misspelled one, so refusals alone would have passed while `net` was
+open.
+
+**It refuses to run rather than guess.** No target, an unidentifiable ref, or a
+non-production project without `--allow-non-prod`, and it exits non-zero without
+probing — because a gate that cannot say which project it checked is worse than no
+gate, and "sourced the tooling env, printed OK, recorded production checked" is
+the failure it exists to prevent.
 
 **Why it is a release gate rather than a migration.** `pg_net` grants PUBLIC
 `EXECUTE` on `net.http_post` and ALL on `net._http_response`. `supabase_admin`
@@ -2076,7 +2086,12 @@ configuration matters most. It carries no production guard for that reason. An
 **inconclusive** probe exits non-zero: "we could not tell" must never read as
 "it is fine".
 
-**Verified 2026-09-12 on non-production `wcoyjeklscuqsumpjpfo`: all five PASS.**
+**Verified 2026-09-12 on non-production `wcoyjeklscuqsumpjpfo`** (with
+`--allow-non-prod`): all three probes refused and the exposed list is exactly
+`[public, graphql_public]`. The gate's own pass predicate is unit-tested against
+captured PostgREST responses in `__tests__/lib/apiSchemaGate.test.ts`, including
+the false-pass path it used to have — a 200 whose row data merely contained the
+string `PGRST106`.
 Production has **not** been checked, because production is outside this work's
 authorization — **somebody authorized must run it there before release.**
 
