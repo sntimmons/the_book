@@ -1996,6 +1996,38 @@ annotated where it fires.
 `.env.tooling.local` resolve to `wcoyjeklscuqsumpjpfo`; no production credential
 exists in the working environment.
 
+## 2026-09-13 — `20261134000000` **APPLIED to non-production** (Operator neutrality, audit F9, PR #87, merged `d7acc44`)
+
+One file, and it adds no table and no column: a predicate,
+`public.operator_case_involves_user(uuid, uuid)`, and a third check inside the two operator RPCs.
+
+**WHY IT EXISTS.** `is_operator()` gained a third arm in `20261059000000` — a row in
+`public.operators` makes it true for an **ordinary signed-in caller** — which turned operators from
+server processes into users of this product. That migration saw the consequence and guarded
+`adjudicate_barter_obligation` ("a participant cannot adjudicate their own trade") and **not** the
+Review Queue. So an operator who owned a de-approved `providers` row could call
+`operator_set_provider_eligibility` on it and `operator_update_case` on the appeal, restoring
+themselves and closing the question, alone.
+
+**PROVEN BEFORE IT WAS CLOSED**, against non-production inside a rolled-back transaction: acting as
+that signed-in user with `role = authenticated`, `is_operator()` returned true and **both calls
+succeeded**, leaving `case = resolved, is_approved = true`.
+
+**THE BODIES WERE TAKEN FROM `pg_get_functiondef`, NOT RETYPED.** A hand-written copy of
+`operator_update_case` dropped the `noted` action, the `PT412` closed-case refusal, the note-length
+bound and the real `reports` column names (`report_status`, `resolved_by`) on the first attempt. A
+`create or replace` is a full rewrite, so for the parts not being changed the database is the only
+safe source. Recorded because the same trap is waiting for the next person who edits a long RPC.
+
+**THE GUARD ENGAGES ONLY WHEN THERE IS A CALLER IDENTITY.** `service_role`, migrations and ops
+sessions have no self to favour, so every trusted server path is untouched — verified by a control,
+not assumed.
+
+**Validation** (non-production `wcoyjeklscuqsumpjpfo`; production untouched): B5B **2274/2274** with
+zero residue, Jest **1054/1054** across 53 suites, typecheck clean, `lint:ci` 0 errors / 209 warnings,
+negotiation concurrency **224/224** zero residue, and `supabase migration list --linked`
+**173 local == 173 remote, zero mismatched**.
+
 ## 2026-09-12 — `20261130000000` … `20261133000000` **APPLIED to non-production** (Account erasure scheduled execution, PR #84, merged `719d8f9` 2026-09-13)
 
 One file, and the capability it adds is a scheduler rather than a schema change:

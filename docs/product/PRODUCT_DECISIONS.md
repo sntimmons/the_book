@@ -2920,6 +2920,111 @@ contradiction CURRENT_STATE.md had carried as unresolved — a second Delete Acc
 control that promised permanent deletion and called `signOut()`.
 
 
+### PD-111 — Origin deletion is the deletion event; an edge cache is not a second copy of the promise
+
+**Decided 2026-09-13. Closes the F1-C question raised by the Grok audit verification.**
+
+`provider-media` and `posts-media` are **public** buckets. A public URL obtained
+before an object is deleted **continues to serve the bytes from the CDN edge** after
+the object is gone — measured against non-production at +0s, +5s and +15s with
+`cf-cache-status: HIT`, bounded by `cache-control: public, max-age=3600`.
+
+**The deletion is real. What persists is a cached copy of a URL somebody already
+held.** The authenticated listing returns `[]` the instant the delete lands, and the
+same URL with a cache-busting query string returns `400`. Private buckets are
+unaffected: a signed URL dies immediately, also `400`.
+
+**The ruling:**
+
+1. **Do NOT privatise the current public media buckets in this phase.** That is a
+   storage-architecture change touching every read path for avatars and portfolios,
+   and it is not what a closed beta needs to buy.
+2. **For user-controlled public media, centralize and shorten the cache policy where
+   technically safe.** One place, not scattered hard-coded TTLs — the value belongs
+   beside the upload helper, not repeated per call site.
+3. **`ORIGIN DELETION IS THE AUTHORITATIVE DELETION EVENT.`** That is what the product
+   promises and what the erasure engine proves.
+4. **No surface, doc or support answer may claim an already-issued CDN URL stops
+   working the moment the object is deleted.** It does not. An already-cached public
+   copy may remain reachable until edge-cache expiry.
+5. **Objects ALREADY uploaded keep the TTL they were stored with.** A cache policy is
+   set per object at upload time; shortening the default changes future uploads and
+   **cannot retroactively shorten what is already cached.** That residue is an
+   **ACCEPTED CLOSED-BETA PLATFORM LIMITATION** — recorded, not fixed, and not
+   claimed to be fixable.
+
+**Status:** Decided and recorded. **NOT IMPLEMENTED, deliberately.** Point 2 requires
+touching `lib/storage.ts` and the upload call sites, which is product code and outside
+a reconciliation's scope. Filed as a **bounded follow-up for the next appropriate
+engineering pass** — one centralized cache-policy value, no behaviour change beyond it.
+
+**Evidence:** `docs/audits/GROK_WHOLE_APP_AUDIT_F1_F10_VERIFICATION.md` § F1, which
+carries the measurements. `lib/storage.ts` sets no `cacheControl`, so supabase-js's
+default of `3600` applies — that default is the current 1-hour window, not a chosen one.
+
+### PD-112 — A headline may not assert what its own body calls future
+
+**Decided 2026-09-13. Generalises the rule PD-004/PD-042 kept re-teaching, one surface
+at a time.**
+
+`app/preview/protection-center.tsx` already stated it: *"A 'Coming soon' pill above a
+present-tense assertion does not neutralise it. Preview screens may NAME a future
+capability; they may not assert one."* The audit verification found that rule applied to
+one screen's body and to another's cards, while both screens' **ledes** still read in the
+present tense — so a screen told a client to "See verified IDs" while its own card said a
+badge *would* show one day.
+
+**The rule now applies to EVERY preview and trust surface, and to every level of it.** A
+**headline, lede, banner or section title** must not describe a future feature as
+currently live when the card or body beneath it says the feature is coming later. **Future
+capability must be framed as future capability** — at the headline, not only in the small
+print under it.
+
+**Why the headline specifically.** It is read first, read by people who never scroll, and
+quoted when somebody describes the app to somebody else. A qualification that appears only
+below it reaches fewer readers than the claim does.
+
+**This is not a licence to redesign screens**, and it did not authorise one: the two trust
+ledes and three navigation rows the audit found were reworded, and nothing else was
+touched. The remaining preview ledes are a **Cross-App UX / Product Truth** item, not a
+defect queue.
+
+**Status:** Locked. Partially implemented — the trust surfaces are corrected and pinned by
+`__tests__/guards/betaClaimsAbsent.test.ts`; the remaining preview ledes are owed to the
+Cross-App UX / Product Truth pass.
+
+### PD-113 — "Verified Providers" is not approved terminology until verification exists
+
+**Decided 2026-09-13.**
+
+**No surface may use "Verified Providers".** It names a *category of providers who passed
+a check*, and no identity-verification process exists for any provider to have passed
+(PD-004). It is a stronger claim than the "ID Verified" badge this product already
+removed, because a badge is about one provider and a category is about the marketplace.
+
+**Use truthful current-state language instead**, chosen for context — **"Houston Beta
+Providers"** or **"Approved Providers"** where a set of providers is meant.
+
+**"Verified" may return only when the corresponding verification system is actually
+implemented.** Not when it is planned, scheduled or being built.
+
+**Scope of the change made under this ruling.** Both live occurrences were already part of
+the audit-fixed surface, so both were corrected: `components/ClientMe.tsx` and
+`app/preview/provider-verification.tsx`. **Neither became "Approved Providers"** — both
+name a future ID *check* rather than a set of providers, so "Houston Beta Providers" and
+"Approved Providers" would each have been wrong in a new way. They read **"Provider ID
+checks"**. That substitution is engineering's reading of "depending on context" and is
+flagged here rather than presented as the ruling's own words.
+
+**No broad copy sweep was performed**, per the ruling. Pinned by
+`betaClaimsAbsent.test.ts`, which now fails on the noun phrase in any live surface — and
+deliberately not on the word "verified", because "Phone Verified" is true and
+"Verification coming soon" is honest.
+
+**Status:** Locked. Recorded as a **Cross-App UX / Product Truth requirement** for the
+pass that owns that surface; the two known occurrences are already corrected.
+
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

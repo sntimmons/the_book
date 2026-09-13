@@ -1,5 +1,23 @@
 # Current State — what is true on `main` today
 
+**The whole-app adversarial audit is COMPLETE, and it is the last gate in front of Discovery /
+Fairness** (`d7acc44`, PR #87, 2026-09-13). Grok's read-only audit reported **no demonstrated
+blocker**; a verification pass took F1–F10 one at a time and **no HIGH survived it**. Two confirmed
+defects, both fixed: **F9**, an operator could resolve the case about their own suspended business
+(`20261134000000`), and **F4**, five copy claims asserting capabilities that do not exist. Three
+decisions came out of it — **PD-111** (origin deletion is the deletion event; an edge cache is not a
+second copy of the promise), **PD-112** (a headline may not assert what its own body calls future)
+and **PD-113** ("Verified Providers" is not approved terminology until verification exists). Full
+record: [../audits/GROK_WHOLE_APP_AUDIT_F1_F10_VERIFICATION.md](../audits/GROK_WHOLE_APP_AUDIT_F1_F10_VERIFICATION.md).
+
+**Two things the audit left open, and neither is a defect.** **F1-C:** a **public**-bucket URL
+obtained before deletion keeps serving the bytes from the CDN edge until cache expiry, while the
+origin is genuinely empty — ruled on by PD-111, and the residue on already-uploaded objects is an
+**accepted closed-beta platform limitation** that **cannot be retroactively shortened**. **F6:** the
+concurrent provider-contract-edit versus client-acceptance race is **UNPROVEN** — stale-version
+acceptance is refused and the accepted version is immutable, both asserted, but nothing races the
+two. **Unproven is not a defect and must not be read as one.**
+
 **Account erasure SCHEDULED EXECUTION merged 2026-09-13 (`719d8f9`, PR #84).** The erasure engine
 **runs itself.** `pg_cron` calls `invoke_account_deletion_worker()`, which uses `pg_net` to invoke
 the `account-deletion-worker` Edge Function, which runs the shared deletion engine against the
@@ -106,8 +124,16 @@ records was **deliberately unresolved** (OQ-077).
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `304d1ec19a18a2c65c3c1ebec9fb9187468bcad0` (2026-09-13) — the
-squash-merge of **PR #85**, which closed the one piece of technical debt this workstream had recorded.
+**Reconciled against:** `main` @ `d7acc44431c048aeb549f9f35744a7298abede38` (2026-09-13) — the
+squash-merge of **PR #87**, the Grok whole-app audit verification. The anchor moves because this
+document now asserts facts that did not exist before it: the operator-neutrality guard, the corrected
+copy, and the audit's own disposition. CI green on the merged head; **173 local == 173 applied** on
+non-production, zero mismatched. **Production `kxregomuawwcqvisuhtr` was not connected to, linked,
+migrated or queried** by the audit or by this reconciliation.
+
+**Previously reconciled against:** `main` @ `304d1ec19a18a2c65c3c1ebec9fb9187468bcad0` (2026-09-13) —
+the squash-merge of **PR #85**, which closed the one piece of technical debt this workstream had
+recorded.
 The anchor moves because this document asserted that debt was **unfixed**, and it is fixed. The
 erasure facts below were verified at **PR #84** (`719d8f9`) and are not re-verified here.
 

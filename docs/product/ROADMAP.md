@@ -2,10 +2,13 @@
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `304d1ec` (2026-09-13) — **PR #85**, which discharged the one
-technical-debt item this document carried as owed. **For that item and the § remaining-sequence step
-that named it, and for nothing else.** The anchor moves because a § Next entry asserted work as owed
-that is now done.
+**Reconciled against:** `main` @ `d7acc44` (2026-09-13) — **PR #87**, the Grok whole-app audit
+verification. **For § The remaining sequence to closed beta, the audit entry below, and nothing
+else.** The anchor moves because the first step of that sequence is now **complete**, which changes
+what this document says comes next.
+
+**Previously reconciled against:** `main` @ `304d1ec` (2026-09-13) — **PR #85**, which discharged the
+one technical-debt item this document carried as owed.
 
 **Previously reconciled against:** `main` @ `719d8f9` (2026-09-13) — **PR #84**, Account erasure
 scheduled execution — **for the § Next erasure entries, the § Physical-device / UX QA list, § The remaining
@@ -1227,6 +1230,70 @@ was exercised" into "the timer was observed".
 
 ---
 
+### Engineering task — ONE centralized cache policy for user media (PD-111) — **NOT STARTED**
+
+**Bounded, and bounded on purpose.** PD-111 ruled that the public media buckets are **not**
+privatised this phase and that the cache policy should be centralized and shortened where
+technically safe. That is the whole task.
+
+**What it is.** `lib/storage.ts` passes no `cacheControl` on upload, so supabase-js's default of
+`3600` applies — the current 1-hour edge window is a library default nobody chose. One value, defined
+once beside the upload helper, applied by every call site.
+
+**What it is NOT.** Not a storage-architecture change, not a move to signed URLs, not a per-call-site
+TTL, and **not a retroactive fix**: a cache policy is stamped per object at upload, so shortening the
+default changes **future** uploads only. The residue on already-uploaded objects is an accepted
+closed-beta platform limitation under PD-111 and **cannot be shortened after the fact** — any plan
+claiming otherwise is wrong.
+
+**What must not be said either way.** That an already-issued CDN URL stops working the moment the
+object is deleted. **Origin deletion is the authoritative deletion event**; the edge copy expires on
+its own clock.
+
+**Why it is not done yet.** It is product code, and it surfaced in a reconciliation. Do it in the next
+engineering pass that is already touching storage or media, not as an errand of its own.
+
+---
+
+### Whole-app adversarial audit — **MERGED** (`d7acc44`, PR #87, 2026-09-13)
+
+Grok's read-only audit raised ten findings and reported **no demonstrated blocker**. A verification
+pass classified each one against evidence rather than accepting its severity.
+
+**Outcome: no HIGH survived verification. Two confirmed defects, both fixed in this merge.**
+
+- **F9 — an operator could decide their own case.** `is_operator()` gained a third arm in
+  `20261059000000` (a row in `public.operators`), making an operator a signed-in user of the
+  product. That migration guarded `adjudicate_barter_obligation` and **not** the Review Queue, so an
+  operator who owned a de-approved `providers` row could restore their own eligibility and resolve
+  the appeal about it. Proven against non-production, fixed by `20261134000000` with one neutrality
+  predicate used by both operator RPCs, and pinned by 13 B5B assertions including controls proving a
+  **neutral** operator and the `service_role` path still work.
+- **F4 — product-truth copy.** Five claims asserting capabilities that do not exist (ID checks,
+  payment protection). Copy only; generalised into **PD-112** and **PD-113**.
+
+**Already closed or accepted, with evidence per sub-question:** F1 (except C), F2, F3, F5, F6
+(except one case), F7, F8, F10.
+
+**Two things this merge did NOT close, and neither is a defect:**
+
+- **F1-C — public-bucket CDN cache.** A public URL held before deletion keeps serving the bytes from
+  the edge until cache expiry, while the origin is genuinely empty. Ruled on by **PD-111**: origin
+  deletion is the authoritative deletion event; buckets are **not** privatised this phase; the
+  already-cached residue on existing objects is an **accepted closed-beta platform limitation**;
+  centralizing the cache policy is a **bounded engineering follow-up**, not done here.
+- **F6 — concurrent provider contract edit racing a client acceptance.** **UNPROVEN, and recorded as
+  unproven rather than as a defect.** Stale-version acceptance is refused and the accepted version is
+  immutable — both asserted — but no harness races the two, because
+  `negotiation-concurrency.mjs` has no contract fixtures. Owed to a later pass.
+
+**One error in the verification pass is recorded in the audit document rather than quietly
+corrected:** F5 was first analysed from a single migration, which gave the wrong location for the
+block gate; the concurrency scenario built on that premise failed, was removed, and the finding is
+now pinned deterministically instead. The harness is byte-identical to its pre-audit state.
+
+---
+
 ### The remaining sequence to closed beta
 
 **The major backend-integrity construction phase is now effectively COMPLETE for the closed-beta
@@ -1239,14 +1306,18 @@ judged on real hardware.
 **This is a sequence, and the order is the point.** Each step's output is the next step's input;
 running them concurrently is how a UI pass gets built on a surface an audit is about to change.
 
-| # | Step | Why it sits here |
-|---|---|---|
-| **1** | **Independent whole-app adversarial audit** | First, because everything after it is built on the assumption that what is on `main` is sound. It is independent so it is not marking its own homework, and adversarial because the suites already here prove the rules that were thought of. **It starts with no carried-over debt**: the `judgeExposedList` item this table used to name as an input was cleared by PR #85 beforehand. § WHOLE-APP AUDIT ROUND 2 is the standing entry. |
-| **2** | **Discovery / Fairness** | The marketplace surface's ordering and exposure rules — the last substantial backend product decision owed, and the one a provider's experience of the beta turns on. **Not started, and nothing in this document may be read as having decided it.** |
-| **3** | **Cross-App UX simplification** | Before any design pass. Simplifying flows after they have been styled means throwing away the styling. |
-| **4** | **UI implementation / design-system pass** | The app is functionally built and visually unfinished. This is where that is addressed, on flows step 3 has settled. |
-| **5** | **Physical-device / TestFlight hardening** | Everything on § Physical-device / UX QA list, plus the broader end-to-end journeys. Only a device can prove a person can reach a control. |
-| **6** | **Production / launch readiness** | Production has **never** been a target of development or test tooling and is unreconciled by deliberate policy. Release process, environment promotion, Sentry, analytics, support and break-it testing land here. |
+| # | Step | Status | Why it sits here |
+|---|---|---|---|
+| ~~0~~ | ~~Independent whole-app adversarial audit~~ | **COMPLETE** (`d7acc44`, PR #87, 2026-09-13) | Grok's read-only whole-app audit, then a verification pass that took F1–F10 one at a time. **No demonstrated blocker, and no HIGH survived verification.** Two confirmed defects, both fixed: F4 product-truth copy and F9 an operator deciding their own case. Full record: [../audits/GROK_WHOLE_APP_AUDIT_F1_F10_VERIFICATION.md](../audits/GROK_WHOLE_APP_AUDIT_F1_F10_VERIFICATION.md). |
+| **1** | **DISCOVERY / FAIRNESS** | **NEXT. Not started.** | The marketplace surface's ordering and exposure rules — the last substantial backend product decision owed, and the one a provider's experience of the beta turns on. **Nothing in this document may be read as having decided it.** The audit confirmed the *integrity* of today's read paths (`providers_visible`, the canonical-rating invariant, no engagement signal in ranking); it decided nothing about fairness. |
+| **2** | **Cross-App UX / Product Truth** | Not started | Before any design pass — simplifying flows after they are styled throws the styling away. **Now also carries two recorded requirements:** the remaining preview/trust ledes under **PD-112**, and the terminology sweep under **PD-113**. |
+| **3** | **UI / Design System implementation** | Not started | The app is functionally built and visually unfinished. This is where that is addressed, on flows step 2 has settled. |
+| **4** | **Physical-device / TestFlight hardening** | Not started | Everything on § Physical-device / UX QA list, plus the broader end-to-end journeys. Only a device can prove a person can reach a control. |
+| **5** | **Production / launch readiness** | Not started | Production has **never** been a target of development or test tooling and is unreconciled by deliberate policy. Release process, environment promotion, Sentry, analytics, support and break-it testing land here. |
+
+**The audit step is numbered `0` and struck through rather than deleted**, because a reader arriving
+at this table needs to see that the sequence had a gate in front of it and that the gate was passed
+— not a list that looks like it always started at Discovery.
 
 **Sessions 9–15 below predate this framing** and are retained because their content is still owed;
 where a session number and a step number disagree, the sequence above is the ordering and the session

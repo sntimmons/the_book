@@ -182,6 +182,13 @@ const IDENTITY_CLAIMS: Claim[] = [
     pattern: /verified\s+IDs?\b/i },
   { why: 'no identity verification exists, so no ID has been verified (PD-004)',
     pattern: /\bIDs?\s+verified\b/i },
+  // PD-113. "Verified Providers" is not approved terminology while identity
+  // verification is not live — it names a CATEGORY of providers who passed a check
+  // nothing performs. It may return when the verification system does. The rule
+  // covers the noun phrase, not the word "verified", because "Phone Verified" is
+  // true and "Verification coming soon" is honest.
+  { why: 'not approved terminology until identity verification is live (PD-113)',
+    pattern: /\bverified\s+providers?\b/i },
 ]
 
 // NOTIFICATIONS. No push, device or email notification path exists anywhere in

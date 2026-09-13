@@ -43,7 +43,12 @@ export default function ProviderVerificationPreviewScreen() {
   return (
     <PreviewScreen
       heroIcon="ribbon"
-      title="Verified Providers"
+      // PD-113: "Verified Providers" is not approved terminology while identity
+      // verification is not live. The PM's alternatives — "Houston Beta Providers",
+      // "Approved Providers" — name a SET of providers, and this screen is about a
+      // future ID CHECK, so neither fits. "Provider ID checks" names the capability
+      // without implying a category of providers that already passed one.
+      title="Provider ID checks"
       lede="Knowing a provider is real should not take a leap of faith. Verified IDs would sit beside the reviews and completed-booking counts that already exist. The ID check does not exist yet, so nothing here is verifying identity today."
       pieces={PIECES}
       featureName="provider_verification"
