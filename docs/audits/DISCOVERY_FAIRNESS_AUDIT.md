@@ -2,7 +2,7 @@
 
 **Status:** Historical (dated snapshot). Not current-state documentation — the durable
 operational answer is [../operations/DISCOVERY_OPERATIONS.md](../operations/DISCOVERY_OPERATIONS.md).
-**Date:** 2026-09-13. **Against:** `main` @ `e78d819`, branch `feat/discovery-fairness`.
+**Date:** 2026-09-13. **Against:** `main` @ `e78d819`; merged to `main` as **`c444abb`** (PR #89).
 **Environments:** every live check against **non-production** `wcoyjeklscuqsumpjpfo`.
 **Production `kxregomuawwcqvisuhtr` was never connected to, linked, migrated or queried.**
 

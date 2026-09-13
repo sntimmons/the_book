@@ -25,7 +25,13 @@ engineering. **OQ-076** — the residual `account_unavailable(uuid)` identity or
 the closed beta** and carried to the pre-public-launch privacy/security revisit by Founder ruling of
 2026-09-12; **no architectural change was made**, and none is claimed here.
 
-**Last edited by: PR #88** — the post-audit reconciliation (2026-09-13), which **closed nothing and
+**Last edited by: PR #90** — the post-Discovery/Fairness reconciliation (2026-09-13), which **closed
+nothing and opened one entry**: **OQ-089**, the provider neighborhood / service-area data gap. That
+entry is a data-quality requirement carried into Cross-App UX, and it is the reason **PD-117** defers
+proximity lanes. **OQ-084 and OQ-076 are untouched** — a ranking ruling answers neither a legal
+question nor a privacy one.
+
+Before it, **PR #88** — the post-audit reconciliation (2026-09-13), which **closed nothing and
 opened nothing.** The Grok whole-app audit (`d7acc44`, PR #87) is recorded here **only** for what it
 did to the open questions, which is nothing: it confirmed two defects in implementation, neither of
 which was an undecided question, and it produced **PD-111 … PD-113**, which are rulings rather than
@@ -1159,6 +1165,37 @@ the current behaviour is a decision.**
 - **Blocks:** external beta. It does **not** block the closed beta, where the
   cohort is 25–30 and an operator running one command is a proportionate control.
 - **This entry deliberately proposes no answer.**
+
+---
+
+### OQ-089 — What neighborhood / service-area data will providers actually give us?
+
+- **Area:** Product / onboarding / discovery
+- **Status: OPEN. Recorded 2026-09-13 as a data-quality requirement, not an engineering
+  question.** Carried into **Cross-App UX / Product Truth**.
+- **Why it matters:** Discovery cannot provide meaningful neighborhood or proximity behaviour
+  until providers supply usable neighborhood / service-area information. This is not
+  hypothetical: **zero of the providers in non-production have set either `location` or
+  `neighborhood`**, so the **Near You** lane is empty in practice and *Popular Near You* was
+  deferred by **PD-117** partly because of it. Prompting providers for a neighborhood would do
+  more for discovery today than any ranking change.
+- **What exists:** two free-text columns the provider types — `location` ("Houston, TX") and
+  `neighborhood` ("Midtown"). **There is no latitude or longitude column anywhere in the
+  schema.** Proximity is a case- and space-insensitive text match: same neighborhood, else same
+  city.
+- **WHAT MUST NOT BE DONE TO SOLVE IT**, and this is the part of the entry that is a ruling
+  rather than a question:
+  - **no geocoding of precise home addresses**
+  - **no latitude/longitude column without PM review**
+  - **no guessing a neighborhood** from anything
+  - **no use of a client's precise address**
+- **What is actually undecided:** what to ask a provider for, where in onboarding to ask it,
+  whether a service **area** differs from where they work, whether it should be a free-text field
+  at all or a picked value from a Houston list, and what to show when they decline. Those are
+  product and UX questions, which is why this is filed rather than answered.
+- **What unblocks what:** once this data exists and has been audited, proximity-based lanes may
+  be reconsidered (**PD-117**). Until then no location lane ships.
+- **This entry proposes no answer.**
 
 **Nothing in either merge closed a question by repository evidence**, and the rule that produced
 this ledger is unchanged: a migration is an implementation, not an approval. **OQ-006**, **OQ-007**,

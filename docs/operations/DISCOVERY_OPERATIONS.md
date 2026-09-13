@@ -1,10 +1,12 @@
 # Discovery and fairness — Operations and support note
 
-**Status:** Authoritative. **Anchor:** `main` @ `e78d819` plus this branch. **Not merged.**
+**Status:** Authoritative. **Anchor:** `main` @ `c444abb` (PR #89, 2026-09-13).
 **Audit:** [../audits/DISCOVERY_FAIRNESS_AUDIT.md](../audits/DISCOVERY_FAIRNESS_AUDIT.md).
 **Policy:** PD-089 (block filtering lives in the views), PD-090 / OQ-076 (accepted inference
 limitation), PD-091 / PD-092 / PD-094 (canonical reputation), PD-104 (deleted accounts leave
-public surfaces), PD-112 (a headline may not assert what its body calls future).
+public surfaces), PD-112 (a headline may not assert what its body calls future), **PD-114** (unrated
+is neutral, not zero quality), **PD-115** (`is_featured` may not reorder the marketplace), **PD-116**
+(search intent outranks popularity), **PD-117** ("Popular Near You" does not ship).
 
 Written for whoever answers *"why am I not showing up?"* — which is a fair question from someone
 whose income depends on the answer, and the question this whole surface has to be able to survive.

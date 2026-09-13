@@ -2,8 +2,12 @@
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `d7acc44` (2026-09-13) — **PR #87**, the Grok whole-app audit
-verification. **For § The remaining sequence to closed beta, the audit entry below, and nothing
+**Reconciled against:** `main` @ `c444abb` (2026-09-13) — **PR #89**, Discovery / Fairness. **For
+§ The remaining sequence to closed beta and the Discovery entry below, and nothing else.** The anchor
+moves because the sequence's first item is now complete, which changes what comes next.
+
+**Previously reconciled against:** `main` @ `d7acc44` (2026-09-13) — **PR #87**, the Grok whole-app
+audit verification. **For § The remaining sequence to closed beta, the audit entry below, and nothing
 else.** The anchor moves because the first step of that sequence is now **complete**, which changes
 what this document says comes next.
 
@@ -1255,6 +1259,45 @@ engineering pass that is already touching storage or media, not as an errand of 
 
 ---
 
+### Discovery / Fairness — **MERGED** (`c444abb`, PR #89, 2026-09-13)
+
+**Complete for the closed-beta scope.** Provider discovery is **five named lanes over a complete
+grid** — Near You, Open Today, New to The Book, Worth a Look — each stating its own rule, with the
+grid below listing every approved provider so a full lane never removes anybody.
+
+**The lane architecture already honoured both locked rules and did so STRUCTURALLY**: the types the
+ranking modules receive carry no content field, so a social signal cannot reach marketplace placement
+without three deliberate edits a reviewer would see. **A provider who posts nothing is not penalised.**
+
+**Four decisions.** **PD-114** unrated is neutral, not zero quality — an absence is not the worst
+verdict. **PD-115** `is_featured` may not reorder the marketplace; the column stays for the visible
+badge only. **PD-116** search intent outranks popularity, via four explainable relevance tiers.
+**PD-117** "Popular Near You" does not ship — not because it was unfair, but because "Near" claims a
+precision no lat/long model can support.
+
+**Three objective defects closed.** The post-decline alternatives screen read base `providers` and so
+**recommended providers the client had blocked** (the block filter lives only in `providers_visible`);
+unrated providers entered the lane rules as a rating of `0`; and a lane was titled "Available Soon"
+over data that only means *open today*.
+
+**Fairness was measured rather than asserted**, on a representative 28-provider cohort: **28/28
+providers in at least one lane, none excluded, max 3 of 5 lanes occupied by any one provider, and all
+new and all unrated providers surfacing.** No quota and no rotation was needed.
+
+**A regression this work caused and the committed suite caught**, recorded because the trap is
+general: adding a GENERATED column broke `refuse_provider_write_when_account_inactive`, because
+PostgreSQL computes generated columns **after** before-row triggers — so a whole-row
+`to_jsonb(new) = to_jsonb(old)` comparison saw a phantom change and refused a departing provider's
+counter recompute with `PT440`. It failed in the **safe-looking** direction, which is what makes it
+hard to trace. Fixed by `20261136000000`.
+
+**STILL OWED:** **OQ-089** — provider neighborhood / service-area data. Zero providers have set
+either field, so Near You is empty in practice and proximity lanes stay deferred. It is a product and
+onboarding question, **not** to be solved by geocoding addresses, adding lat/long without PM review,
+guessing, or using a client's precise address. Carried into Cross-App UX / Product Truth.
+
+---
+
 ### Whole-app adversarial audit — **MERGED** (`d7acc44`, PR #87, 2026-09-13)
 
 Grok's read-only audit raised ten findings and reported **no demonstrated blocker**. A verification
@@ -1309,11 +1352,11 @@ running them concurrently is how a UI pass gets built on a surface an audit is a
 | # | Step | Status | Why it sits here |
 |---|---|---|---|
 | ~~0~~ | ~~Independent whole-app adversarial audit~~ | **COMPLETE** (`d7acc44`, PR #87, 2026-09-13) | Grok's read-only whole-app audit, then a verification pass that took F1–F10 one at a time. **No demonstrated blocker, and no HIGH survived verification.** Two confirmed defects, both fixed: F4 product-truth copy and F9 an operator deciding their own case. Full record: [../audits/GROK_WHOLE_APP_AUDIT_F1_F10_VERIFICATION.md](../audits/GROK_WHOLE_APP_AUDIT_F1_F10_VERIFICATION.md). |
-| **1** | **DISCOVERY / FAIRNESS** | **NEXT. Not started.** | The marketplace surface's ordering and exposure rules — the last substantial backend product decision owed, and the one a provider's experience of the beta turns on. **Nothing in this document may be read as having decided it.** The audit confirmed the *integrity* of today's read paths (`providers_visible`, the canonical-rating invariant, no engagement signal in ranking); it decided nothing about fairness. |
-| **2** | **Cross-App UX / Product Truth** | Not started | Before any design pass — simplifying flows after they are styled throws the styling away. **Now also carries two recorded requirements:** the remaining preview/trust ledes under **PD-112**, and the terminology sweep under **PD-113**. |
-| **3** | **UI / Design System implementation** | Not started | The app is functionally built and visually unfinished. This is where that is addressed, on flows step 2 has settled. |
-| **4** | **Physical-device / TestFlight hardening** | Not started | Everything on § Physical-device / UX QA list, plus the broader end-to-end journeys. Only a device can prove a person can reach a control. |
-| **5** | **Production / launch readiness** | Not started | Production has **never** been a target of development or test tooling and is unreconciled by deliberate policy. Release process, environment promotion, Sentry, analytics, support and break-it testing land here. |
+| ~~1~~ | ~~Discovery / Fairness~~ | **COMPLETE** for the closed-beta scope (`c444abb`, PR #89, 2026-09-13) | Five named lanes over a complete grid, each stating its own rule. Four decisions: **PD-114** unrated is neutral, **PD-115** `is_featured` out of ranking, **PD-116** search intent outranks popularity, **PD-117** "Popular Near You" deferred. Three objective defects closed, including a screen that **recommended blocked providers**. Social neutrality is structural, not conventional. |
+| **1** | **CROSS-APP UX / PRODUCT TRUTH** | **NEXT. Not started.** | Before any design pass — simplifying flows after they are styled throws the styling away. **Carries four recorded requirements:** provider **neighborhood / service-area data collection** (**OQ-089**, which is what unblocks proximity lanes under PD-117); the remaining **preview/trust ledes** (**PD-112**); the **verification terminology** sweep (**PD-113**); and the remaining confusing, dead or duplicated flows plus a **product-truth copy sweep**. |
+| **2** | **UI / Design System implementation** | Not started | The app is functionally built and visually unfinished. This is where that is addressed, on flows step 1 has settled. |
+| **3** | **Physical-device / TestFlight hardening** | Not started | Everything on § Physical-device / UX QA list, plus the broader end-to-end journeys. Only a device can prove a person can reach a control. |
+| **4** | **Production / launch readiness** | Not started | Production has **never** been a target of development or test tooling and is unreconciled by deliberate policy. Release process, environment promotion, Sentry, analytics, support and break-it testing land here. |
 
 **The audit step is numbered `0` and struck through rather than deleted**, because a reader arriving
 at this table needs to see that the sequence had a gate in front of it and that the gate was passed
