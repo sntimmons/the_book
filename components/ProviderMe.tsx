@@ -91,7 +91,9 @@ const PROVIDER_GROUPS: PreviewGroup[] = [
       { key: 'analytics', icon: 'bar-chart-2', title: 'Money & Analytics', sub: 'Earnings and business health', href: '/preview/analytics' },
       { key: 'learning', icon: 'book-open', title: 'Learn the Business', sub: 'Taxes, pricing, and growth', href: '/preview/learning' },
       { key: 'contracts', icon: 'file-text', title: 'Contracts', sub: 'Simple service agreements', href: '/preview/contracts' },
-      { key: 'safety', icon: 'shield', title: 'Safety & Verification', sub: 'Know who you are booking', href: '/preview/safety' },
+      // PRODUCT TRUTH (audit F4): "Know who you are booking" told a provider they
+      // can already know who a client is. No client verification exists (PD-004).
+      { key: 'safety', icon: 'shield', title: 'Safety & Verification', sub: 'What client checks would add', href: '/preview/safety' },
     ],
   },
 ]

@@ -6,6 +6,15 @@ import { PreviewScreen, PreviewPiece } from '../../components/PreviewScreen'
 // it (PD-004). A client following that instruction and finding no badge would
 // read its absence as a specific provider failing a check, which is a worse
 // trust outcome than the badge was.
+//
+// SECOND CORRECTION (audit F4). That pass fixed the PIECES and left the LEDE,
+// which still read "Know your provider is real. See verified IDs, real reviews,
+// and completed bookings before you book." — a present-tense instruction to do,
+// before booking, a thing that cannot be done. The screen contradicted itself:
+// its own card said a badge "would" show while its lede said to go and see one.
+// The rule this file already states applies to both halves — a "Coming soon" tag
+// above a present-tense assertion does not neutralise it, and of everything in
+// this cluster an identity claim is the one a client is most likely to act on.
 
 const PIECES: PreviewPiece[] = [
   {
@@ -35,7 +44,7 @@ export default function ProviderVerificationPreviewScreen() {
     <PreviewScreen
       heroIcon="ribbon"
       title="Verified Providers"
-      lede="Know your provider is real. See verified IDs, real reviews, and completed bookings before you book."
+      lede="Knowing a provider is real should not take a leap of faith. Verified IDs would sit beside the reviews and completed-booking counts that already exist. The ID check does not exist yet, so nothing here is verifying identity today."
       pieces={PIECES}
       featureName="provider_verification"
       footerNote="Want this before you book? Let us know."

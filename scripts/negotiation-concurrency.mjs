@@ -1923,6 +1923,95 @@ async function raceBlockVsBooking() {
     delete from public.user_blocks where blocker_user_id = '${ids.ru}' and blocked_user_id = '${ids.ou}';`)
 }
 
+// ── S8-3b. A block landing alongside the SUBMIT, which is the gate that exists ──
+//
+// AUDIT FINDING F5, and the reason S8-3 above was not already the answer. S8-3
+// races the block against the INSERT of a booking row. But `PT427` does not live
+// on the insert: `20261055000000` moved it to `enforce_booking_submit_not_blocked`,
+// a BEFORE UPDATE trigger that fires on exactly one transition —
+//
+//     old.submitted_at is null and new.submitted_at is not null
+//
+// — because *"a bookings row only becomes a request when it is submitted"*, and a
+// draft is not contact. So S8-3's `PT427` assertion is reachable only by the
+// eligibility path; the gate this finding is about was never raced by anything.
+//
+// WHAT WOULD BE A DEFECT, stated before the run so the result cannot be
+// reinterpreted afterwards: a SUBMITTED request existing between a blocked pair
+// where the block committed FIRST. That is the only forbidden end state.
+//
+// WHAT IS NOT A DEFECT, by decided product behaviour: a submit that commits before
+// the block. `20261055000000` is explicit that every transition other than
+// draft->submitted stays open to a blocked pair "because a block never strands a
+// transaction that already exists" — so a request submitted microseconds before a
+// block is in exactly the position of one submitted a week before. The TOCTOU
+// window therefore has no forbidden outcome, and this scenario asserts that: both
+// orders are legal, and the state after either is coherent.
+async function raceBlockVsSubmit() {
+  const prov = `(select id from public.providers where user_id = '${ids.ou}')`
+  await runSql(`
+    delete from public.user_blocks where blocker_user_id = '${ids.ru}' and blocked_user_id = '${ids.ou}';
+    delete from public.bookings where user_id = '${ids.ru}' and provider_id = ${prov};
+    insert into public.bookings(user_id, provider_id, service_name, requested_date)
+      values ('${ids.ru}', ${prov}, 'submit race svc', current_date);`)
+
+  // Both sides sleep so the two CLI processes overlap inside the server rather
+  // than merely arriving near each other.
+  const block = `perform pg_sleep(2);
+    insert into public.user_blocks(blocker_user_id, blocked_user_id) values ('${ids.ru}','${ids.ou}');`
+  const submit = `perform pg_sleep(2);
+    update public.bookings set submitted_at = now()
+     where user_id = '${ids.ru}' and provider_id = ${prov} and submitted_at is null;`
+
+  const [b, sub] = await Promise.all([runTimedUser(ids.ru, block), runTimedUser(ids.ru, submit)])
+
+  chk('the block still succeeds — it is the actor\'s own decision, never contested',
+    'true', String(b.opOk))
+
+  const st = await runSql(`select json_build_object(
+      'submitted', (select (submitted_at is not null)::text from public.bookings
+                     where user_id = '${ids.ru}' and provider_id = ${prov}),
+      'blocked', (select (count(*) > 0)::text from public.user_blocks
+                   where blocker_user_id = '${ids.ru}' and blocked_user_id = '${ids.ou}')
+    ) as timing;`)
+  const submitted = scalar(st.out, 'submitted')
+  const blocked = scalar(st.out, 'blocked')
+
+  chk('the block is recorded whichever way the race went', 'true', blocked)
+
+  // THE ONE ASSERTION THAT COULD FAIL FOR A REAL REASON. Either the submit was
+  // refused with PT427, or it committed — and if it committed it is a live
+  // transaction that the block is not permitted to strand. What must never happen
+  // is a submit that RAISED and yet left a submitted row, or one that succeeded
+  // while reporting the block code.
+  chk('the outcome is internally consistent: refused => not submitted, ok => submitted',
+    'true', String(sub.opOk ? submitted === 'true' : submitted === 'false'))
+
+  chk('and a refusal is the BLOCK code PT427, not a generic failure',
+    'true', String(sub.opOk || sub.timing?.code === 'PT427'))
+
+  // The end state, whichever order won, must be one of exactly two coherent ones.
+  chk('end state is one of the two legal orderings, never a torn third',
+    'true', String((submitted === 'true' && blocked === 'true') ||
+                   (submitted === 'false' && blocked === 'true')))
+
+  // And the gate is not one-shot: with the block now committed, a FRESH submit
+  // attempt on a fresh draft must be refused deterministically. If the race left
+  // the trigger satisfied somehow, this is where that shows.
+  await runSql(`delete from public.bookings where user_id = '${ids.ru}' and provider_id = ${prov};
+    insert into public.bookings(user_id, provider_id, service_name, requested_date)
+      values ('${ids.ru}', ${prov}, 'post-block submit', current_date);`)
+  const after = await runTimedUser(ids.ru,
+    `update public.bookings set submitted_at = now()
+      where user_id = '${ids.ru}' and provider_id = ${prov} and submitted_at is null;`)
+  chk('with the block committed, a later submit is refused deterministically',
+    'PT427', String(after.opOk ? 'SUCCEEDED' : (after.timing?.code ?? 'refused-no-code')))
+
+  await runSql(`
+    delete from public.bookings where user_id = '${ids.ru}' and provider_id = ${prov};
+    delete from public.user_blocks where blocker_user_id = '${ids.ru}' and blocked_user_id = '${ids.ou}';`)
+}
+
 // ── S8-4. Two duplicate provider appeals at once ───────────────────────────
 //
 // The brief names duplicate appeals specifically: one live case, or an operator
@@ -2144,6 +2233,7 @@ async function raceTwoSignedInOperators() {
 await raceMutualBlock()
 await raceDuplicateBlock()
 await raceBlockVsBooking()
+await raceBlockVsSubmit()
 await raceDuplicateProviderAppeal()
 await raceTwoOperatorsOneCase()
 await raceTwoSignedInOperators()

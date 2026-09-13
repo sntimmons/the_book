@@ -586,3 +586,124 @@ select pg_temp.chk('operator', 'still no value, SLA or priority field on a case'
            or column_name ilike '%price%' or column_name ilike '%sla%'
            or column_name ilike '%due%' or column_name ilike '%priority%')));
 select pg_temp.act_service();
+
+-- ══ 9. AN OPERATOR IS NOT A NEUTRAL PARTY TO THEIR OWN CASE ═══════════════
+--
+-- Audit finding F9, closed by `20261134000000`. Until then `operator_update_case`
+-- and `operator_set_provider_eligibility` asked two questions — is the caller an
+-- operator, and does the record name whoever acted — and never the third: is this
+-- operator NEUTRAL on this case. Since `20261059000000` an operator is a signed-in
+-- person who is also a user of this product, so they can be the subject of the very
+-- case they are working.
+--
+-- The hole was proven against non-production before it was closed: one account that
+-- was BOTH an allow-listed operator AND the owner of a de-approved `providers` row
+-- restored its own eligibility and resolved the appeal about itself.
+--
+-- WHY § 1's COVERAGE DID NOT CATCH IT. `safety_operator.test.sql` asserts "a
+-- provider cannot restore their own eligibility", and that is about a PLAIN provider
+-- issuing a direct `update public.providers set is_approved = true`, which RLS
+-- refuses. It says nothing about a provider who is ALSO an operator calling the RPC,
+-- because when it was written no operator could be a provider. The assertion did not
+-- rot — the world under it changed and nobody re-asked its question.
+--
+-- Three cases, and the last two matter as much as the first: the guard must refuse
+-- a party, must NOT refuse a neutral operator, and must NOT touch the ops path.
+do $$
+declare
+  op_party   uuid := gen_random_uuid();  -- operator who is also the subject
+  op_neutral uuid := gen_random_uuid();  -- operator with no interest in the case
+  v_pid uuid; v_case uuid; v_res text; v_ok boolean;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (op_party), (op_neutral);
+  insert into public.operators(user_id, granted_by_user_id, note)
+    values (op_party, null, 'F9 party'), (op_neutral, null, 'F9 neutral');
+  insert into public.providers(user_id, display_name, username, is_approved)
+    values (op_party, 'F9 Own Business', 'f9own_'||substr(op_party::text,1,8), false)
+    returning id into v_pid;
+  insert into public.operator_cases(case_type, provider_id, requested_by_user_id, status)
+    values ('provider_appeal', v_pid, op_party, 'open') returning id into v_case;
+
+  perform set_config('b5b.f9_party', op_party::text, true);
+  perform set_config('b5b.f9_neutral', op_neutral::text, true);
+  perform set_config('b5b.f9_case', v_case::text, true);
+  perform set_config('b5b.f9_prov', v_pid::text, true);
+
+  -- The predicate itself, on the facts rather than through an RPC.
+  perform pg_temp.chk('operator', 'the case is recognised as involving its subject', 'true',
+    public.operator_case_involves_user(v_case, op_party)::text);
+  perform pg_temp.chk('operator', 'and as NOT involving an unrelated operator', 'false',
+    public.operator_case_involves_user(v_case, op_neutral)::text);
+
+  -- ── The party operator is refused, while still BEING an operator ─────────
+  perform pg_temp.act(op_party);
+  perform pg_temp.chk('operator', 'the party operator is still an operator', 'true',
+    public.is_operator()::text);
+
+  begin
+    v_res := public.operator_update_case(v_case, 'resolved', op_party, 'self');
+    perform pg_temp.chk('operator',
+      'an operator cannot resolve a case they are a party to', 'refused', 'SUCCEEDED: '||v_res);
+  exception when insufficient_privilege then
+    perform pg_temp.chk('operator',
+      'an operator cannot resolve a case they are a party to', 'refused', 'refused');
+  end;
+
+  begin
+    v_ok := public.operator_set_provider_eligibility(v_pid, true, op_party, 'self');
+    perform pg_temp.chk('operator',
+      'nor restore the eligibility of their OWN provider row', 'refused', 'SUCCEEDED: '||v_ok::text);
+  exception when insufficient_privilege then
+    perform pg_temp.chk('operator',
+      'nor restore the eligibility of their OWN provider row', 'refused', 'refused');
+  end;
+
+  -- Nothing moved. A refusal that still wrote would be worse than none.
+  perform pg_temp.act_service();
+  perform pg_temp.chk('operator', 'and the case is untouched by the refused call', 'open',
+    (select status from public.operator_cases where id = v_case));
+  perform pg_temp.chk('operator', 'and the provider is still de-approved', 'false',
+    (select is_approved::text from public.providers where id = v_pid));
+  perform pg_temp.chk('operator', 'and no event was logged for the refused action', '0',
+    (select count(*)::text from public.operator_case_events where case_id = v_case));
+
+  -- ── CONTROL 1: a NEUTRAL operator does the ordinary work ────────────────
+  -- The guard must narrow self-dealing, not the Review Queue.
+  perform pg_temp.act(op_neutral);
+  begin
+    v_ok := public.operator_set_provider_eligibility(v_pid, true, op_neutral, 'reviewed');
+    perform pg_temp.chk('operator',
+      'CONTROL: a neutral operator CAN still decide the same case', 'true', v_ok::text);
+  exception when others then
+    perform pg_temp.chk('operator',
+      'CONTROL: a neutral operator CAN still decide the same case', 'true', 'REFUSED '||sqlerrm);
+  end;
+  perform pg_temp.act_service();
+  perform pg_temp.chk('operator', 'and that decision closed the appeal', 'resolved',
+    (select status from public.operator_cases where id = v_case));
+
+  -- ── CONTROL 2: the ops path has no self to favour and is untouched ──────
+  -- service_role carries no auth.uid(), so the guard cannot engage. `noted` is the
+  -- one action a closed case still accepts, which is why it is used here.
+  begin
+    v_res := public.operator_update_case(v_case, 'noted', op_party, 'ops note');
+    perform pg_temp.chk('operator',
+      'CONTROL: the service_role ops path is unaffected', 'resolved', v_res);
+  exception when others then
+    perform pg_temp.chk('operator',
+      'CONTROL: the service_role ops path is unaffected', 'resolved', 'REFUSED '||sqlerrm);
+  end;
+end $$;
+
+-- The neutrality predicate is infrastructure, not a client question: an ordinary
+-- caller must not be able to ask "is this case about me" about a queue they cannot
+-- read.
+select pg_temp.chk('operator', 'operator_case_involves_user is not client-callable', 'false/false',
+  has_function_privilege('anon', 'public.operator_case_involves_user(uuid,uuid)', 'EXECUTE')::text
+  ||'/'|| has_function_privilege('authenticated', 'public.operator_case_involves_user(uuid,uuid)', 'EXECUTE')::text);
+select pg_temp.chk('operator', 'and it is DEFINER with a pinned search_path', 'true/true',
+  (select (p.prosecdef)::text ||'/'|| (coalesce(array_to_string(p.proconfig,','),'') like '%search_path%')::text
+     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public' and p.proname = 'operator_case_involves_user'));
+select pg_temp.act_service();
