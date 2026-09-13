@@ -256,9 +256,21 @@ begin
      and table_name <> 'barter_obligation_adjudications';
   perform pg_temp.chk('no_show',
     'no review-case, outcome or reputation TABLE beyond the adjudication record', '0', v_n::text);
-  select count(*) into v_n from pg_extension where extname in ('pg_cron', 'pg_timetable');
+  -- SAME CHANGE, SAME REASON (see receiver_window.test.sql). `pg_cron` exists now
+  -- because PD-108 made account-deletion finalisation automatic. What this suite
+  -- has always been protecting — that nothing escalates a no-show on a timer — is
+  -- asserted directly instead of inferred from the absence of a scheduler.
+  select count(*) into v_n from cron.job
+   where jobname <> 'account-deletion-worker';
   perform pg_temp.chk('no_show',
-    'no scheduler was installed — nothing escalates on a timer', '0', v_n::text);
+    'the only scheduled job is the account-deletion worker', '0', v_n::text);
+  select count(*) into v_n from cron.job
+   where command ~* 'barter|obligation|no_show|escalat|review_request';
+  perform pg_temp.chk('no_show',
+    'and nothing escalates on a timer — no scheduled job names any of it', '0', v_n::text);
+  select count(*) into v_n from pg_extension where extname in ('pgagent', 'pg_timetable');
+  perform pg_temp.chk('no_show',
+    'and no other scheduler extension was installed', '0', v_n::text);
 
   -- ── 19. History is retained ─────────────────────────────────────────────
   select count(*) into v_n from public.barter_obligations where agreement_id = v_ag;

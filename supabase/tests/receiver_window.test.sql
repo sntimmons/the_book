@@ -923,8 +923,40 @@ begin
                           'barter_obligations_starts_pending');
   perform pg_temp.chk('receiver_window', 'no new trigger on barter_obligations', '0', v_n::text);
 
-  select count(*) into v_n from pg_extension where extname in ('pg_cron', 'pgagent');
-  perform pg_temp.chk('receiver_window', 'no scheduler extension was installed', '0', v_n::text);
+  -- A SCHEDULER NOW EXISTS, AND THIS ASSERTION CHANGED SHAPE RATHER THAN SIDE.
+  --
+  -- It used to read `count(pg_extension where extname in ('pg_cron','pgagent')) = 0`.
+  -- That was never about erasure: it existed because a barter obligation's state
+  -- must only move when a PARTICIPANT acts — no second timer, no automatic
+  -- escalation (PD-072, and the deliberately-undecided note in OPEN_QUESTIONS) —
+  -- and "no scheduler exists" was the cheapest way to make a clock impossible.
+  --
+  -- PD-108 installs `pg_cron` to finalise account deletions, so the
+  -- guarantee-by-absence is gone. **Deleting the assertion would have been the
+  -- dishonest way to ship a changed decision**, so it is replaced by a
+  -- guarantee-by-inspection that says the same thing about barter and nothing
+  -- less: the scheduled jobs are an allowlist of one, and its command names no
+  -- barter object. A second job, or this one growing a barter reach, fails here
+  -- and somebody has to justify it.
+  select count(*) into v_n from cron.job
+   where jobname <> 'account-deletion-worker';
+  perform pg_temp.chk('receiver_window',
+    'the only scheduled job in this database is the account-deletion worker', '0', v_n::text);
+
+  select count(*) into v_n from cron.job where command ~* 'barter|obligation';
+  perform pg_temp.chk('receiver_window',
+    'and no scheduled job touches a barter object', '0', v_n::text);
+
+  -- The job calls ONE function, and that function reaches nothing but the worker.
+  select count(*) into v_n from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.proname = 'invoke_account_deletion_worker'
+     and p.prosrc ~* 'barter|obligation';
+  perform pg_temp.chk('receiver_window',
+    'nor does the function it calls', '0', v_n::text);
+
+  select count(*) into v_n from pg_extension where extname in ('pgagent', 'pg_timetable');
+  perform pg_temp.chk('receiver_window',
+    'and no OTHER scheduler extension was installed', '0', v_n::text);
 
   -- No obligation reached an answered state without a receiver acting. The clock cannot write.
   select count(*) into v_n from public.barter_obligations

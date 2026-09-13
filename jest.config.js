@@ -17,6 +17,18 @@ module.exports = {
     ...(expoPreset.setupFilesAfterEnv || []),
     '<rootDir>/jest.setup.js',
   ],
+  // The canonical account-erasure sequence lives in
+  // `supabase/functions/_shared/accountDeletionRun.mjs` — `.mjs` because it must
+  // load unchanged in BOTH Node (the manual fallback worker) and the Supabase
+  // Edge runtime (the scheduled worker), and this package is CommonJS by default.
+  // jest-expo's transform matches `\.[jt]sx?$`, which does not include `.mjs`, so
+  // the file would be handed to a CJS context and die on its `export`. Reuse the
+  // preset's own JS transform rather than naming babel-jest again, so the two can
+  // never diverge.
+  transform: {
+    ...expoPreset.transform,
+    '\\.mjs$': expoPreset.transform['\\.[jt]sx?$'],
+  },
   moduleNameMapper: {
     // Keep jest-expo's own mappings (vector-icons, `@/` default, etc.) and pin
     // the repo alias to the project root to match tsconfig `@/* -> ./*`.

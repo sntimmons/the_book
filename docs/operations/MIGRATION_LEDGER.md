@@ -1377,6 +1377,7 @@ NOT in the migration that created it.
 | `public.booking_reference_photos.storage_path` / `storage_path_restricted` (new) / `adel_booking_photos_sever` / `adel_booking_photos_purge` / `enforce_booking_photo_path_is_own` (new) / `adel_contract_artifacts` / `sweep_account_deletions` / `release_account_deletion_hold` / `finalize_account_deletion` | `20261072000000`, `20261076000000`, `20261108000000`, `20261114000000`, `20261126000000` | **`20261128000000`**, corrected by **`20261129000000`** | **A STORAGE PATH IS TWO THINGS AT ONCE, AND WAS BOUND AS NEITHER.** `booking_reference_photos.storage_path` is `<auth uid>/<booking id>/<n>` — **an identity**, because it carries the uploader's real `auth.users` id in text, and **a capability**, because the erasure engine feeds it to a `service_role` Storage delete and `can_read_booking_photo` resolves object access through it. (a) `20261108000000` revoked the table SELECT and re-granted by name, correctly withholding `uploader_subject_id` and **leaving `storage_path` in the grant** — so after an erasure two providers each holding one booking with a reference photo could compare path prefixes, find them equal, and recover both the link between two relationship pseudonyms and the erased account's auth id: the exact resolution PD-105 forbids, through normal application data, and untouched by the pseudonyms `20261124000000` introduced. The sever now covers the path as well as the id; the real path moves to a restricted column and the granted one becomes `erased/<row id>`. **This has a product consequence and it is stated rather than hidden:** a provider can no longer open a departed client's reference photos, because access resolves on the granted path. The row survives on its 90-day clock so the BYTES go on schedule, which is what policy D is about. (b) `booking_photos_client_insert` pinned the uploader and the booking and **never constrained the path**, which was free text — harmless while nothing acted on the column, and a cross-user storage-delete primitive the moment the worker did: insert a row on your own draft naming somebody else's object, request deletion, and the purge enqueues it for a `service_role` delete that bypasses every storage policy, destroying evidence `20261076000000` exists to make undeletable after submit. Closed twice, because either alone leaves the other's rows: bound on INSERT, and the purge enqueues only paths under the subject's own prefix, reporting the rest in the step result. **`20261129000000` corrects where that binding SPEAKS:** it was a BEFORE trigger, and **every BEFORE trigger runs before the RLS `WITH CHECK`**, so a provider attaching to a client's request heard about the path instead of being refused the row — `booking_integrity.test.sql:207` said so on the first run. Moved to AFTER INSERT, which puts the two rules in the order they belong: RLS decides whether you may write the row, the path rule then decides whether the object is yours. |
 | `public.adel_contract_artifacts` (exclusion scoping + unbound acceptances) | `20261126000000` | **`20261128000000`**, **`20261129000000`** | **TWO WAYS THE CONTRACT NARROWING GOT ITS SCOPE WRONG, IN OPPOSITE DIRECTIONS.** (a) The three `not exists` exclusions asked whether **ANY** row in the whole table named the object — and `contracts.pdf_url` is free text under its owner's control. So anybody who knew one object name under a departing account's `contract-pdfs` prefix could point their own `pdf_url` at it and the erasure would skip it permanently: never queued, `media_purge` sees nothing outstanding, request reports `completed` with the bytes still there. That is the "success with the bytes in the bucket" failure `20261107000000` was written to remove, reachable by a third party. Scoped to the subject's own rows, which is what steps (a) and (b) already did. Note the asymmetry that made this a retention bug rather than a deletion one: the candidate set is bounded by the subject's own prefix, so third-party control could only ever RETAIN. (b) Step (b) deletes a version no signature points at — and a signature with a NULL `contract_version_id` points at **none**, so for a contract carrying one, every version looked unaccepted and the step would have deleted **the exact frozen evidence PD-107 exists to keep**, leaving the acceptance row pointing at nothing. The binding is held by a trigger and a one-off backfill, not a column constraint. **When we cannot tell which version an acceptance accepted, we keep them all** — the same instinct as `20261112000000`: do not delete evidence to make an erasure succeed. The count is reported in the step result rather than left silent. The suite asserts the BEHAVIOUR, not `count(unbound) = 0`: live data holds none today, but the fixtures create them freely, so the count form measured fixture hygiene and would have stayed green while the hazard remained. |
 | `public.sweep_account_deletions` / `release_account_deletion_hold` / `finalize_account_deletion` (hold class + purge gating) | `20261122000000`, `20261126000000` | **`20261128000000`** | **ONE RULE WRITTEN IN THREE PLACES, UPDATED IN ONE — AND A PURGE THAT COULD FINISH BEFORE ITS SEVER.** (a) `20261126000000` taught `run_account_deletion_step` that `contract_artifacts` answers to the `accepted_contracts` hold class and left the same `case` expression unchanged in the sweep and in the release path, where it fell through to `else s.step_key end` — a value `account_deletion_holds_class_check` forbids, so no hold could match it. The consequences pointed opposite ways and neither was acceptable: the sweep un-held the step on every pass (re-held immediately by `run_account_deletion_step`, so nothing was destroyed, but the request flipped completed→failed→completed forever), and the release path never matched the step it should free, working only by accident through the sweep's opposite bug. (b) **A purge whose sever was HELD was written as `completed`.** The purges find their rows through what the sever wrote — the restricted subject for photos, the relationship pseudonyms for messages — so a held sever leaves the due date NULL, and the `null → completed` branch then pinned it through the `on conflict` clause forever, while the sweep only ever picks up `scheduled` and `failed`. Releasing the hold later would run the sever and never the purge: **a 180-day window silently becoming forever**, which is the failure `20261114000000` was written to remove, in a third place. The purge is now `held` with a reason until its sever completes. |
+| `pg_cron` / `pg_net` (new extensions) / `public.account_deletion_worker_runs` (new) / `public.invoke_account_deletion_worker` (new) / `public.set_account_deletion_worker_schedule` (new) / `supabase/functions/account-deletion-worker` (new) / `supabase/functions/_shared/accountDeletionRun.mjs` (new) | `20261107000000`, `20261129000000` | **`20261130000000`** | **PD-108 / OQ-088. THE DELETION FINALISATION RUNS ITSELF.** The engine had been complete since `20261129000000` and **nothing invoked any of it** — an operator ran a CLI worker, and a retention promise that depends on somebody remembering is not a retention guarantee. Native Supabase scheduling, by PM decision: `pg_cron` → `invoke_account_deletion_worker()` → `pg_net` → the `account-deletion-worker` Edge Function → the unchanged database functions. **Daily at 04:17 UTC** — daily because the promise to a user is a DATE and hourly would be false precision at a cohort of 25–30; 04:17 because a job on the hour shares its slot with every other `0 * * * *` on the instance. `cron.job` is the single source of truth for the cadence and `set_account_deletion_worker_schedule(text)` is the only supported way to change it. **EVERY SECRET IS IN THE VAULT AND THE JOB COMMAND CARRIES NONE** — `cron.job.command` is a plain text column, so a URL and a bearer token pasted into it would ride into every schema dump; the command is one line, `select public.invoke_account_deletion_worker();`, and a suite assertion fails if it ever matches `http|bearer|eyJ|secret|key|token`. The worker secret is deliberately **separate from the service-role key**: if it leaks, the worst it buys is making the engine do work it was already going to do, idempotently, with no read of anything. **ONE ENGINE, TWO RUNTIMES:** the sequence lives in `_shared/accountDeletionRun.mjs`, which **imports nothing at all** — that emptiness is what lets Node and the Supabase Edge runtime load it unchanged, and a test asserts it, because an import there is a fork with extra steps. **THIS REVERSES A PINNED ASSERTION, AND REPLACES IT RATHER THAN DELETING IT.** `receiver_window.test.sql` and `no_show_under_review.test.sql` had asserted since their first run that no scheduler extension existed — never about erasure, but so that no clock could move a barter obligation's state (PD-072). Guarantee-by-absence becomes guarantee-by-inspection: the only scheduled job is this one, and neither it nor the function it calls names a barter object. A second job fails those assertions and somebody has to justify it. |
 | `public.getOrCreateConversation` (client) / conversation resolution | — | **`20260908000000_canonical_provider_pair.sql`** | `resolve_conversation` and `find_conversation` are the authoritative resolve-or-create and lookup paths. Do not resolve a conversation by a single `(client_id, provider_id)` orientation anywhere: a provider pair may legitimately be stored either way round. |
 
 `20260907000000`'s "RECORDED, NOT RESOLVED / TWO THREADS PER PAIR" note is **resolved** by
@@ -1994,6 +1995,107 @@ annotated where it fires.
 **Production remains untouched and was not connected to.** Both `.env` and
 `.env.tooling.local` resolve to `wcoyjeklscuqsumpjpfo`; no production credential
 exists in the working environment.
+
+## 2026-09-12 — `20261130000000` **APPLIED to non-production** (Account erasure scheduled execution, PD-108)
+
+One file, and the capability it adds is a scheduler rather than a schema change:
+`pg_cron` and `pg_net` installed, `account_deletion_worker_runs` created, and the
+`account-deletion-worker` job registered at `17 4 * * *`.
+
+**Deployed alongside it** (non-production `wcoyjeklscuqsumpjpfo` only): the
+`account-deletion-worker` Edge Function, the `ACCOUNT_DELETION_WORKER_SECRET`
+function secret, and three `vault.secrets` rows (`account_deletion_worker_url`,
+`_secret`, `_anon_key`). **No secret value is in this repository.**
+
+**END-TO-END PROOF, through the exact command `cron.job` runs** — not a harness
+standing in for it. A disposable fixture account with a real object in
+`provider-media` was erased: `auth.users` row gone, `clients` row gone, **the
+storage object actually removed from the bucket**, the deletion confirmed, the
+request `completed`, every step completed, and
+`overdue_account_deletion_work()` empty. Three further invocations, **two of them
+fired in the same statement to force overlap**, were harmless no-ops that left
+exactly one erasure record and one queue row, still confirmed.
+
+**What was NOT observed:** the timer firing. The job is registered and active;
+every link in the chain it triggers is proven. Watching a real firing needs a
+calendar.
+
+**Corrected by `20261131000000`, `20261132000000` and `20261133000000`**, all on
+the same branch and all from the security review of the first commit:
+
+| File | What it corrects |
+|---|---|
+| `20261131000000` | Tried to revoke the client grants `pg_net` installs. **It is a no-op** — see the next row. |
+| `20261132000000` | **A REVOKE BY A NON-GRANTOR IS A NO-OP.** `pg_net` grants PUBLIC execute on `net.http_post` and ALL on `net._http_response`; `supabase_admin` made those grants, these migrations run as `postgres`, and `postgres` is not a member of it. There is no SQL this repository can run that removes them. A migration that looks like a fix and is not is worse than none — the same shape as `20261103000000`'s column-level revoke. What bounds it is that PostgREST exposes `public` and `graphql_public` only, probed live; **that setting is not in this repository.** So the mitigation became the one we control: the worker's response body is **counts only**, because that body lands in `net._http_response` and a failing run's full result names subject ids (PD-105). |
+| `20261133000000` | **A PROMISE THAT COULD NOT TELL YOU IT BROKE**, in three parts. (a) `invoke_account_deletion_worker` was fire-and-forget and the run row was written by the Edge Function *after* the secret gate — so a wrong vault secret, a rotated worker secret or an undelivered call wrote **nothing anywhere** while `cron` reported SUCCESS, because the SQL succeeded. A **dispatch** is now recorded before the call, the run stamps the dispatch it answers, and `account_deletion_worker_health()` turns every absence into a positive row. (b) The drain loop took **no lock**, unlike the purge loop beside it: two runs could list the same object and the loser reported a media FAILURE for an object the winner had just deleted, annotating an already-confirmed row. Rows are now claimed under a 15-minute lease with `for update skip locked`, and a failure cannot be written onto a confirmed row. (c) An **already-absent object wedged the erasure permanently** — confirmation required the API to hand back the removed object, so every later run failed and `media_purge` raised for ever. The fix is **not** to assume absence means deletion; the worker goes and looks, and confirms only on positive evidence the object is not in the bucket. Also: three live comments still said **"THERE IS NO SCHEDULER"** on the objects the scheduler drives, and a generic assertion now fails if any does. |
+
+**Validation** (non-production `wcoyjeklscuqsumpjpfo`; production untouched):
+B5B **2253/2253** with zero residue, Jest **1003/1003**, typecheck clean,
+`lint:ci` 0 errors, negotiation concurrency **224/224**, and `supabase migration
+list --linked` **172 local == 172 remote, zero mismatched**.
+
+**The wedge fix proven live, not reasoned about:** a queue row naming an object
+that is not in the bucket was resolved on the next run — `1 deleted (1 already
+absent), 0 failed` — and the row is confirmed with `attempts = 0` and no error,
+rather than failing for ever.
+
+**Unauthorized callers, probed against the live function rather than reasoned
+about:** no auth, the anon key, a signed-in CLIENT's JWT, a signed-in PROVIDER's
+JWT, a wrong worker secret, and **the service-role key with no worker secret** —
+all `401`. `GET` is `405`. A signed-in client calling
+`invoke_account_deletion_worker` or `sweep_account_deletions` through PostgREST
+gets `42501`.
+
+## Production release configuration checks
+
+Separate from migrations, and easy to forget for exactly that reason: some
+guarantees this repository relies on are **project settings**, not schema.
+
+### Exposed API schemas — REQUIRED before any production release
+
+```bash
+SUPABASE_URL=<project url> SUPABASE_ANON_KEY=<anon key> \
+  npm run check:api-schemas
+```
+
+Must print `OK`, and the header line must say **PRODUCTION**. It reads one object
+per forbidden schema — `net._http_response`, `cron.job`,
+`vault.decrypted_secrets` — and then **asserts the exposed list PostgREST names in
+its own refusal is exactly `[public, graphql_public]`**. That second half is what
+makes it typo-proof: `PGRST106` comes back for any schema not in the list,
+including a misspelled one, so refusals alone would have passed while `net` was
+open.
+
+**It refuses to run rather than guess.** No target, an unidentifiable ref, or a
+non-production project without `--allow-non-prod`, and it exits non-zero without
+probing — because a gate that cannot say which project it checked is worse than no
+gate, and "sourced the tooling env, printed OK, recorded production checked" is
+the failure it exists to prevent.
+
+**Why it is a release gate rather than a migration.** `pg_net` grants PUBLIC
+`EXECUTE` on `net.http_post` and ALL on `net._http_response`. `supabase_admin`
+made those grants and `postgres` is not a member of it, so **no migration here can
+revoke them** — `20261131000000` tried, applied cleanly, and did nothing;
+`20261132000000` records why. The only control left is PostgREST's exposed-schema
+list, which lives in the dashboard. This script is how a release fails on it
+instead of trusting it.
+
+The script is strictly **read-only** — it asks to be refused and expects
+`PGRST106` — so it is safe to point at production, which is the environment whose
+configuration matters most. It carries no production guard for that reason. An
+**inconclusive** probe exits non-zero: "we could not tell" must never read as
+"it is fine".
+
+**Verified 2026-09-12 on non-production `wcoyjeklscuqsumpjpfo`** (with
+`--allow-non-prod`): all three probes refused and the exposed list is exactly
+`[public, graphql_public]`. The gate's own pass predicate is unit-tested against
+captured PostgREST responses in `__tests__/lib/apiSchemaGate.test.ts`, including
+the false-pass path it used to have — a 200 whose row data merely contained the
+string `PGRST106`.
+Production has **not** been checked, because production is outside this work's
+authorization — **somebody authorized must run it there before release.**
+
+---
 
 ## Production application policy
 

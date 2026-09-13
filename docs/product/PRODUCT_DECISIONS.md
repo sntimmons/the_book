@@ -2663,6 +2663,253 @@ verified e-signature is made anywhere**, and none may be added without counsel.
 
 ---
 
+### PD-108 — Deletion finalisation is automatic, and the CLI is the fallback
+
+**Decided 2026-09-12. Closes OQ-088.**
+
+PD-102 tells a person a date. Until now nothing made that date happen: an
+operator ran a CLI worker, and **a retention promise that depends on somebody
+remembering is not a retention guarantee.** That is why OQ-088 was returned as a
+pre-external-beta blocker rather than closed with a runbook.
+
+**The mechanism is native Supabase scheduling**, chosen by PM over the
+alternatives:
+
+```
+pg_cron  →  public.invoke_account_deletion_worker()  →  pg_net
+         →  the account-deletion-worker Edge Function
+         →  the erasure engine and the Storage API
+         →  public.account_deletion_worker_runs
+```
+
+**Cadence: daily, 04:17 UTC.** Daily is the right cadence and hourly would be
+false precision — the promise to a user is a DATE, not a minute, and the
+closed-beta cohort is 25–30 people. A run an hour would add nothing anyone could
+perceive and twenty-four times the failure surface. The minute is deliberately
+not on the hour, where every other `0 * * * *` job on the instance lands.
+**`cron.job` is the single source of truth for the cadence** and
+`public.set_account_deletion_worker_schedule(text)` is the only supported way to
+change it; nothing restates it.
+
+#### What owns what
+
+| Layer | Owns |
+|---|---|
+| `pg_cron` | when |
+| `invoke_account_deletion_worker()` + `pg_net` | the call, and reading the secrets from the Vault |
+| the Edge Function | orchestration only — it decides nothing about what may be deleted |
+| the database functions | every deletion rule, unchanged |
+| `pending_media_deletions` | the sole authority for which bytes may be deleted |
+| `account_deletion_worker_runs` + `overdue_account_deletion_work()` | whether it worked |
+
+**Storage deletions are confirmed before completion, and that rule did not
+move.** `confirm_media_deleted` is called only when the Storage API actually
+returned the removed object — not when it merely failed to error — and
+`media_purge` refuses to pass while anything is unconfirmed.
+
+**The manual CLI worker stays.** `scripts/account-deletion-worker.mjs` is the
+emergency path for when the scheduler or the function is failing, when a backlog
+must be drained now rather than tonight, or when somebody is diagnosing a run
+that did not come out clean. **It is a fallback, not the primary mechanism**, and
+the operations note says so in those words.
+
+#### One engine, two runtimes
+
+Both callers run the same file — `supabase/functions/_shared/accountDeletionRun.mjs`
+— because two callers is exactly how a deletion engine acquires two slightly
+different meanings of "done". That module **imports nothing at all**, which is
+what lets Node and the Supabase Edge runtime load it unchanged, and a test
+asserts that emptiness: an import there is a fork with extra steps.
+
+#### The authorization, and why it is a separate secret
+
+The function holds `service_role`, so being callable is itself a privilege. Two
+gates: the platform verifies a project JWT, and then the function requires a
+**dedicated worker secret**, compared in constant time. The second is the real
+boundary — the anon key is public and ships in the app bundle. The secret is
+deliberately **not** the service-role key: if it leaks, the worst it buys is
+making the engine do work it was already going to do, idempotently, with no read
+of anything. Every secret lives in `vault.secrets`; `cron.job.command` carries
+none, because it is a plain text column.
+
+#### Three things the security review of this work changed
+
+**A promise that cannot tell you it broke.** `invoke_account_deletion_worker` was
+fire-and-forget, and the run row was written by the Edge Function *after* the
+secret gate — so a wrong vault secret, a rotated worker secret or an undelivered
+call wrote **nothing anywhere**, while `cron` reported SUCCESS because the SQL
+succeeded. PD-108 replaced "somebody has to remember" with "somebody has to
+notice", and that is only better if the system can tell them. A **dispatch** is
+now recorded before the call goes out, the run stamps the dispatch it answers, and
+`account_deletion_worker_health()` turns every absence into a row.
+
+**Overlapping runs invented failures.** The drain loop took no lock, unlike the
+purge loop beside it. Two runs could list the same object; the loser reported a
+media FAILURE for an object the winner had just deleted. Rows are now claimed
+under a lease, and a failure can no longer be written onto a row somebody else
+confirmed.
+
+**An already-absent object wedged the erasure forever.** Confirmation required
+the Storage API to hand back the removed object, so an object that was already
+gone could never be confirmed and `media_purge` would raise for ever. The fix is
+**not** to assume absence means deletion — it is to go and look, and confirm only
+on positive evidence that the object is not in the bucket. The rule that a
+confirmation is a claim about bytes, never a shrug, is intact.
+
+#### What this decision does NOT change
+
+**Nothing about retention durations.** **OQ-084** is still open and still
+counsel's: the accepted-contract and report/safety windows remain unset, and
+automating execution does not license inventing a number for the two classes that
+have none.
+
+**Nothing about what a scheduler may touch.** Two suites asserted since their
+first run that no scheduler extension existed — not because of erasure, but so
+that no clock could ever move a barter obligation's state (PD-072). Installing
+`pg_cron` removes that guarantee-by-absence, so it is **replaced, not deleted**:
+the suites now assert that the only scheduled job is this one and that neither it
+nor the function it calls names a barter object. Weakening those tests would have
+been the dishonest way to ship a changed decision.
+
+**Evidence:** `supabase/migrations/20261130000000_the_deletion_runs_itself.sql`,
+corrected by `20261131000000`, `20261132000000` and `20261133000000`;
+`supabase/functions/account-deletion-worker/index.ts`;
+`supabase/functions/_shared/accountDeletionRun.mjs`;
+`scripts/account-deletion-worker.mjs`; pinned in
+`supabase/tests/account_erasure.test.sql` § 18 and
+`__tests__/lib/accountDeletionRun.test.ts`. Operations:
+[ACCOUNT_ERASURE_OPERATIONS.md](../operations/ACCOUNT_ERASURE_OPERATIONS.md)
+§§ 9–12.
+
+**Status:** implemented and verified end to end against non-production, **on the
+`feat/account-erasure-scheduler` branch — NOT YET MERGED to `main`.** Until it
+merges, `main` has no scheduler and OQ-088's blocker stands for anything reading
+`main`. **The timer has not been watched firing**; every link in the chain it
+triggers has been exercised through the exact command `cron.job` runs, by hand,
+once, and **nothing in CI exercises it** — a wrong vault secret would fail no
+committed test, which is why `account_deletion_worker_health()` exists. Retention
+DURATIONS remain **OQ-084** and unset.
+
+
+### PD-109 — Proof of deletion is positive verification of absence
+
+**Decided 2026-09-12. Approved on the security review of the scheduler.**
+
+A media item **may** be confirmed deleted when Storage **positively verifies that
+the object is absent**.
+
+It may **not** be confirmed because:
+
+- a request failed for any generic reason,
+- the API returned no error, or
+- anything was assumed about a 404 without reading the actual Storage API result.
+
+And it may never be confirmed **before** checking.
+
+#### Why this needed a ruling rather than a preference
+
+`confirm_media_deleted` is the product's claim that bytes are gone, and
+`media_purge` refuses to let an erasure reach `completed` while any object is
+unconfirmed. Two opposite failures were both live:
+
+**Confirming too readily.** `remove()` answers `{ error: null, data: [] }` for a
+path that does not resolve, so treating the absence of an error as success wrote
+a claim about bytes nobody had checked — and the `media_purge` gate believed it.
+
+**Confirming too grudgingly.** Requiring the API to hand back the removed object
+meant an object that was **already** gone could never be confirmed at all: every
+later run failed the same way, `media_purge` raised for ever, and an erasure that
+was factually complete could never be **recorded** complete. Reached with no
+attacker — the delete succeeds and the confirming call errors.
+
+The rule threads both, and it admits **two kinds of evidence and no others**:
+
+1. **Storage returned the object it removed.** `remove()` answers with the objects
+   it actually deleted, so a non-empty payload is Storage reporting what it did.
+   This is the normal path and it involves no second lookup.
+2. **Storage positively reports the object absent.** Used only when the first
+   produced nothing — then the worker goes and looks, and confirms on an
+   affirmative "it is not there".
+
+What is **not** evidence: the mere absence of an error, an empty payload on its
+own, or a lookup that itself failed — that last one reports "still there", so the
+object is retried rather than confirmed on a question nobody answered.
+
+**An earlier version of this record said "only when Storage says the object is not
+there", which described the fallback and not the primary path.** The behaviour was
+right and the sentence was wrong; a decision record that overstates its own rule is
+how the rule gets reimplemented incorrectly later.
+
+**Evidence:** `supabase/functions/_shared/accountDeletionRun.mjs` — the confirm
+branch and `objectIsAbsent`, which is where the failed-lookup rule lives. It lives
+there and nowhere else **because the security review found it duplicated verbatim
+in both runtime adapters with no test**, inside the one module whose whole purpose
+is that business logic is not duplicated per runtime. Covered by
+`__tests__/lib/accountDeletionRun.test.ts`, including the case where the lookup
+itself errors. Verified live against non-production: a queued path with no object
+in the bucket resolved as `1 deleted (1 already absent), 0 failed`, and the row is
+confirmed with `attempts = 0` and no error.
+
+**Status:** implemented; the conservative behaviour is the decided behaviour, not
+an interim.
+
+---
+
+### PD-110 — There is one deletion flow, and every control leads to it
+
+**Decided 2026-09-12. Fixes a contradiction that predated the erasure workstream.**
+
+Any control offering to delete an account must reach
+**`/settings/delete-account`**. No screen may implement deletion of its own, and
+no control may describe an outcome it does not produce.
+
+#### What was wrong
+
+`app/me/edit.tsx` carried a second **Delete Account** row. It said *"This
+permanently deletes your account and all your data. This cannot be undone."* and
+then called `supabase.auth.signOut()` and nothing else.
+
+**Two failures in one control, pointing opposite ways.** It was a promise the app
+did not keep — and it was also the reverse failure: somebody who wanted to be
+deleted was quietly signed out and had no way to tell. Its own comment said to
+wire it to an Edge Function "before App Store submission"; that flow now exists
+(PD-102), so the note was obsolete while the code was not.
+
+**It survived the entire erasure workstream** — eleven decisions, thirty
+migrations, three security reviews — because nothing in any of them pointed at
+that file. That is the lesson worth keeping: a second entry point to a decided
+flow is invisible to every test written about the flow itself.
+
+#### The shape of the fix
+
+The row navigates, and shows **no confirmation of its own**. The destination
+screen owns the disclosure — what is deleted, what is anonymized, what is kept,
+the 30-day grace, the restore path — and a summary Alert in front of it could
+only be a worse copy that drifts. The previous one drifted all the way to being
+false.
+
+**Evidence:** `app/me/edit.tsx`, same route and convention as
+`app/settings/index.tsx`. Pinned by
+`__tests__/app/deleteAccountEntryPoints.test.tsx`, which:
+
+- presses the real control on **both** screens and asserts where each goes and
+  that neither signs out — the settings row had no behavioural test at all until
+  the security review said so, and it is the one most likely to be edited;
+- asserts that the Sign Out row beside it is a different control that does not
+  delete, so the two cannot swap places unnoticed;
+- **DISCOVERS** the entry points by walking `app/` for a deletion control rather
+  than naming them, so a third screen added tomorrow is guarded without anybody
+  remembering this file — a hardcoded list would have been blind to exactly the
+  defect this decision exists to prevent;
+- reads **comment-stripped** source, because the first version matched its own
+  explanatory comment describing the bug it guards against.
+
+Verified by reintroducing the old handler on each screen: three assertions fail
+for `me/edit.tsx`, two for `settings/index.tsx`.
+
+**Status:** implemented.
+
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

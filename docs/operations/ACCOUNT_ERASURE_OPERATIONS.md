@@ -5,7 +5,8 @@
 **Policy:** **PD-102** (closed-beta retention), **PD-103** (OQ-077 technical fixes),
 **PD-104** (the guarantee lives in the data, not the view), **PD-105** (an anonymized record is a
 relationship, not a person), **PD-106** (grace preserves resolution, not participation),
-**PD-107** (retention is the accepted artifact).
+**PD-107** (retention is the accepted artifact), **PD-108** (finalisation is automatic; the CLI is
+the fallback — **on the `feat/account-erasure-scheduler` branch, not yet merged**).
 
 Written for whoever answers *"delete my account"*, *"I changed my mind"*, *"why do
 you still have my contract"*, and *"the deletion failed"*. Limits sit beside
@@ -253,7 +254,8 @@ appears somewhere after the date.
    the one query that answers "is anything being retained longer than it should
    be". It returns two kinds of row: **any request past its grace date that nothing
    has finalised** — the row reads `(request never finalised)`, and this is the
-   case that matters most, because there is no scheduler — and **any step that is
+   case that matters most — a request whose scheduled run never happened; see § 10
+   for how that is now detected rather than waited for — and **any step that is
    failed, held, or past due**, with its error. Nothing else surfaces either: no
    client role can read these tables, so this query belongs in the same routine as
    the sweep.
@@ -307,16 +309,13 @@ An operator can place a **hold on one class** of a specific request
 
 ## 7. Known limitations — read these before answering anyone
 
-- **There is no scheduler, and there is now a worker.** The two are different
-  things and the distinction is the whole of **OQ-088**. `scripts/account-deletion-worker.mjs`
-  does the job in one bounded command — sweep, drain the media queue through the
-  Storage API, confirm each delete, sweep again, report what is late — but
-  **nothing invokes it on a clock**. A person still has to run it (§ 9).
-  **Returned as a PRE-EXTERNAL-BETA BLOCKER**: a deletion request past its
-  promised completion date with no worker execution is not acceptable beta
-  behaviour, and choosing what runs the worker (`pg_cron`+`pg_net`, Supabase
-  scheduled functions, scheduled CI, or an external host) is an operational
-  decision, not an engineering one.
+- **Deletion finalisation is AUTOMATIC (PD-108).** `pg_cron` runs the worker
+  daily at 04:17 UTC. Nobody has to remember anything, and **OQ-088 is closed.**
+  What remains true is that the timer has never been *watched* firing. Every link
+  in the chain it triggers has been proven end to end **by hand, once, against
+  non-production** — which is a different claim, and **nothing in CI exercises
+  it**: a wrong vault secret or a rotated worker secret would fail no committed
+  test. § 10 is how you find that out.
 - **There is no email or push confirmation**, of the request or of completion.
   The app records the request durably and shows its status on the screen, and the
   screen says so in as many words. **Never tell a user a notification was sent.**
@@ -334,6 +333,15 @@ An operator can place a **hold on one class** of a specific request
   transactions** and cannot start anything new.
 - **A client author is not told when their Community post was hidden** (from the
   moderation work) — unrelated to erasure, but the same screen gap.
+- **A deletion is confirmed on evidence from Storage, and on nothing else**
+  (PD-109): either Storage returned the object it removed, or Storage positively
+  reports the object absent. **Not** because a request failed, **not** because no
+  error came back, and never before checking — a lookup that itself fails counts
+  as "still there". So a media object can legitimately show as outstanding for a
+  cycle while the worker retries it; that is the rule working, not a fault.
+- **The scheduler's own grants are a platform default we cannot remove.** See the
+  standing rule in § 10. Not currently reachable; recorded because it depends on
+  a setting outside this repository.
 - **Backups.** Deleted data may persist in provider-managed backups until those
   backups age out. **The current infrastructure does not expose a retention or
   expiry window for them**, so this document states no number. Getting one is a
@@ -363,9 +371,165 @@ not a substitute for a policy document.
 
 ---
 
-## 9. New human operational obligation
+## 9. The automatic path (PD-108)
 
-**Someone has to run the worker.** One command, on a regular cadence:
+```
+pg_cron  →  public.invoke_account_deletion_worker()  →  pg_net
+         →  the account-deletion-worker Edge Function
+         →  the erasure engine and the Storage API
+         →  public.account_deletion_worker_runs
+```
+
+| | |
+|---|---|
+| **Scheduler** | `pg_cron`, job `account-deletion-worker` |
+| **Cadence** | daily, **04:17 UTC** — read it from `cron.job`, never from a comment |
+| **Changing it** | `select public.set_account_deletion_worker_schedule('<cron expr>');` as `service_role`. The only supported way. |
+| **What runs** | the `account-deletion-worker` Edge Function, which runs the same sequence as the CLI fallback, from the same file |
+| **Owner** | The Book operator/founder for the closed beta. **The execution is automatic; the owner watches it, they do not drive it.** |
+
+**A successful run** finalises every request past its grace date, deletes every
+queued storage object through the Storage API, confirms each one, sweeps again so
+`media_purge` can pass, and records a row in `account_deletion_worker_runs` with
+`ok = true` and `overdue_count = 0`.
+
+**What the promise to a user is.** A DATE, not a minute. A deletion scheduled for
+the 12th completes on the 12th's run. **Never quote a user a time of day**, and
+never say they will be emailed — no notification of any kind is sent, then or now.
+
+---
+
+## 10. When it fails — how Stephen checks
+
+**Two queries. The first answers "is there deletion work outstanding?"**
+
+```sql
+select * from public.overdue_account_deletion_work();
+```
+
+Empty is clean. Any row is a request past its grace date that nothing finalised,
+or a step that is failed, held or past due — each with its `last_error`.
+
+**Did it even run?**
+
+```sql
+select ran_at, source, ok, media_examined, media_deleted, media_failed, overdue_count
+  from public.account_deletion_worker_runs
+ order by ran_at desc limit 14;
+```
+
+A gap in `ran_at` means the scheduler did not fire — a different problem from a
+run that fired and failed, and the two need different fixes. `source` says
+whether it was the scheduler (`scheduled`) or a person (`manual`).
+
+**Why did the call itself fail?** `pg_net` records the HTTP result:
+
+```sql
+select id, status_code, error_msg, left(content, 500)
+  from net._http_response order by id desc limit 5;
+```
+
+A non-2xx `status_code` is the function telling you work is late — the body
+carries the counts. `error_msg` with no status means the call never arrived.
+
+**The query that turns an ABSENCE into a row.** Nobody notices a missing row, so
+"the scheduler stopped" is itself reported:
+
+```sql
+select * from public.account_deletion_worker_health();
+```
+
+Empty is healthy. It reports four things, each a positive signal:
+
+| `problem` | What it means |
+|---|---|
+| `dispatch_never_answered` | The job fired and the Edge Function never recorded a run — a wrong vault secret, a rotated worker secret, an undelivered call. **`cron` will have reported SUCCESS**, because the SQL succeeded. |
+| `no_successful_run` | No successful run in over two days. The scheduler has stopped. |
+| `run_failed` | A run arrived and did not come out clean. |
+| `media_stuck` | One object has failed three or more times. Somebody has to look at that one. |
+
+**Is the job still scheduled?**
+
+```sql
+select jobname, schedule, active from cron.job;
+```
+
+### A standing rule the scheduler created
+
+**Do not add `net` or `cron` to the project's exposed PostgREST schemas.**
+
+Installing `pg_net` grants PUBLIC `EXECUTE` on `net.http_post` and ALL
+privileges on `net._http_response`. Those grants were made by `supabase_admin`,
+so **`postgres` cannot revoke them and no migration in this repository can** — it
+was attempted, and the revoke was a silent no-op. What keeps them out of reach is
+that PostgREST exposes `public` and `graphql_public` only. Exposing `net` would
+hand every signed-in account the ability to make the database issue arbitrary
+HTTP requests.
+
+The worker is built so that even then it leaks no identities: its response body
+is counts only, and the detail lives in `account_deletion_worker_runs`, which is
+`service_role`-only.
+
+**This is now a checkable release gate, not a hope:**
+
+```bash
+SUPABASE_URL=<project url> SUPABASE_ANON_KEY=<anon key> \
+  npm run check:api-schemas
+```
+
+It must print `OK` **and say PRODUCTION in its header line** before any release.
+It refuses to run against a project it cannot positively identify, and refuses a
+non-production project unless you pass `--allow-non-prod` — so it cannot quietly
+check the wrong thing and be recorded as having checked production.
+
+Verified on non-production 2026-09-12: all three probes refused, and the exposed
+schema list PostgREST names is exactly `[public, graphql_public]`. See
+[MIGRATION_LEDGER.md](MIGRATION_LEDGER.md) § Production release configuration
+checks. **Production has not been checked; somebody authorized must.**
+
+**A non-clean result means somebody is waiting.** Someone asked to be deleted and
+has been told a date. Work the failures, then run the fallback until the overdue
+query is empty.
+
+---
+
+## 11. Manual fallback
+
+**Use it when the automatic path is failing, when a backlog must be drained now
+rather than tonight, or when you are diagnosing a run that did not come out
+clean. It is not the primary mechanism.**
+
+```bash
+cd /Users/stephentimmons/the-book-app
+set -a; . ./.env.tooling.local; set +a
+node scripts/account-deletion-worker.mjs            # --dry-run to look first
+```
+
+- **Environment:** `TEST_SUPABASE_URL` and `TEST_SUPABASE_SERVICE_ROLE_KEY` from
+  `.env.tooling.local` (never `EXPO_PUBLIC_*`, never committed).
+- **Production guard:** the script parses the project ref out of the URL and
+  **refuses to run against production**, and refuses any URL whose ref it cannot
+  positively identify. It is not a warning; it throws before connecting.
+- **Bounded:** `--max=<n>` caps how many objects one run deletes (default 200).
+- **Exit code:** non-zero whenever anything is late, any object failed to delete,
+  or any step errored. A clean run exits 0 and says so.
+
+**The recovery sequence when automation has failed:**
+
+1. Run the worker.
+2. Read `overdue_account_deletion_work()`.
+3. Resolve any media failures — `last_error` on `pending_media_deletions` says
+   what the Storage API refused.
+4. Re-run until the overdue query is empty.
+5. **Then find out why the scheduler did not.** A drained backlog with an
+   unexplained scheduler is the same outage tomorrow.
+
+---
+
+## 12. Standing operational obligations
+
+**Nobody has to run the worker.** It runs itself — see § 9. What follows is the
+FALLBACK, for when it does not.
 
 ```bash
 set -a; . ./.env.tooling.local; set +a
@@ -387,6 +551,10 @@ its grace date nothing finalised, or a step that is failed, held or past due.
 never ran is an account that was promised deletion and did not get it. The
 underlying calls are still available directly — `select public.sweep_account_deletions();`
 as `service_role` — if the worker cannot be run for some reason.
+
+**Someone has to watch the run log.** Automation removed the obligation to RUN
+the worker; it did not remove the obligation to notice that it stopped working.
+§ 10 is the whole of it.
 
 **Someone has to work held classes.** A hold is a decision to keep something; it
 needs revisiting and releasing, or it becomes an indefinite retention nobody

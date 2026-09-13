@@ -1,0 +1,264 @@
+// THE CANONICAL ACCOUNT-ERASURE EXECUTION SEQUENCE — one copy, two runtimes.
+//
+// ══ WHY THIS FILE EXISTS AT ALL ═══════════════════════════════════════════
+//
+// The erasure engine is finished and proven; what it lacked was something to
+// RUN it. There are now two callers — a scheduled Supabase Edge Function (Deno)
+// and `scripts/account-deletion-worker.mjs` (Node, the manual fallback) — and
+// two callers is exactly how a deletion engine acquires two slightly different
+// meanings of "done". So the sequence lives here, once, and the callers supply
+// nothing but I/O.
+//
+// **This module imports nothing.** Not `@supabase/supabase-js`, not a Deno std
+// library, not a polyfill. That is what lets one file be loaded unchanged by
+// `node` and by the Supabase Edge runtime, and it is the only reason the parity
+// is real rather than aspirational. Keep it that way: an import here is a fork.
+//
+// ══ THE SEQUENCE, AND WHY EACH STEP IS WHERE IT IS ════════════════════════
+//
+//   1. sweep  — finalises every request past its grace date and runs every purge
+//               whose retention window has expired. This is what ENQUEUES media.
+//   2. drain  — SQL cannot delete a storage object (Supabase answers `42501:
+//               Direct deletion from storage tables is not allowed`), so the
+//               engine queues them and only the Storage API can empty the queue.
+//               Rows are CLAIMED under a lease, not merely listed: two runs that
+//               list the same row make the loser report a failure for an object
+//               the winner deleted successfully.
+//   3. confirm — and ONLY on evidence. `remove()` reports
+//               `{ error: null, data: [] }` for a path that does not resolve, so
+//               confirming on the absence of an error writes a lie the
+//               `media_purge` gate would then believe. When nothing was removed
+//               the worker GOES AND LOOKS: an object the API says is not there is
+//               gone, and saying so is a fact rather than a shrug. Without that
+//               check an already-absent object could never be confirmed, and the
+//               erasure could never reach `completed`.
+//   4. sweep  — again, deliberately. `media_purge` could not pass before the
+//               drain, so without a second sweep every erasure would sit one run
+//               behind, reporting `failed` until somebody ran the worker twice.
+//   5. overdue — the honest answer to "did promised deletion work fail?"
+//
+// Every database rule stays in the database. This file orchestrates and reports;
+// it decides nothing about what may be deleted.
+
+/**
+ * @param {object} io  Runtime adapters. Each returns `{ data, error }` in the
+ *   supabase-js shape so neither caller has to translate.
+ * @param {() => Promise<{data:any,error:any}>} io.sweep
+ * @param {(limit:number) => Promise<{data:any[],error:any}>} io.claimPendingMedia
+ * @param {(bucket:string, folder:string, name:string) => Promise<{data:any[],error:any}>} io.listObjects
+ * @param {(bucket:string, path:string) => Promise<{data:any,error:any}>} io.removeObject
+ * @param {(bucket:string, path:string) => Promise<{data:any,error:any}>} io.confirmDeleted
+ * @param {(row:object, message:string) => Promise<void>} io.recordFailure
+ * @param {() => Promise<{data:any[],error:any}>} io.overdue
+ * @param {(line:string) => void} [io.log]
+ * @param {object} [opts]
+ * @param {number} [opts.max=200]   Most objects one run will delete. A run is
+ *   BOUNDED on purpose: a scheduled job that tries to empty an unbounded queue
+ *   in one invocation is a job that times out halfway and reports nothing.
+ * @param {boolean} [opts.dryRun=false]
+ */
+export async function runAccountDeletionWorker(io, opts = {}) {
+  const max = Math.max(1, Math.min(5000, Number(opts.max) || 200))
+  const dryRun = opts.dryRun === true
+  const log = io.log ?? (() => {})
+
+  const result = {
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+    dryRun,
+    max,
+    sweeps: [],
+    mediaExamined: 0,
+    mediaDeleted: 0,
+    mediaFailed: 0,
+    mediaAlreadyGone: 0,
+    overdueCount: 0,
+    overdue: [],
+    errors: [],
+    ok: false,
+  }
+
+  const fail = (stage, message) => {
+    const text = `${stage}: ${String(message)}`
+    result.errors.push(text)
+    log(text)
+  }
+
+  // ── 1. Sweep ────────────────────────────────────────────────────────────
+  if (dryRun) {
+    log('sweep 1: skipped (dry run)')
+  } else {
+    const { data, error } = await io.sweep()
+    if (error) fail('sweep 1', error.message ?? error)
+    else {
+      result.sweeps.push(data)
+      log(`sweep 1: ${JSON.stringify(data)}`)
+    }
+  }
+
+  // ── 2. Drain the media queue through the Storage API ───────────────────
+  const { data: rows, error: listError } = dryRun
+    ? await io.listPendingMedia(max)
+    : await io.claimPendingMedia(max)
+  if (listError) {
+    fail('media', listError.message ?? listError)
+  } else {
+    const queued = rows ?? []
+    result.mediaExamined = queued.length
+    if (queued.length === 0) {
+      log('media: nothing queued')
+    } else if (dryRun) {
+      log(`media: ${queued.length} object(s) queued (dry run, nothing deleted)`)
+      for (const r of queued) log(`  would delete ${r.bucket_id}/${r.object_path}`)
+    } else {
+      for (const r of queued) {
+        const { data: removed, error: rmError } = await io.removeObject(r.bucket_id, r.object_path)
+        // THE PAYLOAD, NOT JUST THE ERROR. A path that does not resolve comes
+        // back as `{ error: null, data: [] }`, and treating that as success
+        // confirms a deletion that never happened.
+        let reallyGone = !rmError && Array.isArray(removed) && removed.length > 0
+
+        if (!reallyGone && !rmError) {
+          // NOTHING WAS REMOVED, SO GO AND LOOK. If the object is genuinely not
+          // in the bucket then the bytes are gone and confirming it is a FACT —
+          // and refusing to confirm would wedge the erasure forever, because
+          // every later run would reach exactly this point again and
+          // `media_purge` would keep raising. This is the one case where absence
+          // is evidence, and it is evidence we went and gathered rather than
+          // assumed.
+          reallyGone = (await objectIsAbsent(io, r.bucket_id, r.object_path)) === true
+          if (reallyGone) {
+            result.mediaAlreadyGone += 1
+            log(`  already absent, confirming ${r.bucket_id}/${r.object_path}`)
+          }
+        }
+
+        if (!reallyGone) {
+          const why = rmError
+            ? (rmError.message ?? String(rmError))
+            : 'the Storage API removed nothing and the object is still in the bucket'
+          result.mediaFailed += 1
+          await io.recordFailure(r, why)
+          log(`  FAILED ${r.bucket_id}/${r.object_path}: ${why}`)
+          continue
+        }
+        const { data: confirmed, error: confirmError } = await io.confirmDeleted(
+          r.bucket_id,
+          r.object_path,
+        )
+        if (confirmError) {
+          result.mediaFailed += 1
+          log(`  DELETED BUT UNCONFIRMED ${r.bucket_id}/${r.object_path}: ${confirmError.message ?? confirmError}`)
+          continue
+        }
+        if (confirmed) result.mediaDeleted += 1
+      }
+      log(
+        `media: ${result.mediaDeleted} deleted` +
+          (result.mediaAlreadyGone ? ` (${result.mediaAlreadyGone} already absent)` : '') +
+          `, ${result.mediaFailed} failed, ${queued.length} examined (cap ${max})`,
+      )
+    }
+  }
+
+  // ── 3. Sweep again, so media_purge can pass in the SAME run ────────────
+  if (!dryRun) {
+    const { data, error } = await io.sweep()
+    if (error) fail('sweep 2', error.message ?? error)
+    else {
+      result.sweeps.push(data)
+      log(`sweep 2: ${JSON.stringify(data)}`)
+    }
+  }
+
+  // ── 4. What is late ────────────────────────────────────────────────────
+  const { data: late, error: overdueError } = await io.overdue()
+  if (overdueError) {
+    fail('overdue', overdueError.message ?? overdueError)
+  } else {
+    result.overdue = late ?? []
+    result.overdueCount = result.overdue.length
+    if (result.overdueCount === 0) {
+      log('overdue: nothing')
+    } else {
+      log(`overdue: ${result.overdueCount} item(s)`)
+      for (const r of result.overdue) {
+        log(
+          `  request ${r.request_id} step ${r.step_key} status ${r.status}` +
+            ` due ${r.due_at ?? '-'} attempts ${r.attempts ?? 0}` +
+            (r.last_error ? ` last_error ${r.last_error}` : ''),
+        )
+      }
+    }
+  }
+
+  // A run is successful only when nothing errored, nothing is late, and no
+  // object failed to delete. A failed object leaves `media_purge` unable to
+  // pass, so calling the run a success would be claiming an erasure finished
+  // with the bytes still in the bucket.
+  result.ok =
+    result.errors.length === 0 && result.overdueCount === 0 && result.mediaFailed === 0
+  result.finishedAt = new Date().toISOString()
+  return result
+}
+
+/**
+ * The part of a run that is safe to hand back over HTTP.
+ *
+ * ══ WHY A RUN RESULT IS NOT A RESPONSE BODY ══════════════════════════════
+ *
+ * The full result carries `overdue`, and `overdue_account_deletion_work()`
+ * returns a **subject id** per row — the one thing PD-105 keeps out of every
+ * role but `service_role`. When the caller is `pg_net`, the response body is
+ * stored in `net._http_response`, and on a Supabase project that table is
+ * granted to PUBLIC by the extension itself (`=arwdDxtm/supabase_admin`). It is
+ * unreachable today only because PostgREST exposes `public` and
+ * `graphql_public` and not `net` — a project setting that lives nowhere in this
+ * repository.
+ *
+ * So the body carries COUNTS and the durable, `service_role`-only
+ * `account_deletion_worker_runs` row carries the detail. The status code and the
+ * counts are everything a caller needs to know whether to wake somebody; the
+ * names of the people involved are not.
+ */
+export function summarizeRun(result) {
+  return {
+    ok: result.ok,
+    startedAt: result.startedAt,
+    finishedAt: result.finishedAt,
+    dryRun: result.dryRun,
+    mediaExamined: result.mediaExamined,
+    mediaDeleted: result.mediaDeleted,
+    mediaFailed: result.mediaFailed,
+    mediaAlreadyGone: result.mediaAlreadyGone,
+    overdueCount: result.overdueCount,
+    errorCount: result.errors.length,
+    sweeps: result.sweeps,
+  }
+}
+
+/**
+ * Is this object absent from the bucket?
+ *
+ * ══ THE FAILED-LOOKUP RULE LIVES HERE, ONCE ══════════════════════════════
+ *
+ * `true` only on a successful listing that does not contain the object. **A
+ * lookup that itself failed returns `false` — "still there"** — so the object is
+ * RETRIED rather than confirmed on a question nobody answered. Confirming on a
+ * failed lookup would be exactly the "generic failure as proof of deletion" that
+ * PD-109 forbids, and it is the most dangerous line in this file.
+ *
+ * It lived in both adapters, copied verbatim, until the security review pointed
+ * out that the one safety-critical branch of PD-109 was duplicated in the very
+ * design that exists to stop business logic being duplicated — and that neither
+ * copy had a test. Now there is one copy, and it has one.
+ */
+export async function objectIsAbsent(io, bucket, path) {
+  const slash = path.lastIndexOf('/')
+  const folder = slash === -1 ? '' : path.slice(0, slash)
+  const name = slash === -1 ? path : path.slice(slash + 1)
+  const { data, error } = await io.listObjects(bucket, folder, name)
+  if (error) return false
+  if (!Array.isArray(data)) return false
+  return !data.some((o) => o?.name === name)
+}
