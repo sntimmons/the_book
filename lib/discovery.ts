@@ -240,7 +240,20 @@ export function buildDiscoveryLanes(inputs: DiscoveryInputs): DiscoveryLane[] {
   // slot, and the product does not know the second thing.
   lanes.push({
     key: 'available_soon',
-    title: 'Available Soon',
+    // ── THE TITLE SAID MORE THAN THE DATA (PD-112) ─────────────────────────
+    //
+    // This read "Available Soon" over a subtitle that correctly said "Open today,
+    // based on the hours they published." Those are different claims: the lane is
+    // built from `availableToday`, which is published working hours for today's
+    // weekday minus blocked dates — it means OPEN, and booked time is deliberately
+    // not subtracted because this beta has no slot engine. "Available Soon"
+    // promises a free appointment, which nothing here establishes.
+    //
+    // PD-112: a headline may not assert what its own body calls something else. The
+    // subtitle was already right, so the title is what changed. The lane KEY is
+    // left alone — it is not user-facing and renaming it would touch tests and
+    // callers for no gain in truth.
+    title: 'Open Today',
     subtitle: 'Open today, based on the hours they published.',
     providers: providers
       .filter((p) => p.availableToday === true)

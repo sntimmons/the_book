@@ -56,8 +56,24 @@ export default function BookingDeclined() {
         return
       }
 
+      // ── READS THE VIEW, NOT THE TABLE (PD-089) ───────────────────────────
+      //
+      // This was `.from('providers')`. The base table's SELECT policy is
+      //
+      //     (NOT account_unavailable(user_id)) OR user_id = auth.uid()
+      //                                        OR caller_deals_with_provider(id)
+      //
+      // — which excludes deleted and pending-deletion accounts and **carries no
+      // block predicate at all**. The block filter lives in `providers_visible`.
+      // So this screen could RECOMMEND a provider the client had blocked, which is
+      // worse than merely failing to hide one: the app was actively putting them
+      // forward. Proven against non-production with a control — before the block
+      // base=1/view=1, after it base=1/view=0.
+      //
+      // Every other discovery surface already reads the view (`fetchDiscoveryPool`,
+      // `useProviders`, `useProviderSearch`); this one call site did not.
       const { data: similar } = await supabase
-        .from('providers')
+        .from('providers_visible')
         .select('id, display_name, neighborhood, average_rating, category_id')
         .eq('category_id', declinedProvider.category_id)
         .eq('is_approved', true)
