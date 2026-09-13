@@ -14,6 +14,7 @@
 import {
   classify,
   exposedFrom,
+  exposedObservations,
   judgeExposedList,
 } from '@/scripts/check-api-schemas.mjs'
 
@@ -95,5 +96,82 @@ describe('judgeExposedList — a refusal alone proves nothing', () => {
 
   it('refuses to pass when no list was obtained at all', () => {
     expect(judgeExposedList([null, null])).toMatch(/prove nothing/)
+  })
+})
+
+describe('judgeExposedList — the probes must AGREE, and a disagreement fails closed', () => {
+  // The three probes (`net`, `cron`, `vault`) read ONE project setting. The
+  // judgement used to take whichever list came back first and ignore the rest, so a
+  // disagreement was resolved silently in favour of the earliest answer. On a
+  // release gate that is the same defect class as the substring match this file
+  // already closed: a pass for the wrong reason.
+  const ALLOWED = ['public', 'graphql_public']
+
+  it('(1) PASSES when all three probes agree on the allowed list', () => {
+    expect(judgeExposedList([ALLOWED, ALLOWED, ALLOWED])).toBeNull()
+  })
+
+  it('(1b) agreement is by SET, not by order — a different order is not a disagreement', () => {
+    expect(judgeExposedList([ALLOWED, ['graphql_public', 'public'], ALLOWED])).toBeNull()
+  })
+
+  it('(2) FAILS when all three probes agree on a DISALLOWED list', () => {
+    // Unanimity is not correctness. Three probes agreeing that `net` is exposed is
+    // the gate's worst-case finding, not its happy path.
+    expect(judgeExposedList([['public', 'net'], ['public', 'net'], ['public', 'net']])).toMatch(
+      /forbidden schema/,
+    )
+    // And an extra non-forbidden schema is still not the expected list.
+    const extra = ['public', 'graphql_public', 'storage']
+    expect(judgeExposedList([extra, extra, extra])).toMatch(/expected/)
+  })
+
+  it('(3) FAILS when the probes DISAGREE, naming every list it saw', () => {
+    const problem = judgeExposedList([ALLOWED, ['public', 'graphql_public', 'storage'], ALLOWED])
+    expect(problem).toMatch(/DISAGREE/)
+    // The diagnostic must show the differing lists, not just announce a conflict —
+    // otherwise nobody can tell which probe to go and look at.
+    expect(problem).toContain('[public, graphql_public]')
+    expect(problem).toContain('[public, graphql_public, storage]')
+  })
+
+  it('(3b) does NOT silently choose the first list — the OLD behaviour would have passed this', () => {
+    // First list is clean, a later one is not. Pre-fix this returned null.
+    expect(judgeExposedList([ALLOWED, ['public', 'graphql_public', 'net']])).not.toBeNull()
+  })
+
+  it('(3c) a disagreement never MASKS a leak — the forbidden schema is reported', () => {
+    // Both things are wrong here. The leak is the more urgent fact and must be the
+    // one named, rather than being hidden behind "the probes disagree".
+    expect(judgeExposedList([ALLOWED, ['public', 'net']])).toMatch(/forbidden schema/)
+  })
+
+  it('(4) FAILS on malformed or unusable probe responses', () => {
+    expect(judgeExposedList([null, undefined])).toMatch(/prove nothing/)
+    expect(judgeExposedList([])).toMatch(/prove nothing/)
+    expect(judgeExposedList(undefined)).toMatch(/prove nothing/)
+    // `[]` is TRUTHY, so a `filter(Boolean)` would have kept it and then reported
+    // "the exposed list is exactly []" as a finding derived from nothing.
+    expect(judgeExposedList([[]])).toMatch(/prove nothing/)
+    // A non-array where a list was expected is not an observation either.
+    expect(judgeExposedList(['public, graphql_public'])).toMatch(/prove nothing/)
+  })
+
+  it('ignores unusable entries when a real observation exists beside them', () => {
+    expect(judgeExposedList([null, ALLOWED, []])).toBeNull()
+  })
+})
+
+describe('exposedObservations — what the PASS line is allowed to read', () => {
+  // The CLI printed `lists.filter(Boolean)[0]`, which could pick an empty array and
+  // print "exactly []" on a run that had genuinely observed the allowed list. Both
+  // the judgement and the print now go through this one filter.
+  it('keeps only non-empty arrays', () => {
+    expect(exposedObservations([null, [], ['public'], 'nope', undefined])).toEqual([['public']])
+  })
+
+  it('returns an empty array for nothing usable, rather than throwing', () => {
+    expect(exposedObservations(undefined)).toEqual([])
+    expect(exposedObservations([null, []])).toEqual([])
   })
 })

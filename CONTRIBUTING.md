@@ -8,6 +8,16 @@ keep changes safe and reviewable. Read [README.md](README.md) and
 
 - **Branch from `main`.** Never commit directly to `main`. Use a short,
   descriptive branch name.
+- **This includes documentation-only work, and state reconciliations in
+  particular.** Every change reaches `main` the same way: **branch → commit →
+  push → PR → CI → merge**. There is **no direct-to-main exception**, and none
+  may be introduced for docs, for a reconciliation, or for a change judged too
+  small to review. Written down because the practice had drifted: several
+  post-merge state reconciliations were committed straight to `main`, which
+  contradicted this rule and also contradicted the Project State Steward's own
+  checklist (*"confirm the working tree is clean and the branch is not `main`"*)
+  and its `Last edited by: PR #NN` output field — a field that cannot be filled
+  in without a PR.
 - **Keep changes small and scoped.** One logical change per branch. Large,
   mixed diffs are hard to review and hard to revert.
 - **Review the diff before merging.** Read the full `git diff` yourself (or have
