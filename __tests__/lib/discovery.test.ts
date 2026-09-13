@@ -177,8 +177,25 @@ describe('buildDiscoveryLanes', () => {
     })
   })
 
-  describe('Popular Near You', () => {
-    it('ranks by completed bookings, then by reviews', () => {
+  // ── POPULAR NEAR YOU IS DEFERRED, NOT DELETED (PM ruling) ───────────────
+  //
+  // This block used to assert the lane's ranking: completed bookings, then reviews,
+  // with providers who have no track record ABSENT rather than ranked last, and an
+  // honest rename to "Popular on The Book" when nobody was near the viewer. Those
+  // assertions all passed. The lane was not unfair.
+  //
+  // It does not ship in the closed beta because of the word "Near". There is no
+  // latitude or longitude in this schema — `location` and `neighborhood` are free
+  // text the provider typed — so proximity is a string match, and the lane implied a
+  // precision the product cannot establish. The rename made it worse rather than
+  // better: with zero providers having set either field, `near` was always empty and
+  // the lane silently became a popularity row nobody had approved.
+  //
+  // The lane CODE is kept dormant so the reasoning survives for whoever re-enables
+  // it once provider neighborhood/service-area data is populated and audited. What
+  // is asserted now is that it cannot reach a user.
+  describe('Popular Near You — deferred for the closed beta', () => {
+    it('is NOT surfaced, whatever the data would have qualified for it', () => {
       const lanes = buildDiscoveryLanes({
         providers: [
           provider({ id: 'mid', totalBookings: 5, averageRating: 5 }),
@@ -187,31 +204,42 @@ describe('buildDiscoveryLanes', () => {
         ],
         now: NOW,
       })
-      expect(laneFor(lanes, 'popular_near_you')?.providers.map((p) => p.id))
-        .toEqual(['top', 'mid', 'tiedLow'])
+      expect(laneFor(lanes, 'popular_near_you')).toBeUndefined()
+      expect(lanes.map((l) => l.key)).not.toContain('popular_near_you')
     })
 
-    it('omits a provider with no completed bookings rather than ranking them last', () => {
-      // Having no track record is not a worse track record. A provider with zero
-      // bookings is absent from a lane about track records, and picked up by the
-      // catch-all instead.
+    it('no surviving lane is titled for popularity or proximity', () => {
+      // The failure mode being guarded is a replacement lane arriving under a
+      // different key with the same unapproved claim.
       const lanes = buildDiscoveryLanes({
         providers: [
-          provider({ id: 'booked', totalBookings: 2 }),
+          provider({ id: 'a', totalBookings: 9, averageRating: 5, neighborhood: 'Midtown' }),
+          provider({ id: 'b', totalBookings: 4, averageRating: 4, neighborhood: 'Midtown' }),
+        ],
+        viewerNeighborhood: 'Midtown',
+        now: NOW,
+      })
+      for (const lane of lanes) {
+        expect(lane.title).not.toMatch(/\bpopular\b/i)
+        expect(lane.title).not.toMatch(/\btrending\b/i)
+        expect(lane.title).not.toMatch(/\bbest\b/i)
+        expect(lane.title).not.toMatch(/\btop\b/i)
+      }
+    })
+
+    it('a provider with a real track record is still shown somewhere', () => {
+      // Deferring the lane must not remove anybody from discovery. This is the
+      // assertion that would catch it if it did.
+      const lanes = buildDiscoveryLanes({
+        providers: [
+          provider({ id: 'booked', totalBookings: 9, averageRating: 5 }),
           provider({ id: 'none', totalBookings: 0 }),
         ],
         now: NOW,
       })
-      expect(laneFor(lanes, 'popular_near_you')?.providers.map((p) => p.id)).toEqual(['booked'])
-      expect(laneFor(lanes, 'worth_a_look')?.providers.map((p) => p.id)).toEqual(['none'])
-    })
-
-    it('is named honestly when there is nobody near the viewer', () => {
-      const lanes = buildDiscoveryLanes({
-        providers: [provider({ id: 'a', totalBookings: 4, location: 'Dallas, TX' })],
-        now: NOW,
-      })
-      expect(laneFor(lanes, 'popular_near_you')?.title).toBe('Popular on The Book')
+      const shown = new Set(lanes.flatMap((l) => l.providers.map((p) => p.id)))
+      expect(shown.has('booked')).toBe(true)
+      expect(shown.has('none')).toBe(true)
     })
   })
 

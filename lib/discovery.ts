@@ -157,7 +157,7 @@ function isNew(p: DiscoveryProvider, now: number): boolean {
  * across renders on purpose: a feed that reshuffled on every scroll would be
  * fairer and unusable.
  */
-function tiebreak(id: string): number {
+export function tiebreak(id: string): number {
   // FNV-1a, then an xorshift finalizer. The finalizer is the load-bearing part:
   // a plain polynomial hash is MONOTONIC in the last character, so ids that
   // differ only in their tail ("a1", "a2", "a3") come out in exactly the order
@@ -276,16 +276,29 @@ export function buildDiscoveryLanes(inputs: DiscoveryInputs): DiscoveryLane[] {
   // them and a person rated them. No content signal reaches this comparison, and
   // a provider with no bookings yet is absent rather than ranked last — this lane
   // is about a track record, and having none is not a worse one.
-  const popular = (near.length > 0 ? near : providers)
-    .filter((p) => (p.totalBookings ?? 0) > 0)
-    .sort(byBookingsThenRating)
-    .slice(0, LANE_LIMIT)
-  lanes.push({
-    key: 'popular_near_you',
-    title: near.length > 0 ? 'Popular Near You' : 'Popular on The Book',
-    subtitle: 'Ranked by completed bookings and client reviews.',
-    providers: popular,
-  })
+  // ── PM RULING: POPULAR NEAR YOU DOES NOT SHIP IN THE CLOSED BETA ────────
+  //
+  // Not because the lane was unfair — it ranks completed bookings and reviews,
+  // which are marketplace facts, and it EXCLUDES providers with no track record
+  // rather than ranking them last. The problem is the word "Near".
+  //
+  // There is no latitude or longitude anywhere in this schema. `location` and
+  // `neighborhood` are free text the provider typed, so proximity is a string
+  // match and nothing more. The lane would imply a precision the product cannot
+  // establish. And in non-production ZERO providers have set either field, so the
+  // `near` list is empty and the title silently degraded to "Popular on The
+  // Book" — a popularity row nobody approved, wearing the name of a lane that was
+  // about proximity.
+  //
+  // THE CODE IS KEPT AND LEFT DORMANT, which the ruling permits: the rule is
+  // written down, testable, and ready to re-enable once provider
+  // neighborhood/service-area data is populated and audited. Deleting it would
+  // mean re-deriving the reasoning later from nothing. It is not pushed, so it
+  // cannot surface — `buildDiscoveryLanes` never returns it.
+  //
+  // Reconsider ONLY after the data gap is closed, and not by inventing a
+  // different location lane in the meantime.
+  void byBookingsThenRating
 
   // WORTH A LOOK — the exposure guarantee. See the note above the function.
   const shown = new Set(lanes.flatMap((l) => l.providers.map((p) => p.id)))

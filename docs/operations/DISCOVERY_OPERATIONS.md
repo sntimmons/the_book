@@ -55,13 +55,24 @@ photo and at least one active service; those gate going live, not staying visibl
 order attention; the grid below them still lists every approved provider, so a lane being full never
 removes anybody from discovery.
 
+**What decides order, in one sentence: the surface's own rule first, canonical rating second, and a
+meaningless deterministic tie-break last. Nothing else.**
+
 | Lane | Who is in it | How it is ordered |
 |---|---|---|
 | **Near You** | Same neighborhood, or same city when neighborhoods do not match | Deterministic tie-break. **Not** by rating or bookings — it answers "who is around here" |
 | **Open Today** | The server says they published working hours for today and have not blocked the date | Deterministic tie-break |
 | **New to The Book** | Joined in the last **30 days** | Newest first |
-| **Popular Near You** | Has **at least one completed booking** | Completed bookings, then reviews |
 | **Worth a Look** | Everyone the rows above did not show | Deterministic tie-break |
+
+**"Popular Near You" does not ship in the closed beta** (PM ruling). Not because it was unfair — it
+ranked completed bookings and reviews, which are marketplace facts, and it *excluded* providers with
+no track record rather than ranking them last. The problem is the word **"Near"**: there is no
+latitude or longitude in this schema, so proximity is a text match and the lane implied a precision
+the product cannot establish. With no provider having set a neighborhood it silently became a
+popularity row nobody approved. **The code is dormant, not deleted** — ready to reconsider once
+provider neighborhood / service-area data is populated and audited. If somebody asks where the
+popular row went, that is the answer.
 
 Every lane is capped at **12**. That is a ceiling, not a quota: it stops one row becoming the whole
 screen, and it applies to every lane identically.
@@ -98,8 +109,10 @@ A provider approved today, with no reviews, no bookings and no posts:
 - appears in **Worth a Look** whenever the other rows did not show them
 - appears in the complete grid
 
-**They are absent from exactly one lane — Popular Near You — and that lane excludes them rather than
-ranking them last**, because it is about a track record and having none is not a worse one.
+**Since Popular Near You is deferred, a new provider is now absent from no lane at all.** Every
+surviving lane either includes them or is about something they can satisfy today — and the one lane
+that ranked on a track record was the only one they could not, which excluded them rather than
+ranking them last.
 
 ## 6. How unrated providers are shown
 
@@ -110,11 +123,42 @@ verdict — the rating simply is not rendered.
 `0`. Every surface goes through one helper (`displayRating`) which treats `0` as *"not rated yet"*,
 because **the scale starts at 1**. If you ever see `★ 0.0` in the app, that is a bug — report it.
 
-**Known limitation, and it is the open ranking question:** the complete grid and search results are
-ordered by rating descending, and because the stored value for an unrated provider is `0`, they sort
-**below every rated provider**. That is a ranking behaviour awaiting a product ruling, recorded in
-the audit as the one open decision. It does not remove anybody from discovery, and the lanes are not
-affected.
+**UNRATED IS NEUTRAL, NOT ZERO QUALITY** (PM ruling, now implemented). An unrated provider does not
+compete on the rating scale at all — they simply follow those who do, **within** whatever the
+surface's primary rule already decided, and are then ordered by a deterministic tie-break that
+favours nobody.
+
+- **Search:** relevance tier first, then rating among the rated, then unrated, then tie-break. **A
+  rating can never move a provider across a relevance tier.**
+- **The complete grid:** rated before unrated, then the deterministic tie-break.
+
+What changed and why it matters: the grid used to break its remaining ties on `id`, which ordered the
+entire unrated tail **by signup date, permanently**, on the most-visited surface in the product —
+today that is every provider. It now orders on `discovery_tiebreak`, a generated column that nobody
+can set.
+
+## 6b. How search decides an order
+
+**Search intent outranks popularity.** A provider is placed in the strongest tier they qualify for,
+and **rating can only reorder providers inside the same tier** — it can never lift a weakly relevant
+provider above a strongly relevant one.
+
+| Tier | What it means |
+|---|---|
+| **1** | The query names a **service they publish**, or their category / trade |
+| **2** | The query names **them** — display name, business name or handle |
+| **3** | A broader relevant match — a looser service hit, their bio, their area |
+| **4** | The database matched and we cannot see why. Still shown, last |
+
+Within a tier: rated providers by canonical rating, then unrated, then the deterministic tie-break.
+
+**Service and category outrank name on purpose.** Somebody searching "balayage" is describing the
+work they want, not the person they want — so a provider who performs it answers better than one
+whose business name happens to contain the word. If a provider asks why a competitor appears above
+them for a term, the checkable answer is which tier each of them is in, and that follows from their
+own published services.
+
+**Relevance is a sort, never a filter.** Nobody is dropped for being a weak match.
 
 ## 7. How "Open Today" should be read
 
@@ -156,12 +200,15 @@ and prompting providers to set a neighborhood would do more for discovery than a
 1. **The grid and search order by rating**, so unrated providers sort last. Open product question.
 2. **No location data in practice**, so Near You is empty today.
 3. **No slot engine**, so "Open Today" is an open state and never a free appointment.
-4. **`is_featured` is the grid's first sort key.** Nothing in the product ever sets it — the only
-   writes anywhere are erasure setting it `false`, and no client role can write it — so it is inert.
-   It remains a hook that would pin a provider above the entire marketplace if anyone ever set it.
-   **If you are asked to "feature" somebody, that is a product decision, not a support action.**
-5. **`is_trending` is never set either**, so the "Trending" badge is unreachable.
-6. **Search returns at most 20 results** and does not rank by how well the match fits the query.
+4. **`is_featured` no longer affects ranking at all** (PM ruling). It was the grid's first sort key,
+   above rating. The column remains and still drives the visible "Featured" badge — a label is not a
+   hidden reorder — but it cannot reorder results, boost discovery or override relevance.
+   **If you are asked to "feature" somebody into a better position, that is not something the system
+   can do any more, and it was never a support action.**
+5. **`is_trending` is never set by anything**, so the "Trending" badge is unreachable.
+6. **Search returns at most 20 results**, chosen from a ranked pool of up to 200 — so the 20 shown
+   are the 20 most relevant, not the 20 highest-rated.
+7. **Proximity lanes are deferred** until neighborhood / service-area data exists. See § 8.
 
 ## 10. Fairness behaviour Operations should understand
 

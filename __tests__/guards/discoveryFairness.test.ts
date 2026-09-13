@@ -283,16 +283,111 @@ describe('fairness metrics on a representative closed-beta cohort', () => {
     for (const p of unrated) expect(occupancy.get(p.id) ?? 0).toBeGreaterThan(0)
   })
 
-  it('the performance lane ranks on marketplace facts and excludes nobody who has none', () => {
-    // SCENARIO D vs C: the only lane that ranks on a track record contains ONLY
-    // providers with completed bookings, and having none puts a provider elsewhere
-    // rather than last. There is no social input available to it — `DiscoveryProvider`
-    // carries none — so C cannot outrank D by posting.
-    const popular = lanes.find((l) => l.key === 'popular_near_you')
-    expect(popular).toBeDefined()
-    for (const p of popular!.providers) expect(p.totalBookings ?? 0).toBeGreaterThan(0)
-    // And everyone it left out is still represented.
-    const missing = providers.filter((p) => (p.totalBookings ?? 0) === 0)
-    for (const p of missing) expect(occupancy.get(p.id) ?? 0).toBeGreaterThan(0)
+  it('the deferred performance lane is absent, and nobody lost exposure to it', () => {
+    // SCENARIO D vs C. "Popular Near You" is deferred by PM ruling (no lat/long
+    // model, so "Near" claims a precision the product cannot establish). What must
+    // remain true is that deferring it removed nobody from discovery — the five
+    // established providers it would have held are still represented.
+    expect(lanes.map((l) => l.key)).not.toContain('popular_near_you')
+    const established = providers.filter((p) => (p.totalBookings ?? 0) > 0)
+    expect(established.length).toBeGreaterThan(0)
+    for (const p of established) expect(occupancy.get(p.id) ?? 0).toBeGreaterThan(0)
+    // And C cannot outrank D by posting, because no social signal exists to rank on.
+    const noTrackRecord = providers.filter((p) => (p.totalBookings ?? 0) === 0)
+    for (const p of noTrackRecord) expect(occupancy.get(p.id) ?? 0).toBeGreaterThan(0)
+  })
+})
+
+// ══ 6. is_featured CANNOT REORDER THE MARKETPLACE (PM ruling) ═════════════
+//
+// It was the FIRST sort key of the complete grid, above rating, with a column
+// comment calling it "Admin-curated". Nothing in the product ever set it — the only
+// writes anywhere are erasure setting it false, no client role holds UPDATE, and
+// zero rows had it true — so it was inert. It was also one `UPDATE` away from
+// silently pinning a provider above the entire marketplace with no product rule
+// behind it.
+//
+// THE COLUMN STAYS. The ruling permits it to remain for another legitimate purpose,
+// and it still drives the visible "Featured" badge — a label is not a hidden
+// reorder. What it may no longer do is decide who is seen first.
+describe('is_featured cannot alter marketplace provider ranking', () => {
+  it('the grid ORDER BY does not name it', () => {
+    const s = code('hooks/useProviders.ts')
+    expect(s).not.toMatch(/order\(\s*['"]is_featured['"]/)
+    expect(s).not.toMatch(/order\(\s*['"]is_trending['"]/)
+  })
+
+  it('the grid orders on canonical rating and then the deterministic tie-break', () => {
+    // Scoped to the GRID query. The file also orders services by price and hero
+    // images by sort_order, which are not provider rankings.
+    const s = code('hooks/useProviders.ts')
+    const grid = /from\(\s*['"]providers_visible['"]\s*\)[\s\S]*?\.order\([\s\S]*?\.order\([^)]*\)/
+    const m = grid.exec(s.slice(s.indexOf('function useProviders(')))
+    expect(m).not.toBeNull()
+    const order = [...m![0].matchAll(/order\(\s*['"]([a-z_]+)['"]/g)].map((x) => x[1])
+    expect(order[0]).toBe('average_rating')
+    expect(order[1]).toBe('discovery_tiebreak')
+    expect(order).not.toContain('is_featured')
+    // `id` as a provider ordering key is the defect the tie-break column replaced:
+    // it ordered the whole unrated tail by signup date, permanently.
+    expect(order).not.toContain('id')
+  })
+
+  it('no provider-list query anywhere orders by id, which favours early signups', () => {
+    // Both the grid AND the lanes' pool had this. The pool mattered more at scale:
+    // ordering it by id and taking 200 makes the pool the oldest accounts, and the
+    // lanes can only rank what the pool contains.
+    const s = code('hooks/useProviders.ts')
+    const providerQueries = [...s.matchAll(/from\(\s*['"]providers(_visible)?['"]\s*\)[\s\S]{0,900}?(?=\n\s*\}|\n\s*const |$)/g)]
+    for (const q of providerQueries) {
+      // A single-row lookup by id is not a list and may filter on id.
+      if (/\.single\(\)|\.maybeSingle\(\)|count:/.test(q[0])) continue
+      expect(q[0]).not.toMatch(/order\(\s*['"]id['"]/)
+    }
+  })
+
+  it('search ranking cannot see it — the type has no such field', () => {
+    // Enforced by the type in providerSearchRank.test.ts; asserted here as the
+    // absence of any mention in the ranking module at all.
+    expect(code('lib/providerSearchRank.ts')).not.toMatch(/is_featured|isFeatured/)
+  })
+
+  it('the lane rules cannot see it either', () => {
+    expect(code('lib/discovery.ts')).not.toMatch(/is_featured|isFeatured/)
+  })
+})
+
+// ══ 7. NO PROVIDER APPEARS TWICE IN ONE LANE ══════════════════════════════
+//
+// A duplicate inside a single row is an implementation bug rather than a fairness
+// one, but it looks exactly like favouritism to whoever sees it, and an ordering
+// change is when it appears.
+describe('no module shows the same provider twice', () => {
+  const NOW2 = Date.parse('2026-09-13T12:00:00.000Z')
+  const list: DiscoveryProvider[] = Array.from({ length: 20 }, (_, i) => ({
+    id: `d${i}`,
+    neighborhood: 'Midtown',
+    location: 'Houston, TX',
+    createdAt: new Date(NOW2 - (i % 2 === 0 ? 5 : 400) * 86400000).toISOString(),
+    totalBookings: i % 3,
+    averageRating: i % 4 === 0 ? null : 4 + (i % 4) / 10,
+    availableToday: i % 2 === 0,
+  }))
+  const lanes = buildDiscoveryLanes({ providers: list, viewerNeighborhood: 'Midtown', now: NOW2 })
+
+  it('every lane holds distinct providers', () => {
+    for (const lane of lanes) {
+      const ids = lane.providers.map((p) => p.id)
+      expect(new Set(ids).size).toBe(ids.length)
+    }
+  })
+
+  it('Worth a Look never repeats somebody an earlier lane already showed', () => {
+    // Its whole job is to be the complement of the rows above it.
+    const earlier = new Set(
+      lanes.filter((l) => l.key !== 'worth_a_look').flatMap((l) => l.providers.map((p) => p.id)),
+    )
+    const worth = lanes.find((l) => l.key === 'worth_a_look')
+    for (const p of worth?.providers ?? []) expect(earlier.has(p.id)).toBe(false)
   })
 })

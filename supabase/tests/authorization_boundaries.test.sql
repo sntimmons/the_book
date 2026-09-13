@@ -750,3 +750,45 @@ select pg_temp.chk_allowed('authz', 'storage: a user CAN upload into their own f
 -- instead proven through the real Storage API by the runtime verification script
 -- recorded in the migration ledger, which showed an owner's object actually
 -- disappearing and a stranger's delete leaving it in place.
+
+-- ══ DISCOVERY TIE-BREAK: A RANKING KEY NOBODY CAN SET ═════════════════════
+--
+-- `20261135000000` added `providers.discovery_tiebreak` so the paginated grid can
+-- order ties by nothing instead of by signup date. The whole value of the column is
+-- that it is UNSETTABLE — a placement key anyone could write would be `is_featured`
+-- again, which the PM ruling just removed from ranking.
+select pg_temp.chk('authz', 'discovery_tiebreak is GENERATED, so nobody can set it', 'ALWAYS',
+  (select is_generated from information_schema.columns
+    where table_schema = 'public' and table_name = 'providers'
+      and column_name = 'discovery_tiebreak'));
+select pg_temp.chk('authz', 'and no client role holds UPDATE on it', 'false/false',
+  has_column_privilege('anon', 'public.providers', 'discovery_tiebreak', 'UPDATE')::text
+  ||'/'|| has_column_privilege('authenticated', 'public.providers', 'discovery_tiebreak', 'UPDATE')::text);
+select pg_temp.chk('authz', 'but both client roles can READ it, or the grid cannot order', 'true/true',
+  has_column_privilege('anon', 'public.providers', 'discovery_tiebreak', 'SELECT')::text
+  ||'/'|| has_column_privilege('authenticated', 'public.providers', 'discovery_tiebreak', 'SELECT')::text);
+-- Not monotonic in the id: sequential ids must not come out sorted, which is the
+-- durable advantage the column exists to remove.
+select pg_temp.chk('authz', 'the tie-break order is not the id order', 'true',
+  ((select string_agg(id::text, ',' order by discovery_tiebreak) from public.providers)
+   is distinct from
+   (select string_agg(id::text, ',' order by id) from public.providers))::text);
+
+-- The view had to be republished to expose it. These re-assert the two SECURITY
+-- properties of that view, because a `create or replace view` is a full rewrite and
+-- that is exactly when a predicate gets dropped.
+select pg_temp.chk('authz', 'providers_visible still carries the bidirectional block predicate', 'true',
+  (pg_get_viewdef('public.providers_visible'::regclass, true) like '%user_blocks%')::text);
+select pg_temp.chk('authz', 'and still excludes unavailable accounts', 'true',
+  (pg_get_viewdef('public.providers_visible'::regclass, true) like '%account_unavailable%')::text);
+select pg_temp.chk('authz', 'and is still a DEFINER view owned by postgres', 'postgres/false',
+  (select pg_get_userbyid(c.relowner) ||'/'||
+          coalesce((select option_value from pg_options_to_table(c.reloptions)
+                     where option_name = 'security_invoker'), 'false')
+     from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relname = 'providers_visible'));
+select pg_temp.chk('authz', 'and exposes the tie-break the grid orders on', 'true',
+  (select (count(*) > 0)::text from information_schema.columns
+    where table_schema = 'public' and table_name = 'providers_visible'
+      and column_name = 'discovery_tiebreak'));
+select pg_temp.act_service();

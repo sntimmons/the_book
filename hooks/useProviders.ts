@@ -1,4 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
+
+import { rankProviderSearch } from '@/lib/providerSearchRank'
+import { displayRating } from '@/lib/reputationLabel'
 import { useFocusEffect } from 'expo-router'
 import { supabase } from '../lib/supabase'
 
@@ -117,6 +120,19 @@ const PUBLIC_PROVIDER_FIELDS = [
   'created_at',
 ].join(', ')
 
+/**
+ * How many candidates search ranks before trimming.
+ *
+ * Generous on purpose. If the server trimmed to the display limit first it would
+ * be choosing which providers the relevance rules are even allowed to consider —
+ * which is the defect the ranking exists to fix, moved one step earlier. Bounded
+ * because a search still has to return.
+ */
+const SEARCH_POOL = 200
+
+/** How many ranked results the screen shows. */
+const SEARCH_RESULT_LIMIT = 20
+
 // The ids of providers who are open today, per the server.
 //
 // ── WHY THIS IS AN RPC AND NOT A COLUMN ───────────────────────────────────
@@ -169,7 +185,19 @@ export async function fetchDiscoveryPool(limit: number = 200): Promise<Provider[
     .from('providers_visible')
     .select(PUBLIC_PROVIDER_FIELDS)
     .eq('is_approved', true)
-    .order('id', { ascending: true })
+    // ── THE POOL MUST NOT BE "THE EARLIEST 200" ──────────────────────────────
+    //
+    // This ordered by `id` and took `limit`. In a market larger than the limit that
+    // makes the pool the OLDEST accounts, and since the lanes can only rank what the
+    // pool contains, every provider past the cut would be invisible in every lane —
+    // permanently, and for no reason but signup order. The cohort is far below 200
+    // today, so nothing is currently excluded; the ordering is still the same durable
+    // advantage `tiebreak()` exists to remove, one layer up.
+    //
+    // `discovery_tiebreak` is a generated md5 of the row id (20261135000000):
+    // deterministic, so the pool is stable across renders rather than reshuffling
+    // under a thumb, and meaningless, so the sample favours nobody.
+    .order('discovery_tiebreak', { ascending: true })
     .limit(limit)
   // Empty, not null: the lanes simply do not render, and the complete grid below
   // them is unaffected. There is nothing here a viewer needs to be told.
@@ -261,11 +289,36 @@ export function useProviders(categoryId?: number, pageSize?: number) {
           .from('providers_visible')
           .select(PUBLIC_PROVIDER_FIELDS)
           .eq('is_approved', true)
-          .order('is_featured', { ascending: false })
+          // ── PM RULING: NO SILENT FEATURED OVERRIDE ────────────────────────
+          //
+          // `is_featured` was the FIRST sort key here, putting a flagged provider
+          // above the entire marketplace. Nothing in the product ever set it — the
+          // only writes anywhere are erasure setting it false, and no client role
+          // holds UPDATE — so it was inert. It was also one UPDATE away from being
+          // a silent placement override with no product rule behind it, which is
+          // why the ruling removes it from ranking rather than leaving it dormant.
+          //
+          // THE COLUMN STAYS. It still drives the "Featured" badge, which is a
+          // visible label rather than a hidden reorder. What it may no longer do is
+          // decide who is seen first.
+          //
+          // ── PM RULING: UNRATED IS NEUTRAL, NOT ZERO QUALITY ───────────────
+          //
+          // `average_rating` is NOT NULL DEFAULT 0, so rating-descending already
+          // places rated providers before unrated ones — which the ruling permits
+          // as a SECONDARY sort. What it does not permit is the old second key:
+          // `id ASC` ordered the entire unrated tail by SIGNUP DATE, permanently,
+          // on the most-visited surface in the product. Today that is every
+          // provider.
+          //
+          // `discovery_tiebreak` is the fix (20261135000000): a generated md5 of
+          // the row id — deterministic, stable across renders, meaningless, and
+          // writable by nobody. It is the server-side twin of `tiebreak()` in
+          // lib/discovery.ts, which the lanes already use. It had to be a column
+          // because this grid is paginated server-side and PostgREST orders by
+          // columns, not expressions — a client-side re-sort would tear pagination.
           .order('average_rating', { ascending: false, nullsFirst: false })
-          // Stable tiebreaker so offset pagination can't duplicate/skip rows
-          // when is_featured/average_rating tie.
-          .order('id', { ascending: true })
+          .order('discovery_tiebreak', { ascending: true })
 
         if (categoryId) {
           query = query.eq('category_id', categoryId)
@@ -497,16 +550,76 @@ export function useProviderSearch(
         dbQuery = dbQuery.in('id', Array.from(openToday))
       }
 
-      // Ranked on the canonical derived rating, for the same reason. Before
-      // 20261084000000 this ordered search on `providers.rating` — a column no
-      // recompute has ever written, and which only service_role could set. Every
-      // display surface read `average_rating`, so search was ranking on a number
-      // that no review could move and a hand-edit could fix in place.
-      dbQuery = dbQuery.order('average_rating', { ascending: false }).limit(20)
+      // ── PM RULING: SEARCH INTENT OUTRANKS POPULARITY ──────────────────────
+      //
+      // This used to be the entire ranking: `order('average_rating').limit(20)`.
+      // Every match — a display name that IS the query, a bio that mentions it once
+      // — was pooled together and sorted by reputation alone. So a provider whose
+      // name matched exactly could sit below a loosely-relevant higher-rated one,
+      // and the limit could cut them off the list altogether.
+      //
+      // Relevance is now decided by `lib/providerSearchRank.ts`: tier first
+      // (service/category › name › broader › weak), then canonical rating WITHIN a
+      // tier, then unrated after rated, then the same deterministic tie-break the
+      // lanes use. No rating difference can cross a tier.
+      //
+      // WHY THE POOL IS FETCHED AND TRIMMED HERE rather than ordered by the server:
+      // the tiers depend on the SERVICE NAMES a provider publishes, which live in
+      // another table, and on a word-boundary match PostgREST cannot express. If
+      // the server still applied `order(rating).limit(20)` it would choose WHICH
+      // twenty the client gets to rank — the old defect, one step earlier. So the
+      // pool is bounded generously, ranked, then trimmed. Same shape as the
+      // Discover lanes, and for the same reason.
+      dbQuery = dbQuery.limit(SEARCH_POOL)
 
       const { data, error } = await dbQuery
       if (error) throw error
-      setResults((data as unknown as Provider[]) || [])
+      const pool = (data as unknown as Provider[]) || []
+
+      // The services each candidate publishes — the strongest relevance signal, and
+      // the reason ranking cannot be a single SQL order. One batched query, not N.
+      const serviceNames = new Map<string, string[]>()
+      if (pool.length > 0) {
+        const { data: svc } = await supabase
+          .from('provider_services')
+          .select('provider_id, name')
+          .in('provider_id', pool.map((p) => p.id))
+          .eq('is_active', true)
+        for (const row of (svc as { provider_id: string; name: string }[] | null) ?? []) {
+          const list = serviceNames.get(row.provider_id) ?? []
+          list.push(row.name)
+          serviceNames.set(row.provider_id, list)
+        }
+      }
+
+      const catName = new Map<number, string>()
+      {
+        const { data: cats } = await supabase.from('categories').select('id, name')
+        for (const c of (cats as { id: number; name: string }[] | null) ?? []) {
+          catName.set(c.id, c.name)
+        }
+      }
+
+      const ranked = rankProviderSearch(
+        pool.map((p) => ({
+          id: p.id,
+          displayName: p.display_name,
+          businessName: p.business_name,
+          username: p.username,
+          categoryName: p.category_id != null ? (catName.get(p.category_id) ?? null) : null,
+          customCategory: p.custom_category,
+          serviceNames: serviceNames.get(p.id) ?? [],
+          bio: p.bio,
+          location: p.location,
+          neighborhood: p.neighborhood,
+          // `displayRating`, so an unrated provider arrives as null rather than as
+          // a rating of zero — the same rule as the Discover lanes.
+          averageRating: displayRating(p),
+          row: p,
+        })),
+        query,
+      )
+      setResults(ranked.slice(0, SEARCH_RESULT_LIMIT).map((r) => r.row))
     } catch (err: any) {
       console.log('Search error:', err)
       // A failed search must not leave the previous results standing as though

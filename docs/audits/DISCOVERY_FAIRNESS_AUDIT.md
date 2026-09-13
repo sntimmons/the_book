@@ -10,17 +10,19 @@ Core principle being tested: **"the algorithm should rank content, not secretly 
 the provider"** — and the locked rule that **providers who post nothing must not be penalised in
 marketplace discovery.**
 
-**Headline: the lane architecture already honours both, and does so structurally rather than by
-convention. Three objective defects were found at its edges and fixed. One ranking question is
-genuinely a product decision and is returned rather than answered.**
+**Headline: the lane architecture already honoured both, and did so structurally rather than by
+convention. Three objective defects were found at its edges. Four product decisions were returned to
+the PM, ruled on, and implemented — see § 12, which is where this document's current conclusions
+live. Sections 1–11 record the state as FOUND, before those rulings; where a row there disagrees with
+§ 12, § 12 is what shipped.**
 
 ## 1. Surface inventory
 
 | Surface | Relation | Ordering | Approved | Block-filtered | Deleted-filtered |
 |---|---|---|---|---|---|
 | Discover **lanes** (`fetchDiscoveryPool` → `buildDiscoveryLanes`) | `providers_visible` | per-lane, see § 5 | ✅ | ✅ | ✅ |
-| Discover **complete grid** (`useProviders`) | `providers_visible` | `is_featured` ▼, `average_rating` ▼, `id` ▲ | ✅ | ✅ | ✅ |
-| **Provider search** (`useProviderSearch`) | `providers_visible` | `average_rating` ▼, limit 20 | ✅ | ✅ | ✅ |
+| Discover **complete grid** (`useProviders`) | `providers_visible` | ~~`is_featured` ▼, `average_rating` ▼, `id` ▲~~ → **`average_rating` ▼, `discovery_tiebreak` ▲** | ✅ | ✅ | ✅ |
+| **Provider search** (`useProviderSearch`) | `providers_visible` | ~~`average_rating` ▼, limit 20~~ → **relevance tier, then rating, then tie-break** | ✅ | ✅ | ✅ |
 | **Category results** | `providers_visible` (grid, `category_id`) | as grid | ✅ | ✅ | ✅ |
 | **Nearby** screen (`app/nearby`) | `providers_visible` via `useProviders` | as grid | ✅ | ✅ | ✅ |
 | **Top Rated** screen (`app/top-rated`) | `providers_visible` via `useProviders` | local `average_rating ?? 0` ▼ | ✅ | ✅ | ✅ |
@@ -102,12 +104,13 @@ in the last 5 days, 23 unrated, a third open today):
 
 A provider approved today with nothing behind them appears in **New to The Book** (30 days),
 **Near You** (if they set a neighborhood), **Open Today** (on published days), **Worth a Look**, and
-the grid. They are absent from exactly one lane — **Popular Near You** — and that lane *excludes*
-them rather than ranking them last, because it is about a track record and having none is not a
-worse one.
+the grid. As found, they were absent from exactly one lane — **Popular Near You** — and that lane
+*excluded* them rather than ranking them last, because it is about a track record and having none is
+not a worse one. **That lane is now deferred entirely** (§ 12, ruling 4), so a new provider is absent
+from no surviving lane at all.
 
-**This is not a confirmed fairness defect at the lane level.** It *is* one in the grid and in search
-— see § 12.
+**This was not a confirmed fairness defect at the lane level.** It *was* one in the grid and in
+search, and § 12 is where both were fixed.
 
 ## 7. Domination / variety — PASS
 
@@ -130,8 +133,8 @@ match**: same neighborhood, else same city. No distance, no radius, no sort by h
 postal / lat / lon is granted SELECT to `anon` or `authenticated` on `providers`.
 
 **Current non-production reality: 0 of 6 providers have set a neighborhood or a location.** So
-**Near You is always empty today** and *Popular Near You* correctly renames itself *"Popular on The
-Book"*. That is a data-population gap, not a logic defect — and prompting providers to set a
+**Near You is always empty today**, and *Popular Near You* silently renamed itself *"Popular on The
+Book"* — which is part of why ruling 4 defers it. That is a data-population gap, not a logic defect — and prompting providers to set a
 neighborhood would do more for discovery than any ranking change. **No distance-based ranking factor
 was introduced**, because the data cannot support one honestly.
 
@@ -171,55 +174,114 @@ writes anywhere are erasure setting it `false`, no client role holds UPDATE, and
 true**. It remains a hook that would pin a provider above the entire marketplace if set. Recorded in
 § 12 as a decision, not silently removed.
 
-## 12. Product decisions required — implementation stopped on these
+## 12. Product decisions — ALL FOUR RULED ON, 2026-09-13, and implemented
 
-### Decision 1 — how should unrated providers be ordered in the grid and in search? **(the one that matters)**
+The audit stopped on these and returned options. The PM ruled on all four; this section records the
+rulings and what was built.
 
-The grid orders `average_rating` ▼ and search orders `average_rating` ▼ limit 20. Because the stored
-value for an unrated provider is `0`, **they sort below every rated provider, permanently, on both
-surfaces.** The codebase has already decided that `0` means *not rated* for **display**
-(`displayRating`); using it as a **sort key** contradicts that decision. But what should replace it is
-a ranking weight, and ranking weights are not engineering's to choose.
+### Ruling 1 — UNRATED IS NEUTRAL, NOT ZERO QUALITY
 
-| Option | What it does | Trade-off |
-|---|---|---|
-| **A — leave it** | Unrated stays last on both surfaces | Simplest; but a new provider is bottom-of-list on the two highest-traffic surfaces, and the lanes are doing all the fairness work alone |
-| **B — order unrated by a neutral signal, after rated** (recommended) | Rated providers by rating; unrated after them, ordered by the same deterministic tie-break the lanes use, not by id | Keeps rating meaningful, removes "0 = worst" while changing nothing about who is *eligible*. Small, explainable, testable |
-| **C — interleave** | Mix unrated into the rated ordering at a fixed cadence | Most opportunity for new providers; hardest to explain to a client wondering why an unrated provider is above a 4.8 |
+An unrated provider is not coerced into a rating of `0` for ranking or display. Rating may sort
+**after** the surface's own primary rule; unrated providers follow the rated ones within that
+otherwise-equal group and are then ordered by the existing deterministic tie-break. **Rating presence
+may not override user intent.**
 
-**Recommendation: B.** It is the option that follows from a rule already locked (0 is an absence, not
-a verdict) without inventing a new ranking philosophy, and it is the only one of the three whose
-behaviour a provider could be told in one sentence.
+**Implemented:**
 
-### Decision 2 — does `is_featured` stay a ranking hook?
+- **Search:** relevance tier → canonical rating among the rated → unrated → tie-break.
+- **Grid:** rating descending (which already places rated before unrated, since the stored value for
+  an unrated provider is `0`) → **`discovery_tiebreak`**.
 
-| Option | |
+**The grid needed a migration, and the reason is worth recording.** The ruling says unrated providers
+use *the existing deterministic tie-break* — `tiebreak()` in `lib/discovery.ts`, which the lanes use.
+The grid could not: it is **paginated server-side** (`range(offset, offset+19)`), so ordering must be
+decided by the database or pagination tears, and PostgREST's `order=` takes a **column**, not an
+expression. So the grid's second key was `id ASC`, which ordered **the entire unrated tail by signup
+date, permanently, on the most-visited surface in the product** — today that is every provider.
+
+`20261135000000` adds `providers.discovery_tiebreak`, `generated always as (md5(id::text)) stored`:
+deterministic, stable across renders, meaningless, indexed to match the grid's ORDER BY, and
+**writable by nobody at all** — which is the opposite of `is_featured`. md5 because it is IMMUTABLE
+(a generated column requires it) and because it is **not monotonic in the tail**, the same
+load-bearing property `lib/discovery.ts` explains.
+
+**A second defect of the same class was found while asserting this** and is fixed in the same pass:
+`fetchDiscoveryPool` ordered its 200-row pool by `id ASC`. Above 200 approved providers that makes the
+pool **the oldest accounts**, and since the lanes can only rank what the pool contains, everybody past
+the cut would be invisible in every lane. The cohort is far below 200 today so nothing was excluded —
+the ordering was still the same durable advantage, one layer up. Now ordered on `discovery_tiebreak`.
+
+### Ruling 2 — `is_featured` is OUT of marketplace ranking
+
+No approved beta rule authorises a silent featured-provider override. **Removed from the grid's
+ORDER BY.** The column remains and still drives the visible "Featured" badge — a label is not a
+hidden reorder — but it may not reorder results, boost discovery, or override relevance or fairness.
+
+Pinned by assertions that the grid's ORDER BY does not name it, that neither ranking module mentions
+it, and that the search input type has no such field.
+
+### Ruling 3 — SEARCH RELEVANCE TIERS
+
+Implemented in `lib/providerSearchRank.ts` — pure logic, no I/O, same split as `lib/discovery.ts`.
+
+| Tier | Qualifies |
 |---|---|
-| **A — remove it from the grid's ORDER BY** (recommended) | It is inert, it is unset, and leaving it means one `UPDATE` silently pins somebody above the whole marketplace |
-| **B — keep it and record a decision** authorising curated placement, with who may set it and on what basis | Honest if curation is wanted |
-| **C — leave undecided** | The current state: a live hook with no ruling behind it |
+| **1 — service or category** | The query matches a **published service name**, the provider's category name, or their free-text trade, on a **word boundary** |
+| **2 — name** | Display name, business name or handle, on a word boundary **or** as a partial ("alex" → "Alexandra") |
+| **3 — broader** | A loose (substring) service/category hit, or the bio, neighborhood or location |
+| **4 — weak** | The database filter matched and the reason is not visible. **Still shown, last** |
 
-**Recommendation: A**, and if curated placement is ever wanted, it should arrive as its own decision
-with a visible label — which the "Featured" badge already exists to provide.
+Then: **canonical rating descending within a tier** → **unrated after rated** → **`tiebreak()`**, the
+same function the lanes use. **No rating difference can cross a tier boundary.**
 
-### Decision 3 — does search rank by relevance, or only by rating?
+**Service and category outrank name deliberately:** somebody searching "balayage" is describing the
+work, not the person, so a provider who performs it answers better than one whose business name
+contains the word. The top tier requires a **word boundary**, which is stricter than the database's
+`ilike %q%`, so a coincidental substring ("lash" inside "eyelashes") does not earn tier 1.
 
-Search currently orders **only** by rating, so among matching providers a near-exact name match can
-sit below a loosely-matching higher-rated one, and `limit 20` can cut it off entirely. Adding relevance
-tiers (exact name › name contains › category › bio) is a ranking design, not a bug fix.
-**No recommendation offered** — this is the one where the product intent genuinely isn't implied by
-anything already decided.
+**Why the pool is fetched and ranked client-side:** tiers depend on the **service names** a provider
+publishes (another table) and on a word-boundary match PostgREST cannot express. Leaving
+`order(rating).limit(20)` on the server would let the server choose **which twenty** the client is
+allowed to rank — the original defect, one step earlier. The pool is bounded at 200, ranked, then
+trimmed to 20.
 
-### Decision 4 — does "Popular Near You" ship in beta?
+**Not introduced:** semantic or AI search, embeddings, learned models, social engagement, follower
+counts, Reels or Community activity, or any hidden popularity score. The input type
+(`SearchableProvider`) carries none of them, and a test asserts the shape.
 
-It is the only lane that ranks on a track record, and in a 25–30 cohort it will show roughly the same
-five providers to everyone. Keeping it is defensible (it ranks marketplace facts, and excludes rather
-than demotes those without them); dropping it for the closed beta is also defensible. **Not
-engineering's call.** Everything else about it is already fair.
+### Ruling 4 — "POPULAR NEAR YOU" DOES NOT SHIP
 
-**Not needed:** a minimum-review threshold (rating already requires a revealed review to exist at
-all), variety rotation (measured concentration is 3 of 5), and any new-provider "boost" beyond the
-existing New lane.
+Deferred, **not because it was unfair.** It ranked completed bookings and reviews — marketplace facts
+— and excluded providers with no track record rather than ranking them last. The problem is **"Near"**:
+no lat/long model, free-text location, no distance truth, and zero providers with a populated
+neighborhood. The label would imply a precision the product cannot establish, and with `near` always
+empty it silently retitled itself "Popular on The Book" — a popularity row nobody approved.
+
+**The lane code is kept dormant** (permitted by the ruling) so the reasoning survives for whoever
+re-enables it; `buildDiscoveryLanes` never returns it, so it cannot surface. **No replacement location
+lane was invented.** Reconsider only after provider neighborhood / service-area data is populated and
+audited.
+
+### A regression this pass caused, caught by the committed suite
+
+`20261135000000` broke one erasure assertion: *"a departing provider's server-derived counters can
+still be recomputed"* began failing with `PT440`.
+
+`refuse_provider_write_when_account_inactive` decides "is this a recompute or is this the caller
+editing their presence" by comparing `to_jsonb(new) - v_derived` against `to_jsonb(old) - v_derived`.
+**PostgreSQL computes generated columns AFTER before-row triggers**, so `new.discovery_tiebreak` was
+NULL inside the trigger while `old` held the md5 — a difference that is not a difference. A provider
+in their 30-day grace period could no longer have their counters recomputed, which is a real erasure
+regression (a booking completed by somebody else would have started failing).
+
+Fixed by `20261136000000`, which adds the column to the allow-list where it belongs on the array's own
+terms — *"columns no person sets"* — and it is the strongest member of that set, being writable by
+nobody at all.
+
+**Worth carrying forward:** any whole-row `to_jsonb(new) = to_jsonb(old)` comparison in a BEFORE
+trigger is broken by adding a generated column, and it fails in the **safe-looking** direction — a
+refusal, not a leak — so it surfaces as a mysterious permission error rather than as anything that
+points at the cause.
 
 ## 13. Duplicated-authority inventory
 
@@ -256,10 +318,14 @@ safety outcome, not only a filtering bug.
 |---|---|
 | typecheck | clean |
 | `lint:ci` | 0 errors, 209 warnings (baseline 210) |
-| Jest | **1076 / 1076**, 54 suites (was 1055) |
-| B5B (non-prod) | **2274 / 2274**, 0 failed, zero residue |
-| Concurrency harness | see PR — unchanged surface, no SQL touched |
-| Migrations | **173 local == 173 applied**, zero mismatched — **no migration added** |
+| Jest | **1105 / 1105**, 56 suites |
+| B5B (non-prod) | **2282 / 2282**, 0 failed, zero residue |
+| Concurrency harness | 224 / 224, zero residue |
+| Migrations | **175 local == 175 applied**, zero mismatched |
 
-**No forward migration was needed.** Every fix is application code; no schema, policy, trigger or
-grant changed, so no applied migration was touched.
+**Two forward migrations, both genuinely required.** `20261135000000` (the ordering key the ruling
+needs, plus republishing `providers_visible` to expose it) and `20261136000000` (the generated-column
+BEFORE-trigger correction above). **No applied migration was edited.** The view was republished from
+`pg_get_viewdef` rather than retyped, and both of its security predicates — the bidirectional block
+check and `account_unavailable` — are re-asserted in B5B, because a `create or replace view` is a full
+rewrite and that is exactly when a predicate gets dropped.
