@@ -3025,6 +3025,128 @@ deliberately not on the word "verified", because "Phone Verified" is true and
 pass that owns that surface; the two known occurrences are already corrected.
 
 
+### PD-114 — Unrated is neutral, not zero quality
+
+**Decided 2026-09-13. Implemented at `c444abb` (PR #89).**
+
+An unrated provider is **not coerced into a rating of `0`** for ranking or for display.
+`providers.average_rating` is `numeric NOT NULL DEFAULT 0`, so the stored value for
+somebody nobody has reviewed **is** zero — and the scale starts at 1, so treating that
+number as a rating turns an absence into the worst possible verdict.
+
+**Where rating is a legitimate secondary sort:** rated providers may sort before unrated
+ones, **only after the surface's own primary relevance or lane rule**, and the unrated
+group is then ordered by the **existing deterministic tie-break**. **Rating presence may
+never override user intent.**
+
+- **Search:** relevance tier → canonical rating among the rated → unrated → tie-break.
+- **Complete grid:** rating descending (which already places rated first) → tie-break.
+- **Lanes:** unchanged. They never ranked on rating except inside the deferred
+  performance lane.
+
+**No arbitrary new-provider quota.** New providers remain discoverable through the
+approved lane model, which was measured rather than asserted: on a representative
+28-provider cohort every provider appeared in at least one lane, none was excluded, and
+the most any one occupied was 3 of 5.
+
+**This required a migration, and the reason is the decision's own substance.** The ruling
+says *the existing* tie-break — `tiebreak()` in `lib/discovery.ts`, which the lanes use.
+The grid could not use it: it is **paginated server-side**, so ordering must be decided by
+the database or pagination tears, and PostgREST orders by a **column**, not an expression.
+Its second key was therefore `id ASC`, which ordered **the entire unrated tail by signup
+date, permanently, on the most-visited surface in the product**.
+
+`20261135000000` adds `providers.discovery_tiebreak`, `generated always as
+(md5(id::text)) stored` — deterministic, stable, meaningless, and **writable by nobody at
+all**, which is the property that keeps it from becoming another `is_featured`.
+
+**Evidence:** `lib/providerSearchRank.ts`, `hooks/useProviders.ts`, `lib/reputationLabel.ts`;
+`__tests__/lib/providerSearchRank.test.ts`, `__tests__/guards/discoveryFairness.test.ts`.
+
+**Status:** Locked; implemented and merged.
+
+### PD-115 — `is_featured` may not reorder the marketplace
+
+**Decided 2026-09-13. Implemented at `c444abb` (PR #89).**
+
+**No approved beta product rule authorises a silent featured-provider ranking override**,
+and `is_featured` was the **first** sort key of the complete grid — above rating. Nothing
+in the product ever set it (the only writes anywhere are erasure setting it `false`, and no
+client role holds UPDATE), so it was inert. It was also one `UPDATE` away from pinning a
+provider above the entire marketplace with no decision behind it.
+
+**Removed from marketplace ranking.** The field **may remain** for another legitimate
+purpose — it still drives the visible "Featured" badge, and a label is not a hidden
+reorder — but it must not: reorder provider results, boost discovery, override relevance,
+or override any fairness rule. The same applies to `is_trending`, which nothing sets.
+
+**Evidence:** `hooks/useProviders.ts`; pinned in
+`__tests__/guards/discoveryFairness.test.ts` — the grid's ORDER BY does not name it,
+neither ranking module mentions it, and the search input type has no such field.
+
+**Status:** Locked; implemented and merged.
+
+### PD-116 — Search intent outranks popularity
+
+**Decided 2026-09-13. Implemented at `c444abb` (PR #89).**
+
+Provider search ranks by **simple, explainable relevance tiers**. A highly rated but weakly
+relevant provider **must not** outrank a strongly relevant one because they have more
+reputation history.
+
+| Tier | Qualifies |
+|---|---|
+| **1** | The query matches a **published service name**, the provider's category, or their free-text trade — on a **word boundary** |
+| **2** | Display name, business name or handle — word boundary **or** partial |
+| **3** | Broader relevant match: a loose service/category hit, the bio, the neighborhood or location |
+| **4** | The database filter matched and the reason is not visible. **Still shown, last** |
+
+Then **canonical rating descending within a tier** → **unrated after rated** (PD-114) →
+**the same deterministic tie-break the lanes use**. **No rating difference may cross a tier
+boundary**, and relevance is a **sort, never a filter** — nobody is dropped for being a weak
+match.
+
+**Service and category outrank name deliberately:** somebody searching "balayage" is
+describing the work, not the person. The top tier requires a word boundary, stricter than
+the database's `ilike %q%`, so a coincidental substring does not earn it.
+
+**Not introduced, and not to be:** semantic or AI search, embeddings, learned models, social
+engagement, follower counts, Reels or Community activity, or any hidden popularity score.
+`SearchableProvider` carries none of them and a test asserts its shape.
+
+**Evidence:** `lib/providerSearchRank.ts` (pure, no I/O);
+`__tests__/lib/providerSearchRank.test.ts`.
+
+**Status:** Locked; implemented and merged.
+
+### PD-117 — "Popular Near You" does not ship in the closed beta
+
+**Decided 2026-09-13. Implemented at `c444abb` (PR #89).**
+
+**Not because the lane was unfair.** It ranked completed bookings and reviews — marketplace
+facts — and it **excluded** providers with no track record rather than ranking them last.
+
+The problem is the word **"Near"**. There is **no latitude or longitude model** in this
+schema; `location` and `neighborhood` are free text the provider typed; there is no distance
+truth. The label would imply a proximity precision the product cannot currently establish.
+And with **zero** providers having populated either field, the `near` set was always empty
+and the lane silently retitled itself *"Popular on The Book"* — a popularity row nobody
+approved, wearing the name of a lane that was about proximity.
+
+**Do not fabricate location precision.** The lane's code **may remain dormant** because it is
+harmless while unreachable, and it does: `buildDiscoveryLanes` never returns it. **It must not
+surface to users**, and **it must not be replaced by another unapproved location lane.**
+
+**Proximity-based lanes may be reconsidered after provider neighborhood / service-area data
+is populated and audited** — see [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) § OQ-089.
+
+**Evidence:** `lib/discovery.ts`; `__tests__/lib/discovery.test.ts` § "Popular Near You —
+deferred for the closed beta", which asserts it is not surfaced and that no surviving lane
+is titled for popularity or proximity.
+
+**Status:** Locked; implemented and merged.
+
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

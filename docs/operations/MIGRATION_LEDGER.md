@@ -1996,6 +1996,57 @@ annotated where it fires.
 `.env.tooling.local` resolve to `wcoyjeklscuqsumpjpfo`; no production credential
 exists in the working environment.
 
+## 2026-09-13 — `20261135000000`, `20261136000000` **APPLIED to non-production** (Discovery / Fairness, PR #89, merged `c444abb`)
+
+Two files, one capability and one correction to it.
+
+**`20261135000000` — a tie is not a reward for signing up early.** Adds
+`providers.discovery_tiebreak`, `generated always as (md5(id::text)) stored`, plus an
+index matching the grid's ORDER BY, and republishes `providers_visible` to expose it.
+
+**WHY A MIGRATION WAS NEEDED.** PD-114 says unrated providers use *the existing*
+deterministic tie-break — `tiebreak()` in `lib/discovery.ts`, which the lanes use. The
+complete grid could not: it is **paginated server-side**, so ordering must be decided by
+the database or pagination tears, and PostgREST's `order=` takes a **column**, not an
+expression. Its second key was therefore `id ASC`, which ordered **the entire unrated tail
+by signup date, permanently**, on the most-visited surface in the product — today that is
+every provider.
+
+md5 because it is **IMMUTABLE**, which a generated column requires, and because it is
+**not monotonic in the tail** — the property that stops ids differing only in their last
+character from coming out in sorted order. `GENERATED ALWAYS … STORED` so it is writable
+by **nobody at all**, which is what keeps it from becoming another `is_featured`.
+
+**THE VIEW WAS REPUBLISHED FROM `pg_get_viewdef`, NOT RETYPED** — the same discipline
+`20261134000000` records. Its two security predicates, the bidirectional block check and
+`account_unavailable`, are now **re-asserted in B5B**, because a `create or replace view`
+is a full rewrite and that is precisely when a predicate gets silently dropped.
+
+**`20261136000000` — a generated column is NULL in a BEFORE trigger.** The first migration
+broke one erasure assertion: *"a departing provider's server-derived counters can still be
+recomputed"* started failing with `PT440`.
+
+`refuse_provider_write_when_account_inactive` decides "recompute or self-edit" by comparing
+`to_jsonb(new) - v_derived` against the same of `old`. **PostgreSQL computes generated
+columns AFTER before-row triggers**, so `new.discovery_tiebreak` was NULL inside the
+trigger while `old` held the md5 — a difference that is not a difference. A provider inside
+their 30-day grace period could no longer have their counters recomputed, so a booking
+completed by somebody else would have begun failing. Fixed by adding the column to the
+allow-list, where it belongs on that array's own terms and as its strongest member, being
+writable by nobody.
+
+**WORTH CARRYING FORWARD, because the trap is general:** any whole-row
+`to_jsonb(new) = to_jsonb(old)` comparison in a BEFORE trigger is broken by adding a
+generated column, and it fails in the **safe-looking** direction — a refusal, not a leak —
+so it presents as a mysterious permission error rather than as anything pointing at the
+cause.
+
+**Validation** (non-production `wcoyjeklscuqsumpjpfo`; production untouched): B5B
+**2282/2282** with zero residue — re-run in CI against the same project and confirmed
+2282/2282 there too — Jest **1105/1105** across 56 suites, typecheck clean, `lint:ci` 0
+errors / 209 warnings, negotiation concurrency zero failures, and `supabase migration list
+--linked` **175 local == 175 remote, zero mismatched**.
+
 ## 2026-09-13 — `20261134000000` **APPLIED to non-production** (Operator neutrality, audit F9, PR #87, merged `d7acc44`)
 
 One file, and it adds no table and no column: a predicate,

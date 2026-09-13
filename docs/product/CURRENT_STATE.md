@@ -1,5 +1,31 @@
 # Current State — what is true on `main` today
 
+**Discovery / Fairness is COMPLETE for the closed-beta scope** (`c444abb`, PR #89, 2026-09-13).
+Provider discovery is five named lanes — **Near You, Open Today, New to The Book, Worth a Look** —
+over a complete grid, each lane stating its own rule. Four decisions came out of it: **PD-114**
+(unrated is neutral, not zero quality), **PD-115** (`is_featured` may not reorder the marketplace),
+**PD-116** (search intent outranks popularity) and **PD-117** ("Popular Near You" does not ship).
+Operational answers: [../operations/DISCOVERY_OPERATIONS.md](../operations/DISCOVERY_OPERATIONS.md);
+audit: [../audits/DISCOVERY_FAIRNESS_AUDIT.md](../audits/DISCOVERY_FAIRNESS_AUDIT.md).
+
+**What ranks:** the surface's own rule first, canonical reputation second, then a meaningless
+deterministic tie-break. **What does not, and structurally cannot:** any social or content signal —
+Reel likes, views, comments, saves, Community likes, replies, bookmarks, follower count, posting
+frequency — because the types the ranking modules receive (`DiscoveryProvider`, `SearchableProvider`)
+**carry no such field**. **A provider who posts nothing is not penalised in the marketplace**, and
+that is enforced rather than remembered.
+
+**Three objective defects were closed.** **D1:** the post-decline alternatives screen read base
+`providers` and therefore **recommended providers the client had blocked** — the block filter lives
+only in `providers_visible`. **D2:** unrated providers entered the lane rules as a rating of `0`.
+**D3:** a lane titled "Available Soon" over data that only means *open today*.
+
+**Two things the phase deliberately did not do.** It introduced **no distance ranking** — there is no
+latitude or longitude column anywhere, so proximity is a text match and the data cannot honestly
+support more (**OQ-089**). And it added **no new-provider quota**: fairness was measured instead — on
+a representative 28-provider cohort every provider appeared in at least one lane, none was excluded,
+and the most any one occupied was 3 of 5.
+
 **The whole-app adversarial audit is COMPLETE, and it is the last gate in front of Discovery /
 Fairness** (`d7acc44`, PR #87, 2026-09-13). Grok's read-only audit reported **no demonstrated
 blocker**; a verification pass took F1–F10 one at a time and **no HIGH survived it**. Two confirmed
@@ -124,8 +150,15 @@ records was **deliberately unresolved** (OQ-077).
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `d7acc44431c048aeb549f9f35744a7298abede38` (2026-09-13) — the
-squash-merge of **PR #87**, the Grok whole-app audit verification. The anchor moves because this
+**Reconciled against:** `main` @ `c444abbe99d0381d2bdb430905f398243d58e816` (2026-09-13) — the
+squash-merge of **PR #89**, Discovery / Fairness. The anchor moves because this document now asserts
+facts that did not exist before it: the search relevance tiers, the unrated-neutral ordering, the
+removal of `is_featured` from ranking, and the deferral of the proximity lane. CI green on the merged
+head; **175 local == 175 applied** on non-production, zero mismatched. **Production
+`kxregomuawwcqvisuhtr` was not connected to, linked, migrated or queried.**
+
+**Previously reconciled against:** `main` @ `d7acc44431c048aeb549f9f35744a7298abede38` (2026-09-13) —
+the squash-merge of **PR #87**, the Grok whole-app audit verification. The anchor moves because this
 document now asserts facts that did not exist before it: the operator-neutrality guard, the corrected
 copy, and the audit's own disposition. CI green on the merged head; **173 local == 173 applied** on
 non-production, zero mismatched. **Production `kxregomuawwcqvisuhtr` was not connected to, linked,
