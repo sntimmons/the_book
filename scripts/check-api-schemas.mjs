@@ -36,6 +36,13 @@
 //     PostgREST names the exposed schemas in that very message, so the list is
 //     parsed out and checked directly. That makes the gate self-validating.
 //
+//   * **The probes must AGREE, and a disagreement fails closed.** The judgement
+//     took the first list returned and ignored the other two. All three read one
+//     project setting, so they should agree — which is precisely why a difference
+//     means something the gate cannot model, and why picking the first answer
+//     silently would be a gate passing for the wrong reason. Every list it saw is
+//     printed.
+//
 //   * **The project is IDENTIFIED, not guessed.** It used a hand-rolled regex of
 //     exactly the shape `scripts/prodRef.mjs` warns against, and fell back to
 //     `TEST_SUPABASE_URL` — so an operator following this file's own usage block
@@ -112,18 +119,54 @@ export function classify(status, body) {
   }
 }
 
+// The usable observations: a list is only evidence if a probe actually returned
+// one. An empty array is not an observation, which is why `filter(Boolean)` is not
+// enough — `[]` is truthy, and reporting "the exposed list is exactly []" as a PASS
+// would be the gate lying in the reader's own words.
+export function exposedObservations(lists) {
+  return (lists ?? []).filter((x) => Array.isArray(x) && x.length > 0)
+}
+
 // Judges the exposed list itself. A refusal proves only that the name we asked
 // for is not exposed — a typo would be refused too — so the real list is checked.
+//
+// ══ EVERY PROBE'S OBSERVATION COUNTS, AND THEY MUST AGREE ════════════════
+//
+// This used to take the FIRST list any probe returned and ignore the rest. The
+// three probes read ONE project setting, so they should agree — and that is
+// exactly why a disagreement is worth failing on rather than resolving. If they
+// ever differ, something is happening that this gate cannot model: a probe
+// reaching a different project, a configuration change mid-run, a proxy or cache
+// answering for one request. **A release gate that resolves a disagreement
+// silently, in favour of whichever probe happened to answer first, is a gate that
+// can pass for the wrong reason** — the same defect class as the substring match
+// this file already closed. So it fails closed and prints every list it saw
+// instead of a single verdict.
 export function judgeExposedList(lists) {
-  const found = lists.filter(Boolean)
+  const found = exposedObservations(lists)
   if (found.length === 0) {
     return 'no probe returned an exposed-schema list, so the refusals prove nothing about the real configuration'
   }
-  const exposed = found[0]
-  const leaked = FORBIDDEN_SCHEMAS.filter((x) => exposed.includes(x))
+
+  // A forbidden schema in ANY observation is damning whether or not the probes
+  // agree, so it is reported FIRST — a disagreement must never mask a leak.
+  const leaked = FORBIDDEN_SCHEMAS.filter((x) => found.some((l) => l.includes(x)))
   if (leaked.length) return `forbidden schema(s) in the exposed list: ${leaked.join(', ')}`
-  if (exposed.slice().sort().join(',') !== EXPECTED_EXPOSED.slice().sort().join(','))
-    return `exposed list is [${exposed.join(', ')}], expected [${EXPECTED_EXPOSED.join(', ')}]`
+
+  // Set equality, not order: PostgREST naming the same schemas in a different
+  // order is not a disagreement.
+  const key = (l) => [...l].sort().join(',')
+  const distinct = [...new Set(found.map(key))]
+  if (distinct.length > 1) {
+    return (
+      'probes DISAGREE about the exposed schema list: ' +
+      found.map((l) => `[${l.join(', ')}]`).join(' vs ') +
+      '. They read one project setting and must agree; the gate cannot pick a winner, so this fails closed.'
+    )
+  }
+
+  if (distinct[0] !== key(EXPECTED_EXPOSED))
+    return `exposed list is [${found[0].join(', ')}], expected [${EXPECTED_EXPOSED.join(', ')}]`
   return null
 }
 
@@ -241,7 +284,15 @@ for (const { p, r } of results) {
 const lists = results.map((x) => x.r.exposed)
 const listProblem = judgeExposedList(lists)
 if (listProblem) console.log(`  FAIL exposed schema list — ${listProblem}`)
-else console.log(`  PASS exposed schema list is exactly [${lists.filter(Boolean)[0].join(', ')}]`)
+else {
+  // Safe to read one of them only BECAUSE agreement was just enforced, and it is
+  // read through the same filter the judgement used rather than `filter(Boolean)`.
+  const seen = exposedObservations(lists)
+  console.log(
+    `  PASS exposed schema list is exactly [${seen[0].join(', ')}] — ` +
+      `${seen.length} of ${lists.length} probes reported it, and they agree`,
+  )
+}
 
 console.log('')
 if (reachable > 0 || listProblem) {
