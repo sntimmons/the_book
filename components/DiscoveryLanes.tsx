@@ -4,6 +4,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 import type { Provider } from '@/hooks/useProviders'
 import { buildDiscoveryLanes, DiscoveryProvider } from '@/lib/discovery'
 import { cacheBustedPhoto } from '@/lib/image'
+import { displayRating } from '@/lib/reputationLabel'
 
 // The visible half of the beta discovery model (Correction 3, items S and T).
 //
@@ -55,7 +56,18 @@ function toDiscoveryProvider(p: Provider, openToday: Set<string> | null): Discov
     location: p.location,
     createdAt: p.created_at,
     totalBookings: p.total_bookings,
-    averageRating: p.average_rating ?? p.rating,
+    // `displayRating`, NOT `average_rating ?? rating`. Both columns are
+    // `NOT NULL DEFAULT 0`, so the nullish coalescing never yields null and an
+    // UNRATED provider arrived here as `averageRating: 0` — while
+    // `DiscoveryProvider` documents that field as "their revealed review average,
+    // or **null** when they have no revealed reviews".
+    //
+    // 0 is not a rating. The scale starts at 1, and `lib/reputationLabel.ts`
+    // exists because six screens were each answering "does this provider have a
+    // rating yet" differently; this mapping was a seventh. Feeding 0 into
+    // `byBookingsThenRating` ranks an unrated provider below a one-star one in
+    // Popular — treating an absence as the worst possible verdict.
+    averageRating: displayRating(p),
     availableToday: openToday === null ? null : openToday.has(p.id),
   }
 }
