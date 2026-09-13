@@ -2,7 +2,12 @@
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `c444abb` (2026-09-13) — **PR #89**, Discovery / Fairness. **For
+**Reconciled against:** `main` @ `5166d9e` (2026-09-13) — **PR #91**, Cross-App UX Core. **For
+§ The remaining sequence to closed beta, the Cross-App UX entry below, and the external-beta
+blocker list — and nothing else.** The anchor moves because the sequence's current item is now
+complete.
+
+**Previously reconciled against:** `main` @ `c444abb` (2026-09-13) — **PR #89**, Discovery / Fairness. **For
 § The remaining sequence to closed beta and the Discovery entry below, and nothing else.** The anchor
 moves because the sequence's first item is now complete, which changes what comes next.
 
@@ -1259,6 +1264,99 @@ engineering pass that is already touching storage or media, not as an errand of 
 
 ---
 
+### Cross-App UX / Product Truth — CORE **MERGED** (`5166d9e`, PR #91, 2026-09-13)
+
+Implements the approved items from a read-only audit of every flow
+([../audits/CROSS_APP_UX_AUDIT.md](../audits/CROSS_APP_UX_AUDIT.md)). Operational answers:
+[../operations/UX_OPERATIONS.md](../operations/UX_OPERATIONS.md). **No migration** — every
+change is application code and copy.
+
+**The audit's own conclusion, worth keeping:** the app was **architecturally far ahead of its
+human experience.** Server-side truth was strong and prior product-truth passes had done real
+work; the gap was presentation, and it concentrated in three places — Settings was mostly
+non-functional, the **booking flow had the least scaffolding of any flow** despite being the
+revenue path, and onboarding spent the user's sense of progress on optional work.
+
+**What shipped:** a derived booking step indicator (the contract step is conditional, so the
+total is never guessed); the skip-message CTA that claimed to send and **silently discarded
+reference photos**; provider onboarding reordered so required work precedes optional, with
+Portfolio and Reels moved out of the sequence entirely; the neighbourhood requirement and the
+`location`/`neighborhood` semantics that had been written from one value; ten dead Settings
+controls; the payouts link; expired requests in the Bookings list; the messaging-unavailable
+and review blind-window explanations; barter vocabulary normalised to one name per act;
+follower counts out of the profile's trust row; and the unreachable Reels availability badge.
+
+**PD-118** was decided here: a missing control is more truthful than a legal destination that
+does not exist — and the three external-beta blockers it names are listed below.
+
+**TWO AUDIT FINDINGS WERE WRONG and are corrected in the record rather than dropped.**
+Messaging **does** explain an unavailable conversation (the copy comes from the hook, not the
+screen — only its "right now" wording needed fixing), and the Community composer **already**
+gates its fields per intent in both render and payload. Neither needed the proposed change.
+
+**DEFERRED, and this phase is not finished until they are decided:** the duplicate
+personal-info entry point; orphan-route deletion; the Business IA redesign; the remaining
+preview/trust ledes (**PD-112**) and terminology sweep (**PD-113**) beyond the surfaces
+already corrected; and making the booking step total knowable from step 1, which needs a
+narrow boolean RPC and is a product decision because the provider-keyed contract read was
+removed deliberately.
+
+**OQ-089 is partially advanced, not closed.** A neighbourhood is now required in onboarding
+and the two location fields carry distinct meanings, so Near You's city fallback can work for
+the first time. What remains open is what to ask for and how — service area versus where they
+work, and whether the fixed list is the right shape.
+
+---
+
+### ⛔ EXTERNAL-BETA LAUNCH BLOCKERS — three, none complete
+
+**Recorded as its own entry rather than inside general UX debt, because that is what they are
+not.** Ruled by **PD-118**.
+
+| # | Blocker | Depends on |
+|---|---|---|
+| 1 | **A reachable Privacy Policy** | **OQ-084** — retention language, counsel |
+| 2 | **A reachable Terms of Service** | **OQ-084** |
+| 3 | **A real Contact Support destination** | Product |
+
+*Optional, not blocking:* a general **Report an Issue** destination distinct from in-context
+reporting.
+
+**EXTERNAL TESTERS MUST NOT BE RELEASED UNTIL 1–3 ARE LIVE.** The product collects personal
+data, takes bookings, and runs a 30-day deletion policy with legally-retained evidence.
+
+**Do not close any of these with a placeholder URL, a stub document or invented legal copy.**
+The Settings rows that promised them were removed *because* an alert saying "Coming soon" was
+worse than an absent row — a placeholder would be worse than either. **In-context safety
+reporting is unaffected and real** (`ReportSheet`, `post-booking/issue`); what is missing is a
+general support route, and it was missing before PR #91 too.
+
+---
+
+### Design readiness — what is structurally stable, and what Design may not change
+
+**The UX structure is ready for visual design on the changed core surfaces.** Design may treat
+these as **structurally stable for the current beta scope**:
+
+- the **booking flow** and its step indicator
+- the **provider onboarding flow** and its required/optional distinction
+- **provider neighbourhood collection**
+- the **Settings beta scope** (including what is deliberately absent)
+- **Bookings status presentation**, including Expired
+- the **review** blind-window explanation
+- the **messaging-disabled** state
+- **provider-profile** follower treatment
+- **barter terminology**
+- **Reels** cleanup
+
+**Design must NOT change any of the following without PM review:** workflow rules, fairness,
+permissions, safety, privacy, or marketplace policy. Two specifics worth naming because they
+look like styling decisions and are not: the **step indicator must never state a total the flow
+has not established**, and **`COMPLETED SERVICE VALUE` must not be renamed** to earnings,
+balance, payout or wallet.
+
+---
+
 ### Discovery / Fairness — **MERGED** (`c444abb`, PR #89, 2026-09-13)
 
 **Complete for the closed-beta scope.** Provider discovery is **five named lanes over a complete
@@ -1353,8 +1451,9 @@ running them concurrently is how a UI pass gets built on a surface an audit is a
 |---|---|---|---|
 | ~~0~~ | ~~Independent whole-app adversarial audit~~ | **COMPLETE** (`d7acc44`, PR #87, 2026-09-13) | Grok's read-only whole-app audit, then a verification pass that took F1–F10 one at a time. **No demonstrated blocker, and no HIGH survived verification.** Two confirmed defects, both fixed: F4 product-truth copy and F9 an operator deciding their own case. Full record: [../audits/GROK_WHOLE_APP_AUDIT_F1_F10_VERIFICATION.md](../audits/GROK_WHOLE_APP_AUDIT_F1_F10_VERIFICATION.md). |
 | ~~1~~ | ~~Discovery / Fairness~~ | **COMPLETE** for the closed-beta scope (`c444abb`, PR #89, 2026-09-13) | Five named lanes over a complete grid, each stating its own rule. Four decisions: **PD-114** unrated is neutral, **PD-115** `is_featured` out of ranking, **PD-116** search intent outranks popularity, **PD-117** "Popular Near You" deferred. Three objective defects closed, including a screen that **recommended blocked providers**. Social neutrality is structural, not conventional. |
-| **1** | **CROSS-APP UX / PRODUCT TRUTH** | **NEXT. Not started.** | Before any design pass — simplifying flows after they are styled throws the styling away. **Carries four recorded requirements:** provider **neighborhood / service-area data collection** (**OQ-089**, which is what unblocks proximity lanes under PD-117); the remaining **preview/trust ledes** (**PD-112**); the **verification terminology** sweep (**PD-113**); and the remaining confusing, dead or duplicated flows plus a **product-truth copy sweep**. |
-| **2** | **UI / Design System implementation** | Not started | The app is functionally built and visually unfinished. This is where that is addressed, on flows step 1 has settled. |
+| ~~1~~ | ~~Cross-App UX / Product Truth~~ | **CORE COMPLETE** (`5166d9e`, PR #91, 2026-09-13) | The structural corrections are in: booking progress, the skip-message CTA and its photo loss, provider onboarding order, the neighbourhood requirement and its field semantics, ten dead Settings controls, the payouts link, expired requests, messaging and review explanations, barter vocabulary, follower demotion, Reels cleanup. **PD-118** came out of it. **What remains of this phase is NOT structural** — see § Cross-App UX below for the deferred items. |
+| **1** | **FINAL UI / DESIGN SYSTEM IMPLEMENTATION** | **NEXT. Not started.** | Using the approved Figma visual direction, the approved mixed light/dark surface model, the approved design tokens, and the real UX structure from PR #91. The core surfaces are **structurally stable** for the current beta scope — see § Design readiness below for exactly which, and for what Design may not change without PM review. |
+| **2** | **Visual comparison pass** | Not started | Against the approved direction, once the system is implemented. |
 | **3** | **Physical-device / TestFlight hardening** | Not started | Everything on § Physical-device / UX QA list, plus the broader end-to-end journeys. Only a device can prove a person can reach a control. |
 | **4** | **Production / launch readiness** | Not started | Production has **never** been a target of development or test tooling and is unreconciled by deliberate policy. Release process, environment promotion, Sentry, analytics, support and break-it testing land here. |
 

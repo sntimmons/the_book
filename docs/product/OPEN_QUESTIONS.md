@@ -25,7 +25,13 @@ engineering. **OQ-076** — the residual `account_unavailable(uuid)` identity or
 the closed beta** and carried to the pre-public-launch privacy/security revisit by Founder ruling of
 2026-09-12; **no architectural change was made**, and none is claimed here.
 
-**Last edited by: PR #90** — the post-Discovery/Fairness reconciliation (2026-09-13), which **closed
+**Last edited by: PR #92** — the post-Cross-App-UX-Core reconciliation (2026-09-13), which
+**closed nothing.** It advanced **OQ-089** (a neighbourhood is now required, and the two location
+fields carry distinct meanings) without answering the question it asks, and recorded **PD-118**'s
+three external-beta blockers — of which **OQ-084** gates two. **OQ-084 and OQ-076 are untouched**;
+a UX pass answers neither a legal question nor a privacy one.
+
+Before it, **PR #90** — the post-Discovery/Fairness reconciliation (2026-09-13), which **closed
 nothing and opened one entry**: **OQ-089**, the provider neighborhood / service-area data gap. That
 entry is a data-quality requirement carried into Cross-App UX, and it is the reason **PD-117** defers
 proximity lanes. **OQ-084 and OQ-076 are untouched** — a ranking ruling answers neither a legal
@@ -1195,6 +1201,20 @@ the current behaviour is a decision.**
   product and UX questions, which is why this is filed rather than answered.
 - **What unblocks what:** once this data exists and has been audited, proximity-based lanes may
   be reconsidered (**PD-117**). Until then no location lane ships.
+- **Partially advanced 2026-09-13 by PR #91 (`5166d9e`), and NOT closed.** Two things changed:
+  a **neighbourhood is now required** to finish the provider profile step (it was optional, and
+  skipping it meant permanent absence from Near You with nothing explaining why), and
+  `location` and `neighborhood` now carry **distinct values** — `Houston, TX` and the picked
+  local area. They had been written from one value, so `cityOf('Midtown')` returned `'Midtown'`
+  and Near You's city fallback could never match anything; it existed and did nothing. **The
+  fallback can work for the first time.**
+  **Enforced in the UX, not the schema, deliberately:** erasure sets both columns to null
+  (`20261104000000`), so a `NOT NULL` constraint would refuse to let somebody delete their
+  account.
+  **What is still open is the question this entry asks:** what to ask a provider for, where,
+  whether a service AREA differs from where they work, whether the fixed list is the right
+  shape, and what to show when they decline. The guardrails above are unchanged — no
+  geocoding, no lat/long without PM review, no guessing, no client precise address.
 - **This entry proposes no answer.**
 
 **Nothing in either merge closed a question by repository evidence**, and the rule that produced

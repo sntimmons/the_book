@@ -3147,6 +3147,53 @@ is titled for popularity or proximity.
 **Status:** Locked; implemented and merged.
 
 
+### PD-118 — A missing control is more truthful than a legal destination that does not exist
+
+**Decided 2026-09-13. Implemented at `5166d9e` (PR #91).**
+
+`app/settings/index.tsx` carried ten rows whose entire behaviour was
+`Alert.alert(title, 'Coming soon')`. Four of them were **Terms of Service**, **Privacy
+Policy**, **Contact Support** and **Report an Issue**.
+
+**The ruling: remove them, and do not restore a placeholder.** A row that promises a
+privacy policy and delivers an alert spends the user's trust at the moment they went
+looking for it. A placeholder document, or a `mailto:` to an unmonitored inbox, would be
+worse — it keeps the same lie behind better wording and makes the gap harder to see.
+
+So the rows are gone, and their absence is **recorded as blocking rather than filed as
+polish**.
+
+**THESE ARE HARD EXTERNAL-BETA LAUNCH BLOCKERS. None is complete:**
+
+1. **A reachable Privacy Policy.**
+2. **A reachable Terms of Service.**
+3. **A real Contact Support destination.**
+4. *Optional:* a general **Report an Issue** destination, if product wants one distinct
+   from in-context reporting.
+
+**EXTERNAL TESTERS MUST NOT BE RELEASED UNTIL 1–3 ARE LIVE.** This is not a UX nicety:
+the product collects personal data, takes bookings, and runs a 30-day deletion policy with
+legally-retained evidence. Items 1 and 2 depend on **OQ-084** (retention language, counsel)
+and are **not engineering's to close**.
+
+**What is NOT affected, stated because it would be easy to misread this as a safety
+regression.** In-context reporting is real and reachable: `components/ReportSheet.tsx` from
+a profile or a post, and `app/post-booking/issue.tsx` from a booking. **Safety reporting
+never depended on the removed rows.** What is missing is a GENERAL support route — and it
+was missing before this change too, hidden behind a row that said "Coming soon".
+
+**Do not close any of these by adding a placeholder URL, a stub document, or invented legal
+copy.** The removal is only honest for as long as nothing pretends to replace it.
+
+**Evidence:** `app/settings/index.tsx` (the rows and the `stub()` helper are gone);
+`__tests__/guards/crossAppUx.test.ts` asserts their absence **and** that no `mailto:` or
+placeholder destination was introduced. Obligations tracked in
+[../operations/UX_OPERATIONS.md](../operations/UX_OPERATIONS.md) § 9.
+
+**Status:** Locked. The removals are implemented and merged; **the four obligations are
+OPEN.**
+
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

@@ -1,7 +1,6 @@
 # Cross-App UX — operations note and launch obligations
 
-**Status:** Authoritative. **Anchor:** `main` @ `64fa8f9` plus branch
-`feat/cross-app-ux-core`. **Not merged.**
+**Status:** Authoritative. **Anchor:** `main` @ `5166d9e` (PR #91, 2026-09-13).
 **Audit this implements:** [../audits/CROSS_APP_UX_AUDIT.md](../audits/CROSS_APP_UX_AUDIT.md)
 (read-only, 2026-09-13).
 **Policy:** PD-004 (no identity verification), PD-042 (no payments), PD-059 (no

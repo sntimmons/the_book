@@ -1,5 +1,55 @@
 # Current State — what is true on `main` today
 
+> ## ⛔ EXTERNAL-BETA LAUNCH BLOCKERS — THREE, NONE COMPLETE
+>
+> **External testers must not be released until all three are live** (**PD-118**).
+> These are recorded at the top of this document deliberately: they are not UX debt and
+> they must not be read as polish.
+>
+> | # | Blocker | Owner |
+> |---|---|---|
+> | 1 | **A reachable Privacy Policy** | Product + counsel — depends on **OQ-084** |
+> | 2 | **A reachable Terms of Service** | Product + counsel — depends on **OQ-084** |
+> | 3 | **A real Contact Support destination** | Product |
+>
+> *Optional, not blocking:* a general **Report an Issue** destination distinct from
+> in-context reporting.
+>
+> **Do not close any of these with a placeholder URL, a stub document or invented legal
+> copy.** The Settings rows that used to promise them were removed precisely because an
+> alert saying "Coming soon" was worse than an absent row; a placeholder would be worse
+> than either. **In-context safety reporting is unaffected and real** — `ReportSheet` from a
+> profile or post, and `post-booking/issue` from a booking.
+
+**Cross-App UX Core is COMPLETE** (`5166d9e`, PR #91, 2026-09-13). The structural UX
+corrections are in: the booking flow now says where the client is, provider onboarding asks
+for required work before optional, dead controls are gone, and several claims the product
+could not support have been withdrawn. **No migration was needed** — every change is
+application code and copy. One decision came out of it: **PD-118** (a missing control is
+more truthful than a legal destination that does not exist).
+
+**What changed, in one place:**
+
+| Surface | Change |
+|---|---|
+| **Booking** | A **derived** step indicator across all six screens. The contract step is conditional, so the total is 6 or 5 and is never guessed — it shows `Step 3` while unknown and `Last step` on send, and never claims the request is sent |
+| **Booking** | "Skip, send request without a message" → **"Continue without a message"**. It did not send. And it silently discarded attached **reference photos** — now preserved |
+| **Provider onboarding** | Reordered to **basics → service → availability → policy → review → Go Live** (`Step N of 5`). Portfolio and Reels were steps 2–3 ahead of the only required step; they are now offered from the readiness review, marked optional |
+| **Provider onboarding** | Each step states its **own** requirement, including that availability does not block going live but does block booking |
+| **Neighbourhood** | **Required** in the UX. `location` = `Houston, TX`; `neighborhood` = the picked local area. They were written from **one value**, which collapsed Near You's city fallback |
+| **Settings** | Ten dead rows removed with the `stub()` helper. Legal and support rows **withheld** — see the blockers above |
+| **Business** | "View payouts" removed. `COMPLETED SERVICE VALUE` kept, and must not be renamed |
+| **Bookings list** | An expired request now reads **Expired** instead of Pending for ever, without blaming the provider |
+| **Messaging** | "Messaging is not available for this conversation." No cause named (PD-082); no retry invited that cannot succeed |
+| **Reviews** | The confirmation states the **7 days**, and reveals nothing about whether the counterpart has reviewed |
+| **Barter** | One name per act — "I'm interested", "Propose terms", "Propose different terms". **No state, RPC or transition changed** |
+| **Provider profile** | Follower and Following counts out of the **primary trust row**. The follow feature is untouched |
+| **Reels** | The unreachable "Available" badge removed with its hardcoded-`false` flag |
+
+**Enforced in the UX rather than the schema, and worth knowing why:** the required
+neighbourhood is **not** a `NOT NULL` constraint, because account erasure sets `location` and
+`neighborhood` to null — a constraint would refuse to let somebody delete their account.
+
 **Discovery / Fairness is COMPLETE for the closed-beta scope** (`c444abb`, PR #89, 2026-09-13).
 Provider discovery is five named lanes — **Near You, Open Today, New to The Book, Worth a Look** —
 over a complete grid, each lane stating its own rule. Four decisions came out of it: **PD-114**
@@ -150,8 +200,16 @@ records was **deliberately unresolved** (OQ-077).
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `c444abbe99d0381d2bdb430905f398243d58e816` (2026-09-13) — the
-squash-merge of **PR #89**, Discovery / Fairness. The anchor moves because this document now asserts
+**Reconciled against:** `main` @ `5166d9e647cb41dd31b5797ba33c43ffef67cd2d` (2026-09-13) — the
+squash-merge of **PR #91**, Cross-App UX Core. The anchor moves because this document now
+asserts facts that did not exist before it: the booking step indicator, the reordered
+onboarding sequence, the neighbourhood requirement and its field semantics, and the removal
+of ten non-functional Settings controls. **No migration was added**; 175 local == 175 applied
+on non-production, zero mismatched. **Production `kxregomuawwcqvisuhtr` was not connected to,
+linked, migrated or queried.**
+
+**Previously reconciled against:** `main` @ `c444abbe99d0381d2bdb430905f398243d58e816`
+(2026-09-13) — the squash-merge of **PR #89**, Discovery / Fairness. The anchor moves because this document now asserts
 facts that did not exist before it: the search relevance tiers, the unrated-neutral ordering, the
 removal of `is_featured` from ranking, and the deferral of the proximity lane. CI green on the merged
 head; **175 local == 175 applied** on non-production, zero mismatched. **Production
