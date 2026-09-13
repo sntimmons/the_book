@@ -503,7 +503,7 @@ describe('the trust preview ledes name a future capability without asserting it'
 // WHEN ID CHECKS OR PROTECTION ACTUALLY SHIP, DELETE THE ROW AND SAY SO. A failure
 // here is a question about what the product can back, not a prompt to reword.
 describe('no coming-soon row asserts a capability the product does not have', () => {
-  const ROWS: ReadonlyArray<readonly [string, string, string]> = [
+  const ROWS: readonly (readonly [string, string, string])[] = [
     ['components/ClientMe.tsx', 'IDs, real reviews, and booking counts',
      'no identity-verification process exists (PD-004)'],
     ['components/ClientMe.tsx', 'Coverage, claims, and real support',
