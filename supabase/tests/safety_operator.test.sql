@@ -1057,3 +1057,103 @@ select pg_temp.chk('safety', 'and its INSERT policy is gone with the grant', '0'
 select pg_temp.chk('safety', 'the table itself still exists, with its rows', 'true',
   (to_regclass('public.community_reports') is not null)::text);
 select pg_temp.act_service();
+
+-- ══ 12. BLOCK ON BOOKINGS IS ENFORCED AT BOTH POINTS, NOT ONE ═════════════
+--
+-- AUDIT FINDING F5 asked whether a block racing a booking submit leaves a
+-- forbidden state. It does not, and the reason is stronger than the race: there
+-- are TWO independent triggers, so there is no single check to lose a race to.
+--
+--   enforce_booking_write_integrity   BEFORE INSERT OR UPDATE   raises PT427
+--   enforce_booking_submit_not_blocked BEFORE UPDATE            raises PT427
+--
+-- THIS ASSERTION EXISTS BECAUSE THE VERIFICATION PASS GOT IT WRONG FIRST. Reading
+-- `20261055000000` alone says the gate is the draft->submitted transition, and a
+-- concurrency scenario was written on that model. It failed — not because the
+-- product was broken but because with a block in place **the draft INSERT is
+-- already refused**, so the submit UPDATE matched zero rows and "succeeded"
+-- trivially. A gate proven only by a race can be misread that way; a deterministic
+-- assertion of both gates cannot.
+--
+-- WHY BOTH MATTER. If only the submit were gated, a blocked pair could accumulate
+-- drafts. If only the insert were gated, a draft created BEFORE a block could still
+-- be submitted after it — which is the actual F5 question, and the submit trigger
+-- is the answer to it.
+do $$
+declare
+  cu uuid := gen_random_uuid(); pu uuid := gen_random_uuid(); pid uuid; n integer;
+  v_code text;
+begin
+  perform pg_temp.act_service();
+  insert into auth.users(id) values (cu), (pu);
+  insert into public.clients(id, name) values (cu, 'F5 client') on conflict (id) do nothing;
+  insert into public.providers(user_id, display_name, username, is_approved)
+    values (pu, 'F5 Prov', 'f5b_'||substr(pu::text,1,8), true) returning id into pid;
+
+  -- ── (a) A DRAFT MADE BEFORE THE BLOCK: the submit trigger is what stops it ──
+  -- This is F5's real question. The row already exists and is legal; the block
+  -- arrives afterwards; the transition must be refused.
+  perform pg_temp.act(cu);
+  insert into public.bookings(user_id, provider_id, service_name, requested_date)
+    values (cu, pid, 'f5 pre-block draft', current_date);
+  perform pg_temp.chk('safety', 'a draft before any block is created normally', '1',
+    (select count(*)::text from public.bookings where user_id = cu and provider_id = pid));
+
+  perform pg_temp.act_service();
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (cu, pu);
+  perform pg_temp.chk('safety', 'contact_blocked_provider resolves the providers ROW id', 'true',
+    public.contact_blocked_provider(cu, pid)::text);
+
+  perform pg_temp.act(cu);
+  begin
+    update public.bookings set submitted_at = now()
+     where user_id = cu and provider_id = pid and submitted_at is null;
+    get diagnostics n = row_count;
+    -- A zero-row UPDATE raises nothing, so the row count is asserted too: an
+    -- assertion that passes on "no error" would pass on "nothing happened".
+    v_code := 'NO ERROR, rows='||n::text;
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('safety',
+    'a draft created BEFORE the block cannot be submitted after it', 'PT427', v_code);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('safety', 'and it is still a draft afterwards', 'true',
+    (select (submitted_at is null)::text from public.bookings
+      where user_id = cu and provider_id = pid));
+
+  -- ── (b) AND A NEW DRAFT IS REFUSED AT THE INSERT, by the other trigger ────
+  perform pg_temp.act(cu);
+  begin
+    insert into public.bookings(user_id, provider_id, service_name, requested_date)
+      values (cu, pid, 'f5 post-block draft', current_date);
+    v_code := 'INSERTED';
+  exception when others then v_code := sqlstate;
+  end;
+  perform pg_temp.chk('safety',
+    'and a NEW draft for a blocked pair is refused at the INSERT', 'PT427', v_code);
+  perform pg_temp.act_service();
+  perform pg_temp.chk('safety', 'so no second booking row was created', '1',
+    (select count(*)::text from public.bookings where user_id = cu and provider_id = pid));
+
+  -- ── (c) TWO SEPARATE TRIGGERS, so neither is a single point of failure ────
+  perform pg_temp.chk('safety', 'both block gates exist on bookings, insert and submit', '2',
+    (select count(*)::text from pg_trigger t
+      where t.tgrelid = 'public.bookings'::regclass and not t.tgisinternal
+        and t.tgfoid in ('public.enforce_booking_write_integrity'::regproc,
+                         'public.enforce_booking_submit_not_blocked'::regproc)));
+
+  -- ── (d) UNBLOCKING RESTORES BOTH PATHS ───────────────────────────────────
+  -- A refusal that outlived the block would be the mirror-image defect.
+  delete from public.user_blocks where blocker_user_id = cu and blocked_user_id = pu;
+  perform pg_temp.act(cu);
+  begin
+    update public.bookings set submitted_at = now()
+     where user_id = cu and provider_id = pid and submitted_at is null;
+    get diagnostics n = row_count;
+    v_code := 'submitted rows='||n::text;
+  exception when others then v_code := 'REFUSED '||sqlstate;
+  end;
+  perform pg_temp.chk('safety', 'unblocking lets the waiting draft submit', 'submitted rows=1', v_code);
+  perform pg_temp.act_service();
+end $$;
+select pg_temp.act_service();

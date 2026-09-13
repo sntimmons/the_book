@@ -169,6 +169,19 @@ const IDENTITY_CLAIMS: Claim[] = [
   { why: 'no verification exists to have a deadline (OQ-036)',
     pattern: /within \d+\s*(day|week|month)s?[^.]{0,60}verif/i },
   { why: 'no verification deadline is approved', pattern: /complete verification within/i },
+  // AUDIT F4. `components/ClientMe.tsx` offered a client "Verified Providers —
+  // IDs, real reviews, and booking counts" and `ProviderMe.tsx` offered a provider
+  // "Know who you are booking". Both are live surfaces IN THIS GUARD'S SCOPE, and
+  // both named an ID check as something the product does. No pattern above caught
+  // them: the bare word "IDs" is not "ID Verified", and a subtitle is not a badge.
+  // This is the affirmative shape — a verified ID as a thing that EXISTS. The
+  // conditional phrasings those rows now use ("What ID checks would add") do not
+  // match, which is the distinction the product rule draws: a preview may NAME a
+  // future capability, no surface may ASSERT one.
+  { why: 'no identity verification exists, so no ID has been verified (PD-004)',
+    pattern: /verified\s+IDs?\b/i },
+  { why: 'no identity verification exists, so no ID has been verified (PD-004)',
+    pattern: /\bIDs?\s+verified\b/i },
 ]
 
 // NOTIFICATIONS. No push, device or email notification path exists anywhere in
@@ -401,5 +414,119 @@ describe('provider onboarding makes no unsupported claim', () => {
 
   it('and says plainly that media is optional', () => {
     expect(code('app/onboarding/provider/reels.tsx')).toMatch(/optional/i)
+  })
+})
+
+// ── THE PREVIEW LEDES, WHICH THIS GUARD DELIBERATELY DOES NOT SCAN ────────
+//
+// AUDIT F4. The exclusion of `app/preview/**` above is right and is not being
+// reversed: those screens exist to describe unbuilt capability, and forbidding
+// them from naming a future feature would be backwards. But the exclusion is why
+// the PM's own rule went unenforced in the one place it was written down.
+//
+// `app/preview/protection-center.tsx` states it in full: *"A 'Coming soon' pill
+// above a present-tense assertion does not neutralise it. Preview screens may NAME
+// a future capability; they may not assert one."* That pass corrected
+// protection-center's body, and corrected the PIECES of
+// `provider-verification.tsx` — one of which reads "A badge WOULD show when a
+// provider's identity has been confirmed". It left both trust LEDES in the
+// present tense:
+//
+//     provider-verification: "Know your provider is real. See verified IDs, real
+//                             reviews, and completed bookings before you book."
+//     safety:                "Know who you are booking. Verify clients and feel
+//                             safe, especially when you work alone."
+//
+// So one screen told a client to go and see a verified ID while its own card said
+// a badge would show one day. Of everything in this cluster these two are the
+// claims a person is most likely to ACT on — accepting a stranger, or booking
+// one — which is why they get a guard and the lookbook lede does not.
+//
+// SCOPE. Only the two TRUST previews, and only the imperative "go and do this
+// now" shape. The other previews describe features whose absence costs nobody
+// their safety, and rewriting all of them would be a copy pass, not a fix.
+describe('the trust preview ledes name a future capability without asserting it', () => {
+  const TRUST_PREVIEWS = [
+    join('app', 'preview', 'provider-verification.tsx'),
+    join('app', 'preview', 'safety.tsx'),
+  ]
+
+  it.each(TRUST_PREVIEWS)('%s exists to be checked', (rel) => {
+    expect(existsSync(join(ROOT, rel))).toBe(true)
+  })
+
+  // The lede only, not the whole file: the PIECES are already conditional and the
+  // explanatory comments deliberately quote the wording being forbidden.
+  const lede = (rel: string): string => {
+    const m = /lede="([^"]*)"/.exec(code(rel))
+    expect(m).not.toBeNull()
+    return m![1]
+  }
+
+  it.each(TRUST_PREVIEWS)('%s does not instruct the reader to SEE a verified ID', (rel) => {
+    expect(lede(rel)).not.toMatch(/\bsee\s+verified\b/i)
+    expect(lede(rel)).not.toMatch(/verified\s+IDs?\b(?![^.]*\bwould\b)/i)
+  })
+
+  it.each(TRUST_PREVIEWS)('%s does not instruct the reader to VERIFY anybody', (rel) => {
+    // "Verify clients and feel safe" — an imperative for a process that does not
+    // exist. A conditional mention of verification is fine and is the point.
+    expect(lede(rel)).not.toMatch(/(^|[.!?]\s+)verify\s+\w/i)
+  })
+
+  it.each(TRUST_PREVIEWS)('%s says plainly that it does not exist yet', (rel) => {
+    // The correction is not just softer tense. Each lede must still contain the
+    // flat denial, because that is the sentence a reader can rely on.
+    expect(lede(rel)).toMatch(/do(es)? not exist yet|not exist yet|nothing[^.]*(verif|exists)/i)
+  })
+})
+
+// ── THE COMING-SOON ROWS, WHICH ARE LIVE SURFACES ─────────────────────────
+//
+// AUDIT F4, and the part the pattern table above genuinely cannot express. The
+// `ComingSoonCluster` rows live in `components/ClientMe.tsx` and
+// `ProviderMe.tsx` — inside this guard's scope, not behind the `app/preview`
+// exclusion — and they are the FIRST claim a reader sees, before the screen that
+// qualifies it. Three of them described capabilities the product does not have:
+//
+//     'IDs, real reviews, and booking counts'   — no ID check exists (PD-004)
+//     'Coverage, claims, and real support'      — no payment protection (PD-042)
+//     'Know who you are booking'                — no client verification (PD-004)
+//
+// NONE of these matches a pattern in the table above, and adding one that did
+// would mean banning the bare word "IDs" or "support" across the app, which would
+// fire on truthful copy and get itself deleted rather than obeyed. So the removed
+// WORDING is pinned directly, the way `barterValueAbsent.test.ts` pins a removal:
+// the specific sentence does not come back, and the guard says what to do if the
+// capability ever ships.
+//
+// WHEN ID CHECKS OR PROTECTION ACTUALLY SHIP, DELETE THE ROW AND SAY SO. A failure
+// here is a question about what the product can back, not a prompt to reword.
+describe('no coming-soon row asserts a capability the product does not have', () => {
+  const ROWS: readonly (readonly [string, string, string])[] = [
+    ['components/ClientMe.tsx', 'IDs, real reviews, and booking counts',
+     'no identity-verification process exists (PD-004)'],
+    ['components/ClientMe.tsx', 'Coverage, claims, and real support',
+     'The Book operates no payment protection of any kind (PD-042)'],
+    ['components/ProviderMe.tsx', 'Know who you are booking',
+     'no client verification exists (PD-004)'],
+  ]
+
+  it.each(ROWS)('%s no longer says "%s"', (rel, wording, why) => {
+    const src = code(rel.split('/').join(sep))
+    expect(src.includes(wording) ? `${rel} still says it — ${why}` : 'absent').toBe('absent')
+  })
+
+  // And the rows still EXIST, reworded rather than deleted: a guard that passes
+  // because the whole cluster was removed would be proving the wrong thing.
+  it('the rows are still present, in conditional form', () => {
+    const client = code(join('components', 'ClientMe.tsx'))
+    const provider = code(join('components', 'ProviderMe.tsx'))
+    expect(client).toMatch(/provider_verification/)
+    expect(client).toMatch(/protection_center/)
+    expect(provider).toMatch(/'safety'/)
+    // "would" is the tense the product rule asks for.
+    expect(client).toMatch(/would/)
+    expect(provider).toMatch(/would/)
   })
 })

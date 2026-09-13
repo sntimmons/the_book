@@ -708,8 +708,15 @@ const CLIENT_GROUPS: PreviewGroup[] = [
     label: 'Safety & Trust',
     items: [
       { key: 'safety_client', icon: 'shield', title: 'Safety', sub: 'Share your appointment and check in', href: '/preview/safety-client' },
-      { key: 'provider_verification', icon: 'user-check', title: 'Verified Providers', sub: 'IDs, real reviews, and booking counts', href: '/preview/provider-verification' },
-      { key: 'protection_center', icon: 'umbrella', title: 'Protection Center', sub: 'Coverage, claims, and real support', href: '/preview/protection-center' },
+      // PRODUCT TRUTH (audit F4): these two subtitles asserted capabilities that do
+      // not exist — "IDs" (no identity-verification process exists at all, PD-004)
+      // and "Coverage, claims, and real support" (The Book operates no payment
+      // protection of any kind, PD-042). They sit OUTSIDE the preview screens, so
+      // the corrections made on those screens never reached them, and this row is
+      // the FIRST claim a client reads. Reworded to name a future without asserting
+      // it, which is the rule protection-center.tsx states in full.
+      { key: 'provider_verification', icon: 'user-check', title: 'Verified Providers', sub: 'What ID checks would add', href: '/preview/provider-verification' },
+      { key: 'protection_center', icon: 'umbrella', title: 'Protection Center', sub: 'What coverage would look like', href: '/preview/protection-center' },
     ],
   },
   {
