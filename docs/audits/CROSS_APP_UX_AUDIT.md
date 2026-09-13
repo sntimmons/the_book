@@ -3,7 +3,7 @@
 **Status:** Historical (dated snapshot). The durable operational answer is
 [../operations/UX_OPERATIONS.md](../operations/UX_OPERATIONS.md).
 **Audit:** read-only, 2026-09-13, against `main` @ `64fa8f9`. Nothing was modified by it.
-**Implementation:** branch `feat/cross-app-ux-core`, same day. **No migration.**
+**Implementation:** merged to `main` as **`5166d9e`** (PR #91), same day. **No migration.**
 **Production `kxregomuawwcqvisuhtr` was never connected to, linked, migrated or queried.**
 
 Governing principles: complexity belongs underneath; a user should not have to understand
