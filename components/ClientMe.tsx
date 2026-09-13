@@ -715,7 +715,9 @@ const CLIENT_GROUPS: PreviewGroup[] = [
       // the corrections made on those screens never reached them, and this row is
       // the FIRST claim a client reads. Reworded to name a future without asserting
       // it, which is the rule protection-center.tsx states in full.
-      { key: 'provider_verification', icon: 'user-check', title: 'Verified Providers', sub: 'What ID checks would add', href: '/preview/provider-verification' },
+      // PD-113: the row title said 'Verified Providers', which reads as a live
+      // category of providers who passed a check nothing performs.
+      { key: 'provider_verification', icon: 'user-check', title: 'Provider ID checks', sub: 'What ID checks would add', href: '/preview/provider-verification' },
       { key: 'protection_center', icon: 'umbrella', title: 'Protection Center', sub: 'What coverage would look like', href: '/preview/protection-center' },
     ],
   },

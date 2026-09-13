@@ -25,7 +25,23 @@ engineering. **OQ-076** — the residual `account_unavailable(uuid)` identity or
 the closed beta** and carried to the pre-public-launch privacy/security revisit by Founder ruling of
 2026-09-12; **no architectural change was made**, and none is claimed here.
 
-**Last edited by:** the post-**PR #84** reconciliation (2026-09-13), which **closed nothing** —
+**Last edited by: PR #88** — the post-audit reconciliation (2026-09-13), which **closed nothing and
+opened nothing.** The Grok whole-app audit (`d7acc44`, PR #87) is recorded here **only** for what it
+did to the open questions, which is nothing: it confirmed two defects in implementation, neither of
+which was an undecided question, and it produced **PD-111 … PD-113**, which are rulings rather than
+closures.
+
+**OQ-076 is REAFFIRMED, not closed.** The audit re-examined the residual inference surface as part of
+F3 and found the position unchanged: discovery reads `providers_visible` and is block-filtered, while
+a **directly-opened profile deliberately still reads base `providers`** — which is the diffability
+PD-090 accepted for the Houston closed beta, not a new leak. It remains **accepted for closed beta
+and carried to the pre-public-launch privacy/security revisit.** Nothing in the audit narrowed it and
+nothing may be read as having done so.
+
+**OQ-084 is untouched.** An audit cannot answer a legal question, and none of PD-111 … PD-113 supplies
+a retention duration.
+
+Before it, the post-**PR #84** reconciliation (2026-09-13), which **closed nothing** —
 PD-108 had already closed OQ-088 on 2026-09-12, and this edit only recorded the merge that carried
 it onto `main`. Before it, the post-**PR #83** reconciliation (2026-09-12), which likewise closed
 nothing and recorded the merge that carried PD-105 … PD-107; it was committed to `main` as

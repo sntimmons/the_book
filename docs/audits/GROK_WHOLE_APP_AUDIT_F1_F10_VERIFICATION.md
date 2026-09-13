@@ -395,17 +395,25 @@ what the schema currently does**, and a single migration is not it.
 OQ-076's base-table diffability, reaffirmed — `fetchProvider` reading base `providers` for a
 directly-opened profile is PD-090's accepted closed-beta limitation, not an F3 leak.
 
-**Product decisions needed (3), none taken here:**
+**Product decisions needed (3) — ALL THREE WERE SUBSEQUENTLY RULED ON, 2026-09-13.** Recorded here
+so this snapshot is not read as leaving them open:
 
-1. **F1-C.** Shorten the upload `cacheControl` on `provider-media` / `posts-media`, make those
-   buckets private and serve signed URLs, or accept the ≤1h window and say so in the erasure
-   operations note. Engineering has no basis to pick; all three are defensible.
-2. **The remaining preview ledes.** Seven other `app/preview/*` screens use present-tense
-   assertions ("See your earnings", "Send and sign simple service agreements"). They are not
-   trust claims, so they were left alone. Whether the protection-center rule applies to all of
-   them is a copy standard, not a bug.
-3. **Whether "Verified Providers" may remain a feature NAME** while no verification exists. The
-   row title was kept; only the asserting subtitle changed.
+1. **F1-C, the public-bucket CDN cache → PD-111.** Buckets are **not** privatised this phase; the
+   cache policy is to be **centralized and shortened** where technically safe, as a bounded
+   engineering follow-up; **origin deletion is the authoritative deletion event**; no surface may
+   claim an already-issued CDN URL stops working the instant the object is deleted; and the residue
+   on **already-uploaded** objects keeps its original TTL and **cannot be retroactively shortened** —
+   an accepted closed-beta platform limitation.
+2. **The remaining preview ledes → PD-112.** The rule applies to **all** preview and trust surfaces
+   and to **every level** of them: a headline, lede, banner or section title may not describe a future
+   feature as currently live when its own body calls it future. The remaining ledes are owed to the
+   **Cross-App UX / Product Truth** pass, not to a defect queue.
+3. **"Verified Providers" → PD-113. Not approved terminology** while identity verification is not
+   live. Both live occurrences were already inside this pass's surface and were corrected to
+   **"Provider ID checks"** — neither to "Approved Providers" nor "Houston Beta Providers", because
+   both name a *set of providers* and these name a future *check*. Pinned by a guard that fails on the
+   noun phrase in any live surface, and deliberately not on the word "verified", since "Phone
+   Verified" is true.
 
 **Unproven after inspection (1):** F6's concurrent contract edit vs client acceptance. No
 speculative fix made; a harness with contract fixtures is owed.
