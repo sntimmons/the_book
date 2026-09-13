@@ -34,7 +34,7 @@ race itself. That is why F1 and F5 needed evidence of their own rather than a ci
 | F2 | Erasure completeness | **Already closed** | — (was HIGH) | No |
 | F3 | Discovery / ratings | **Already closed** | — (was HIGH) | No |
 | F4 | Product-truth UI copy | **CONFIRMED DEFECT** (narrow) | MEDIUM (was HIGH) | **Yes — copy only** |
-| F5 | Block + booking race | **Already closed**; the gate was **untested** and now is | LOW (was MEDIUM) | Test only |
+| F5 | Block + booking race | **Already closed** — two triggers, not one | LOW (was MEDIUM) | Test only |
 | F6 | Contracts | **Already closed**; one concurrency case **unproven** | LOW (was MEDIUM) | No |
 | F7 | Reviews | **Already closed** | — (was MEDIUM) | No |
 | F8 | Community / Reels | **Already closed** | — (was MEDIUM) | No |
@@ -188,28 +188,46 @@ removed row wording pinned directly (a pattern banning the bare words "IDs" or "
 fire on truthful copy and get itself deleted rather than obeyed). **Red-green verified:**
 restoring each original string fails 4 assertions.
 
-## F5 — Block + booking race — Already closed; the gate was untested
+## F5 — Block + booking race — Already closed, at two points
 
-Enforcement is server-side and authoritative: `enforce_booking_submit_not_blocked`, a
-`BEFORE UPDATE` trigger firing on exactly one transition —
-`old.submitted_at is null and new.submitted_at is not null` — raising **`PT427`**. Every other
-transition stays open to a blocked pair, deliberately, "because a block never strands a
-transaction that already exists".
+Block enforcement on bookings is **two independent server-side triggers**, not one:
 
-**The race has no forbidden end state, and that is the finding.** Because a live transaction
-deliberately survives a block, a submit that commits microseconds before the block is in exactly
-the position of one submitted a week earlier. The only forbidden outcome would be a **submitted**
-request where the block committed **first** — which the trigger prevents, since it reads
-committed rows at statement start.
+| Trigger | Fires | Raises |
+|---|---|---|
+| `enforce_booking_write_integrity` | `BEFORE INSERT OR UPDATE` | `PT427` |
+| `enforce_booking_submit_not_blocked` | `BEFORE UPDATE`, only on `submitted_at` null → not-null | `PT427` |
 
-**What was genuinely missing was a test of the gate.** The existing `raceBlockVsBooking`
-scenario races a block against the **INSERT** of a booking — but `PT427` does not live on the
-insert, so that scenario's `PT427` assertion is reachable only by the eligibility path and the
-submit gate was never raced by anything. Added `raceBlockVsSubmit` to
-`scripts/negotiation-concurrency.mjs`: two genuinely parallel sessions, block vs the
-`draft → submitted` update, asserting both orderings are legal, that the outcome is internally
-consistent (refused ⇒ not submitted; ok ⇒ submitted), that a refusal is `PT427` rather than a
-generic failure, and that a later submit with the block committed is refused deterministically.
+Both confirmed live on `public.bookings`. Every other transition stays open to a blocked pair,
+deliberately, "because a block never strands a transaction that already exists".
+
+**The race has no forbidden end state.** Because a live transaction survives a block by design,
+a submit committing microseconds before one is in the position of one submitted a week earlier.
+The only forbidden outcome would be a submitted request where the block committed first — and two
+triggers stand in front of that, so there is no single check to lose a race to.
+
+**This section is a correction, and the correction is the useful part.** The first pass read
+`20261055000000` alone, concluded that `PT427` "does not live on the insert", and wrote a
+concurrency scenario on that model. **That was wrong.** The scenario failed three assertions —
+not because the product was broken but because **with a block in place the draft INSERT is
+already refused**, so the submit UPDATE matched zero rows and "succeeded" trivially. The
+scenario was measuring its own false premise.
+
+It was **removed rather than adjusted**. A race is the wrong instrument for this question: it can
+pass or fail for reasons that have nothing to do with the gate, and it had just demonstrated
+exactly that. What replaced it is deterministic, in `safety_operator.test.sql` § 12:
+
+- a draft created **before** any block **cannot be submitted after it** — `PT427`, and it is
+  still a draft afterwards. *This is F5's actual question, and the submit trigger is its answer.*
+- a **new** draft for a blocked pair is refused at the **INSERT** — `PT427`, and no second row
+  is created.
+- **both** gates exist on `bookings`, asserted by `tgfoid`, so neither is a single point of
+  failure.
+- **unblocking restores both paths** — the waiting draft submits. A refusal that outlived the
+  block would be the mirror-image defect.
+
+The row count is asserted alongside the error code, because an assertion that passes on "no
+error" would also pass on "nothing happened" — which is precisely how the first attempt misled
+itself.
 
 ## F6 — Contracts — Already closed; one case unproven
 
@@ -364,8 +382,14 @@ touched. All four refuse a non-operator internally, so defence in depth holds.
 **Confirmed defects (2, both fixed):** F9 (operator neutrality, `20261134000000`) and F4 (five
 copy claims).
 
-**Already closed / false positive (7):** F1 A/B/D/E/F, F2, F3, F5 (behaviour), F6 (except one
-case), F7, F8, F10.
+**Already closed / false positive (7):** F1 A/B/D/E/F, F2, F3, F5, F6 (except one case), F7,
+F8, F10.
+
+**One error in this pass, recorded rather than quietly corrected.** F5 was first analysed from
+`20261055000000` alone, which gave the wrong location for the block gate; a concurrency scenario
+built on that premise failed and was removed, and the finding is now pinned deterministically
+instead. The lesson is the same one F9 turned on: **the live database is the only safe source for
+what the schema currently does**, and a single migration is not it.
 
 **Accepted limitations (2):** F1-C, the ≤1h CDN edge cache on public buckets after deletion.
 OQ-076's base-table diffability, reaffirmed — `fetchProvider` reading base `providers` for a
