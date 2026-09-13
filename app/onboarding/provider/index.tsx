@@ -16,6 +16,8 @@ import {
 import { Feather } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
+import { StepProgress } from '@/components/StepProgress'
+import { providerProgressLabel } from '@/lib/providerOnboardingProgress'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useProviderStore } from '@/store/providerStore'
 import { useCategories } from '../../../hooks/useProviders'
@@ -48,7 +50,20 @@ export default function ProviderOnboardingStep1() {
   const isValid =
     name.trim().length > 0 &&
     (category.length > 0 || customCategory.trim().length > 0) &&
-    photo !== null
+    photo !== null &&
+    // ── NEIGHBOURHOOD IS REQUIRED FOR THE HOUSTON BETA (PM ruling) ─────────
+    //
+    // It was optional, and skipping it had an invisible cost: the provider was
+    // absent from the Near You lane permanently, with nothing in the app telling
+    // them why. Discovery cannot offer local relevance for somebody who has not
+    // said where they work, so this is asked once, here, from a fixed list.
+    //
+    // ENFORCED IN THE UX, NOT THE SCHEMA, and deliberately: account erasure sets
+    // `location = null, neighborhood = null` (20261104000000), so a NOT NULL
+    // constraint would refuse to let somebody delete their account. A required
+    // field whose own product rules require it to become null cannot be a database
+    // constraint.
+    location.trim().length > 0
 
   async function pickPhoto() {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -93,7 +108,12 @@ export default function ProviderOnboardingStep1() {
       setErrors(newErrors)
       return
     }
-    router.push('/onboarding/provider/portfolio')
+    // REQUIRED WORK FIRST. This used to hand off to `/portfolio`, putting two
+    // optional growth screens (portfolio, then reels) ahead of the one thing Go
+    // Live actually needs — a service. A provider who stopped at the video step
+    // never reached it. Portfolio and Reels are now offered from the readiness
+    // review instead, and from the Business dashboard afterwards.
+    router.push('/onboarding/provider/services')
   }
 
   function fieldBorder(field: FocusedField) {
@@ -125,7 +145,7 @@ export default function ProviderOnboardingStep1() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Build your profile</Text>
-        <Text style={styles.topBarStep}>Step 1 of 7</Text>
+        <StepProgress label={providerProgressLabel('basics')} />
       </View>
 
       <ScrollView

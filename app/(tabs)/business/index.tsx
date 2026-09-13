@@ -583,14 +583,15 @@ export default function ProviderDashboard() {
               <Text style={styles.earningStatLabel}>this month</Text>
             </View>
           </View>
-          <TouchableOpacity
-            style={styles.payoutsLink}
-            onPress={() => router.push('/(tabs)/business/payouts' as never)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.payoutsLinkText}>View payouts</Text>
-            <Feather name="chevron-right" size={11} color="#C8922A" />
-          </TouchableOpacity>
+          {/* "VIEW PAYOUTS" REMOVED. It led to a screen whose entire content was
+              "Payouts are not available during beta." — an honest destination, and a
+              control that existed only to deliver that sentence. The Book moves no
+              money (PD-042), so a payouts link on the provider dashboard implies a
+              balance owed.
+
+              COMPLETED SERVICE VALUE above is kept exactly as it is. It is a
+              truthful count of work done, and it is deliberately NOT called
+              earnings, balance, payout or wallet. Do not rename it. */}
         </View>
 
         {/* Pending requests */}
@@ -987,17 +988,6 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
     marginTop: 2,
-  },
-  payoutsLink: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 14,
-  },
-  payoutsLinkText: {
-    fontSize: 12,
-    color: '#C8922A',
-    fontFamily: 'Manrope_500Medium',
   },
   section: {
     marginBottom: 28,

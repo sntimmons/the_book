@@ -13,6 +13,8 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Sentry from '@sentry/react-native'
 import { useBookingStore } from '@/store/bookingStore'
+import { StepProgress } from '@/components/StepProgress'
+import { bookingProgressLabel } from '@/lib/bookingProgress'
 import { useAuth } from '@/context/AuthContext'
 import { fetchContractForBooking, Contract } from '@/lib/contracts'
 import {
@@ -36,7 +38,9 @@ export default function BookContract() {
     bookingMessage,
     setContractSigned,
     setDraftBookingId,
-  } = useBookingStore()
+    contractRequired,
+  setContractRequired,
+} = useBookingStore()
 
   const [contract, setContract] = useState<Contract | null>(null)
   const [loading, setLoading] = useState(true)
@@ -105,9 +109,15 @@ export default function BookContract() {
         if (cancelled) return
         // A genuine "no contract exists" (empty, no error) skips the step.
         if (!c) {
+          // The step count is now SETTLED, and settling it is what lets the
+          // progress indicator state a total instead of a bare step number. This
+          // is the earliest point it can be known: the safe read is keyed on a
+          // booking, and the booking is created just above.
+          setContractRequired(false)
           router.replace('/book/payment')
           return
         }
+        setContractRequired(true)
         setContract(c)
         setLoading(false)
       } catch (e) {
@@ -273,7 +283,11 @@ export default function BookContract() {
           <Feather name="chevron-left" size={20} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Service Agreement</Text>
-        <View style={styles.iconBtn} />
+        {/* The step label sits in the slot that already balanced the back button,
+            so the title stays centred and the bar gains no new element. */}
+        <View style={styles.headerStep}>
+          <StepProgress label={bookingProgressLabel('contract', contractRequired)} />
+        </View>
       </View>
 
       <ScrollView
@@ -426,6 +440,10 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
   },
   iconBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
+  headerStep: {
+    width: 76,
+    alignItems: 'flex-end',
+  },
   headerTitle: {
     flex: 1,
     textAlign: 'center',

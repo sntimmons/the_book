@@ -16,17 +16,11 @@ import { supabase } from '@/lib/supabase'
 
 // ── Masked phone helper ───────────────────────────────────────────────────────
 
-function maskPhone(phone: string | undefined | null): string {
-  if (!phone) return 'Not set'
-  const digits = phone.replace(/\D/g, '')
-  if (digits.length < 4) return phone
-  const last4 = digits.slice(-4)
-  return '+1 (***) ***-' + last4
-}
 
-function stub(title: string) {
-  Alert.alert(title, 'Coming soon')
-}
+// `stub()` REMOVED ALONG WITH ITS LAST CALLER. It was one line —
+// `Alert.alert(title, 'Coming soon')` — and that cheapness is why ten Settings
+// rows existed for capabilities the product does not have. Leaving the helper
+// behind would make the eleventh just as easy.
 
 // ── Row primitives ────────────────────────────────────────────────────────────
 
@@ -88,8 +82,8 @@ export default function SettingsScreen() {
     }
   }, [user])
 
-  const email = user?.email ?? 'Not set'
-  const phone = maskPhone(user?.phone)
+  // `email` and `phone` were read only to display beside their own Coming-soon
+  // rows, which are gone. Personal Information is where account details live.
 
   function handleSignOut() {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -132,21 +126,19 @@ export default function SettingsScreen() {
             icon="person-outline"
             label="Personal Information"
             onPress={() => router.push('/settings/personal-info' as never)}
-          />
-          <NavRow
-            icon="call-outline"
-            label="Phone Number"
-            value={phone}
-            onPress={() => stub('Phone Number')}
-          />
-          <NavRow
-            icon="mail-outline"
-            label="Email"
-            value={email}
-            onPress={() => stub('Email')}
             isLast
           />
         </View>
+        {/* PHONE AND EMAIL ROWS REMOVED. Both were `stub()` — a row that showed the
+            value and then said "Coming soon" when tapped. Neither can actually be
+            changed in the app, so the rows offered something the product cannot do.
+            "If a control doesn't do anything, don't show it."
+
+            The VALUES are not lost: Personal Information above shows the account
+            details. What is gone is the false affordance of editing them.
+
+            Restore these when a real change flow exists — changing either is an
+            auth-credential change, not a profile edit. */}
 
         {/* PROVIDER: escape hatch so a client (including anyone who was routed
             in as a client without choosing) can still reach provider
@@ -172,15 +164,14 @@ export default function SettingsScreen() {
             named a capability that does not exist and is not promised. Removed.
             "Payment Methods" stays: it is an honest Coming-soon stub for a
             capability the roadmap does own (PD-042). */}
-        <GroupLabel>Payments</GroupLabel>
-        <View style={s.group}>
-          <NavRow
-            icon="card-outline"
-            label="Payment Methods"
-            onPress={() => stub('Payment Methods')}
-            isLast
-          />
-        </View>
+        {/* PAYMENTS GROUP REMOVED ENTIRELY. "Payment Methods" was a Coming-soon
+            stub, and an earlier note here argued it could stay because "the roadmap
+            owns the capability". That reasoning does not survive the product
+            principle: The Book takes no payment at all (PD-042), so a Payments
+            section in Settings tells a beta user this product handles their money.
+            A roadmap item is not a reason to show a control today.
+
+            Restore it when payments exist — not when they are planned. */}
 
         {/* ITEM A (Correction 3): the Notifications group is removed.
             Three switches — Booking Updates, Provider Activity, Deals & Alerts —
@@ -215,16 +206,14 @@ export default function SettingsScreen() {
         {/* PRIVACY */}
         <GroupLabel>Privacy</GroupLabel>
         <View style={s.group}>
-          <NavRow
-            icon="eye-outline"
-            label="Profile Visibility"
-            onPress={() => stub('Profile Visibility')}
-          />
-          <NavRow
-            icon="finger-print-outline"
-            label="Identity Verification"
-            onPress={() => stub('Identity Verification')}
-          />
+          {/* "Profile Visibility" and "Identity Verification" REMOVED. Both were
+              stubs. Identity Verification is the more serious of the two: no
+              identity-verification process exists (PD-004), and PD-113 rules the
+              terminology itself unapproved until one does — so a Settings row named
+              for it implied a capability twice over. Profile visibility is derived
+              (approval, deletion state, blocks), not a switch anybody sets.
+
+              Blocked Accounts stays because it is real. */}
           {/* NO LONGER A STUB. Blocking is live as of Session 8, and this row
               was the only place in the product a person would look for the list
               — reading "Coming soon" while their blocks were real. It was also
@@ -239,42 +228,45 @@ export default function SettingsScreen() {
           />
         </View>
 
-        {/* SUPPORT */}
-        <GroupLabel>Support</GroupLabel>
-        <View style={s.group}>
-          <NavRow
-            icon="help-circle-outline"
-            label="Help Center"
-            onPress={() => stub('Help Center')}
-          />
-          <NavRow
-            icon="chatbubble-outline"
-            label="Contact Support"
-            onPress={() => stub('Contact Support')}
-          />
-          <NavRow
-            icon="flag-outline"
-            label="Report an Issue"
-            onPress={() => stub('Report an Issue')}
-            isLast
-          />
-        </View>
+        {/* SUPPORT GROUP WITHHELD FOR BETA — AND THIS IS A LAUNCH OBLIGATION, NOT
+            A CLEANUP.
 
-        {/* LEGAL */}
-        <GroupLabel>Legal</GroupLabel>
-        <View style={s.group}>
-          <NavRow
-            icon="document-text-outline"
-            label="Terms of Service"
-            onPress={() => stub('Terms of Service')}
-          />
-          <NavRow
-            icon="lock-closed-outline"
-            label="Privacy Policy"
-            onPress={() => stub('Privacy Policy')}
-            isLast
-          />
-        </View>
+            All three rows were `stub()`: Help Center, Contact Support, Report an
+            Issue. A user with a problem tapped "Contact Support" and was told
+            "Coming soon", which is worse than no row at all — it spends their trust
+            at the exact moment they needed help.
+
+            They are REMOVED rather than replaced with a fake destination, because
+            inventing one (a mailto to an unmonitored inbox, a form that goes
+            nowhere) would keep the same lie behind better wording.
+
+            WHAT STILL WORKS, and is why this is a removal rather than a regression:
+            in-context reporting is real and reachable — `components/ReportSheet.tsx`
+            from a profile or a post, and `app/post-booking/issue.tsx` from a
+            booking. Safety reporting is not affected by this change. What is missing
+            is a GENERAL support route, and it was missing before this commit too.
+
+            OPEN LAUNCH OBLIGATION: a real Contact Support destination, and a
+            general Report an Issue route if wanted. Tracked in
+            docs/operations/UX_OPERATIONS.md. Do not restore these rows with a
+            placeholder. */}
+
+        {/* LEGAL GROUP WITHHELD FOR BETA — THE MOST SERIOUS OF THESE REMOVALS.
+
+            "Terms of Service" and "Privacy Policy" were both `stub()`: a row that
+            said "Coming soon" for documents this product needs in order to collect
+            personal data, take bookings, and run a 30-day deletion policy with
+            legally-retained evidence.
+
+            A row that promises a privacy policy and delivers an alert is worse than
+            an absent row, and a placeholder document would be worse than either.
+            So they are removed, and their absence is recorded as blocking rather
+            than filed as polish.
+
+            OPEN LAUNCH OBLIGATION, and it is not engineering's to close: a
+            reachable Privacy Policy and Terms of Service, whose retention language
+            depends on OQ-084 (counsel). Tracked in
+            docs/operations/UX_OPERATIONS.md. */}
 
         {/* ACCOUNT — the way out of the product.
             Self-service deletion has to live INSIDE the app: a product whose only

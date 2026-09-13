@@ -14,6 +14,13 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { Feather, Ionicons } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
+import { StepProgress } from '@/components/StepProgress'
+import {
+  providerProgressLabel,
+  providerStepNumber,
+  providerStepRequirementNote,
+  providerStepTotal,
+} from '@/lib/providerOnboardingProgress'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
@@ -607,8 +614,20 @@ export default function AvailabilityEditor({
     <View style={styles.root}>
       {isOnboarding ? (
         <>
+          {/* DERIVED, NOT TYPED. This fill was hard-coded to `62.5%` — 5/8, left
+              over from an eight-step flow whose payout screen was deleted. It was
+              already stale before this change and would have been wrong again
+              after it. Driving it from the same module as the label means the bar
+              and the number can never disagree, which is the only way a bar is
+              safe: it is a proportion, and a proportion nobody recomputes is how
+              fake progress gets shipped. */}
           <View style={styles.progressTrack}>
-            <View style={styles.progressFill} />
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${(providerStepNumber('availability') ?? 0) * (100 / providerStepTotal())}%` },
+              ]}
+            />
           </View>
           <View style={[styles.onboardingHeader, { paddingTop: insets.top + 16 }]}>
             <TouchableOpacity
@@ -620,7 +639,7 @@ export default function AvailabilityEditor({
               <Feather name="chevron-left" size={18} color="#F0E8D5" />
             </TouchableOpacity>
             <Text style={styles.onboardingHeaderLabel}>Your availability</Text>
-            <Text style={styles.onboardingHeaderStep}>Step 5 of 7</Text>
+            <StepProgress label={providerProgressLabel('availability')} />
           </View>
         </>
       ) : (
@@ -662,6 +681,12 @@ export default function AvailabilityEditor({
             <Text style={styles.headline}>Set your schedule.</Text>
             <Text style={styles.subtext}>
               Clients will only see time slots that fit your availability. You can always change this later.
+            </Text>
+            {/* The honest nuance, stated rather than implied by position: hours are
+                NOT a Go Live blocker, but without them nobody can book a time.
+                "Optional" alone would be true and useless. */}
+            <Text style={styles.requirementNote}>
+              {providerStepRequirementNote('availability')}
             </Text>
           </>
         )}
@@ -918,7 +943,7 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   progressFill: {
-    width: '62.5%',
+    // Width is supplied inline from the shared step module — see the note above.
     height: 4,
     backgroundColor: 'rgba(240,232,213,0.6)',
   },
@@ -1057,6 +1082,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_400Regular',
     lineHeight: 20,
     marginBottom: 28,
+  },
+  requirementNote: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_500Medium',
+    marginTop: 8,
   },
   sectionLabel: {
     fontSize: 10,

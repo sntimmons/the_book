@@ -38,7 +38,6 @@ interface Reel {
   providerCategory: string
   providerNeighborhood: string
   providerAvatarUrl?: string
-  providerAvailable: boolean
   caption: string
   likes: number
   comments: number
@@ -119,7 +118,6 @@ async function fetchReels(): Promise<Reel[]> {
         providerAvatarUrl: p.profile_photo_url ?? undefined,
         // No real-time availability signal on the posts feed yet; do not
         // fabricate one.
-        providerAvailable: false,
         caption: row.caption ?? '',
         likes: row.like_count ?? 0,
         comments: row.comment_count ?? 0,
@@ -400,11 +398,20 @@ export default function ReelsScreen() {
   }
 
   function handleComment(id: string) {
+    // COMMENTS ARE BUILT. This used to answer "Coming soon" whenever `isRealData`
+    // was false — that is, on the seeded demo reels — so a working feature reported
+    // itself unbuilt depending on which rows happened to be on screen. The honest
+    // distinction is not "is the feature ready" but "can this particular item hold a
+    // comment", and a demo reel cannot because it has no row to attach one to.
     if (isRealData) {
       setCommentPostId(id)
-    } else {
-      Alert.alert('Coming soon', 'This feature is coming in the next update.', [{ text: 'OK' }])
+      return
     }
+    Alert.alert(
+      'Not available on sample content',
+      'This is a sample reel, so it has nothing to comment on. Comments work on real posts.',
+      [{ text: 'OK' }],
+    )
   }
 
   async function handleShare(reel: Reel) {
@@ -512,7 +519,6 @@ function ReelItem({
   onShare,
   insets,
 }: ReelItemProps) {
-  const pulseAnim = useRef(new Animated.Value(1)).current
   const providerInitials = getInitials(reel.providerName)
   const videoRef = useRef<Video>(null)
   const lastTapAt = useRef(0)
@@ -530,28 +536,8 @@ function ReelItem({
     }
   }, [isActive])
 
-  useEffect(() => {
-    if (!reel.providerAvailable) return
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 0.3,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }),
-      ]),
-    )
-    loop.start()
-    return () => {
-      loop.stop()
-      pulseAnim.stopAnimation()
-    }
-  }, [reel.providerAvailable, pulseAnim])
+  // The pulse animation and its Animated.Value went with the removed
+  // "Available" badge — both existed only for a flag nothing ever set.
 
   function playBurst() {
     burst.setValue(0)
@@ -793,20 +779,14 @@ function ReelItem({
               <Text style={styles.providerName} numberOfLines={1}>
                 {reel.providerName}
               </Text>
-              {reel.providerAvailable && (
-                <View style={styles.availInline}>
-                  <Animated.View
-                    style={{
-                      opacity: pulseAnim,
-                      width: 6,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: '#C8922A',
-                    }}
-                  />
-                  <Text style={styles.availText}>Available</Text>
-                </View>
-              )}
+              {/* THE "AVAILABLE" BADGE IS GONE. `providerAvailable` was assigned
+                  `false` at one place in this file and never set anywhere else, so
+                  the pulsing dot could not render under any real state — dead UI
+                  that would have become a false availability claim the moment
+                  somebody wired it, because "available" is not something this beta
+                  can establish (there is no slot engine; see the Open Today lane).
+                  The field is removed with it rather than left as a trap. */}
+
             </View>
             <Text style={styles.providerMeta} numberOfLines={1}>
               {reel.providerCategory} · {reel.providerNeighborhood}
@@ -1247,16 +1227,6 @@ const styles = StyleSheet.create({
     color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
     flexShrink: 1,
-  },
-  availInline: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  availText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.7)',
-    fontFamily: 'Manrope_500Medium',
   },
   providerMeta: {
     fontSize: 13,

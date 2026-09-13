@@ -401,7 +401,7 @@ describe('propose terms on a negotiation with none', () => {
     })
     fillComposer(utils)
     await act(async () => {
-      fireEvent.press(utils.getByText('Send terms'))
+      fireEvent.press(utils.getByText('Propose terms'))
     })
     expect(mocked.createProposal).toHaveBeenCalledTimes(1)
     expect(mocked.createProposal).toHaveBeenCalledWith('interest-1', {
@@ -433,10 +433,10 @@ describe('propose terms on a negotiation with none', () => {
       }),
     )
     await act(async () => {
-      fireEvent.press(utils.getByText('Send terms'))
+      fireEvent.press(utils.getByText('Propose terms'))
     })
     expect(utils.queryByText('No terms yet')).toBeNull()
-    expect(utils.queryByText('Send terms')).toBeNull()
+    expect(utils.queryByText('Propose terms')).toBeNull()
     await act(async () => {
       release()
     })
@@ -448,7 +448,7 @@ describe('propose terms on a negotiation with none', () => {
       fireEvent.press(await utils.findByText('Propose terms'))
     })
     await act(async () => {
-      fireEvent.press(utils.getByText('Send terms'))
+      fireEvent.press(utils.getByText('Propose terms'))
     })
     expect(mocked.createProposal).not.toHaveBeenCalled()
     expect(alerts()).toEqual([
@@ -473,7 +473,7 @@ describe('propose terms on a negotiation with none', () => {
     fillComposer(utils)
     const before = reads()
     await act(async () => {
-      fireEvent.press(utils.getByText('Send terms'))
+      fireEvent.press(utils.getByText('Propose terms'))
     })
     expect(alerts()).toEqual([
       {
@@ -483,7 +483,7 @@ describe('propose terms on a negotiation with none', () => {
       },
     ])
     expect(reads()).toBe(before)
-    expect(utils.getByText('Send terms')).toBeTruthy()
+    expect(utils.getByText('Propose terms')).toBeTruthy()
   })
 
   it('closes the composer and re-reads on a terminal refusal', async () => {
@@ -499,11 +499,16 @@ describe('propose terms on a negotiation with none', () => {
     fillComposer(utils)
     const before = reads()
     await act(async () => {
-      fireEvent.press(utils.getByText('Send terms'))
+      fireEvent.press(utils.getByText('Propose terms'))
     })
     expect(alerts()[0].title).toBe('That negotiation is no longer available')
     await waitFor(() => expect(reads()).toBe(before + 1))
-    expect(utils.queryByText('Send terms')).toBeNull()
+    // ASSERTS THE COMPOSER TITLE, not the submit button. The button and the
+    // control that OPENS it now share one verb ("Propose terms") by design, so the
+    // button's absence no longer distinguishes "composer closed" from "composer
+    // closed and the open button is back". The card title only exists while the
+    // composer is open, which is the thing under test.
+    expect(utils.queryByText('Your terms')).toBeNull()
   })
 })
 
@@ -912,11 +917,11 @@ describe('send different terms', () => {
     mocked.submitCounter.mockResolvedValue({ ok: true, versionNo: 2, error: null } as never)
     const utils = await renderScreen()
     await act(async () => {
-      fireEvent.press(await utils.findByText('Send different terms'))
+      fireEvent.press(await utils.findByText('Propose different terms'))
     })
     fillComposer(utils)
     await act(async () => {
-      fireEvent.press(utils.getByText('Send terms'))
+      fireEvent.press(utils.getByText('Propose terms'))
     })
     expect(mocked.submitCounter).toHaveBeenCalledTimes(1)
     expect(mocked.submitCounter).toHaveBeenCalledWith('proposal-1', {
@@ -933,7 +938,7 @@ describe('send different terms', () => {
     mocked.submitCounter.mockResolvedValue({ ok: true, versionNo: 2, error: null } as never)
     const utils = await renderScreen()
     await act(async () => {
-      fireEvent.press(await utils.findByText('Send different terms'))
+      fireEvent.press(await utils.findByText('Propose different terms'))
     })
     fillComposer(utils)
     let release: () => void = () => {}
@@ -944,7 +949,7 @@ describe('send different terms', () => {
       }),
     )
     await act(async () => {
-      fireEvent.press(utils.getByText('Send terms'))
+      fireEvent.press(utils.getByText('Propose terms'))
     })
     // The previous terms are still on screen while the re-read is in flight.
     expect(utils.getByText('A haircut')).toBeTruthy()
@@ -961,12 +966,12 @@ describe('send different terms', () => {
     } as never)
     const utils = await renderScreen()
     await act(async () => {
-      fireEvent.press(await utils.findByText('Send different terms'))
+      fireEvent.press(await utils.findByText('Propose different terms'))
     })
     fillComposer(utils)
     const before = reads()
     await act(async () => {
-      fireEvent.press(utils.getByText('Send terms'))
+      fireEvent.press(utils.getByText('Propose terms'))
     })
     expect(alerts()).toEqual([
       {
@@ -987,15 +992,15 @@ describe('send different terms', () => {
     } as never)
     const utils = await renderScreen()
     await act(async () => {
-      fireEvent.press(await utils.findByText('Send different terms'))
+      fireEvent.press(await utils.findByText('Propose different terms'))
     })
     fillComposer(utils)
     const before = reads()
     await act(async () => {
-      fireEvent.press(utils.getByText('Send terms'))
+      fireEvent.press(utils.getByText('Propose terms'))
     })
     await waitFor(() => expect(reads()).toBe(before + 1))
-    expect(utils.queryByText('Send terms')).toBeNull()
+    expect(utils.queryByText('Propose terms')).toBeNull()
   })
 })
 
@@ -1230,7 +1235,7 @@ describe('no write action beyond the six', () => {
     // Nothing this slice does not have.
     expect(utils.queryByText('Accept these terms')).toBeNull()
     expect(utils.queryByText('Confirm trade')).toBeNull()
-    expect(utils.queryByText('Send different terms')).toBeNull()
+    expect(utils.queryByText('Propose different terms')).toBeNull()
     expect(utils.queryByText(CONFIRM_RECEIVED_COPY.confirmLabel)).toBeNull()
     expect(utils.queryByText(NOT_RECEIVED_COPY.confirmLabel)).toBeNull()
     expect(utils.queryByText(RESPOND_LABELS.noShow)).toBeNull()

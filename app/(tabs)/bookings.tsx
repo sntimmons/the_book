@@ -15,7 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { getOrCreateConversation } from '@/hooks/useMessaging'
-import { bookingTab, bookingStatusLabel, bookingStatusTone } from '@/lib/bookingStatus'
+import {
+  bookingTab,
+  bookingStatusLabel,
+  bookingStatusTone,
+  bookingRequestUrgency,
+} from '@/lib/bookingStatus'
 import { reviewEntryFor, ReviewOpportunity } from '@/lib/reviews'
 import { useReviewOpportunities } from '@/hooks/useReviewOpportunities'
 
@@ -31,6 +36,9 @@ interface BookingRow {
   provider_id: string
   message: string | null
   created_at: string
+  // Both are needed to derive expiry, which is not in `status` — see StatusPill.
+  submitted_at: string | null
+  expires_at: string | null
 }
 
 const STATUS_TABS: { key: Status; label: string }[] = [
@@ -87,7 +95,11 @@ export default function BookingsScreen() {
       const { data, error } = await supabase
         .from('bookings')
         .select(
-          'id, service_name, requested_date, requested_time, status, payment_amount, provider_id, message, created_at, submitted_at',
+          // `expires_at` is selected so this LIST can tell an expired request from a live
+          // one. Without it every unanswered request read "Pending" for ever and the
+          // client had to open the row to discover the deadline had passed — the
+          // detail screen knew, and the list did not.
+          'id, service_name, requested_date, requested_time, status, payment_amount, provider_id, message, created_at, submitted_at, expires_at',
         )
         .eq('user_id', user.id)
         // A DRAFT is not a request. The client's own SELECT policy shows them
@@ -301,7 +313,7 @@ function BookingCard({
           </View>
           <View style={styles.cardRight}>
             <Text style={styles.cardPrice}>{money(booking.payment_amount)}</Text>
-            <StatusPill status={booking.status} />
+            <StatusPill status={booking.status} booking={booking} />
           </View>
         </View>
       </TouchableOpacity>
@@ -326,8 +338,32 @@ function BookingCard({
 // Pill reflects the booking's REAL status (via the shared label + tone), not
 // the active tab — so e.g. a "No show" in the Past tab reads correctly instead
 // of showing "Completed".
-function StatusPill({ status }: { status: string }) {
-  const tone = bookingStatusTone(status)
+function StatusPill({
+  status,
+  booking,
+}: {
+  status: string
+  booking?: { submitted_at?: string | null; expires_at?: string | null }
+}) {
+  // ── EXPIRED IS A STATE THE LIST HAS TO SHOW ─────────────────────────────
+  //
+  // `status` is still `pending` on a request whose deadline has passed — expiry is
+  // DERIVED from `expires_at`, not stored, so nothing in the enum says so. The
+  // detail screen already derived it; this list did not, and so showed "Pending" on
+  // a request nobody can answer any more. A client waiting on that has no way to
+  // learn it is over.
+  //
+  // NO BLAME. "Expired" describes the request, not the provider — a provider who
+  // ran out of time has not refused, and the copy must not imply they did. That is
+  // also why it is toned as neutral rather than as a rejection.
+  const expired =
+    booking != null &&
+    bookingStatusTone(status) === 'pending' &&
+    bookingRequestUrgency(
+      { submitted_at: booking.submitted_at ?? null, expires_at: booking.expires_at ?? null },
+      Date.now(),
+    ) === 'expired'
+  const tone = expired ? 'completed' : bookingStatusTone(status)
   const pillStyle =
     tone === 'confirmed'
       ? styles.pillGreen
@@ -346,7 +382,7 @@ function StatusPill({ status }: { status: string }) {
           : styles.pillTextRed
   return (
     <View style={[styles.pill, pillStyle]}>
-      <Text style={textStyle}>{bookingStatusLabel(status)}</Text>
+      <Text style={textStyle}>{expired ? 'Expired' : bookingStatusLabel(status)}</Text>
     </View>
   )
 }

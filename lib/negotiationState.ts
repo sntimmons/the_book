@@ -352,7 +352,7 @@ export function negotiationView(f: NegotiationFacts): NegotiationView {
     headline: STATE_COPY[state].headline,
     termsTitle: STATE_COPY[state].termsTitle,
     detail: timingExpired
-      ? 'The timing on these terms has passed. Send different terms with updated timing to continue.'
+      ? 'The timing on these terms has passed. Propose different terms with updated timing to continue.'
       : detail,
     // A dead negotiation accepts nothing. The server refuses both independently; this only
     // decides whether to render a control that would otherwise be refused.

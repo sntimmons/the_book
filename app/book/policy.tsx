@@ -11,6 +11,8 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
+import { StepProgress } from '@/components/StepProgress'
+import { bookingProgressLabel } from '@/lib/bookingProgress'
 import { supabase } from '@/lib/supabase'
 import {
   DEFAULT_POLICY,
@@ -31,7 +33,8 @@ export default function BookPolicy() {
     selectedTime,
     agreedToPolicy,
     setAgreedToPolicy,
-  } = useBookingStore()
+    contractRequired,
+} = useBookingStore()
 
   // Show the REAL policy for this provider. If they somehow have no row, fall
   // back to the explicit defaults — never invent terms the client then agrees
@@ -79,7 +82,9 @@ export default function BookPolicy() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Review Policy</Text>
-        <View style={styles.topBarSpacer} />
+        <View style={styles.topBarSpacer}>
+          <StepProgress label={bookingProgressLabel('policy', contractRequired)} />
+        </View>
       </View>
 
       <ScrollView
@@ -269,7 +274,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
   },
   topBarSpacer: {
-    width: 36,
+    // Widened from 36 to fit the step label. It still balances the back button
+    // so the title stays centred — the label sits in the slot that already
+    // existed for that purpose rather than a new element in the bar.
+    width: 76,
+    alignItems: 'flex-end',
   },
   summaryCard: {
     marginHorizontal: 20,

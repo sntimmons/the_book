@@ -74,7 +74,14 @@ export default function ProviderPortfolio() {
 
   function handleContinue() {
     if (photos.length === 0) return
-    router.push('/onboarding/provider/reels')
+  // ── NO LONGER A STEP IN THE SEQUENCE ────────────────────────────────────
+  //
+  // This used to be step 2 of the provider onboarding chain, ahead of the service
+  // that Go Live actually requires. It is now entered from the readiness review as
+  // OPTIONAL work, so it returns there instead of pushing forward into steps the
+  // provider has already completed — chaining onward from here would have walked
+  // them back through services, availability and policy a second time.
+    router.back()
   }
 
   const isActive = photos.length >= 1
@@ -85,10 +92,10 @@ export default function ProviderPortfolio() {
 
   return (
     <View style={styles.root}>
-      {/* Progress bar */}
-      <View style={styles.progressTrack}>
-        <View style={styles.progressFill} />
-      </View>
+      {/* NO PROGRESS BAR. This screen is optional and is reached from the
+          readiness review, so a bar showing sequential position would claim a
+          place in a flow it is not part of — and a fraction of progress toward
+          something it does not gate. */}
 
       {/* Top bar, in flow, above ScrollView */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
@@ -101,7 +108,8 @@ export default function ProviderPortfolio() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Your portfolio</Text>
-        <Text style={styles.topBarStep}>Step 2 of 7</Text>
+        {/* No step number: this is optional work reached from the readiness review,
+            not a stage on the way to going live. */}
       </View>
 
       {/* Scrollable content */}
@@ -199,7 +207,7 @@ export default function ProviderPortfolio() {
         <TouchableOpacity
           activeOpacity={0.6}
           style={{ marginTop: 12, alignItems: 'center' }}
-          onPress={() => router.push('/onboarding/provider/reels')}
+          onPress={() => router.back()}
         >
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>

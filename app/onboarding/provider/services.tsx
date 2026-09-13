@@ -14,6 +14,11 @@ import {
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import { StepProgress } from '@/components/StepProgress'
+import {
+  providerProgressLabel,
+  providerStepRequirementNote,
+} from '@/lib/providerOnboardingProgress'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useProviderStore } from '@/store/providerStore'
 import { DEPOSIT_NOT_CHARGED_NOTE } from '@/lib/policy'
@@ -171,7 +176,7 @@ export default function ProviderServices() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Your services</Text>
-        <Text style={styles.topBarStep}>Step 4 of 7</Text>
+        <StepProgress label={providerProgressLabel('services')} />
       </View>
 
       <ScrollView
@@ -184,6 +189,10 @@ export default function ProviderServices() {
         automaticallyAdjustContentInsets={false}
       >
         <Text style={styles.headline}>What do you offer?</Text>
+        {/* Each step says for itself whether it blocks going live, so position in
+            the flow is no longer the only signal. Optional growth work (portfolio,
+            reels) is no longer in this sequence at all. */}
+        <Text style={styles.requirementNote}>{providerStepRequirementNote('services')}</Text>
         <Text style={styles.subtext}>
           Add the services clients can book. You can always edit these later.
         </Text>
@@ -583,6 +592,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_700Bold',
     lineHeight: 36,
     marginBottom: 8,
+  },
+  requirementNote: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_500Medium',
+    marginTop: 6,
   },
   subtext: {
     fontSize: 14,

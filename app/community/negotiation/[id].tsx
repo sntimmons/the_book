@@ -582,7 +582,10 @@ export default function NegotiationScreen() {
             {busy ? (
               <ActivityIndicator color="#080808" size="small" />
             ) : (
-              <Text style={styles.primaryText}>Send terms</Text>
+              // "Propose terms", not "Send terms": proposing is what this act is
+              // called the first time it is offered and what the counterparty
+              // responds to, so a second name for it made one step look like two.
+              <Text style={styles.primaryText}>Propose terms</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -829,7 +832,10 @@ export default function NegotiationScreen() {
                   + 'nothing on record for this trade.'}
           </Text>
           {composing ? (
-            renderComposer('Propose terms', onOpen)
+            // The card TITLE is a noun and the submit button is the verb, so one
+            // screen does not show the same phrase twice. "Propose" is the single
+            // name for the act either way — first offer or revision.
+            renderComposer('Your terms', onOpen)
           ) : contextIsLive ? (
             <View style={styles.actions}>
               <TouchableOpacity style={styles.primaryBtn} onPress={startComposing}>
@@ -974,12 +980,12 @@ export default function NegotiationScreen() {
             </View>
 
             {composing ? (
-              renderComposer('Send different terms', onSend)
+              renderComposer('Revised terms', onSend)
             ) : (
               <View style={styles.actions}>
                 {view.canPropose ? (
                   <TouchableOpacity style={styles.secondaryBtn} onPress={startComposing}>
-                    <Text style={styles.secondaryText}>Send different terms</Text>
+                    <Text style={styles.secondaryText}>Propose different terms</Text>
                   </TouchableOpacity>
                 ) : null}
                 {view.canAccept ? (

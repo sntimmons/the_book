@@ -83,9 +83,15 @@ export default function ReviewSubmitted() {
           <View style={styles.impactNote}>
             <Text style={styles.impactTitle}>Your review stays private for now.</Text>
             <Text style={styles.impactSub}>
+              {/* SAYS THE NUMBER. The write screen tells the client "7 days"; this
+                  one said only "when the review window closes", so the one concrete
+                  fact they could plan around disappeared at the moment they most
+                  wanted it. It still reveals nothing about whether the other person
+                  has reviewed — "once they review you too" is a condition, not a
+                  report. */}
               {provider != null
-                ? `It becomes visible once ${firstName} reviews you too, or when the review window closes. This keeps reviews fair for both sides.`
-                : 'It becomes visible once the provider reviews you too, or when the review window closes. This keeps reviews fair for both sides.'}
+                ? `It becomes visible once ${firstName} reviews you too, or 7 days after your appointment — whichever comes first. This keeps reviews fair for both sides.`
+                : 'It becomes visible once the provider reviews you too, or 7 days after your appointment — whichever comes first. This keeps reviews fair for both sides.'}
             </Text>
           </View>
 
