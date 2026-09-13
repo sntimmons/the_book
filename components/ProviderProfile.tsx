@@ -320,11 +320,22 @@ export default function ProviderProfile({
 
         {/* ── STATS ── */}
         <View style={styles.statsRow}>
+          {/* ── SOCIAL COUNTS ARE OUT OF THE TRUST ROW ──────────────────────
+              This row read Bookings | Followers | Following | Rating. Two of those
+              four are social, and this is the row a client reads to decide whether
+              to trust somebody — so a follower number sitting in it invites exactly
+              the inference the marketplace refuses to make. Discovery ranking uses
+              NO social signal at all (the types it receives carry none), and a
+              profile that presents followers as a peer of rating contradicts that
+              in the one place a client is actually deciding.
+
+              What remains is what the marketplace knows: completed bookings, and the
+              rating with the number of clients it rests on.
+
+              FOLLOW IS UNTOUCHED — the action, the counts and the underlying data
+              all still exist, and `app/providers/[id].tsx` still reads the live
+              count. Only its place in the trust summary changed. */}
           <StatCol value={provider.bookingCount ?? 0} label="Bookings" />
-          <View style={styles.statDivider} />
-          <StatCol value={provider.followerCount ?? 0} label="Followers" />
-          <View style={styles.statDivider} />
-          <StatCol value={provider.followingCount ?? 0} label="Following" />
           <View style={styles.statDivider} />
           <View style={styles.statCol}>
             {(provider.rating ?? 0) > 0 ? (

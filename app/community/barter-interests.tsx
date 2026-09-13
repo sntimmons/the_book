@@ -217,7 +217,7 @@ export default function BarterInterests() {
               <Feather name="inbox" size={36} color="rgba(240,232,213,0.12)" />
               <Text style={styles.emptyTitle}>No interest yet</Text>
               <Text style={styles.emptySub}>
-                When providers express interest in your offer, they show up here.
+                When a provider says they are interested in your offer, they show up here.
               </Text>
             </View>
           }

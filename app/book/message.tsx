@@ -17,6 +17,8 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as ImagePicker from 'expo-image-picker'
 import { useBookingStore } from '@/store/bookingStore'
+import { StepProgress } from '@/components/StepProgress'
+import { bookingProgressLabel } from '@/lib/bookingProgress'
 
 const EXAMPLE_CHIPS = [
   'I have short natural lashes',
@@ -39,7 +41,8 @@ export default function BookMessage() {
     bookingPhotos,
     setBookingMessage,
     setBookingPhotos,
-  } = useBookingStore()
+    contractRequired,
+} = useBookingStore()
 
   const [isFocused, setIsFocused] = useState(false)
   const isEmpty = bookingMessage.trim().length === 0 && bookingPhotos.length === 0
@@ -60,9 +63,20 @@ export default function BookMessage() {
     setBookingPhotos(bookingPhotos.filter((_, i) => i !== index))
   }
 
+  // ── SKIPPING THE MESSAGE IS NOT SENDING, AND IT IS NOT DESTRUCTIVE ──────
+  //
+  // This did two things it did not say. Its label read "Skip, send request without
+  // a message" — but the request is NOT sent here: policy, possibly a contract, and
+  // the send screen all come after, so the user was told they were finished three
+  // screens early. And it cleared `bookingPhotos`, silently discarding reference
+  // photos the client had already attached, with no warning and no way back.
+  //
+  // THE MESSAGE AND THE REFERENCE PHOTOS ARE SEPARATE BOOKING INPUTS. "I have
+  // nothing to say" is not "throw away the photos of what I want" — and the photos
+  // are often the more useful half for the provider. Skipping now clears only the
+  // message, which is the one thing the control is about.
   function handleSkip() {
     setBookingMessage('')
-    setBookingPhotos([])
     router.push('/book/policy')
   }
 
@@ -86,7 +100,9 @@ export default function BookMessage() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Your Request</Text>
-        <View style={styles.topBarSpacer} />
+        <View style={styles.topBarSpacer}>
+          <StepProgress label={bookingProgressLabel('message', contractRequired)} />
+        </View>
       </View>
 
       {/* Booking summary strip */}
@@ -195,7 +211,8 @@ export default function BookMessage() {
           <View style={styles.optionalBadge}>
             <Feather name="info" size={12} color="rgba(240,232,213,0.25)" />
             <Text style={styles.optionalText}>
-              This step is optional. Your provider will still receive your booking request.
+              This step is optional. Any photos you attach are kept either way, and your
+              provider sees them with the request.
             </Text>
           </View>
         )}
@@ -216,7 +233,9 @@ export default function BookMessage() {
           activeOpacity={0.6}
           onPress={handleSkip}
         >
-          <Text style={styles.skipLinkText}>Skip, send request without a message</Text>
+          {/* "Continue without a message" — the flow continues, it does not submit.
+              The old wording claimed the request was being sent from here. */}
+          <Text style={styles.skipLinkText}>Continue without a message</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -251,7 +270,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
   },
   topBarSpacer: {
-    width: 36,
+    // Widened from 36 to fit the step label. It still balances the back button
+    // so the title stays centred — the label sits in the slot that already
+    // existed for that purpose rather than a new element in the bar.
+    width: 76,
+    alignItems: 'flex-end',
   },
   summaryStrip: {
     flexDirection: 'row',

@@ -13,6 +13,8 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
+import { StepProgress } from '@/components/StepProgress'
+import { bookingProgressLabel } from '@/lib/bookingProgress'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { openMessageEntry } from '../../hooks/useMessaging'
@@ -126,7 +128,8 @@ export default function BookDateTime() {
     setSelectedDate,
     setRawDate,
     setSelectedTime,
-  } = useBookingStore()
+    contractRequired,
+} = useBookingStore()
   const { user } = useAuth()
   const scrollRef = useRef<ScrollView>(null)
 
@@ -288,7 +291,9 @@ export default function BookDateTime() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Pick a Date & Time</Text>
-        <View style={styles.topBarSpacer} />
+        <View style={styles.topBarSpacer}>
+          <StepProgress label={bookingProgressLabel('datetime', contractRequired)} />
+        </View>
       </View>
 
       {/* Provider strip */}
@@ -555,7 +560,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
   },
   topBarSpacer: {
-    width: 36,
+    // Widened from 36 to fit the step label. It still balances the back button
+    // so the title stays centred — the label sits in the slot that already
+    // existed for that purpose rather than a new element in the bar.
+    width: 76,
+    alignItems: 'flex-end',
   },
   providerStrip: {
     flexDirection: 'row',

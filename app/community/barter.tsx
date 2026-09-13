@@ -96,7 +96,7 @@ export default function BarterBoard() {
     })
     setSendingInterest(false)
     if (error) {
-      console.log('Express interest error:', error)
+      console.log('Interest send error:', error)
       const f = barterWriteFailure('respond', error)
       Alert.alert(f.title, f.body, [{ text: 'OK' }])
       // A terminal refusal will not succeed on a retry, so the composer closes
@@ -354,7 +354,15 @@ export default function BarterBoard() {
         >
           <Pressable style={styles.modalBackdrop} onPress={() => setInterestOffer(null)} />
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 20 }]}>
-            <Text style={styles.modalTitle}>Express interest</Text>
+            {/* ── ONE NAME PER ACT (UX normalisation) ─────────────────────────
+                This flow had FOUR names for one thing: "Express interest" (this
+                title), "I'm Interested" (the card button that opens it), "Send
+                interest" (the button inside it) and "Interested" (the resulting
+                status). A provider could not tell whether those were one action or
+                several. The ACT is now called "I'm interested" wherever it is
+                offered; "Interested" remains as the STATUS, which is a different
+                part of speech doing a different job. No state name changed. */}
+            <Text style={styles.modalTitle}>I&apos;m interested</Text>
             {interestOffer ? (
               <Text style={styles.modalSub} numberOfLines={2}>
                 {interestOffer.provider.name} is offering {interestOffer.offeringService}
@@ -387,7 +395,7 @@ export default function BarterBoard() {
                 {sendingInterest ? (
                   <ActivityIndicator color="#080808" size="small" />
                 ) : (
-                  <Text style={styles.modalSendText}>Send interest</Text>
+                  <Text style={styles.modalSendText}>I&apos;m interested</Text>
                 )}
               </TouchableOpacity>
             </View>
@@ -524,7 +532,7 @@ function BarterCard({
               )
             ) : (
               <TouchableOpacity style={styles.interestBtn} activeOpacity={0.85} onPress={onInterest}>
-                <Text style={styles.interestBtnText}>I'm Interested</Text>
+                <Text style={styles.interestBtnText}>I&apos;m interested</Text>
               </TouchableOpacity>
             )}
           </>

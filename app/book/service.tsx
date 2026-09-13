@@ -12,6 +12,8 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
+import { StepProgress } from '@/components/StepProgress'
+import { bookingProgressLabel } from '@/lib/bookingProgress'
 import { useProvider, Service } from '../../hooks/useProviders'
 
 export default function BookService() {
@@ -22,6 +24,7 @@ export default function BookService() {
     providerCategory,
     providerLocation,
     setSelectedService,
+    contractRequired,
   } = useBookingStore()
   const { services, loading } = useProvider(providerId)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -31,6 +34,31 @@ export default function BookService() {
       router.replace('/(tabs)/' as never)
     }
   }, [providerId])
+
+  // ── WHY THE STEP TOTAL IS NOT RESOLVED HERE ─────────────────────────────
+  //
+  // The obvious move is to ask, on this screen, whether this provider has a
+  // contract — the provider id is known, and then every later screen could show
+  // "Step N of 6". **It cannot be done safely, and trying is a known trap.**
+  //
+  // `fetchProviderContract` reads `contracts` directly, and that table's RLS is
+  // `auth.uid() = user_id OR is_contract_signer(id)` — the owner, or somebody who
+  // has ALREADY signed. A first-time client is neither, so the read returns **zero
+  // rows and no error**. lib/contracts.ts records that this exact false negative
+  // once "skipped the signing gate entirely for every client, every provider,
+  // always". Asking here would reintroduce it as a progress claim: the indicator
+  // would confidently promise five steps to a client who will take six.
+  //
+  // `contract_for_booking` is the safe read, and it is keyed on a BOOKING that does
+  // not exist until the contract step creates it — deliberately, so nobody holds a
+  // standing read path into other providers' terms.
+  //
+  // So the total stays unknown until the contract step establishes it, and
+  // `lib/bookingProgress.ts` renders "Step 1" with no total rather than guessing.
+  // An unknown total is honest; a wrong one is the thing this whole task is fixing.
+  // Making it knowable from step 1 needs a narrow boolean RPC — a product decision,
+  // recorded in the handoff rather than taken here.
+
 
   const activeServices = services.filter((s) => s.is_active)
 
@@ -62,7 +90,9 @@ export default function BookService() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarTitle}>Select a Service</Text>
-        <View style={styles.topBarSpacer} />
+        <View style={styles.topBarSpacer}>
+          <StepProgress label={bookingProgressLabel('service', contractRequired)} />
+        </View>
       </View>
 
       {/* Provider strip */}
@@ -202,7 +232,11 @@ const styles = StyleSheet.create({
     fontFamily: 'Manrope_600SemiBold',
   },
   topBarSpacer: {
-    width: 36,
+    // Widened from 36 to fit the step label. It still balances the back button
+    // so the title stays centred — the label sits in the slot that already
+    // existed for that purpose rather than a new element in the bar.
+    width: 76,
+    alignItems: 'flex-end',
   },
   trustBadge: {
     flexDirection: 'row',

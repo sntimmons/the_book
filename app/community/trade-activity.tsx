@@ -228,6 +228,18 @@ export default function TradeActivityScreen() {
             Responses you send, and responses you accept, show up here — and stay here after the
             post comes off the board.
           </Text>
+          {/* A NEXT ACTION, because there genuinely is one. The other empty states
+              touched in this pass were left alone on purpose: nothing a person does
+              makes somebody else interested in their offer, and notifications
+              arrive on their own, so a button there would be activity for its own
+              sake. Here the board is where trade activity starts. */}
+          <TouchableOpacity
+            style={styles.emptyCta}
+            activeOpacity={0.8}
+            onPress={() => router.push('/community/barter' as never)}
+          >
+            <Text style={styles.emptyCtaText}>Browse the trade board</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -457,6 +469,19 @@ const styles = StyleSheet.create({
     fontSize: 13.5,
     lineHeight: 20,
     textAlign: 'center',
+  },
+  emptyCta: {
+    marginTop: 18,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(200,146,42,0.45)',
+  },
+  emptyCtaText: {
+    fontSize: 14,
+    color: '#C8922A',
+    fontFamily: 'Manrope_600SemiBold',
   },
   retryBtn: {
     marginTop: 16,

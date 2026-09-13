@@ -1,6 +1,8 @@
 import { View, Text, Pressable, ScrollView, TouchableOpacity, StyleSheet } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import { StepProgress } from '@/components/StepProgress'
+import { providerProgressLabel } from '@/lib/providerOnboardingProgress'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useProviderStore } from '@/store/providerStore'
 
@@ -42,6 +44,21 @@ interface ReviewRow {
   consequence?: string
   route: string
 }
+
+// Offered on the readiness review rather than as steps in the sequence. Kept as
+// data so a test can assert that neither appears in the required path.
+const OPTIONAL_EXTRAS = [
+  {
+    label: 'Portfolio photos',
+    value: 'Show the work you have done',
+    route: '/onboarding/provider/portfolio',
+  },
+  {
+    label: 'Reels',
+    value: 'Short videos of your work',
+    route: '/onboarding/provider/reels',
+  },
+] as const
 
 export default function ProviderReview() {
   const insets = useSafeAreaInsets()
@@ -150,7 +167,7 @@ export default function ProviderReview() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Review</Text>
-        <Text style={styles.topBarStep}>Step 7 of 7</Text>
+        <StepProgress label={providerProgressLabel('review')} />
       </View>
 
       <ScrollView
@@ -179,6 +196,32 @@ export default function ProviderReview() {
               {row.consequence ? (
                 <Text style={styles.rowConsequence}>{row.consequence}</Text>
               ) : null}
+            </View>
+            <Feather name="chevron-right" size={16} color="rgba(240,232,213,0.35)" />
+          </Pressable>
+        ))}
+
+        {/* ── OPTIONAL GROWTH WORK, AFTER THE REQUIRED PATH ──────────────────
+            Portfolio and Reels used to be steps 2 and 3 of the sequence, ahead of
+            the service that Go Live actually requires — so a provider who stopped
+            at the video step never reached it. They are offered here instead,
+            clearly marked optional and clearly available later, which is the whole
+            point of moving them: nobody should think a video blocks their listing.
+            Both remain reachable afterwards from Business → Add Photos / Posts. */}
+        <Text style={styles.optionalHeading}>Optional — add now or any time later</Text>
+        <Text style={styles.optionalSub}>
+          Neither of these is needed to go live. They help clients see your work.
+        </Text>
+
+        {OPTIONAL_EXTRAS.map((extra) => (
+          <Pressable
+            key={extra.route}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            onPress={() => router.push(extra.route as never)}
+          >
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowLabel}>{extra.label}</Text>
+              <Text style={styles.rowValue}>{extra.value}</Text>
             </View>
             <Feather name="chevron-right" size={16} color="rgba(240,232,213,0.35)" />
           </Pressable>
@@ -279,6 +322,22 @@ const styles = StyleSheet.create({
     color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 17,
+  },
+  optionalHeading: {
+    fontSize: 13,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    color: 'rgba(240,232,213,0.45)',
+    fontFamily: 'Manrope_600SemiBold',
+    marginTop: 28,
+  },
+  optionalSub: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: 'rgba(240,232,213,0.4)',
+    fontFamily: 'Manrope_500Medium',
+    marginTop: 4,
+    marginBottom: 12,
   },
   cta: {
     position: 'absolute',

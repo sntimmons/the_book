@@ -14,6 +14,11 @@ import {
 } from 'react-native'
 import { Feather, Ionicons } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import { StepProgress } from '@/components/StepProgress'
+import {
+  providerProgressLabel,
+  providerStepRequirementNote,
+} from '@/lib/providerOnboardingProgress'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
@@ -286,7 +291,7 @@ export default function PolicyEditor({
               <Feather name="chevron-left" size={18} color="#F0E8D5" />
             </TouchableOpacity>
             <Text style={styles.topBarLabel}>Your policies</Text>
-            <Text style={styles.topBarStep}>Step 6 of 7</Text>
+            <StepProgress label={providerProgressLabel('policy')} />
           </View>
         </>
       ) : (
@@ -328,6 +333,10 @@ export default function PolicyEditor({
             <Text style={styles.subtext}>
               Set your cancellation and reschedule rules. Clients agree to these before booking you.
             </Text>
+            {/* Each onboarding step states its own requirement, so position in the
+                sequence is no longer the only signal of whether something gates
+                going live. This one does not. */}
+            <Text style={styles.requirementNote}>{providerStepRequirementNote('policy')}</Text>
           </>
         )}
 
@@ -654,6 +663,13 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 24, paddingTop: 20 },
   headline: { fontSize: 30, fontWeight: '700', color: '#F0E8D5', fontFamily: 'Manrope_700Bold', lineHeight: 36, marginBottom: 8 },
   subtext: { fontSize: 14, color: 'rgba(240,232,213,0.55)', fontFamily: 'Manrope_400Regular', lineHeight: 20, marginBottom: 32 },
+  requirementNote: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: 'rgba(240,232,213,0.5)',
+    fontFamily: 'Manrope_500Medium',
+    marginTop: 8,
+  },
 
   section: { marginBottom: 28 },
   sectionLabel: {

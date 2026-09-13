@@ -83,15 +83,22 @@ export default function ProviderReels() {
   }
 
   function navigate() {
-    router.push('/onboarding/provider/services')
+  // ── NO LONGER A STEP IN THE SEQUENCE ────────────────────────────────────
+  //
+  // This used to be step 3 of the provider onboarding chain, ahead of the service
+  // that Go Live actually requires. It is now entered from the readiness review as
+  // OPTIONAL work, so it returns there instead of pushing forward into steps the
+  // provider has already completed — chaining onward from here would have walked
+  // them back through services, availability and policy a second time.
+    router.back()
   }
 
   return (
     <View style={styles.root}>
-      {/* Progress bar: 37.5% */}
-      <View style={styles.progressTrack}>
-        <View style={styles.progressFill} />
-      </View>
+      {/* NO PROGRESS BAR. This screen is optional and is reached from the
+          readiness review, so a bar showing sequential position would claim a
+          place in a flow it is not part of — and a fraction of progress toward
+          something it does not gate. */}
 
       {/* Top bar, fixed above scroll */}
       <View style={[styles.topBar, { paddingTop: insets.top + 16 }]}>
@@ -104,7 +111,7 @@ export default function ProviderReels() {
           <Feather name="chevron-left" size={18} color="#F0E8D5" />
         </TouchableOpacity>
         <Text style={styles.topBarLabel}>Your reels</Text>
-        <Text style={styles.topBarStep}>Step 3 of 7</Text>
+        {/* No step number — optional, reached from the readiness review. */}
       </View>
 
       <ScrollView

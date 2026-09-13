@@ -425,7 +425,16 @@ export const BLOCKED_PROFILE_COPY = {
  */
 export const MESSAGE_REFUSED_COPY = {
   title: 'Message not sent',
-  body: 'This conversation is not available right now.',
+  // "RIGHT NOW" IS REMOVED, and the reason is the same one that split this copy
+  // from MESSAGE_FAILED_COPY in the first place. This sentence is shown only for a
+  // refusal the SERVER STATED — a block, a declined request, the
+  // one-message-while-pending rule — and those "will not succeed on a retry". So
+  // "right now" invited exactly the retry the distinction exists to prevent: type,
+  // tap, wait, try again, forever.
+  //
+  // It still names no cause. PD-082: a blocked person is never told they were
+  // blocked, so this must read the same whichever rule refused it.
+  body: 'Messaging is not available for this conversation.',
 }
 
 export const MESSAGE_FAILED_COPY = {

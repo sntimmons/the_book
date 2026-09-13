@@ -10,6 +10,7 @@ import {
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
+import { BETA_CITY } from '@/lib/areas'
 import * as Sentry from '@sentry/react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import ProviderProfile from '@/components/ProviderProfile'
@@ -55,7 +56,9 @@ export default function ProviderGoLive() {
     name: name || 'Your Name',
     businessName: businessName || undefined,
     category: customCategory || category || 'Your Category',
-    location: location || 'Houston, TX',
+    // Preview text only. Shows the chosen area, falling back to the city constant
+    // rather than a second copy of the same literal.
+    location: location || BETA_CITY,
     bio: bio || undefined,
     photo: photo || undefined,
     banner: banner || undefined,
@@ -190,7 +193,25 @@ export default function ProviderGoLive() {
       // STAGE 5: provider row
       setUploadStage('Saving your profile...')
 
-      const locationValue = location || null
+      // ── `location` AND `neighborhood` ARE DIFFERENT CONCEPTS (PM ruling) ──
+      //
+      // These were both written from the same value, which quietly broke the
+      // proximity design. `lib/discovery.ts` reads them as two granularities —
+      // `neighborhood` for an exact local match, `location` for a city fallback via
+      // `cityOf()`, which splits on a comma and takes the city part. The picker in
+      // `lib/areas.ts` yields bare local names ("Midtown", "EaDo"), so writing that
+      // into `location` too made `cityOf('Midtown')` return `'Midtown'`, and the
+      // city tier could never match anything. The fallback existed and did nothing.
+      //
+      // For the Houston closed beta:
+      //   location     = 'Houston, TX'  — the city, and the city fallback's input
+      //   neighborhood = the provider's selected local area
+      //
+      // NO PRECISE LOCATION IS COLLECTED OR DERIVED. No street address, no
+      // geocoding, no lat/long, and nothing inferred — the provider picks a local
+      // area from a fixed list and that is the whole of it.
+      const neighborhoodValue = location || null
+      const cityValue = BETA_CITY
       const displayNameValue = name || 'Provider'
 
       // `username` is NOT NULL in the providers table with no default, so a
@@ -244,8 +265,8 @@ export default function ProviderGoLive() {
                 ? customCategory.trim()
                 : null,
             bio: bio || null,
-            location: locationValue,
-            neighborhood: locationValue,
+            location: cityValue,
+            neighborhood: neighborhoodValue,
             profile_photo_url: profilePhotoUrl,
             cover_image_url: bannerUrl,
             verification_status: 'pending',

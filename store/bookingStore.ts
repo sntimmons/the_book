@@ -50,6 +50,15 @@ interface BookingState {
   // re-entry. Cleared by reset() (i.e. when the booking flow resets). This is
   // NOT long-term "never show again" persistence — it is per-booking-attempt.
   verificationNoticeAcknowledged: boolean
+  /**
+   * Does this provider's booking include a contract step?
+   *
+   * `null` = NOT YET ESTABLISHED, and that is a real state, not a placeholder.
+   * `lib/bookingProgress.ts` uses it to decide whether the progress indicator may
+   * state a TOTAL at all: a failed contract lookup must never be read as "no
+   * contract required", and an unknown total is honest where a guessed one is not.
+   */
+  contractRequired: boolean | null
 
   setProvider: (id: string, name: string, category: string, location: string) => void
   setSelectedService: (service: BookingService) => void
@@ -62,6 +71,7 @@ interface BookingState {
   setContractSigned: (contractId: string, versionId: string | null) => void
   setDraftBookingId: (bookingId: string | null) => void
   setVerificationNoticeAcknowledged: (acknowledged: boolean) => void
+  setContractRequired: (required: boolean | null) => void
   reset: () => void
 }
 
@@ -82,6 +92,7 @@ export const useBookingStore = create<BookingState>((set) => ({
   contractVersionId: null,
   draftBookingId: null,
   verificationNoticeAcknowledged: false,
+  contractRequired: null,
 
   // setProvider marks the START of a booking attempt (called from Book Now). It
   // resets the per-attempt verification-notice acknowledgement so that abandoning
@@ -94,6 +105,7 @@ export const useBookingStore = create<BookingState>((set) => ({
       providerCategory: category,
       providerLocation: location,
       verificationNoticeAcknowledged: false,
+      contractRequired: null,
       // A new attempt must not carry another provider's draft id. The draft is
       // re-found (or created) for THIS provider on the next step.
       draftBookingId: null,
@@ -110,6 +122,7 @@ export const useBookingStore = create<BookingState>((set) => ({
   setDraftBookingId: (bookingId) => set({ draftBookingId: bookingId }),
   setVerificationNoticeAcknowledged: (acknowledged) =>
     set({ verificationNoticeAcknowledged: acknowledged }),
+  setContractRequired: (required) => set({ contractRequired: required }),
   reset: () => set({
     providerId: '',
     providerName: '',
@@ -127,5 +140,6 @@ export const useBookingStore = create<BookingState>((set) => ({
     contractVersionId: null,
     draftBookingId: null,
     verificationNoticeAcknowledged: false,
+    contractRequired: null,
   }),
 }))
