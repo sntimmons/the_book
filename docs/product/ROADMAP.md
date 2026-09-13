@@ -2,8 +2,13 @@
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `719d8f9` (2026-09-13) — **PR #84**, Account erasure scheduled
-execution — **for the § Next erasure entries, the § Physical-device / UX QA list, § The remaining
+**Reconciled against:** `main` @ `304d1ec` (2026-09-13) — **PR #85**, which discharged the one
+technical-debt item this document carried as owed. **For that item and the § remaining-sequence step
+that named it, and for nothing else.** The anchor moves because a § Next entry asserted work as owed
+that is now done.
+
+**Previously reconciled against:** `main` @ `719d8f9` (2026-09-13) — **PR #84**, Account erasure
+scheduled execution — **for the § Next erasure entries, the § Physical-device / UX QA list, § The remaining
 sequence to closed beta and the header statements below, and for nothing else.** A narrow anchor,
 deliberately, on the convention [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) already uses: this
 reconciliation verified the four scheduler migrations (`20261130000000` … `20261133000000`), the
@@ -41,10 +46,15 @@ files; and the merge order `224d609` → `6a3fb69` → `a125cd7` → `0781f49` �
 `.git/logs/HEAD`. **The PR numbers for `6a3fb69` and `a125cd7` were not supplied and are recorded as
 not established**, not guessed. PR #76 and PR #74 were supplied.
 
-**Last edited by:** the post-PR-#83 reconciliation (2026-09-12), which was **not given its own PR
-number**, and which ran with `.git/HEAD` pointing at **`main` itself** — so its edits sit
-uncommitted in the working tree on `main`. The Steward has no shell and cannot create a branch;
-whoever commits this diff must do so somewhere other than `main`. The edit before it landed as
+**Last edited by: PR #86** — the post-cleanup reconciliation (2026-09-13), which struck the
+`judgeExposedList` item from § STILL OWED and from audit step 1's inputs.
+
+**This is the first edit to this file that can fill in that field.** The reconciliations before it
+were committed **directly to `main`** and so had no PR number to record — including the two that were
+themselves carrying the instruction *"whoever commits this diff must do so somewhere other than
+`main`"*. **PR #85 removed the ambiguity** in `CONTRIBUTING.md`: there is no direct-to-main exception,
+documentation and reconciliations included. Before PR #86: the post-**PR #84** reconciliation
+(`2a8d986`) and the post-**PR #83** reconciliation (`7d174a1`), neither numbered. The edit before it landed as
 `fc14fe5` (documentation only). The last numbered edit to this file that can be proven is
 **PR #71** (`224d609`), the post-Session-7 reconciliation; PR #75, which would have carried the
 post-Correction-3 edit, **never merged**.
@@ -1210,11 +1220,10 @@ was exercised" into "the timer was observed".
 - **OQ-076**'s residual identity oracle, carried to the pre-public-launch privacy/security revisit.
 - **Physical-device QA** of the deletion flow — the disclosure, the reauthentication prompt, the
   scheduled-date display and the restore path. Automating execution exercises none of them.
-- **LOW technical debt, recorded not fixed:** `judgeExposedList` in `scripts/check-api-schemas.mjs`
-  uses the **first** exposed-schema list any probe returns and does not fail when the three probes
-  return **different** lists. They currently target the same project and should agree, so **this is
-  not a known live defect** — it is a release gate resolving a disagreement silently. **Candidate for
-  the independent whole-app audit below; do not fix it inline in unrelated work.**
+- ~~**LOW technical debt, recorded not fixed:** `judgeExposedList` resolving a probe disagreement
+  silently.~~ **DISCHARGED by PR #85 (`304d1ec`, 2026-09-13)** — it fails closed, prints every list
+  it saw, and reports a forbidden schema in any list first. Filed as an audit candidate and cleared
+  before the audit began instead.
 
 ---
 
@@ -1232,7 +1241,7 @@ running them concurrently is how a UI pass gets built on a surface an audit is a
 
 | # | Step | Why it sits here |
 |---|---|---|
-| **1** | **Independent whole-app adversarial audit** | First, because everything after it is built on the assumption that what is on `main` is sound. It is independent so it is not marking its own homework, and adversarial because the suites already here prove the rules that were thought of. The `judgeExposedList` item above is one input; § WHOLE-APP AUDIT ROUND 2 is the standing entry. |
+| **1** | **Independent whole-app adversarial audit** | First, because everything after it is built on the assumption that what is on `main` is sound. It is independent so it is not marking its own homework, and adversarial because the suites already here prove the rules that were thought of. **It starts with no carried-over debt**: the `judgeExposedList` item this table used to name as an input was cleared by PR #85 beforehand. § WHOLE-APP AUDIT ROUND 2 is the standing entry. |
 | **2** | **Discovery / Fairness** | The marketplace surface's ordering and exposure rules — the last substantial backend product decision owed, and the one a provider's experience of the beta turns on. **Not started, and nothing in this document may be read as having decided it.** |
 | **3** | **Cross-App UX simplification** | Before any design pass. Simplifying flows after they have been styled means throwing away the styling. |
 | **4** | **UI implementation / design-system pass** | The app is functionally built and visually unfinished. This is where that is addressed, on flows step 3 has settled. |

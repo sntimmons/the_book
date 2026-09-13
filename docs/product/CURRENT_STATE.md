@@ -106,8 +106,13 @@ records was **deliberately unresolved** (OQ-077).
 
 **Status:** Authoritative (current-state). Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `719d8f952b4fe01a1ea14672efda87256a9a9bc3` (2026-09-13) — the
-squash-merge of **PR #84**, Account erasure scheduled execution. The migration chain is now **172**
+**Reconciled against:** `main` @ `304d1ec19a18a2c65c3c1ebec9fb9187468bcad0` (2026-09-13) — the
+squash-merge of **PR #85**, which closed the one piece of technical debt this workstream had recorded.
+The anchor moves because this document asserted that debt was **unfixed**, and it is fixed. The
+erasure facts below were verified at **PR #84** (`719d8f9`) and are not re-verified here.
+
+**Previously reconciled against:** `main` @ `719d8f952b4fe01a1ea14672efda87256a9a9bc3` (2026-09-13) —
+the squash-merge of **PR #84**, Account erasure scheduled execution. The migration chain is now **172**
 files, `20260829000000` … `20261133000000` (counted over `supabase/migrations/*.sql` on this tree).
 The anchor moves because this document's central claim about erasure **reversed**: it said the
 scheduler was not built, and it is.
@@ -243,11 +248,19 @@ superseded PR #75 and touching a file outside the Steward's five-file allowlist.
 this reconciliation is therefore that commit's tree, not `e5b9125`'s. No claim below depends on the
 difference, and it is stated rather than glossed.
 
-**Last edited by:** the post-PR-#83 state reconciliation (2026-09-12). **It was given no PR number
-of its own, so none is recorded** — and, unusually, it was **run with `.git/HEAD` pointing at
-`main` itself**, so its edits sit uncommitted in the working tree on `main` rather than on a
-branch. That is stated for the reviewer of the diff: the Steward has no shell and cannot create a
-branch, and whoever commits this must do so somewhere other than `main`.
+**Last edited by: PR #86** — the post-cleanup reconciliation (2026-09-13), which corrected this
+document's claim that the `judgeExposedList` debt was unfixed.
+
+**This is the first edit to this file that can fill in that field, and the reason is worth keeping.**
+The three reconciliations before it were committed **directly to `main`** — `fc14fe5`, `7d174a1` and
+`2a8d986` — so none had a PR number to record. Two of them were carrying, in this very block, the
+instruction *"whoever commits this must do so somewhere other than `main`"*, which was then not
+followed. **PR #85 closed that gap in `CONTRIBUTING.md`**: documentation-only work and state
+reconciliations go branch → PR → CI → merge like everything else, with no exception.
+
+Before PR #86: the post-**PR #84** reconciliation (`2a8d986`, 2026-09-13) and the post-**PR #83**
+reconciliation (`7d174a1`, 2026-09-12), **neither given a PR number, both committed on `main`
+itself.**
 
 The edit before it was the post-Community-Reshape reconciliation, landed as `fc14fe5`
 (documentation only — `.git/logs/HEAD`). The last numbered edit to this file that can be proven
@@ -1369,15 +1382,15 @@ pg_cron  →  public.invoke_account_deletion_worker()  →  pg_net
          →  public.account_deletion_worker_runs  →  health monitoring
 ```
 
-| What is true | Evidence |
-|---|---|
+| What is true | Why, and what it turns on | Evidence |
+|---|---|---|
 | **Daily at 04:17 UTC** | Daily because the promise to a user is a **DATE**, and hourly would be false precision at a cohort of 25–30. 04:17 because a job on the hour shares its slot with every other `0 * * * *` on the instance. **`cron.job` is the single source of truth for the cadence — never a comment**, and `set_account_deletion_worker_schedule(text)` is the only supported way to change it. | `20261130000000`; ACCOUNT_ERASURE_OPERATIONS § 9 |
 | **One engine, two runtimes** | The sequence lives in `supabase/functions/_shared/accountDeletionRun.mjs`, which **imports nothing at all** — that emptiness is what lets Node and the Supabase Edge runtime load the same file unchanged, and a test asserts it, because an import there is a fork with extra steps. | `supabase/functions/_shared/accountDeletionRun.mjs`; `__tests__/lib/accountDeletionRun.test.ts` |
 | **The job command carries no secret** | `cron.job.command` is a plain text column, so a URL and a bearer token pasted into it would ride into every schema dump. The command is one line — `select public.invoke_account_deletion_worker();` — and a suite assertion fails if it ever matches `http\|bearer\|eyJ\|secret\|key\|token`. Every secret is in the vault, and the worker secret is deliberately **separate from the service-role key**: if it leaks, the worst it buys is making the engine do idempotent work it was already going to do. | `20261130000000`; `supabase/tests/account_erasure.test.sql` |
 | **A promise that can tell you it broke** | PD-108 traded *"somebody has to remember to run it"* for *"somebody has to notice it stopped"*, and that is only a better promise if the system can say so. `invoke_account_deletion_worker` is fire-and-forget, so an invocation that never arrived would have left no trace. `account_deletion_worker_runs` records each run with its counts and `source` (`scheduled` or `manual`), and **`account_deletion_worker_health()` turns an ABSENCE into a row** — nobody notices a missing row. | `20261133000000`; ACCOUNT_ERASURE_OPERATIONS § 10 |
 | **An extension grants what it likes, and `pg_net` is generous** | `create extension pg_net` grants `USAGE` on schema `net` and `EXECUTE` on `net.http_post` to **`anon` and `authenticated`** — nothing in this repo asked for it and nothing needs it. `net.http_post` from a client role is an **SSRF primitive**; `net._http_response` holds the response bodies of every pg_net call. | `20261131000000` |
 | **AND NO MIGRATION IN THIS REPOSITORY CAN REVOKE THEM** | `20261131000000` revoked those grants, applied cleanly, reported success and **changed nothing** — verified by re-reading `has_schema_privilege` afterwards. **A REVOKE only removes grants made by the role issuing it**: these migrations run as `postgres`, and the extension's grants were made by `supabase_admin`, which `postgres` is not a member of. `20261132000000` records the failed attempt rather than deleting it. | `20261131000000`, `20261132000000` |
-| **What actually keeps `net` unreachable is a PROJECT SETTING, not this repo** | PostgREST's exposed-schema list. If `net` were added to it, every signed-in account would gain `net.http_post` and the stored bodies in `net._http_response`. That setting lives in the Supabase dashboard. **`npm run check:api-schemas` is the release gate for it** — it probes `net`, `cron` and `vault`, requires HTTP 406 **and** a parsed `PGRST106`, and additionally asserts the exposed list is exactly `[public, graphql_public]` so a typo cannot pass. It identifies the project through the canonical `refFromTarget`, refuses a ref it cannot positively identify, says PRODUCTION or NON-PRODUCTION, and requires `--allow-non-prod`. | `scripts/check-api-schemas.mjs`; `__tests__/lib/apiSchemaGate.test.ts` |
+| **What actually keeps `net` unreachable is a PROJECT SETTING, not this repo** | PostgREST's exposed-schema list. If `net` were added to it, every signed-in account would gain `net.http_post` and the stored bodies in `net._http_response`. That setting lives in the Supabase dashboard. **`npm run check:api-schemas` is the release gate for it** — it probes `net`, `cron` and `vault`, requires HTTP 406 **and** a parsed `PGRST106`, and additionally asserts the exposed list is exactly `[public, graphql_public]` so a typo cannot pass. It identifies the project through the canonical `refFromTarget`, refuses a ref it cannot positively identify, says PRODUCTION or NON-PRODUCTION, and requires `--allow-non-prod`. **Since PR #85 the three probes must AGREE** — a disagreement fails closed and prints every list it saw, because a gate that picks the first answer silently is a gate that can pass for the wrong reason. | `scripts/check-api-schemas.mjs`; `__tests__/lib/apiSchemaGate.test.ts` |
 | **The barter no-scheduler assertion was REVERSED and REPLACED, not deleted** | `receiver_window.test.sql` and `no_show_under_review.test.sql` had asserted since their first run that no scheduler extension existed — never about erasure, but so that **no clock could move a barter obligation's state** (PD-072). Guarantee-by-absence became **guarantee-by-inspection**: the only scheduled job is this one, and neither it nor the function it calls names a barter object. A second job fails those assertions and somebody has to justify it. | `supabase/tests/receiver_window.test.sql`, `no_show_under_review.test.sql` |
 
 **What was NOT observed, stated here rather than implied away: the calendar trigger has not been
@@ -1389,12 +1402,16 @@ returned clean; further invocations, two of them genuinely overlapping, were har
 exactly one erasure record. **Watching a real firing needs a calendar, not a test**, and nothing in
 this document may be read as saying it was watched.
 
-**Recorded as LOW technical debt — an independent-audit candidate, deliberately NOT fixed here.**
-`judgeExposedList` in `scripts/check-api-schemas.mjs` takes the **first** exposed-schema list any
-probe returns and does not fail if the three probes return **different** lists. The three currently
-target the same project and should agree, so **this is not a known live defect** — but it is a
-release gate resolving a disagreement silently in favour of whichever probe answered first. Left for
-the independent whole-app audit; **do not fix it inline in unrelated work.**
+**The one piece of technical debt this workstream recorded is now CLOSED (PR #85, `304d1ec`,
+2026-09-13).** `judgeExposedList` took the **first** exposed-schema list any probe returned and did
+not fail when the three returned **different** lists — not a known live defect, since all three read
+one project setting, but a release gate resolving a disagreement silently in favour of whichever
+probe answered first. **It now fails closed**: every usable observation is collected, a disagreement
+is a failure that prints each list it saw, and a forbidden schema in **any** list is reported first
+so a disagreement cannot mask a leak. The same first-wins bug in the CLI's PASS line — which could
+print *"the exposed list is exactly []"* from no observation at all — is fixed beside it. Ten focused
+tests, verified **red before green**. This was filed as an independent-audit candidate and was
+instead cleared before the audit began.
 
 **What is NOT closed by this merge:** **OQ-084** (the retention durations, and the privacy-policy and
 beta-FAQ language) is untouched — a scheduler cannot answer a legal question. **OQ-076**'s residual

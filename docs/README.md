@@ -149,17 +149,21 @@ lost during foundation work. Statuses below are current: items marked **RESOLVED
 > _Original note (historical):_ `npm run lint` reported 207 warnings (0 errors) under
 > `--max-warnings 0`; CI's lint step was non-blocking (`|| true`).
 
-### P3 - Release gate resolves a probe disagreement silently — **LOW, recorded 2026-09-13, NOT fixed**
-> `judgeExposedList` in `scripts/check-api-schemas.mjs` takes the **first**
-> exposed-schema list any probe returns and does **not** fail when the three probes
-> (`net`, `cron`, `vault`) return **different** lists. All three currently target the
-> same project and should agree, so **this is not a known live defect.** It is recorded
-> because the script is a **release gate** for a setting that lives in the Supabase
-> dashboard rather than in this repository, and a gate that resolves a disagreement
-> silently is the shape of a gate that passes for the wrong reason. **Candidate for the
-> independent whole-app adversarial audit; do not fix it inline in unrelated work.** See
-> [product/CURRENT_STATE.md](product/CURRENT_STATE.md) § Account erasure — scheduled
-> execution.
+### P3 - Release gate resolved a probe disagreement silently — **FIXED (PR #85, `304d1ec`, 2026-09-13)**
+> **Status update:** it fails closed. `judgeExposedList` in
+> `scripts/check-api-schemas.mjs` now collects **every** usable exposed-schema
+> observation, treats a disagreement between the three probes as a **failure** while
+> printing each list it saw, and reports a forbidden schema in **any** list first so a
+> disagreement cannot mask a leak. Agreement is by set rather than order. The allowed
+> list `[public, graphql_public]` and the project-ref / environment guards are unchanged.
+> Ten focused tests, verified **red before green** against the old implementation.
+>
+> _Original note (historical):_ the judgement took the **first** exposed-schema list any
+> probe returned and did not fail when the three probes (`net`, `cron`, `vault`) returned
+> **different** lists. Not a known live defect — all three target one project and should
+> agree — but a **release gate** for a setting that lives in the Supabase dashboard rather
+> than in this repository, resolving a disagreement silently, is the shape of a gate that
+> passes for the wrong reason.
 
 ### Verified dead-code cleanup candidates (do NOT remove yet)
 Suspected leftovers from a Next.js/web template that do not appear to belong to
