@@ -2,8 +2,13 @@
 
 **Status:** Authoritative for sequencing. Maintained by the Project State Steward.
 
-**Reconciled against:** `main` @ `719d8f9` (2026-09-13) — **PR #84**, Account erasure scheduled
-execution — **for the § Next erasure entries, the § Physical-device / UX QA list, § The remaining
+**Reconciled against:** `main` @ `304d1ec` (2026-09-13) — **PR #85**, which discharged the one
+technical-debt item this document carried as owed. **For that item and the § remaining-sequence step
+that named it, and for nothing else.** The anchor moves because a § Next entry asserted work as owed
+that is now done.
+
+**Previously reconciled against:** `main` @ `719d8f9` (2026-09-13) — **PR #84**, Account erasure
+scheduled execution — **for the § Next erasure entries, the § Physical-device / UX QA list, § The remaining
 sequence to closed beta and the header statements below, and for nothing else.** A narrow anchor,
 deliberately, on the convention [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) already uses: this
 reconciliation verified the four scheduler migrations (`20261130000000` … `20261133000000`), the
@@ -1210,11 +1215,10 @@ was exercised" into "the timer was observed".
 - **OQ-076**'s residual identity oracle, carried to the pre-public-launch privacy/security revisit.
 - **Physical-device QA** of the deletion flow — the disclosure, the reauthentication prompt, the
   scheduled-date display and the restore path. Automating execution exercises none of them.
-- **LOW technical debt, recorded not fixed:** `judgeExposedList` in `scripts/check-api-schemas.mjs`
-  uses the **first** exposed-schema list any probe returns and does not fail when the three probes
-  return **different** lists. They currently target the same project and should agree, so **this is
-  not a known live defect** — it is a release gate resolving a disagreement silently. **Candidate for
-  the independent whole-app audit below; do not fix it inline in unrelated work.**
+- ~~**LOW technical debt, recorded not fixed:** `judgeExposedList` resolving a probe disagreement
+  silently.~~ **DISCHARGED by PR #85 (`304d1ec`, 2026-09-13)** — it fails closed, prints every list
+  it saw, and reports a forbidden schema in any list first. Filed as an audit candidate and cleared
+  before the audit began instead.
 
 ---
 
@@ -1232,7 +1236,7 @@ running them concurrently is how a UI pass gets built on a surface an audit is a
 
 | # | Step | Why it sits here |
 |---|---|---|
-| **1** | **Independent whole-app adversarial audit** | First, because everything after it is built on the assumption that what is on `main` is sound. It is independent so it is not marking its own homework, and adversarial because the suites already here prove the rules that were thought of. The `judgeExposedList` item above is one input; § WHOLE-APP AUDIT ROUND 2 is the standing entry. |
+| **1** | **Independent whole-app adversarial audit** | First, because everything after it is built on the assumption that what is on `main` is sound. It is independent so it is not marking its own homework, and adversarial because the suites already here prove the rules that were thought of. **It starts with no carried-over debt**: the `judgeExposedList` item this table used to name as an input was cleared by PR #85 beforehand. § WHOLE-APP AUDIT ROUND 2 is the standing entry. |
 | **2** | **Discovery / Fairness** | The marketplace surface's ordering and exposure rules — the last substantial backend product decision owed, and the one a provider's experience of the beta turns on. **Not started, and nothing in this document may be read as having decided it.** |
 | **3** | **Cross-App UX simplification** | Before any design pass. Simplifying flows after they have been styled means throwing away the styling. |
 | **4** | **UI implementation / design-system pass** | The app is functionally built and visually unfinished. This is where that is addressed, on flows step 3 has settled. |
