@@ -21,6 +21,62 @@
 > than either. **In-context safety reporting is unaffected and real** — `ReportSheet` from a
 > profile or post, and `post-booking/issue` from a booking.
 
+**The semantic theme foundation is IN** (`81d5ea2`, PR #94, 2026-09-14), and **PD-119 is
+implemented**. The app had no theme layer — colour was inline literals across `app/` and
+`components/`, so there was no way to express "the same role, a different appearance".
+There is one now: `lib/theme/tokens.ts` holds sixteen semantic roles resolved for two
+schemes, pure and tested, with no React and no I/O. **No migration was needed** — every
+change is application code.
+
+**Appearance is live at Me → Settings → Appearance**: **System, Light, Dark, defaulting to
+System**. System is a **preference, not a mode** — it resolves to one of exactly two
+palettes, and a third in `lib/theme/tokens.ts` would mean PD-119 had been broken. The
+choice persists to `AsyncStorage` under `appearance_preference` and is **device-local on
+purpose**: it describes this device's screen, not the account, so nothing about it reaches
+Supabase. It changes appearance **only** — not visibility, privacy, permissions, ranking or
+marketplace behaviour, and the screen says so in as many words.
+
+**The two palettes are not inverses, and that is deliberate.** `borderSubtle` is Clay Dust
+on light and Moss Gray on dark. `statusLocal` **lifts** from Cypress 600 to Cypress 300
+because `#356A62` on `#151719` is about 2.4:1 and fails AA as text. `actionPrimary` is
+constant so the button keeps its identity while `actionText` lifts, because Mulberry on
+Night is about 1.8:1. Mechanical inversion would produce none of that.
+
+**Three founder rulings are encoded and asserted, not merely written down.** Linen
+`#F1ECE5` is the primary text colour on dark; Paper `#F8F4EE` stays a light surface/form
+role and does not double as text on dark; and `danger/600` is reachable from **exactly two
+places in the whole app** — a rejected text input, and a load failure that offers a retry.
+`lib/theme/statusTone.ts` exports `rolesUsedByStatusTones()` so a test **proves** danger is
+unreachable from any booking status. **Expired, Declined, Cancelled and No show take the
+neutral `statusOutcome` role.**
+
+**Ten shared components exist**: `Button` (three variants in one component), `SearchInput`,
+`TextField`, `Avatar`, `StatusBadge`, `EmptyState`, `ErrorState` under `components/ui/`,
+plus `StepProgress` and `TabIcon` **adapted rather than duplicated**. `ErrorState` carries a
+`quiet` tone so messaging-unavailable is not dressed as a failure — it names no cause and
+offers no retry, because it must not reveal a block, moderation state or a private account.
+
+**Bottom navigation now shows labels** — Discover, Reels, Bookings, Messages, Me — which is
+founder-approved and closes the delta against the previously label-hidden tab bar. **The
+amber active-tab underline was removed on purpose**: with a visible label and an active
+colour treatment it was a redundant third signal. **Sign Out takes the ordinary utility text
+treatment**, not the action colour and never danger; destructive treatment belongs to Delete
+Account.
+
+**What is NOT done, and must not be read as done.** **Full screen migration has not begun.**
+Only three surfaces are migrated — bottom navigation, Settings, and the new Appearance
+screen — and they carry zero colour literals. Every other screen still holds its inline
+values, which is why the themed primitives are built and tested but **not yet placed on
+unmigrated surfaces**: `StatusBadge` on the still-hardcoded `#080808` bookings list would
+render Ink text on near-black. **Welcome (`app/index.tsx`) is untouched** — `welcome.mp4`,
+its composition, copy and typography are the founder brand lock and the theme layer did not
+need them to prove itself. **PD-120 (From people you follow) is NOT implemented** and stays
+blocked on a data path that does not widen `DiscoveryProvider` or `SearchableProvider`.
+**Code Connect is deliberately deferred**: no package, no config, no CI publishing, no
+`.figma.tsx` files. Figma MCP plus approved node references are sufficient, and
+`Navigation/Bottom` is intentionally left unmapped rather than extracting `CustomTabBar`
+into an artificial standalone component.
+
 **Cross-App UX Core is COMPLETE** (`5166d9e`, PR #91, 2026-09-13). The structural UX
 corrections are in: the booking flow now says where the client is, provider onboarding asks
 for required work before optional, dead controls are gone, and several claims the product
