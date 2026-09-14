@@ -22,6 +22,8 @@ import { useTheme } from '@/context/ThemeContext'
 import Button from '@/components/ui/Button'
 import StatusBadge from '@/components/ui/StatusBadge'
 import Avatar from '@/components/ui/Avatar'
+import ReferencePhotos from '@/components/ui/ReferencePhotos'
+import { bookingPhotoUrls } from '../../lib/bookingPhotos'
 
 interface BookingDetail {
   id: string
@@ -109,6 +111,7 @@ export default function BookingDetailScreen() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(false)
   const [isProvider, setIsProvider] = useState(false)
+  const [photoUrls, setPhotoUrls] = useState<string[]>([])
   // Persistent provider→client review opportunity (QA-JOURNEY-002). Server-
   // authoritative (RPC review_opportunity); the client never computes the window.
   //
@@ -192,6 +195,33 @@ export default function BookingDetailScreen() {
   useEffect(() => {
     fetchBookingDetail()
   }, [fetchBookingDetail])
+
+  // The reference photos the client attached when they sent this request.
+  //
+  // Fetched SEPARATELY from the booking row, the same way the provider's request
+  // screen does it: the paths live in `booking_reference_photos` and the objects
+  // are in a PRIVATE bucket, so each needs its own short-lived signed URL. Folding
+  // them into `fetchBookingDetail` would put a storage round trip in front of the
+  // whole screen for something that is not the record's spine.
+  //
+  // AUTHORIZATION IS THE DATABASE'S, NOT THIS SCREEN'S. `booking_photos_participants_read`
+  // and `can_read_booking_photo` (`20261072000000`, refined by `20261073000000`)
+  // resolve through the booking and admit only its two parties — and the provider
+  // only once the request has actually been SENT. A viewer who may not read an
+  // object gets no signed URL for it and `bookingPhotoUrls` drops it, so this
+  // fails closed without the screen deciding anything. Nothing here widens that,
+  // and nothing here should start to.
+  useEffect(() => {
+    if (!id || !user) return
+    let cancelled = false
+    ;(async () => {
+      const urls = await bookingPhotoUrls(id as string)
+      if (!cancelled) setPhotoUrls(urls)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [id, user])
 
   async function updateStatus(
     newStatus: string,
@@ -479,6 +509,16 @@ export default function BookingDetailScreen() {
             <Text style={[styles.noteText, { color: colors.textPrimary }]}>{booking.message}</Text>
           </View>
         ) : null}
+
+        {/* The photos that went with that note. They sit here because they are the
+            same act — the context the client chose to send — and the note card
+            above already labels itself from the viewer's side.
+
+            Rendered for BOTH parties, like the note, because this route is shared
+            and `isProvider` branches the ACTIONS, not the record. Hiding a part of
+            the record by role would be a new kind of branch on this screen, and the
+            database already decides who may see these. */}
+        <ReferencePhotos urls={photoUrls} viewerIsProvider={isProvider} />
       </ScrollView>
 
       {/* Fixed bottom action bar */}
