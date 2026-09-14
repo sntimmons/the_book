@@ -19,6 +19,11 @@ import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BLOCKED_PROFILE_COPY } from '@/lib/safety'
 import { useTheme } from '@/context/ThemeContext'
+import {
+  UNPUBLISHED_TERMS_COPY,
+  bookingTermsCopy,
+  type PublicBookingTerms,
+} from '@/lib/publicBookingTerms'
 import ProviderReviewsSection from './ProviderReviewsSection'
 import ProviderShoutouts from './ProviderShoutouts'
 
@@ -69,6 +74,13 @@ export interface ProviderData {
   process?: string[]
   /** providers.specialties — already public, simply never surfaced before. */
   specialties?: string[]
+  /**
+   * The provider's REAL cancellation window and lateness grace, from
+   * `provider_public_booking_terms`. Nulls mean NOT PUBLISHED and are rendered
+   * as such — never as the platform default, which is the defect PD-125 was
+   * raised against.
+   */
+  bookingTerms?: PublicBookingTerms
   rating?: number
   /**
    * How many DISTINCT clients the rating rests on. Not the review count: the
@@ -215,6 +227,11 @@ export default function ProviderProfile({
   const processMedia = provider.process ?? []
   const services = provider.services ?? []
   const specialties = (provider.specialties ?? []).filter(Boolean)
+  const terms = provider.bookingTerms
+  const termsCopy = terms ? bookingTermsCopy(terms) : null
+  // The section appears only when at least one term is PUBLISHED. A block that
+  // says "not published" twice and nothing else is not information.
+  const showBookingTerms = !!termsCopy && !termsCopy.nonedPublished
   const showActions = !previewMode && !isOwnProfile
 
   const reputation = reputationLine(provider)
@@ -532,6 +549,35 @@ export default function ProviderProfile({
           </Section>
         ) : null}
 
+        {/* ── BOOKING DETAILS ───────────────────────────────────────────
+            Only the two terms a client is entitled to, and only when the
+            provider has actually published them. No fee percentage, no deposit,
+            no charge language: Third takes no payment in this beta, so this
+            section must never imply it can collect or enforce anything. */}
+        {showBookingTerms ? (
+          <Section kicker="BEFORE YOU REQUEST" title="Booking details">
+            <View style={styles.rows}>
+              {termsCopy?.cancellation ? (
+                <TermRow
+                  label="Cancellation"
+                  value={termsCopy.cancellation}
+                  last={!termsCopy.grace}
+                />
+              ) : null}
+              {termsCopy?.grace ? <TermRow label="Running late" value={termsCopy.grace} last /> : null}
+            </View>
+            {!termsCopy?.cancellation || !termsCopy?.grace ? (
+              <Text style={[type.bodySmall, styles.sectionLead, { color: colors.textSecondary }]}>
+                {UNPUBLISHED_TERMS_COPY.hint}
+              </Text>
+            ) : null}
+            <Text style={[type.bodySmall, styles.sectionLead, { color: colors.textSecondary }]}>
+              Third does not take payment in this beta. You settle with{' '}
+              {provider.name.split(' ')[0]} directly.
+            </Text>
+          </Section>
+        ) : null}
+
         {!previewMode && providerId ? <ProviderShoutouts providerId={providerId} /> : null}
         {!previewMode && providerId ? <ProviderReviewsSection providerId={providerId} /> : null}
       </ScrollView>
@@ -637,6 +683,21 @@ export default function ProviderProfile({
   )
 }
 
+function TermRow({ label, value, last }: { label: string; value: string; last?: boolean }) {
+  const { colors, type } = useTheme()
+  return (
+    <View
+      style={[
+        styles.termRow,
+        !last && { borderBottomWidth: StyleSheet.hairlineWidth * 2, borderBottomColor: colors.borderSubtle },
+      ]}
+    >
+      <Text style={[type.bodyDefault, styles.termLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text style={[type.bodyDefault, styles.termValue, { color: colors.textPrimary }]}>{value}</Text>
+    </View>
+  )
+}
+
 function MediaButton({
   icon,
   label,
@@ -729,6 +790,9 @@ const styles = StyleSheet.create({
   serviceText: { flex: 1 },
   serviceMeta: { marginTop: 3 },
   servicePrice: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  termRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 15 },
+  termLabel: { flex: 1 },
+  termValue: { textAlign: 'right' },
   mediaRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
   processTile: { borderRadius: 14, borderCurve: 'continuous' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 },

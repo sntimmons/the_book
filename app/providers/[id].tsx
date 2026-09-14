@@ -27,6 +27,11 @@ import { useAuth } from '@/context/AuthContext'
 import { useTheme } from '@/context/ThemeContext'
 import { supabase } from '@/lib/supabase'
 import { cacheBustedPhoto } from '@/lib/image'
+import {
+  NO_PUBLIC_BOOKING_TERMS,
+  PublicBookingTerms,
+  fetchPublicBookingTerms,
+} from '@/lib/publicBookingTerms'
 import { openMessageEntry } from '../../hooks/useMessaging'
 
 export default function ProviderProfilePage() {
@@ -50,6 +55,10 @@ export default function ProviderProfilePage() {
   // the canonical baseline. It is the provider's own account of how an
   // appointment goes.
   const [processMedia, setProcessMedia] = useState<string[]>([])
+  // The provider's REAL cancellation window and lateness grace. Nulls mean the
+  // provider has not published them and the section stays absent — never the
+  // platform default dressed as their term (PD-125).
+  const [bookingTerms, setBookingTerms] = useState<PublicBookingTerms>(NO_PUBLIC_BOOKING_TERMS)
   // Session 8. `null` = not known yet, and every control that depends on it
   // reads `=== true` so an unknown never hides a live provider's Book Now.
   const [blockedByMe, setBlockedByMe] = useState<boolean | null>(null)
@@ -238,6 +247,22 @@ export default function ProviderProfilePage() {
   useEffect(() => {
     let cancelled = false
     const pid = provider?.id
+    if (!pid) {
+      setBookingTerms(NO_PUBLIC_BOOKING_TERMS)
+      return
+    }
+    ;(async () => {
+      const t = await fetchPublicBookingTerms(pid)
+      if (!cancelled) setBookingTerms(t)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [provider?.id])
+
+  useEffect(() => {
+    let cancelled = false
+    const pid = provider?.id
     if (!pid) return
     ;(async () => {
       const { data, error } = await supabase.rpc('provider_is_bookable', { p_provider_id: pid })
@@ -344,6 +369,7 @@ export default function ProviderProfilePage() {
     reels: reelVideos,
     process: processMedia,
     specialties: provider.specialties ?? undefined,
+    bookingTerms,
     username: provider.username ?? undefined,
     rating: ratingValue,
     ratingClientCount: (provider as { rating_client_count?: number }).rating_client_count ?? 0,

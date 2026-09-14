@@ -14,7 +14,13 @@ import Button from '@/components/ui/Button'
 import AcknowledgeRow from '@/components/ui/AcknowledgeRow'
 import { supabase } from '@/lib/supabase'
 import {
-  DEFAULT_POLICY,
+  NO_PUBLIC_BOOKING_TERMS,
+  PublicBookingTerms,
+  UNPUBLISHED_TERMS_COPY,
+  bookingTermsCopy,
+  fetchPublicBookingTerms,
+} from '@/lib/publicBookingTerms'
+import {
   PolicyDisplay,
   policyToDisplay,
   rowsToPolicy,
@@ -35,36 +41,51 @@ export default function BookPolicy() {
     contractRequired,
 } = useBookingStore()
 
-  // Show the REAL policy for this provider. If they somehow have no row, fall
-  // back to the explicit defaults — never invent terms the client then agrees
-  // to. Defaults render immediately; the fetch replaces them if a row exists.
-  const [policy, setPolicy] = useState<PolicyDisplay>(policyToDisplay(DEFAULT_POLICY))
+  // ── THE CANCELLATION WINDOW AND GRACE ARE READ SEPARATELY, ON PURPOSE ──
+  //
+  // They used to come from a direct read of `provider_booking_preferences`,
+  // which is OWNER-ONLY: for a client it returned zero rows and no error, the
+  // guard below did not fire because `provider_policies` DID return, and
+  // `rowsToPolicy` substituted `DEFAULT_POLICY`. The client was shown a constant
+  // beside that provider's real terms, in the same list and the same type, and
+  // then ticked a box agreeing to it. The substitution was not even
+  // self-consistent — the column default for grace is 60 minutes and
+  // DEFAULT_POLICY says 15.
+  //
+  // `provider_public_booking_terms` (20261137000000) returns those two fields and
+  // nothing else. NO ROW means the provider has not published them, and that is
+  // rendered as "not published" rather than filled in.
+  const [policy, setPolicy] = useState<PolicyDisplay | null>(null)
+  const [terms, setTerms] = useState<PublicBookingTerms>(NO_PUBLIC_BOOKING_TERMS)
   useEffect(() => {
     let cancelled = false
     if (!providerId) return
     ;(async () => {
-      // Policy spans two tables: provider_policies (fees/reschedule/travel) and
-      // provider_booking_preferences (cancellation window + grace).
-      const [policiesRes, prefsRes] = await Promise.all([
+      const [policiesRes, publicTerms] = await Promise.all([
         supabase.from('provider_policies').select('*').eq('provider_id', providerId).maybeSingle(),
-        supabase
-          .from('provider_booking_preferences')
-          .select('cancellation_window_hours, lateness_grace_minutes')
-          .eq('provider_id', providerId)
-          .maybeSingle(),
+        fetchPublicBookingTerms(providerId),
       ])
       if (cancelled) return
-      if (!policiesRes.data && !prefsRes.data) return // keep explicit defaults
-      setPolicy(
-        policyToDisplay(
-          rowsToPolicy((policiesRes.data as any) ?? null, (prefsRes.data as any) ?? null),
-        ),
-      )
+      setTerms(publicTerms)
+      // `rowsToPolicy` still owns the fee / reschedule / travel terms, which ARE
+      // client-readable. It is handed null for the prefs row deliberately: those
+      // two fields no longer come from here, so its defaults cannot reach the
+      // screen through the back door.
+      if (policiesRes.data) {
+        setPolicy(policyToDisplay(rowsToPolicy(policiesRes.data as any, null)))
+      }
     })()
     return () => {
       cancelled = true
     }
   }, [providerId])
+
+  const termsCopy = bookingTermsCopy(terms)
+  // The fee line names the window it applies within, so it cannot be stated
+  // while the window is unpublished — it would smuggle the default back in as
+  // part of a sentence about money.
+  const cancellationFeeLine =
+    terms.cancellationWindowHours == null ? null : policy?.cancellation.fee ?? null
 
   const servicePrice = selectedService?.price ?? '$145'
 
@@ -144,11 +165,13 @@ export default function BookPolicy() {
           {/* Cancellation — real terms for this provider */}
           <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>CANCELLATION POLICY</Text>
           <View style={[styles.policyCard, styles.policyCardGap]}>
-            <PolicyLine tone="ok" text={policy.cancellation.free} />
-            {policy.cancellation.fee && (
-              <PolicyLine tone="warn" text={policy.cancellation.fee} />
+            {termsCopy.cancellation ? (
+              <PolicyLine tone="ok" text={termsCopy.cancellation} />
+            ) : (
+              <PolicyLine tone="clock" text={UNPUBLISHED_TERMS_COPY.cancellation} />
             )}
-            {policy.cancellation.noShow && (
+            {cancellationFeeLine && <PolicyLine tone="warn" text={cancellationFeeLine} />}
+            {policy?.cancellation.noShow && (
               <PolicyLine tone="bad" text={policy.cancellation.noShow} />
             )}
           </View>
@@ -156,11 +179,15 @@ export default function BookPolicy() {
           {/* Reschedule */}
           <Text style={[styles.sectionLabel, { marginTop: 16 }]}>RESCHEDULE POLICY</Text>
           <View style={[styles.policyCard, styles.policyCardGap]}>
-            <PolicyLine tone="ok" text={policy.reschedule.window} />
-            {policy.reschedule.limit && (
+            {policy ? (
+              <PolicyLine tone="ok" text={policy.reschedule.window} />
+            ) : (
+              <PolicyLine tone="clock" text="Reschedule terms not published" />
+            )}
+            {policy?.reschedule.limit && (
               <PolicyLine tone="warn" text={policy.reschedule.limit} />
             )}
-            {policy.reschedule.fee && (
+            {policy?.reschedule.fee && (
               <PolicyLine tone="warn" text={policy.reschedule.fee} />
             )}
           </View>
@@ -168,18 +195,33 @@ export default function BookPolicy() {
           {/* Late arrival */}
           <Text style={[styles.sectionLabel, { marginTop: 16 }]}>LATE ARRIVAL</Text>
           <View style={[styles.policyCard, { backgroundColor: colors.bgSurface, borderColor: colors.borderSubtle }]}>
-            <PolicyLine tone="clock" text={policy.grace} />
+            {termsCopy.grace ? (
+              <PolicyLine tone="clock" text={termsCopy.grace} />
+            ) : (
+              <PolicyLine tone="clock" text={UNPUBLISHED_TERMS_COPY.grace} />
+            )}
           </View>
 
+          {/* Said ONCE, and only when something is actually missing. */}
+          {(!termsCopy.cancellation || !termsCopy.grace) && (
+            <Text style={[styles.feeNote, { color: colors.textSecondary }]}>
+              {UNPUBLISHED_TERMS_COPY.hint}
+            </Text>
+          )}
+
           {/* PRODUCT TRUTH: these are the PROVIDER's terms, and a client is about
-              to tick a box agreeing to them — including percentages ("100% charge
-              for no-shows" is the platform DEFAULT when a provider has written no
-              policy of their own, `lib/policy.ts` DEFAULT_POLICY). The Book takes
+              to tick a box agreeing to them — including percentages. Third takes
               no payment in this beta (PD-042), so it can neither charge nor
               enforce any of it. The terms are shown unchanged — they are the
-              provider's to set and a client's to know — but the screen no longer
-              lets a percentage imply the platform will collect it. The wording of
-              the terms themselves is a legal/product question and is untouched. */}
+              provider's to set and a client's to know — but the screen does not
+              let a percentage imply the platform will collect it.
+
+              Every line here now comes from a row that actually exists. A
+              provider with no `provider_policies` row renders NO fee or
+              reschedule lines rather than the platform defaults, for the same
+              reason the cancellation window is not filled in: a default
+              presented as this provider's term is a claim about them that
+              nobody made. */}
           <Text style={[styles.feeNote, { color: colors.textSecondary }]}>
             Third does not take payment or collect these fees. Anything owed is
             settled directly with your provider.
