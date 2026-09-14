@@ -21,6 +21,50 @@
 > than either. **In-context safety reporting is unaffected and real** — `ReportSheet` from a
 > profile or post, and `post-booking/issue` from a booking.
 
+**Bookings is PARTIALLY migrated onto the Third theme** (`f911242`, PR #96, 2026-09-14).
+**Phase 2 is partial, not complete, and must not be read as finished.** Two surfaces moved:
+the **Bookings list** (`app/(tabs)/bookings.tsx`) and the **booking message + reference
+photos step** (`app/book/message.tsx`). Both now carry **zero colour literals** — the message
+step keeps one, a documented scrim over user photography, which is appearance-independent.
+**No migration was needed** — every change is application code, and no booking logic, state
+machine, RPC, expiry engine or contract engine was touched.
+
+**A product-truth defect was fixed on the way.** The list's own `StatusPill` rendered the
+`cancelled` tone — which covers **Declined, Cancelled AND No show** — in red. Those are
+**outcomes, not errors**, and danger is restricted to genuine destructive/error contexts.
+Routing the list through the shared `StatusBadge` moves all four, plus **Expired**, onto the
+neutral `status/outcome` role. `lib/theme/statusTone.ts` already proved danger is
+unreachable from any booking status; the screen has now caught up to it.
+
+**Expiry is still derived, and that split is deliberate.** `status` remains `pending` on a
+lapsed request — expiry comes from `expires_at`, never the enum — so the screen computes it
+and hands the answer to the badge, which does no time maths. A new row note says why a
+booking sits where it does (*"Sent Sep 13. Waiting on Marcus."*), derived from data the list
+already selected. **An expired row says the REQUEST expired and never names the provider in
+a sentence about something going wrong.**
+
+**A booking is now a row, not a raised card** — hairline and space rather than stacked
+bordered surfaces, which is what keeps dark mode flat instead of a column of floating
+blocks.
+
+**What is NOT done, and is the reason this entry says PARTIAL.**
+
+- **Eight Bookings-related screens remain unmigrated**: `app/bookings/[id].tsx` and the seven
+  other `app/book/*` screens. **No approved Figma frame exists for any of them**, and a blind
+  theme-only migration was **rejected** — Figma is the visual source of truth and screen
+  composition is not to be invented in React Native. They are Phase 2b, and need a bounded
+  design pass using the existing Foundations and Components first.
+- **An interim Light-appearance seam is ACCEPTED, temporarily.** The migrated list is warm
+  light while the detail screen is still `#080808`, so opening a booking crosses a visible
+  seam in Light. In Dark there is effectively none. This is a **presentation seam, not a
+  product-truth or functional defect**, and it does not block.
+- **The `[My appointments] [My business]` segmented control is REJECTED for closed beta.**
+  The approved frame `78:2` showed it; the list queries `.eq('user_id', user.id)` and is
+  client activity only. **No provider booking query, no new RLS, no new navigation and no
+  provider-side Bookings mode will be built to satisfy a mockup.** The IA stands: **Bookings
+  is client booking activity, Business is provider operations**, and the two mental models
+  stay separate during beta. The Figma frame is to be corrected when Phase 2b design begins.
+
 **The semantic theme foundation is IN** (`81d5ea2`, PR #94, 2026-09-14), and **PD-119 is
 implemented**. The app had no theme layer — colour was inline literals across `app/` and
 `components/`, so there was no way to express "the same role, a different appearance".
