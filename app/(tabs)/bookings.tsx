@@ -17,10 +17,14 @@ import { useAuth } from '@/context/AuthContext'
 import { getOrCreateConversation } from '@/hooks/useMessaging'
 import {
   bookingTab,
-  bookingStatusLabel,
   bookingStatusTone,
   bookingRequestUrgency,
+  bookingListNote,
 } from '@/lib/bookingStatus'
+import { useTheme } from '@/context/ThemeContext'
+import StatusBadge from '@/components/ui/StatusBadge'
+import SharedEmptyState from '@/components/ui/EmptyState'
+import Avatar from '@/components/ui/Avatar'
 import { reviewEntryFor, ReviewOpportunity } from '@/lib/reviews'
 import { useReviewOpportunities } from '@/hooks/useReviewOpportunities'
 
@@ -61,6 +65,7 @@ function money(n: number | null): string {
 }
 
 function SkeletonCard() {
+  const { colors } = useTheme()
   const opacity = useRef(new Animated.Value(0.4)).current
   useEffect(() => {
     const loop = Animated.loop(
@@ -75,11 +80,12 @@ function SkeletonCard() {
       opacity.stopAnimation()
     }
   }, [opacity])
-  return <Animated.View style={[styles.skeletonCard, { opacity }]} />
+  return <Animated.View style={[styles.skeletonCard, { opacity, backgroundColor: colors.bgSubtle }]} />
 }
 
 export default function BookingsScreen() {
   const insets = useSafeAreaInsets()
+  const { colors, scheme } = useTheme()
   const { user } = useAuth()
   const [activeStatus, setActiveStatus] = useState<Status>('upcoming')
   const [bookings, setBookings] = useState<BookingRow[]>([])
@@ -176,28 +182,44 @@ export default function BookingsScreen() {
           : cancelledBookings
 
   return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
+    <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
+      {/* The bar follows the appearance rather than being pinned to light. */}
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
 
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Text style={styles.headerTitle}>My Bookings</Text>
+      <View
+        style={[
+          styles.header,
+          { paddingTop: insets.top + 12, borderBottomColor: colors.borderSubtle },
+        ]}
+      >
+        <Text style={[styles.headerTitle, { color: colors.textPrimary }]}>My Bookings</Text>
       </View>
 
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, { borderBottomColor: colors.borderSubtle }]}>
         {STATUS_TABS.map((tab) => {
           const active = activeStatus === tab.key
           return (
             <TouchableOpacity
               key={tab.key}
-              style={[styles.tab, active && styles.tabActive]}
+              style={[
+                styles.tab,
+                active && [styles.tabActive, { borderBottomColor: colors.actionPrimary }],
+              ]}
               activeOpacity={0.7}
               onPress={() => setActiveStatus(tab.key)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
             >
-              <Text style={active ? styles.tabTextActive : styles.tabTextInactive}>
+              <Text
+                style={[
+                  active ? styles.tabTextActive : styles.tabTextInactive,
+                  { color: active ? colors.textPrimary : colors.textSecondary },
+                ]}
+              >
                 {tab.label}
               </Text>
               {tab.key === 'pending' && pendingBookings.length > 0 && (
-                <View style={styles.pendingDot} />
+                <View style={[styles.pendingDot, { backgroundColor: colors.actionPrimary }]} />
               )}
             </TouchableOpacity>
           )
@@ -220,39 +242,46 @@ export default function BookingsScreen() {
         ) : (
           <View style={styles.list}>
             {activeStatus === 'pending' && (
-              <View style={styles.pendingBanner}>
-                <Feather name="clock" size={14} color="#C8922A" style={styles.pendingBannerIcon} />
+              <View style={[styles.pendingBanner, { borderLeftColor: colors.statusLocal }]}>
+                <Feather
+                  name="clock"
+                  size={14}
+                  color={colors.statusLocal}
+                  style={styles.pendingBannerIcon}
+                />
                 {/* PRODUCT TRUTH: "Your card will only be charged when
                     confirmed" asserted a stored card and a charge on
                     confirmation. Neither exists (PD-042). */}
-                <Text style={styles.pendingBannerText}>
+                <Text style={[styles.pendingBannerText, { color: colors.textPrimary }]}>
                   Pending requests are waiting for provider confirmation. The Book does not take payment in this beta.
                 </Text>
               </View>
             )}
 
             {activeStatus === 'past' && (
-              <Text style={styles.sectionLabel}>PAST APPOINTMENTS</Text>
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>PAST APPOINTMENTS</Text>
             )}
 
             {/* A failed opportunity read must not look like "no review available"
                 (QA-UX-004): say so and offer a way back. */}
             {reviewOppsFailed && (
               <TouchableOpacity
-                style={styles.reviewRetry}
+                style={[styles.reviewRetry, { borderColor: colors.borderSubtle }]}
                 activeOpacity={0.7}
                 onPress={reloadReviewOpps}
+                accessibilityRole="button"
               >
-                <Feather name="refresh-cw" size={13} color="#C8922A" />
-                <Text style={styles.reviewRetryText}>
+                <Feather name="refresh-cw" size={13} color={colors.actionText} />
+                <Text style={[styles.reviewRetryText, { color: colors.actionText }]}>
                   Couldn&apos;t load review status. Tap to retry.
                 </Text>
               </TouchableOpacity>
             )}
 
-            {data.map((b) => (
+            {data.map((b, i) => (
               <BookingCard
                 key={b.id}
+                isFirst={i === 0}
                 booking={b}
                 status={activeStatus}
                 providerName={providerNames[b.provider_id]}
@@ -268,6 +297,13 @@ export default function BookingsScreen() {
   )
 }
 
+// ── A BOOKING IS A ROW ON THE PAGE, NOT A RAISED CARD ────────────────────
+//
+// The approved Bookings frame (78:2) separates bookings with a hairline and space
+// rather than stacking bordered surfaces. That is what keeps dark mode flat and
+// integrated instead of a column of floating blocks, and it reads calmer in light
+// too. The inner divider the old card drew between detail and actions is gone with
+// it — once the card itself is not a box, a second line inside it is redundant.
 function BookingCard({
   booking,
   status,
@@ -275,50 +311,72 @@ function BookingCard({
   userId,
   reviewOpp,
   reviewOppLoading,
+  isFirst,
 }: {
   booking: BookingRow
   status: Status
+  isFirst: boolean
   providerName?: string
   userId: string
   reviewOpp: ReviewOpportunity
   reviewOppLoading: boolean
 }) {
+  const { colors } = useTheme()
   const dateLine = [booking.requested_date, booking.requested_time].filter(Boolean).join(' · ')
   // Houston-local today; a booking dated before it is in the past and should
   // not offer Reschedule/Cancel even if its status still reads "confirmed".
   const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' })
   const isPast = !!booking.requested_date && booking.requested_date < todayIso
+  const expired =
+    bookingStatusTone(booking.status) === 'pending' &&
+    bookingRequestUrgency(
+      { submitted_at: booking.submitted_at, expires_at: booking.expires_at },
+      Date.now(),
+    ) === 'expired'
+  const note = bookingListNote(booking, expired, providerName)
   return (
-    <View style={styles.card}>
+    <View
+      style={[
+        styles.card,
+        !isFirst && { borderTopWidth: 1, borderTopColor: colors.borderSubtle },
+      ]}
+    >
       <TouchableOpacity
         activeOpacity={0.85}
         onPress={() => router.push(`/bookings/${booking.id}` as never)}
       >
         <View style={styles.cardTop}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
-              {(providerName ?? 'P').charAt(0).toUpperCase()}
-            </Text>
-          </View>
+          <Avatar name={providerName ?? 'Provider'} size="medium" />
           <View style={styles.cardCenter}>
-            <Text style={styles.cardProvider}>
+            {/* Long provider and service names wrap rather than clip; nothing here
+                is height-locked, so dynamic type can grow the row. */}
+            <Text style={[styles.cardProvider, { color: colors.textPrimary }]}>
               {(providerName ?? 'Provider') + ' · ' + (booking.service_name ?? 'Service')}
             </Text>
-            {dateLine.length > 0 && <Text style={styles.cardDate}>{dateLine}</Text>}
+            {dateLine.length > 0 && (
+              <Text style={[styles.cardDate, { color: colors.textSecondary }]}>{dateLine}</Text>
+            )}
             {booking.message ? (
-              <Text style={styles.cardMessage} numberOfLines={1}>
+              <Text
+                style={[styles.cardMessage, { color: colors.textSecondary }]}
+                numberOfLines={1}
+              >
                 {booking.message}
               </Text>
             ) : null}
           </View>
           <View style={styles.cardRight}>
-            <Text style={styles.cardPrice}>{money(booking.payment_amount)}</Text>
+            <Text style={[styles.cardPrice, { color: colors.textPrimary }]}>
+              {money(booking.payment_amount)}
+            </Text>
             <StatusPill status={booking.status} booking={booking} />
           </View>
         </View>
       </TouchableOpacity>
 
-      <View style={styles.cardSeparator} />
+      {note ? (
+        <Text style={[styles.cardNote, { color: colors.textSecondary }]}>{note}</Text>
+      ) : null}
 
       <View style={styles.actionRow}>
         <CardActions
@@ -335,9 +393,20 @@ function BookingCard({
   )
 }
 
-// Pill reflects the booking's REAL status (via the shared label + tone), not
-// the active tab — so e.g. a "No show" in the Past tab reads correctly instead
-// of showing "Completed".
+// The badge reflects the booking's REAL status, not the active tab — so a
+// "No show" sitting in the Past tab reads correctly instead of saying "Completed".
+//
+// ── EXPIRED IS DERIVED HERE, NOT IN THE BADGE ───────────────────────────
+//
+// `status` is still `pending` on a request whose deadline has passed: expiry comes
+// from `expires_at`, not from the enum, so nothing in the status says so. That
+// derivation is DATA and stays in this screen; `StatusBadge` does no time maths and
+// is simply told the answer.
+//
+// NO BLAME. "Expired" describes the request, not the provider — a provider who ran
+// out of time has not refused. `lib/theme/statusTone.ts` is what guarantees the
+// treatment stays neutral rather than borrowing the danger family, and a test
+// proves danger is unreachable from any booking status.
 function StatusPill({
   status,
   booking,
@@ -345,17 +414,6 @@ function StatusPill({
   status: string
   booking?: { submitted_at?: string | null; expires_at?: string | null }
 }) {
-  // ── EXPIRED IS A STATE THE LIST HAS TO SHOW ─────────────────────────────
-  //
-  // `status` is still `pending` on a request whose deadline has passed — expiry is
-  // DERIVED from `expires_at`, not stored, so nothing in the enum says so. The
-  // detail screen already derived it; this list did not, and so showed "Pending" on
-  // a request nobody can answer any more. A client waiting on that has no way to
-  // learn it is over.
-  //
-  // NO BLAME. "Expired" describes the request, not the provider — a provider who
-  // ran out of time has not refused, and the copy must not imply they did. That is
-  // also why it is toned as neutral rather than as a rejection.
   const expired =
     booking != null &&
     bookingStatusTone(status) === 'pending' &&
@@ -363,28 +421,7 @@ function StatusPill({
       { submitted_at: booking.submitted_at ?? null, expires_at: booking.expires_at ?? null },
       Date.now(),
     ) === 'expired'
-  const tone = expired ? 'completed' : bookingStatusTone(status)
-  const pillStyle =
-    tone === 'confirmed'
-      ? styles.pillGreen
-      : tone === 'pending'
-        ? styles.pillAmber
-        : tone === 'completed'
-          ? styles.pillNeutral
-          : styles.pillRed
-  const textStyle =
-    tone === 'confirmed'
-      ? styles.pillTextGreen
-      : tone === 'pending'
-        ? styles.pillTextAmber
-        : tone === 'completed'
-          ? styles.pillTextNeutral
-          : styles.pillTextRed
-  return (
-    <View style={[styles.pill, pillStyle]}>
-      <Text style={textStyle}>{expired ? 'Expired' : bookingStatusLabel(status)}</Text>
-    </View>
-  )
+  return <StatusBadge status={status} expired={expired} />
 }
 
 async function openChat(
@@ -444,6 +481,7 @@ function CardActions({
   // the DB. The server decides; the tab is only where the card happens to sit.
   // Nothing renders while the read is in flight, and 'unknown' / 'not_completed' /
   // 'not_participant' render nothing at all.
+  const { colors } = useTheme()
   const entry = reviewEntryFor(reviewOpp, 'client_to_provider', reviewOppLoading)
   const reviewControl =
     entry.kind === 'action' ? (
@@ -455,7 +493,7 @@ function CardActions({
       />
     ) : entry.kind === 'note' ? (
       <View style={styles.pastLabel}>
-        <Text style={styles.pastLabelText}>{entry.label}</Text>
+        <Text style={[styles.pastLabelText, { color: colors.textSecondary }]}>{entry.label}</Text>
       </View>
     ) : null
 
@@ -470,7 +508,7 @@ function CardActions({
             onPress={() => openChat(userId, providerId, bookingId)}
           />
           <View style={styles.pastLabel}>
-            <Text style={styles.pastLabelText}>Past</Text>
+            <Text style={[styles.pastLabelText, { color: colors.textSecondary }]}>Past</Text>
           </View>
           {reviewControl}
         </>
@@ -536,6 +574,17 @@ function CardActions({
   )
 }
 
+// ── INTENTIONAL DEVIATION FROM 78:2 ──────────────────────────────────────
+//
+// The approved frame shows ONE link-weight action per row. A real row carries up to
+// four — Message, Reschedule, Cancel and a review entry — so these stay hairline
+// chips rather than becoming a run of adjacent links: link text at that density
+// loses both tap target and hierarchy. The outline treatment matches the badge
+// system, so it still reads as one surface.
+//
+// `muted` is a de-emphasis, NOT a destructive treatment. Cancel here navigates to
+// the detail screen to confirm; nothing on this row destroys anything, so nothing
+// on it reaches the danger role.
 function ActionButton({
   label,
   onPress,
@@ -545,46 +594,54 @@ function ActionButton({
   onPress: () => void
   muted?: boolean
 }) {
+  const { colors } = useTheme()
   return (
-    <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7} onPress={onPress}>
-      <Text style={muted ? styles.actionBtnTextMuted : styles.actionBtnText}>{label}</Text>
+    <TouchableOpacity
+      style={[styles.actionBtn, { borderColor: colors.borderSubtle }]}
+      activeOpacity={0.7}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <Text
+        style={[
+          muted ? styles.actionBtnTextMuted : styles.actionBtnText,
+          { color: muted ? colors.textSecondary : colors.textPrimary },
+        ]}
+      >
+        {label}
+      </Text>
     </TouchableOpacity>
   )
 }
 
+// AN ABSENCE, NOT A FAILURE. This is the shared State/Empty primitive, so no tab
+// can quietly start describing "nothing here yet" as an error. The per-tab copy is
+// unchanged; the decorative glyph is gone because the approved State/Empty carries
+// no illustration.
 function EmptyState({ status }: { status: Status }) {
   const cfg = EMPTY_CONFIG[status]
   const name = STATUS_TABS.find((t) => t.key === status)?.label ?? ''
-  return (
-    <View style={styles.emptyState}>
-      <Feather name={cfg.icon} size={36} color="rgba(240,232,213,0.1)" />
-      <Text style={styles.emptyTitle}>No {name} bookings</Text>
-      <Text style={styles.emptySub}>{cfg.sub}</Text>
-    </View>
-  )
+  return <SharedEmptyState title={`No ${name} bookings`} body={cfg.sub} testID="bookings-empty" />
 }
 
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#080808',
   },
   header: {
     paddingHorizontal: 20,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
   },
   headerTitle: {
     fontSize: 22,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
   },
   tabs: {
     flexDirection: 'row',
     paddingHorizontal: 20,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
   },
   tab: {
     flex: 1,
@@ -593,16 +650,13 @@ const styles = StyleSheet.create({
   },
   tabActive: {
     borderBottomWidth: 2,
-    borderBottomColor: '#F0E8D5',
   },
   tabTextActive: {
     fontSize: 13,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
   },
   tabTextInactive: {
     fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },
   pendingDot: {
@@ -612,7 +666,6 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#C8922A',
   },
   scroll: {
     flex: 1,
@@ -626,7 +679,6 @@ const styles = StyleSheet.create({
   },
   sectionLabel: {
     fontSize: 10,
-    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
@@ -640,24 +692,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     marginBottom: 12,
     borderRadius: 10,
-    backgroundColor: 'rgba(200,146,42,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.2)',
   },
   reviewRetryText: {
     flex: 1,
     fontSize: 12,
-    color: '#C8922A',
     fontFamily: 'Manrope_500Medium',
   },
+  // A Cypress edge rather than a raised tinted block — the approved frame keeps
+  // this note quiet. Only the left border is drawn, so only the left is coloured.
   pendingBanner: {
-    paddingVertical: 12,
-    backgroundColor: 'rgba(200,146,42,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.15)',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 14,
+    borderLeftWidth: 3,
+    paddingLeft: 14,
+    paddingVertical: 2,
+    marginBottom: 18,
     flexDirection: 'row',
     gap: 8,
     alignItems: 'flex-start',
@@ -668,23 +716,16 @@ const styles = StyleSheet.create({
   pendingBannerText: {
     flex: 1,
     fontSize: 12,
-    color: 'rgba(240,232,213,0.55)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 16,
   },
   skeletonCard: {
     height: 124,
     borderRadius: 14,
-    backgroundColor: 'rgba(240,232,213,0.06)',
     marginBottom: 12,
   },
   card: {
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.07)',
-    borderRadius: 14,
-    marginBottom: 12,
-    overflow: 'hidden',
+    paddingVertical: 4,
   },
   cardTop: {
     padding: 16,
@@ -693,37 +734,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarText: {
-    fontSize: 17,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
   cardCenter: {
     flex: 1,
   },
   cardProvider: {
     fontSize: 14,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
   },
   cardDate: {
     marginTop: 3,
     fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },
   cardMessage: {
     marginTop: 4,
     fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
   },
   cardRight: {
@@ -731,50 +756,13 @@ const styles = StyleSheet.create({
   },
   cardPrice: {
     fontSize: 15,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
   },
-  pill: {
-    marginTop: 4,
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  pillGreen: {
-    backgroundColor: 'rgba(76,175,80,0.1)',
-  },
-  pillTextGreen: {
-    fontSize: 10,
-    color: '#4CAF50',
-    fontFamily: 'Manrope_500Medium',
-  },
-  pillAmber: {
-    backgroundColor: 'rgba(200,146,42,0.1)',
-  },
-  pillTextAmber: {
-    fontSize: 10,
-    color: '#C8922A',
-    fontFamily: 'Manrope_500Medium',
-  },
-  pillNeutral: {
-    backgroundColor: 'rgba(240,232,213,0.06)',
-  },
-  pillTextNeutral: {
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-  },
-  pillRed: {
-    backgroundColor: 'rgba(224,92,92,0.1)',
-  },
-  pillTextRed: {
-    fontSize: 10,
-    color: '#E05C5C',
-    fontFamily: 'Manrope_500Medium',
-  },
-  cardSeparator: {
-    height: 1,
-    backgroundColor: 'rgba(240,232,213,0.05)',
+  cardNote: {
+    fontSize: 12,
+    fontFamily: 'Manrope_400Regular',
+    paddingHorizontal: 20,
+    paddingBottom: 10,
   },
   actionRow: {
     paddingHorizontal: 16,
@@ -790,45 +778,22 @@ const styles = StyleSheet.create({
   },
   pastLabelText: {
     fontSize: 13,
-    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_500Medium',
   },
   actionBtn: {
     flex: 1,
     height: 36,
     borderRadius: 8,
-    backgroundColor: 'rgba(240,232,213,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   actionBtnText: {
     fontSize: 12,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
   },
   actionBtnTextMuted: {
     fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_500Medium',
-  },
-  emptyState: {
-    paddingVertical: 60,
-    alignItems: 'center',
-  },
-  emptyTitle: {
-    marginTop: 14,
-    fontSize: 15,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-  },
-  emptySub: {
-    marginTop: 6,
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.25)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
-    paddingHorizontal: 40,
   },
 })

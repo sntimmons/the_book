@@ -19,6 +19,7 @@ import * as ImagePicker from 'expo-image-picker'
 import { useBookingStore } from '@/store/bookingStore'
 import { StepProgress } from '@/components/StepProgress'
 import { bookingProgressLabel } from '@/lib/bookingProgress'
+import { useTheme } from '@/context/ThemeContext'
 
 const EXAMPLE_CHIPS = [
   'I have short natural lashes',
@@ -31,6 +32,7 @@ const EXAMPLE_CHIPS = [
 ]
 
 export default function BookMessage() {
+  const { colors } = useTheme()
   const insets = useSafeAreaInsets()
   const {
     providerName,
@@ -86,7 +88,7 @@ export default function BookMessage() {
 
   return (
     <KeyboardAvoidingView
-      style={styles.root}
+      style={[styles.root, { backgroundColor: colors.bgCanvas }]}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {/* Top bar */}
@@ -94,26 +96,31 @@ export default function BookMessage() {
         <TouchableOpacity
           onPress={() => router.back()}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={styles.backBtn}
+          style={[styles.backBtn, { backgroundColor: colors.bgSubtle, borderColor: colors.borderSubtle }]}
           activeOpacity={0.7}
         >
-          <Feather name="chevron-left" size={18} color="#F0E8D5" />
+          <Feather name="chevron-left" size={18} color={colors.iconPrimary} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Your Request</Text>
+        <Text style={[styles.topBarTitle, { color: colors.textPrimary }]}>Your Request</Text>
         <View style={styles.topBarSpacer}>
           <StepProgress label={bookingProgressLabel('message', contractRequired)} />
         </View>
       </View>
 
       {/* Booking summary strip */}
-      <View style={styles.summaryStrip}>
+      <View
+        style={[
+          styles.summaryStrip,
+          { borderTopColor: colors.borderSubtle, borderBottomColor: colors.borderSubtle },
+        ]}
+      >
         <View style={styles.summaryLeft}>
-          <Text style={styles.summaryProvider}>{providerName}</Text>
+          <Text style={[styles.summaryProvider, { color: colors.textPrimary }]}>{providerName}</Text>
           {summaryMeta ? (
-            <Text style={styles.summaryMeta}>{summaryMeta}</Text>
+            <Text style={[styles.summaryMeta, { color: colors.textSecondary }]}>{summaryMeta}</Text>
           ) : null}
         </View>
-        <Feather name="check-circle" size={14} color="#4CAF50" />
+        <Feather name="check-circle" size={14} color={colors.statusLocal} />
       </View>
 
       <ScrollView
@@ -125,8 +132,8 @@ export default function BookMessage() {
       >
         <Pressable onPress={Keyboard.dismiss}>
         {/* Headline */}
-        <Text style={styles.headline}>Anything they should know?</Text>
-        <Text style={styles.subtext}>
+        <Text style={[styles.headline, { color: colors.textPrimary }]}>Anything they should know?</Text>
+        <Text style={[styles.subtext, { color: colors.textSecondary }]}>
           Your message goes directly to your provider with your booking request. They see this before deciding to accept.
         </Text>
 
@@ -140,41 +147,49 @@ export default function BookMessage() {
           {EXAMPLE_CHIPS.map((chip) => (
             <TouchableOpacity
               key={chip}
-              style={styles.chip}
+              style={[styles.chip, { borderColor: colors.borderSubtle }]}
               activeOpacity={0.7}
               onPress={() => setBookingMessage(chip)}
             >
-              <Text style={styles.chipText}>{chip}</Text>
+              <Text style={[styles.chipText, { color: colors.textSecondary }]}>{chip}</Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
 
         {/* Text input */}
-        <View style={[styles.inputWrap, isFocused && styles.inputWrapFocused]}>
+        <View
+          style={[
+            styles.inputWrap,
+            {
+              backgroundColor: colors.bgSurface,
+              borderColor: isFocused ? colors.actionPrimary : colors.borderSubtle,
+            },
+          ]}
+        >
           <TextInput
-            style={styles.input}
+            style={[styles.input, { color: colors.textPrimary }]}
             value={bookingMessage}
             onChangeText={setBookingMessage}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
             placeholder={`Tell your provider what you need, any preferences, or questions about the service...`}
-            placeholderTextColor="rgba(240,232,213,0.25)"
+            placeholderTextColor={colors.textSecondary}
             multiline
             maxLength={500}
             textAlignVertical="top"
           />
         </View>
         {bookingMessage.length > 0 && (
-          <Text style={styles.charCount}>{bookingMessage.length} / 500</Text>
+          <Text style={[styles.charCount, { color: colors.textSecondary }]}>{bookingMessage.length} / 500</Text>
         )}
 
         {/* Photo attachments */}
         <View style={styles.photoSection}>
           <View style={styles.photoHeader}>
-            <Text style={styles.sectionLabel}>ATTACH PHOTOS (OPTIONAL)</Text>
-            <Text style={styles.photoLimit}>Up to 3</Text>
+            <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>ATTACH PHOTOS (OPTIONAL)</Text>
+            <Text style={[styles.photoLimit, { color: colors.textSecondary }]}>Up to 3</Text>
           </View>
-          <Text style={styles.photoHelper}>
+          <Text style={[styles.photoHelper, { color: colors.textSecondary }]}>
             Share a reference photo, a style you like, or anything visual that helps your provider understand what you want.
           </Text>
 
@@ -188,7 +203,7 @@ export default function BookMessage() {
                   onPress={() => removePhoto(index)}
                   activeOpacity={0.8}
                 >
-                  <Feather name="x" size={9} color="#F0E8D5" />
+                  <Feather name="x" size={9} color={colors.textOnAction} />
                 </TouchableOpacity>
               </View>
             ))}
@@ -196,11 +211,14 @@ export default function BookMessage() {
             {/* Empty slots */}
             {bookingPhotos.length < 3 && (
               <TouchableOpacity
-                style={styles.photoSlotEmpty}
+                style={[
+                  styles.photoSlotEmpty,
+                  { backgroundColor: colors.bgSubtle, borderColor: colors.borderSubtle },
+                ]}
                 onPress={pickPhoto}
                 activeOpacity={0.7}
               >
-                <Feather name="image" size={20} color="rgba(240,232,213,0.2)" />
+                <Feather name="image" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
           </View>
@@ -209,8 +227,8 @@ export default function BookMessage() {
         {/* Optional badge */}
         {isEmpty && (
           <View style={styles.optionalBadge}>
-            <Feather name="info" size={12} color="rgba(240,232,213,0.25)" />
-            <Text style={styles.optionalText}>
+            <Feather name="info" size={12} color={colors.textSecondary} />
+            <Text style={[styles.optionalText, { color: colors.textSecondary }]}>
               This step is optional. Any photos you attach are kept either way, and your
               provider sees them with the request.
             </Text>
@@ -220,12 +238,21 @@ export default function BookMessage() {
       </ScrollView>
 
       {/* Fixed bottom CTA */}
-      <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
+      <View
+        style={[
+          styles.cta,
+          {
+            paddingBottom: insets.bottom + 16,
+            backgroundColor: colors.bgSurface,
+            borderTopColor: colors.borderSubtle,
+          },
+        ]}
+      >
         <Pressable
-          style={styles.continueBtn}
+          style={[styles.continueBtn, { backgroundColor: colors.actionPrimary }]}
           onPress={() => router.push('/book/policy')}
         >
-          <Text style={styles.continueBtnText}>Continue to Review Policy</Text>
+          <Text style={[styles.continueBtnText, { color: colors.textOnAction }]}>Continue to Review Policy</Text>
         </Pressable>
 
         <TouchableOpacity
@@ -235,7 +262,7 @@ export default function BookMessage() {
         >
           {/* "Continue without a message" — the flow continues, it does not submit.
               The old wording claimed the request was being sent from here. */}
-          <Text style={styles.skipLinkText}>Continue without a message</Text>
+          <Text style={[styles.skipLinkText, { color: colors.actionText }]}>Continue without a message</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
@@ -245,7 +272,6 @@ export default function BookMessage() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#080808',
   },
   topBar: {
     flexDirection: 'row',
@@ -258,15 +284,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   topBarTitle: {
     fontSize: 17,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
   },
   topBarSpacer: {
@@ -283,9 +306,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.06)',
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
   },
   summaryLeft: {
     flex: 1,
@@ -293,12 +314,10 @@ const styles = StyleSheet.create({
   },
   summaryProvider: {
     fontSize: 13,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
   },
   summaryMeta: {
     fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
     marginTop: 2,
   },
@@ -311,13 +330,11 @@ const styles = StyleSheet.create({
   },
   headline: {
     fontSize: 26,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
     marginBottom: 8,
   },
   subtext: {
     fontSize: 14,
-    color: 'rgba(240,232,213,0.55)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 20,
     marginBottom: 24,
@@ -335,30 +352,21 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
-    backgroundColor: 'rgba(240,232,213,0.04)',
   },
   chipText: {
     fontSize: 12,
-    color: 'rgba(240,232,213,0.55)',
     fontFamily: 'Manrope_400Regular',
   },
   inputWrap: {
-    backgroundColor: 'rgba(240,232,213,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.08)',
     borderRadius: 14,
     borderCurve: 'continuous',
     padding: 16,
     minHeight: 120,
     marginBottom: 4,
   },
-  inputWrapFocused: {
-    borderColor: 'rgba(240,232,213,0.25)',
-  },
   input: {
     fontSize: 15,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 22,
     padding: 0,
@@ -366,7 +374,6 @@ const styles = StyleSheet.create({
   },
   charCount: {
     fontSize: 10,
-    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'right',
     marginBottom: 16,
@@ -384,19 +391,16 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: 10,
     fontWeight: '600',
-    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
   },
   photoLimit: {
     fontSize: 11,
-    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_400Regular',
   },
   photoHelper: {
     fontSize: 12,
-    color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 16,
     marginBottom: 12,
@@ -409,10 +413,8 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 10,
-    backgroundColor: 'rgba(240,232,213,0.04)',
     borderWidth: 1.5,
     borderStyle: 'dashed',
-    borderColor: 'rgba(240,232,213,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -427,6 +429,8 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
   },
+  // EXCEPTIONAL LITERAL (documented): a scrim over user photography, which is
+  // appearance-independent. Binding it would lose the alpha the scrim needs.
   photoDeleteBtn: {
     position: 'absolute',
     top: 4,
@@ -446,7 +450,6 @@ const styles = StyleSheet.create({
   },
   optionalText: {
     fontSize: 11,
-    color: 'rgba(240,232,213,0.25)',
     fontFamily: 'Manrope_400Regular',
     flex: 1,
   },
@@ -455,14 +458,11 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#080808',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.06)',
     paddingHorizontal: 24,
     paddingTop: 16,
   },
   continueBtn: {
-    backgroundColor: '#F0E8D5',
     borderRadius: 14,
     borderCurve: 'continuous',
     height: 52,
@@ -473,7 +473,6 @@ const styles = StyleSheet.create({
   continueBtnText: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#080808',
     fontFamily: 'Manrope_700Bold',
   },
   skipLink: {
@@ -484,7 +483,6 @@ const styles = StyleSheet.create({
   },
   skipLinkText: {
     fontSize: 12,
-    color: 'rgba(240,232,213,0.3)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },
