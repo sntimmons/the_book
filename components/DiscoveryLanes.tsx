@@ -1,10 +1,9 @@
-import { View, Text, Image, ScrollView, TouchableOpacity, StyleSheet } from 'react-native'
-import { router } from 'expo-router'
-import { LinearGradient } from 'expo-linear-gradient'
-import type { Provider } from '@/hooks/useProviders'
+import { View, Text, ScrollView, StyleSheet } from 'react-native'
+import type { Provider, Category } from '@/hooks/useProviders'
 import { buildDiscoveryLanes, DiscoveryProvider } from '@/lib/discovery'
-import { cacheBustedPhoto } from '@/lib/image'
 import { displayRating } from '@/lib/reputationLabel'
+import { useTheme } from '@/context/ThemeContext'
+import ProviderCard from '@/components/ui/ProviderCard'
 
 // The visible half of the beta discovery model (Correction 3, items S and T).
 //
@@ -43,6 +42,8 @@ export interface DiscoveryLanesProps {
   openTodayIds?: Set<string> | null
   viewerNeighborhood?: string | null
   viewerLocation?: string | null
+  /** For resolving a provider's trade name on the card. */
+  categories?: Category[]
 }
 
 // The mapping from the fetched row to the ONLY facts the rules are allowed to
@@ -72,44 +73,10 @@ function toDiscoveryProvider(p: Provider, openToday: Set<string> | null): Discov
   }
 }
 
-function LaneCard({ provider }: { provider: Provider }) {
-  const image = provider.heroImage ?? provider.profile_photo_url
-  return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      style={s.card}
-      onPress={() => router.push({ pathname: '/providers/[id]', params: { id: provider.id } })}
-    >
-      {image ? (
-        <Image
-          source={{ uri: cacheBustedPhoto(image) }}
-          style={StyleSheet.absoluteFill}
-          resizeMode="cover"
-        />
-      ) : (
-        // NO PENALTY FOR HAVING NO PHOTOS. A provider with no portfolio still
-        // appears in the row, in their proper place — they get a plain card, not
-        // a worse position. Placement is decided in lib/discovery.ts, which
-        // cannot see content at all.
-        <View style={s.cardBlank} />
-      )}
-      <LinearGradient
-        colors={['transparent', 'rgba(8,8,8,0.92)']}
-        locations={[0.4, 1]}
-        style={StyleSheet.absoluteFill}
-      />
-      <View style={s.cardInfo}>
-        <Text style={s.cardName} numberOfLines={1}>
-          {provider.display_name}
-        </Text>
-        {provider.neighborhood ? (
-          <Text style={s.cardMeta} numberOfLines={1}>
-            {provider.neighborhood}
-          </Text>
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  )
+const LANE_CARD_WIDTH = 148
+
+function tradeName(p: Provider, categories: Category[]): string | null {
+  return categories.find((c) => c.id === p.category_id)?.name ?? p.custom_category ?? null
 }
 
 export default function DiscoveryLanes({
@@ -117,7 +84,9 @@ export default function DiscoveryLanes({
   openTodayIds = null,
   viewerNeighborhood = null,
   viewerLocation = null,
+  categories = [],
 }: DiscoveryLanesProps) {
+  const { colors, type } = useTheme()
   const byId = new Map(providers.map((p) => [p.id, p]))
   const lanes = buildDiscoveryLanes({
     providers: providers.map((p) => toDiscoveryProvider(p, openTodayIds)),
@@ -130,8 +99,15 @@ export default function DiscoveryLanes({
     <View>
       {lanes.map((lane) => (
         <View key={lane.key} style={s.lane}>
-          <Text style={s.laneTitle}>{lane.title}</Text>
-          <Text style={s.laneSubtitle}>{lane.subtitle}</Text>
+          <Text style={[type.titleCard, s.laneTitle, { color: colors.textPrimary }]}>
+            {lane.title}
+          </Text>
+          {/* THE SUBTITLE IS THE RULE, and it stays visible. A provider whose
+              living depends on this feed is entitled to know why they are in a
+              row — or why they are not. */}
+          <Text style={[type.bodySmall, s.laneSubtitle, { color: colors.textSecondary }]}>
+            {lane.subtitle}
+          </Text>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
@@ -139,7 +115,28 @@ export default function DiscoveryLanes({
           >
             {lane.providers.map((lp) => {
               const provider = byId.get(lp.id)
-              return provider ? <LaneCard key={lp.id} provider={provider} /> : null
+              if (!provider) return null
+              return (
+                <ProviderCard
+                  key={lp.id}
+                  variant="lane"
+                  width={LANE_CARD_WIDTH}
+                  testID={`lane-card-${lane.key}`}
+                  provider={{
+                    id: provider.id,
+                    displayName: provider.display_name,
+                    businessName: provider.business_name,
+                    trade: tradeName(provider, categories),
+                    neighborhood: provider.neighborhood,
+                    image: provider.heroImage ?? provider.profile_photo_url,
+                    averageRating: provider.average_rating,
+                    rating: provider.rating,
+                    // Deliberately NOT passed: the lane itself is the open-today
+                    // statement, so a chip on every card inside it repeats one
+                    // fact twelve times.
+                  }}
+                />
+              )
             })}
           </ScrollView>
         </View>
@@ -149,36 +146,8 @@ export default function DiscoveryLanes({
 }
 
 const s = StyleSheet.create({
-  lane: { marginTop: 22 },
-  laneTitle: {
-    paddingHorizontal: 24,
-    fontSize: 18,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  laneSubtitle: {
-    paddingHorizontal: 24,
-    marginTop: 2,
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  laneRow: { paddingHorizontal: 24, paddingTop: 12, gap: 12 },
-  card: {
-    width: 132,
-    height: 176,
-    borderRadius: 18,
-    borderCurve: 'continuous',
-    overflow: 'hidden',
-    backgroundColor: 'rgba(240,232,213,0.05)',
-  },
-  cardBlank: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(240,232,213,0.05)' },
-  cardInfo: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 12 },
-  cardName: { fontSize: 14, color: '#F0E8D5', fontFamily: 'Manrope_600SemiBold' },
-  cardMeta: {
-    marginTop: 2,
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.6)',
-    fontFamily: 'Manrope_400Regular',
-  },
+  lane: { marginTop: 28 },
+  laneTitle: { paddingHorizontal: 20 },
+  laneSubtitle: { paddingHorizontal: 20, marginTop: 2 },
+  laneRow: { paddingHorizontal: 20, paddingTop: 14, gap: 12 },
 })

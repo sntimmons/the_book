@@ -10,6 +10,7 @@ import {
   intentLabel,
   timeAgo,
 } from '@/lib/community'
+import { useTheme } from '@/context/ThemeContext'
 
 // ── COMMUNITY, ON DISCOVER ────────────────────────────────────────────────
 //
@@ -33,6 +34,9 @@ import {
 // design rather than degraded.
 
 export default function DiscoverCommunity() {
+  // Phase 4B: Discover migrated onto the Third theme, and this block sits
+  // inside it, so it answers the same appearance.
+  const { colors } = useTheme()
   const { user } = useAuth()
   const [data, setData] = useState<{
     openToday: CommunityPostView[]
@@ -66,12 +70,12 @@ export default function DiscoverCommunity() {
   return (
     <View style={s.wrap}>
       <View style={s.head}>
-        <Text style={s.eyebrow}>Community</Text>
+        <Text style={[s.eyebrow, { color: colors.statusLocal }]}>Community</Text>
         <TouchableOpacity onPress={() => openCommunity()} activeOpacity={0.8}>
-          <Text style={s.seeAll}>Open</Text>
+          <Text style={[s.seeAll, { color: colors.actionText }]}>Open</Text>
         </TouchableOpacity>
       </View>
-      <Text style={s.sub}>
+      <Text style={[s.sub, { color: colors.textSecondary }]}>
         Ask for a recommendation, see who is open today, or tell people about someone good.
       </Text>
 
@@ -82,7 +86,7 @@ export default function DiscoverCommunity() {
         {CLIENT_INTENTS.map((i) => (
           <TouchableOpacity
             key={i.key}
-            style={s.askCard}
+            style={[s.askCard, { backgroundColor: colors.bgSurface }]}
             activeOpacity={0.85}
             onPress={() =>
               user
@@ -93,20 +97,20 @@ export default function DiscoverCommunity() {
                 : router.push('/auth/signin' as never)
             }
           >
-            <Feather name={i.icon as never} size={15} color="#C8922A" />
-            <Text style={s.askTitle}>{i.label}</Text>
+            <Feather name={i.icon as never} size={15} color={colors.statusLocal} />
+            <Text style={[s.askTitle, { color: colors.textPrimary }]}>{i.label}</Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
       {!user ? (
         <TouchableOpacity
-          style={s.signedOut}
+          style={[s.signedOut, { backgroundColor: colors.bgSurface }]}
           activeOpacity={0.85}
           onPress={() => router.push('/auth/signin' as never)}
         >
-          <Text style={s.signedOutText}>Sign in to see what people are asking</Text>
-          <Feather name="chevron-right" size={15} color="rgba(240,232,213,0.4)" />
+          <Text style={[s.signedOutText, { color: colors.textSecondary }]}>Sign in to see what people are asking</Text>
+          <Feather name="chevron-right" size={15} color={colors.textSecondary} />
         </TouchableOpacity>
       ) : null}
 
@@ -147,25 +151,26 @@ function Group({
   posts: CommunityPostView[]
   onSeeAll: () => void
 }) {
+  const { colors } = useTheme()
   return (
     <View style={{ gap: 8 }}>
       <View style={s.groupHead}>
-        <Text style={s.groupTitle}>{title}</Text>
+        <Text style={[s.groupTitle, { color: colors.textPrimary }]}>{title}</Text>
         <TouchableOpacity onPress={onSeeAll} activeOpacity={0.8}>
-          <Feather name="chevron-right" size={16} color="rgba(240,232,213,0.35)" />
+          <Feather name="chevron-right" size={16} color={colors.textSecondary} />
         </TouchableOpacity>
       </View>
       {posts.map((p) => (
         <TouchableOpacity
           key={p.id}
-          style={s.item}
+          style={[s.item, { backgroundColor: colors.bgSurface }]}
           activeOpacity={0.85}
           onPress={() => router.push(`/community/${p.id}` as never)}
         >
-          <Text style={s.itemMeta} numberOfLines={1}>
+          <Text style={[s.itemMeta, { color: colors.textSecondary }]} numberOfLines={1}>
             {p.author.name} · {intentLabel(p.intent)} · {timeAgo(p.createdAt)}
           </Text>
-          <Text style={s.itemText} numberOfLines={2}>
+          <Text style={[s.itemText, { color: colors.textPrimary }]} numberOfLines={2}>
             {p.content}
           </Text>
         </TouchableOpacity>
@@ -178,13 +183,12 @@ const s = StyleSheet.create({
   wrap: { paddingHorizontal: 16, paddingTop: 28, gap: 10 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   eyebrow: {
-    color: 'rgba(240,232,213,0.45)',
     fontSize: 11,
     letterSpacing: 1.4,
     textTransform: 'uppercase',
   },
-  seeAll: { color: '#C8922A', fontSize: 12, fontWeight: '600' },
-  sub: { color: 'rgba(240,232,213,0.4)', fontSize: 12, lineHeight: 17 },
+  seeAll: { fontSize: 12, fontWeight: '600' },
+  sub: { fontSize: 12, lineHeight: 17 },
   row: { gap: 8, paddingVertical: 4 },
   askCard: {
     flexDirection: 'row',
@@ -193,9 +197,8 @@ const s = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 999,
-    backgroundColor: 'rgba(240,232,213,0.05)',
   },
-  askTitle: { color: 'rgba(240,232,213,0.8)', fontSize: 12, fontWeight: '600' },
+  askTitle: { fontSize: 12, fontWeight: '600' },
   signedOut: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -203,22 +206,20 @@ const s = StyleSheet.create({
     paddingVertical: 11,
     paddingHorizontal: 12,
     borderRadius: 12,
-    backgroundColor: 'rgba(240,232,213,0.04)',
   },
-  signedOutText: { color: 'rgba(240,232,213,0.55)', fontSize: 12 },
+  signedOutText: { fontSize: 12 },
   groupHead: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginTop: 8,
   },
-  groupTitle: { color: 'rgba(240,232,213,0.7)', fontSize: 13, fontWeight: '600' },
+  groupTitle: { fontSize: 13, fontWeight: '600' },
   item: {
     padding: 11,
     borderRadius: 12,
-    backgroundColor: 'rgba(240,232,213,0.04)',
     gap: 4,
   },
-  itemMeta: { color: 'rgba(240,232,213,0.35)', fontSize: 11 },
-  itemText: { color: 'rgba(240,232,213,0.82)', fontSize: 13, lineHeight: 18 },
+  itemMeta: { fontSize: 11 },
+  itemText: { fontSize: 13, lineHeight: 18 },
 })

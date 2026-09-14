@@ -1,226 +1,73 @@
-import { useMemo, useRef, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   View,
   Text,
-  Image,
   ScrollView,
+  Pressable,
   TouchableOpacity,
-  Animated,
-  ActivityIndicator,
   StyleSheet,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native'
-import { LinearGradient } from 'expo-linear-gradient'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Ionicons } from '@expo/vector-icons'
+import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import {
   useProviders,
   useCategories,
-  fetchOpenTodayProviderIds,
   fetchDiscoveryPool,
+  fetchOpenTodayProviderIds,
   Provider,
   Category,
 } from '../../hooks/useProviders'
-import { cacheBustedPhoto } from '../../lib/image'
 import { supabase } from '../../lib/supabase'
 import DiscoveryLanes from '../../components/DiscoveryLanes'
 import DiscoverCommunity from '../../components/DiscoverCommunity'
+import ProviderCard from '../../components/ui/ProviderCard'
+import EmptyState from '../../components/ui/EmptyState'
+import ErrorState from '../../components/ui/ErrorState'
 import { useAuth } from '../../context/AuthContext'
+import { useTheme } from '../../context/ThemeContext'
 import { fetchDueReminder, CareReminder } from '../../lib/care'
-import { displayRating } from '../../lib/reputationLabel'
 
-// ── Shimmer skeleton ──────────────────────────────────────────────────────────
-
-function Shimmer({ style }: { style: any }) {
-  const opacity = useRef(new Animated.Value(0.4)).current
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(opacity, { toValue: 0.8, duration: 800, useNativeDriver: true }),
-        Animated.timing(opacity, { toValue: 0.4, duration: 800, useNativeDriver: true }),
-      ])
-    ).start()
-    return () => opacity.stopAnimation()
-  }, [opacity])
-
-  return (
-    <Animated.View style={[{ backgroundColor: 'rgba(240,232,213,0.06)', opacity }, style]} />
-  )
-}
-
-// ── Person silhouette placeholder (missing photo) ─────────────────────────────
-
-function Silhouette({ size = 48 }: { size?: number }) {
-  const head = size * 0.36
-  const bodyW = size * 0.52
-  const bodyH = size * 0.27
-  const c = 'rgba(240,232,213,0.12)'
-  return (
-    <View style={{ alignItems: 'center', gap: size * 0.06 }}>
-      <View style={{ width: head, height: head, borderRadius: head / 2, backgroundColor: c }} />
-      <View
-        style={{
-          width: bodyW,
-          height: bodyH,
-          borderTopLeftRadius: bodyH,
-          borderTopRightRadius: bodyH,
-          backgroundColor: c,
-        }}
-      />
-    </View>
-  )
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function categoryName(categoryId: number | null | undefined, categories: Category[]) {
-  if (categoryId == null) return ''
-  return categories.find((c) => c.id === categoryId)?.name ?? ''
-}
-
-function ratingLabel(p: Provider): string {
-  // `> 0`, not `!= null`: average_rating is NOT NULL DEFAULT 0, so an unrated
-  // provider was being advertised here as ★ 0.0. See displayRating.
-  const r = displayRating(p)
-  return r != null ? r.toFixed(1) : 'New'
-}
-
-// ── Masonry layout ────────────────────────────────────────────────────────────
+// DISCOVER — the screen everyone lands on.
 //
-// Card heights follow the Figma rhythm (one extra-large, one large, the rest
-// medium/small). The height a card gets is keyed off its POSITION in the feed,
-// never off the provider's identity or rating — so as the feed order changes the
-// "big" slots rotate through different providers rather than permanently
-// spotlighting the same few. Cards are then packed shortest-column-first to get
-// the staggered two-column look.
-const CARD_HEIGHTS = [380, 220, 220, 240, 240, 300]
+// Phase 4B migrated it onto the Third semantic theme, so Light / Dark / System
+// all work from one tree. It was the last primary surface still painted in the
+// legacy dark palette, and the only one that could not render in Light at all.
+//
+// ── WHY THE GRID IS UNIFORM ───────────────────────────────────────────────
+//
+// It was a two-column MASONRY with tile heights of 380 / 300 / 240 / 220 chosen
+// by list position, and the tall tiles were visibly more important — a bigger
+// photo, a 24pt name, a label pill. That is unearned prominence handed out by
+// array index. The lanes above work hard to rank nobody (lib/discovery.ts sorts
+// on a meaningless hash precisely so ties favour nobody), and a grid that made
+// the first provider look like the best one quietly undid it. Every card in the
+// browse surface now has the same structural weight.
+//
+// ── WHAT IS NOT HERE ANY MORE ─────────────────────────────────────────────
+//
+// The "Featured" and "Trending" badges: both columns are DEFAULT false, pinned
+// immutable by the providers UPDATE policy, and written by nothing in the
+// product — so the badges could never appear, and if they ever could, "Trending"
+// is a popularity claim the beta does not make. The "Our Philosophy" block: a
+// centred marketing stack in the middle of a browse surface. The human
+// silhouette placeholder: see ProviderCard.
 
-function heightForIndex(i: number): number {
-  return CARD_HEIGHTS[i % CARD_HEIGHTS.length]
-}
+const GUTTER = 20
+const COLUMN_GAP = 12
 
-interface Tile {
-  provider: Provider
-  height: number
-}
-
-function packColumns(providers: Provider[]): [Tile[], Tile[]] {
-  const cols: [Tile[], Tile[]] = [[], []]
-  const heights = [0, 0]
-  providers.forEach((provider, i) => {
-    const height = heightForIndex(i)
-    const target = heights[0] <= heights[1] ? 0 : 1
-    cols[target].push({ provider, height })
-    heights[target] += height + 16
-  })
-  return cols
-}
-
-// ── Provider tile ─────────────────────────────────────────────────────────────
-
-function ProviderTile({
-  provider,
-  height,
-  categories,
-}: {
-  provider: Provider
-  height: number
-  categories: Category[]
-}) {
-  const tier = height >= 360 ? 'xl' : height >= 300 ? 'lg' : 'sm'
-  const big = tier !== 'sm'
-  const cat =
-    categoryName(provider.category_id, categories) ||
-    provider.custom_category ||
-    ''
-  // Badge uses real signal only — featured first, then trending. Shown on the
-  // extra-large card where the Figma places a label pill.
-  const badge =
-    tier === 'xl'
-      ? provider.is_featured
-        ? 'Featured'
-        : provider.is_trending
-          ? 'Trending'
-          : null
-      : null
-
-  return (
-    <TouchableOpacity
-      activeOpacity={0.85}
-      onPress={() => router.push(`/providers/${provider.id}` as any)}
-      style={[
-        s.tile,
-        { height, borderRadius: big ? 32 : 16 },
-      ]}
-    >
-      {(() => {
-        // Prefer the provider's best portfolio photo; fall back to their
-        // profile photo, then the silhouette placeholder.
-        const cardImage = provider.heroImage ?? provider.profile_photo_url
-        return cardImage ? (
-          <Image
-            source={{ uri: cacheBustedPhoto(cardImage) }}
-            style={StyleSheet.absoluteFill}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={s.tileCenter}>
-            <Silhouette size={big ? 56 : 44} />
-          </View>
-        )
-      })()}
-
-      <LinearGradient
-        colors={['transparent', 'rgba(8,8,8,0.9)']}
-        locations={[0.45, 1]}
-        style={StyleSheet.absoluteFill}
-      />
-
-      <View style={[s.tileInfo, { padding: big ? 24 : 16 }]}>
-        <View style={s.tileTopRow}>
-          {badge && (
-            <View style={s.badge}>
-              <Text style={s.badgeText}>{badge}</Text>
-            </View>
-          )}
-          <View style={s.ratingRow}>
-            <Text style={[s.star, { fontSize: big ? 12 : 10 }]}>★</Text>
-            <Text style={[s.ratingText, { fontSize: big ? 12 : 10 }]}>
-              {ratingLabel(provider)}
-            </Text>
-          </View>
-        </View>
-
-        <Text
-          style={[
-            s.tileName,
-            { fontSize: tier === 'xl' ? 24 : tier === 'lg' ? 20 : 14 },
-          ]}
-          numberOfLines={1}
-        >
-          {provider.display_name}
-        </Text>
-
-        {cat ? (
-          <Text style={[s.tileCat, { fontSize: big ? 12 : 10 }]} numberOfLines={1}>
-            {cat}
-          </Text>
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  )
-}
-
-// ── Main component ────────────────────────────────────────────────────────────
-
-// Subtle, dismissable nudge shown at the top of Discover when the client has a
-// rebook reminder due (within 3 days). One banner max; dismissing stores a
-// timestamp in AsyncStorage so the same reminder stays hidden for 24 hours.
+// ── A rebook nudge, kept quiet ────────────────────────────────────────────
+//
+// Real and useful: it fires from a due care reminder the client set, it is
+// dismissable for 24 hours, and it opens /care. It is also personal rather than
+// marketplace, so it reads as one plain row — no accent colour, no card, no
+// icon tile. A shortcut, not an advertisement.
 function RebookBanner() {
   const { user } = useAuth()
+  const { colors, type } = useTheme()
   const [reminder, setReminder] = useState<CareReminder | null>(null)
 
   useEffect(() => {
@@ -259,62 +106,117 @@ function RebookBanner() {
   }
 
   return (
-    <TouchableOpacity
-      style={s.rebookBanner}
-      activeOpacity={0.9}
-      onPress={() => router.push('/care' as never)}
-    >
-      <View style={s.rebookIcon}>
-        <Ionicons name="time-outline" size={16} color="#C8922A" />
-      </View>
-      <Text style={s.rebookText} numberOfLines={1}>
-        Time to rebook {active.serviceName}
-      </Text>
+    <View style={[s.rebook, { borderColor: colors.borderSubtle }]}>
+      <Pressable
+        style={s.rebookMain}
+        onPress={() => router.push('/care' as never)}
+        accessibilityRole="button"
+        accessibilityLabel={`Time to rebook ${active.serviceName}`}
+        testID="discover-rebook"
+      >
+        <Feather name="clock" size={14} color={colors.textSecondary} />
+        <Text
+          numberOfLines={1}
+          style={[type.bodySmall, s.rebookText, { color: colors.textPrimary }]}
+        >
+          Time to rebook {active.serviceName}
+        </Text>
+      </Pressable>
       <TouchableOpacity
         onPress={dismiss}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityRole="button"
+        accessibilityLabel="Dismiss rebook reminder"
       >
-        <Ionicons name="close" size={16} color="rgba(240,232,213,0.4)" />
+        <Feather name="x" size={15} color={colors.textSecondary} />
       </TouchableOpacity>
-    </TouchableOpacity>
+    </View>
   )
+}
+
+function Pill({
+  label,
+  active,
+  onPress,
+}: {
+  label: string
+  active: boolean
+  onPress: () => void
+}) {
+  const { colors, type } = useTheme()
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={[
+        s.pill,
+        {
+          backgroundColor: active ? colors.actionPrimary : 'transparent',
+          borderColor: active ? colors.actionPrimary : colors.borderSubtle,
+        },
+      ]}
+    >
+      <Text style={[type.labelMeta, { color: active ? colors.textOnAction : colors.textSecondary }]}>
+        {label}
+      </Text>
+    </Pressable>
+  )
+}
+
+function tradeName(p: Provider, categories: Category[]): string | null {
+  return categories.find((c) => c.id === p.category_id)?.name ?? p.custom_category ?? null
 }
 
 export default function DiscoveryFeed() {
   const insets = useSafeAreaInsets()
+  const { colors, type } = useTheme()
   const { width } = useWindowDimensions()
   const [activeCategoryId, setActiveCategoryId] = useState<number | null>(null)
+  const { user } = useAuth()
 
-  const { user, isProvider } = useAuth()
-  // The viewer's own neighborhood, for the Near You lane. Read once and allowed
-  // to fail silently: a missing value simply drops that one lane (the module
-  // omits it rather than guessing a location), which is the right failure — a
+  // The viewer's own area, for Near You and for the header. A missing value
+  // drops that one lane — the module never guesses a location, because a
   // "Near You" row built on a guess is worse than no row.
   const [viewerNeighborhood, setViewerNeighborhood] = useState<string | null>(null)
-  // The "Available Soon" lane's input. Null until it is known — the lane is
-  // omitted rather than guessed, because a row whose name is a claim must not be
-  // built from an unanswered question.
+  // NULL IS NOT "NOBODY". Null means the server was not asked or could not
+  // answer, and the Open Today lane is then absent rather than claiming nobody
+  // is open.
   const [openToday, setOpenToday] = useState<Set<string> | null>(null)
-  // The lanes' own provider set. NOT the feed's current page — see
-  // `fetchDiscoveryPool` for why that made "New to The Book" exclude new
-  // providers, and made lane membership shift as the grid paged.
+  // The lanes' own provider set, separate from the grid's current page.
   const [lanePool, setLanePool] = useState<Provider[]>([])
+  // Distinct from an empty pool: the read FAILED. Collapsing the two rendered a
+  // network failure as a marketplace with nobody in it.
+  const [poolFailed, setPoolFailed] = useState(false)
+
+  const { categories } = useCategories()
+  const { providers, loading, loadingMore, hasMore, error, fetchMore, refetch } = useProviders(
+    activeCategoryId ?? undefined,
+    20,
+  )
+
+  const loadLanes = useCallback(async () => {
+    const [ids, pool] = await Promise.all([fetchOpenTodayProviderIds(), fetchDiscoveryPool()])
+    setOpenToday(ids)
+    if (pool === null) {
+      setPoolFailed(true)
+      setLanePool([])
+      return
+    }
+    setPoolFailed(false)
+    setLanePool(pool)
+  }, [])
 
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const [ids, pool] = await Promise.all([
-        fetchOpenTodayProviderIds(),
-        fetchDiscoveryPool(),
-      ])
       if (cancelled) return
-      setOpenToday(ids)
-      setLanePool(pool)
+      await loadLanes()
     })()
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [loadLanes])
 
   useEffect(() => {
     let cancelled = false
@@ -337,80 +239,124 @@ export default function DiscoveryFeed() {
     }
   }, [user?.id])
 
-  const { providers, loading, loadingMore, hasMore, fetchMore } = useProviders(
-    activeCategoryId ?? undefined,
-    20,
+  const cardWidth = useMemo(
+    () => Math.floor((width - GUTTER * 2 - COLUMN_GAP) / 2),
+    [width],
   )
-  const { categories } = useCategories()
+  const [leftCol, rightCol] = useMemo(() => {
+    const l: Provider[] = []
+    const r: Provider[] = []
+    providers.forEach((p, i) => (i % 2 === 0 ? l : r).push(p))
+    return [l, r]
+  }, [providers])
 
-  const colW = (width - 48 - 16) / 2
+  // A FAILURE IS NOT AN EMPTY MARKETPLACE. Only claim nobody is here when the
+  // reads actually succeeded and returned nothing.
+  const failed = !loading && (!!error || (poolFailed && providers.length === 0))
+  const isEmpty = !loading && !failed && providers.length === 0
 
-  const [leftCol, rightCol] = useMemo(() => packColumns(providers), [providers])
+  function retry() {
+    setPoolFailed(false)
+    void loadLanes()
+    refetch()
+  }
 
-  const showEmptyState = !loading && providers.length === 0
+  function renderCard(p: Provider) {
+    return (
+      <ProviderCard
+        key={p.id}
+        variant="grid"
+        width={cardWidth}
+        testID="discover-grid-card"
+        provider={{
+          id: p.id,
+          displayName: p.display_name,
+          businessName: p.business_name,
+          trade: tradeName(p, categories),
+          neighborhood: p.neighborhood,
+          image: p.heroImage ?? p.profile_photo_url,
+          averageRating: p.average_rating,
+          rating: p.rating,
+          openToday: openToday === null ? null : openToday.has(p.id),
+        }}
+      />
+    )
+  }
 
   return (
-    <View style={s.root}>
+    <View style={[s.root, { backgroundColor: colors.bgCanvas }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[s.scrollContent, { paddingTop: insets.top }]}
+        contentContainerStyle={[s.scroll, { paddingTop: insets.top + 8 }]}
       >
-        {/* ── Header ──────────────────────────────────────────────────────── */}
+        {/* ── Header ─────────────────────────────────────────────────────── */}
         <View style={s.header}>
-          <View style={s.headingWrap}>
-            <Text style={s.heading}>Discover</Text>
-            <Text style={s.subheading}>Curated beauty for you</Text>
+          <View style={s.headerText}>
+            <Text style={[type.displayScreen, { color: colors.textPrimary }]}>Discover</Text>
+            {/* AREA CONTEXT, AND A REAL CONTROL. "Near You" is meaningless if
+                the viewer cannot see or change what "near" means. When they have
+                not set one this reads "Set your area" and opens the SAME profile
+                editor that owns clients.neighborhood — no second flow, no GPS,
+                no invented value. */}
+            <Pressable
+              onPress={() => router.push('/me/edit' as never)}
+              accessibilityRole="button"
+              accessibilityLabel={
+                viewerNeighborhood ? `Your area: ${viewerNeighborhood}. Change it.` : 'Set your area'
+              }
+              style={s.areaRow}
+              testID="discover-area"
+            >
+              <Feather name="map-pin" size={12} color={colors.statusLocal} />
+              <Text style={[type.bodySmall, { color: colors.statusLocal }]}>
+                {viewerNeighborhood ?? 'Set your area'}
+              </Text>
+            </Pressable>
           </View>
           <View style={s.headerActions}>
-            {/* ITEM P (Correction 3): a provider's route into their own business,
-                from the screen they actually open.
-
-                The ONLY door into the dashboard was Me → My Studio, which meant a
-                provider checking their requests had to go through their personal
-                profile to get there. Me stays personal — this does not move
-                anything out of it — but a provider working is not doing something
-                personal, and the tab they land on should not make them detour
-                through their own profile page to answer a client.
-
-                Clients never see it. */}
-            {isProvider ? (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                style={[s.searchBtn, s.businessBtn]}
-                accessibilityLabel="Go to your business dashboard"
-                onPress={() => router.push('/(tabs)/business' as any)}
-              >
-                <Ionicons name="briefcase-outline" size={16} color="#C8922A" />
-              </TouchableOpacity>
-            ) : null}
             <TouchableOpacity
-              activeOpacity={0.7}
-              style={s.searchBtn}
-              onPress={() => router.push('/notifications' as any)}
+              style={[s.iconBtn, { borderColor: colors.borderSubtle }]}
+              onPress={() => router.push('/notifications' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Notifications"
             >
-              <Ionicons name="notifications-outline" size={17} color="rgba(240,232,213,0.8)" />
+              <Feather name="bell" size={17} color={colors.textPrimary} />
             </TouchableOpacity>
             <TouchableOpacity
-              activeOpacity={0.7}
-              style={s.searchBtn}
-              onPress={() => router.push('/(tabs)/search' as any)}
+              style={[s.iconBtn, { borderColor: colors.borderSubtle }]}
+              onPress={() => router.push('/(tabs)/me' as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Your profile"
             >
-              <Ionicons name="search" size={16} color="rgba(240,232,213,0.8)" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              style={s.avatarBtn}
-              onPress={() => router.push('/(tabs)/me' as any)}
-            >
-              <Ionicons name="person" size={18} color="rgba(240,232,213,0.7)" />
+              <Feather name="user" size={17} color={colors.textPrimary} />
             </TouchableOpacity>
           </View>
         </View>
 
-        {/* ── Rebook nudge (client, dismissable) ──────────────────────────── */}
+        {/* ── Search ─────────────────────────────────────────────────────── */}
+        {/* A field, not an icon: finding someone is the first thing this screen
+            is for, and it used to cost an icon-hunt in a four-action header.
+            Tapping opens the EXISTING search screen — this is an entry point,
+            not a second search implementation. */}
+        <Pressable
+          onPress={() => router.push('/(tabs)/search' as never)}
+          accessibilityRole="search"
+          accessibilityLabel="Search providers"
+          testID="discover-search-entry"
+          style={[
+            s.search,
+            { backgroundColor: colors.bgSurface, borderColor: colors.borderSubtle },
+          ]}
+        >
+          <Feather name="search" size={16} color={colors.textSecondary} />
+          <Text style={[type.bodyDefault, { color: colors.textSecondary }]}>
+            Search braiders, barbers, nails…
+          </Text>
+        </Pressable>
+
         <RebookBanner />
 
-        {/* ── Category pills ──────────────────────────────────────────────── */}
+        {/* ── Categories ─────────────────────────────────────────────────── */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -432,435 +378,188 @@ export default function DiscoveryFeed() {
           ))}
         </ScrollView>
 
-        {/* ── BETA DISCOVERY LANES (Correction 3, items S and T) ──────────
-            Visible rows with visible rules, ABOVE the complete grid — never
-            instead of it. The lanes order attention; the grid below is still
-            every approved provider, so a provider who does not fit a capped row
-            is not hidden by one. Shown only on the unfiltered feed: inside a
-            category the viewer has already told us what they want, and a second
-            set of rows would be re-sorting a set they narrowed on purpose.
-
-            The rules themselves are in lib/discovery.ts, including the fairness
-            rule that no marketplace lane may rank on social content. */}
-        {!loading && activeCategoryId === null && lanePool.length > 0 ? (
+        {/* ── Lanes ──────────────────────────────────────────────────────── */}
+        {/* Above the complete grid, never instead of it. Hidden inside a
+            category filter: the viewer has already said what they want, and a
+            second set of rows would re-sort a set they narrowed on purpose. */}
+        {!loading && !failed && activeCategoryId === null && lanePool.length > 0 ? (
           <DiscoveryLanes
             providers={lanePool}
             openTodayIds={openToday}
             viewerNeighborhood={viewerNeighborhood}
-            // The neighborhood picker stores a "Midtown, Houston"-shaped value,
-            // so the same string carries the city fallback. It is passed
-            // explicitly rather than derived inside the module: the module does
-            // not get to invent a location for a viewer who has not given one.
+            // The picker stores a "Midtown, Houston"-shaped value, so the same
+            // string carries the city fallback. Passed explicitly rather than
+            // derived inside the module: the module does not get to invent a
+            // location for a viewer who has not given one.
             viewerLocation={viewerNeighborhood}
+            categories={categories}
           />
         ) : null}
 
-        {/* ── Feed ────────────────────────────────────────────────────────── */}
+        {/* ── Browse ─────────────────────────────────────────────────────── */}
+        <View style={s.browseHead}>
+          <Text style={[type.titleCard, { color: colors.textPrimary }]}>
+            {activeCategoryId === null ? 'Everyone on Third' : 'In this category'}
+          </Text>
+        </View>
+
         {loading ? (
-          <View style={s.gridWrap}>
-            <View style={[s.col, { width: colW }]}>
-              <Shimmer style={[s.tile, { height: 380, borderRadius: 32 }]} />
-              <Shimmer style={[s.tile, { height: 240, borderRadius: 16 }]} />
-            </View>
-            <View style={[s.col, { width: colW }]}>
-              <Shimmer style={[s.tile, { height: 220, borderRadius: 16 }]} />
-              <Shimmer style={[s.tile, { height: 220, borderRadius: 16 }]} />
-              <Shimmer style={[s.tile, { height: 300, borderRadius: 32 }]} />
-            </View>
+          <View style={s.grid}>
+            {[0, 1].map((col) => (
+              <View key={col} style={[s.col, { width: cardWidth }]}>
+                {[0, 1, 2].map((i) => (
+                  <View
+                    key={i}
+                    style={[
+                      s.skeleton,
+                      { width: cardWidth, height: cardWidth * 0.92 + 44, backgroundColor: colors.bgSubtle },
+                    ]}
+                  />
+                ))}
+              </View>
+            ))}
           </View>
-        ) : showEmptyState ? (
-          <View style={s.emptyWrap}>
-            <Silhouette size={56} />
-            <Text style={s.emptyTitle}>
-              {activeCategoryId === null
-                ? 'No providers yet in Houston.'
-                : 'No providers in this category yet.'}
-            </Text>
-            <Text style={s.emptySub}>
-              {activeCategoryId === null
-                ? 'Be the first to join.'
-                : 'Try another category.'}
-            </Text>
-            {activeCategoryId !== null && (
-              <TouchableOpacity
-                style={s.emptyBtn}
-                activeOpacity={0.85}
-                onPress={() => setActiveCategoryId(null)}
-              >
-                <Text style={s.emptyBtnText}>Show all</Text>
-              </TouchableOpacity>
-            )}
-          </View>
+        ) : failed ? (
+          <ErrorState
+            title="Couldn't load providers"
+            body="Something went wrong reaching Third. Your connection may have dropped."
+            onRetry={retry}
+            testID="discover-error"
+          />
+        ) : isEmpty ? (
+          <EmptyState
+            title={
+              activeCategoryId === null
+                ? 'No providers on Third yet'
+                : 'No providers in this category yet'
+            }
+            body={
+              activeCategoryId === null
+                ? 'Houston is just getting started.'
+                : 'Try another category, or browse everyone.'
+            }
+            action={
+              activeCategoryId !== null ? (
+                <Pressable
+                  onPress={() => setActiveCategoryId(null)}
+                  accessibilityRole="button"
+                  style={[s.emptyBtn, { backgroundColor: colors.actionPrimary }]}
+                >
+                  <Text style={[type.labelAction, { color: colors.textOnAction }]}>Show all</Text>
+                </Pressable>
+              ) : null
+            }
+            testID="discover-empty"
+          />
         ) : (
-          <View style={s.gridWrap}>
-            <View style={[s.col, { width: colW }]}>
-              {leftCol.map((t) => (
-                <ProviderTile
-                  key={t.provider.id}
-                  provider={t.provider}
-                  height={t.height}
-                  categories={categories}
-                />
-              ))}
-            </View>
-            <View style={[s.col, { width: colW }]}>
-              {rightCol.map((t) => (
-                <ProviderTile
-                  key={t.provider.id}
-                  provider={t.provider}
-                  height={t.height}
-                  categories={categories}
-                />
-              ))}
-            </View>
+          <View style={s.grid}>
+            <View style={[s.col, { width: cardWidth }]}>{leftCol.map(renderCard)}</View>
+            <View style={[s.col, { width: cardWidth }]}>{rightCol.map(renderCard)}</View>
           </View>
         )}
 
-        {/* ── Community ───────────────────────────────────────────────────── */}
-        {/* BELOW the grid, and capped. Community is a doorway onto the
-            marketplace, not a replacement for it: provider discovery is the
-            page, and this is four short rows near the end of it. It reorders
-            nothing above it — no lane, no tile, no search result — because
-            social engagement is not a marketplace ranking input anywhere in
-            this product (lib/discovery.ts). Hidden inside a category filter for
-            the same reason the lanes are: the viewer has already said what they
-            want. */}
-        {!loading && activeCategoryId === null && !showEmptyState ? (
-          <DiscoverCommunity />
-        ) : null}
-
-        {/* ── Philosophy ──────────────────────────────────────────────────── */}
-        {!loading && !showEmptyState && (
-          <View style={s.philosophy}>
-            <Text style={s.philosophyEyebrow}>Our Philosophy</Text>
-            <Text style={s.philosophyQuote}>
-              {'"Talent is everywhere. The right tools make it visible."'}
-            </Text>
-            <View style={s.philosophyDivider} />
-          </View>
-        )}
-
-        {/* Load more — paginated discovery (20 per page) */}
-        {!loading && !showEmptyState && hasMore && (
-          <TouchableOpacity
-            style={s.loadMoreBtn}
-            activeOpacity={0.85}
+        {!loading && !failed && !isEmpty && hasMore ? (
+          <Pressable
             onPress={fetchMore}
             disabled={loadingMore}
+            accessibilityRole="button"
+            accessibilityLabel="Load more providers"
+            style={[s.loadMore, { borderColor: colors.borderSubtle }]}
+            testID="discover-load-more"
           >
             {loadingMore ? (
-              <ActivityIndicator color="rgba(240,232,213,0.6)" />
+              <ActivityIndicator color={colors.textSecondary} />
             ) : (
-              <Text style={s.loadMoreText}>Load more</Text>
+              <Text style={[type.labelAction, { color: colors.textPrimary }]}>Load more</Text>
             )}
-          </TouchableOpacity>
-        )}
+          </Pressable>
+        ) : null}
 
-        {/* Bottom spacer for the tab bar */}
-        <View style={{ height: 96 }} />
+        {/* ── Community ──────────────────────────────────────────────────── */}
+        {/* BELOW the grid and capped. A doorway onto the marketplace, not a
+            replacement for it — and it reorders nothing above it, because social
+            activity is not a marketplace ranking input anywhere in this product
+            (lib/discovery.ts). Hidden inside a category filter for the same
+            reason the lanes are. */}
+        {!loading && !failed && !isEmpty && activeCategoryId === null ? <DiscoverCommunity /> : null}
       </ScrollView>
     </View>
   )
 }
 
-// ── Category pill ─────────────────────────────────────────────────────────────
-
-function Pill({
-  label,
-  active,
-  onPress,
-}: {
-  label: string
-  active: boolean
-  onPress: () => void
-}) {
-  return (
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={onPress}
-      style={[s.pill, active ? s.pillActive : s.pillInactive]}
-    >
-      <Text style={[s.pillText, active ? s.pillTextActive : s.pillTextInactive]}>
-        {label}
-      </Text>
-    </TouchableOpacity>
-  )
-}
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-
 const s = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#080808',
-  },
-  scrollContent: {
-    paddingBottom: 32,
-  },
-
-  // Header
+  root: { flex: 1 },
+  scroll: { paddingBottom: 120 },
   header: {
+    paddingHorizontal: GUTTER,
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 24,
+    gap: 12,
   },
-  headingWrap: {
-    gap: 4,
-  },
-  heading: {
-    fontSize: 30,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: -0.75,
-    lineHeight: 36,
-  },
-  subheading: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  businessBtn: {
-    // `searchBtn` draws no border, so the tint needs one of its own or the
-    // colour would have nothing to sit on.
-    borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.45)',
-    backgroundColor: 'rgba(200,146,42,0.1)',
-  },
-  searchBtn: {
+  headerText: { flex: 1, gap: 4 },
+  areaRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  headerActions: { flexDirection: 'row', gap: 8, paddingTop: 4 },
+  iconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#1A1A1A',
+    borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.2)',
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-
-  // Rebook nudge banner
-  rebookBanner: {
+  search: {
+    marginTop: 20,
+    marginHorizontal: GUTTER,
+    height: 48,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth * 2,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginHorizontal: 24,
-    marginBottom: 8,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(200,146,42,0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.25)',
   },
-  rebookIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(200,146,42,0.16)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rebookText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-
-  // Category pills
-  pillScroll: {
-    marginBottom: 24,
-  },
-  pillRow: {
-    paddingHorizontal: 24,
-    gap: 8,
-    alignItems: 'center',
-  },
-  pill: {
-    paddingHorizontal: 20,
+  rebook: {
+    marginTop: 12,
+    marginHorizontal: GUTTER,
     paddingVertical: 10,
-    borderRadius: 9999,
-  },
-  pillActive: {
-    backgroundColor: '#C8922A',
-  },
-  pillInactive: {
-    backgroundColor: '#1A1A1A',
-  },
-  pillText: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  pillTextActive: {
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-  pillTextInactive: {
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
-
-  // Masonry grid
-  gridWrap: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    gap: 16,
-  },
-  col: {
-    gap: 16,
-  },
-  tile: {
-    width: '100%',
-    borderCurve: 'continuous',
-    overflow: 'hidden',
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(240,232,213,0.08)',
-  },
-  tileCenter: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tileInfo: {
-    gap: 4,
-  },
-  tileTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+    borderTopWidth: StyleSheet.hairlineWidth * 2,
+    borderBottomWidth: StyleSheet.hairlineWidth * 2,
   },
-  badge: {
-    backgroundColor: '#C8922A',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 9999,
+  rebookMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  rebookText: { flex: 1 },
+  pillScroll: { marginTop: 18 },
+  pillRow: { paddingHorizontal: GUTTER, gap: 8 },
+  pill: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth * 2,
   },
-  badgeText: {
-    fontSize: 10,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  star: {
-    color: '#C8922A',
-  },
-  ratingText: {
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: 0.4,
-  },
-  tileName: {
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: -0.3,
-  },
-  tileCat: {
-    color: '#C8922A',
-    fontFamily: 'Manrope_600SemiBold',
-    letterSpacing: 0.6,
-    textTransform: 'uppercase',
-  },
-
-  // Empty state
-  emptyWrap: {
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: 24,
-    gap: 8,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-    marginTop: 20,
-    textAlign: 'center',
-  },
-  emptySub: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
-  },
+  browseHead: { paddingHorizontal: GUTTER, marginTop: 32, marginBottom: 14 },
+  grid: { flexDirection: 'row', paddingHorizontal: GUTTER, gap: COLUMN_GAP },
+  col: { gap: 20 },
+  skeleton: { borderRadius: 14, borderCurve: 'continuous' },
   emptyBtn: {
-    marginTop: 20,
-    backgroundColor: '#F0E8D5',
-    borderRadius: 14,
-    paddingHorizontal: 20,
     height: 44,
+    paddingHorizontal: 22,
+    borderRadius: 14,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  emptyBtnText: {
-    fontSize: 14,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-
-  // Philosophy
-  loadMoreBtn: {
-    marginHorizontal: 24,
-    marginTop: 8,
+  loadMore: {
+    marginTop: 28,
+    marginHorizontal: GUTTER,
     height: 48,
     borderRadius: 14,
+    borderCurve: 'continuous',
+    borderWidth: StyleSheet.hairlineWidth * 2,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(240,232,213,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
-  },
-  loadMoreText: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.7)',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  philosophy: {
-    alignItems: 'center',
-    paddingTop: 48,
-    paddingBottom: 32,
-    paddingHorizontal: 24,
-    gap: 16,
-  },
-  philosophyEyebrow: {
-    fontSize: 10,
-    color: '#C8922A',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: 4,
-    textTransform: 'uppercase',
-    textAlign: 'center',
-  },
-  philosophyQuote: {
-    fontSize: 20,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
-    lineHeight: 32,
-  },
-  philosophyDivider: {
-    width: 48,
-    height: 1,
-    backgroundColor: 'rgba(200,146,42,0.4)',
-    marginTop: 8,
   },
 })

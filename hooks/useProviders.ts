@@ -180,7 +180,16 @@ const SEARCH_RESULT_LIMIT = 20
 // it can see, and an absent provider is indistinguishable from one that is
 // unapproved, deleted or filtered out. A directly-opened profile deliberately
 // still reads `providers` (see the view's comment).
-export async function fetchDiscoveryPool(limit: number = 200): Promise<Provider[]> {
+/**
+ * The lane pool, or NULL when the read failed.
+ *
+ * Null is not an empty marketplace. This returned `[]` for both, so a network
+ * failure rendered a Discover page with no lanes and no explanation — visually
+ * identical to "nobody has joined yet", which is a claim about the marketplace
+ * rather than a report about the request. The caller now has to decide which it
+ * is, and Discover shows a retry for one and an empty state for the other.
+ */
+export async function fetchDiscoveryPool(limit: number = 200): Promise<Provider[] | null> {
   const { data, error } = await supabase
     .from('providers_visible')
     .select(PUBLIC_PROVIDER_FIELDS)
@@ -199,9 +208,7 @@ export async function fetchDiscoveryPool(limit: number = 200): Promise<Provider[
     // under a thumb, and meaningless, so the sample favours nobody.
     .order('discovery_tiebreak', { ascending: true })
     .limit(limit)
-  // Empty, not null: the lanes simply do not render, and the complete grid below
-  // them is unaffected. There is nothing here a viewer needs to be told.
-  if (error) return []
+  if (error) return null
   return attachHeroImages((data as unknown as Provider[]) || [])
 }
 
@@ -298,9 +305,12 @@ export function useProviders(categoryId?: number, pageSize?: number) {
           // a silent placement override with no product rule behind it, which is
           // why the ruling removes it from ranking rather than leaving it dormant.
           //
-          // THE COLUMN STAYS. It still drives the "Featured" badge, which is a
-          // visible label rather than a hidden reorder. What it may no longer do is
-          // decide who is seen first.
+          // THE COLUMN STAYS, and is now read by nothing user-facing. It drove a
+          // "Featured" badge on the old Discover tile; Phase 4B removed that badge,
+          // because nothing in the product ever sets the column (no client role
+          // holds UPDATE and the row policy pins it), so the label could never
+          // appear. The column is left alone — a UI that stops reading a column is
+          // not a reason to drop it.
           //
           // ── PM RULING: UNRATED IS NEUTRAL, NOT ZERO QUALITY ───────────────
           //
@@ -332,6 +342,9 @@ export function useProviders(categoryId?: number, pageSize?: number) {
         // Cast through unknown: a runtime-string select() makes supabase-js
         // infer GenericStringError instead of our row shape.
         const page = await attachHeroImages((data as unknown as Provider[]) || [])
+        // Clear a previous failure: without this, a successful retry renders the
+        // error state over rows it just fetched.
+        setError(null)
         setHasMore(pageSize != null && page.length === pageSize)
         setProviders((prev) => (replace ? page : [...prev, ...page]))
       } catch (err: any) {
