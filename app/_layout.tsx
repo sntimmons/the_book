@@ -8,10 +8,12 @@ import {
   Manrope_500Medium,
   Manrope_600SemiBold,
   Manrope_700Bold,
+  Manrope_800ExtraBold,
 } from '@expo-google-fonts/manrope'
 import * as SplashScreen from 'expo-splash-screen'
 import * as Sentry from '@sentry/react-native'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
+import { ThemeProvider } from '@/context/ThemeContext'
 
 // Crash + error reporting. Disabled in dev (errors still hit the console) so we
 // only ingest real production failures. Must run before the root renders.
@@ -244,6 +246,7 @@ function RootLayout() {
     Manrope_500Medium,
     Manrope_600SemiBold,
     Manrope_700Bold,
+    Manrope_800ExtraBold,
   })
 
   useEffect(() => {
@@ -257,9 +260,11 @@ function RootLayout() {
   return (
     <SafeAreaProvider>
       <Sentry.ErrorBoundary fallback={<CrashFallback />}>
-        <AuthProvider>
-          <RootNavigator />
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <RootNavigator />
+          </AuthProvider>
+        </ThemeProvider>
       </Sentry.ErrorBoundary>
     </SafeAreaProvider>
   )
