@@ -3196,7 +3196,7 @@ OPEN.**
 
 ### PD-119 — Appearance is a user preference with two designed expressions, and System is the default
 
-**Decided 2026-09-13. Design approved; NOT yet implemented.**
+**Decided 2026-09-13. Implemented at `81d5ea2` (PR #94), 2026-09-14.**
 
 Third gets an **Appearance** setting at **Me → Settings → Appearance**, offering **System**,
 **Light** and **Dark**, defaulting to **System**.
@@ -3228,9 +3228,19 @@ theme layer: colour is inline literals across `app/` and `components/`. This dec
 the reason a token layer is introduced, not a consequence of one existing.
 
 **Evidence:** Figma `Foundations v1` (node `50:12`, § Appearance) and the Appearance frames
-(`113:2` Light, `113:38` Dark).
+(`113:2` Light, `113:38` Dark). In code: `lib/theme/tokens.ts` (sixteen semantic roles, two
+schemes, pure and tested), `lib/theme/statusTone.ts`, `context/ThemeContext.tsx`
+(`AsyncStorage` key `appearance_preference`), `app/settings/appearance.tsx`, and
+`components/ui/`. Asserted by `__tests__/lib/themeTokens.test.ts`,
+`__tests__/lib/statusTone.test.ts`, `__tests__/context/themeAppearance.test.tsx` and
+`__tests__/components/themedComponents.test.tsx` — 59 tests, including that resolution only
+ever yields one of two schemes and that a corrupt stored value cannot break launch.
 
-**Status:** Locked as product behaviour. Implementation pending.
+**What is implemented, and what is not.** The token layer, the preference, its persistence,
+and ten shared components are in. **Full screen migration has NOT begun** — only bottom
+navigation, Settings and Appearance are migrated. Welcome (`app/index.tsx`) is untouched.
+
+**Status:** Locked and implemented.
 
 ### PD-120 — "From people you follow" is a relationship lane and may not touch the provider-ranking path
 
