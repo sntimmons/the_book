@@ -3283,6 +3283,102 @@ Popular Near You remains dormant and does not ship (PD-117).
 **Status:** Locked as product behaviour. Implementation pending, and blocked on a data-path
 design that does not widen the ranking types.
 
+### PD-121 — A Figma frame may not remove a capability the implementation already has
+
+**Decided 2026-09-14. Ruled on the Phase 2C Date & time divergence (PR #99, `f7b7722`).**
+
+Figma remains the **visual source of truth**. It is not an authority to delete working
+behaviour. Where an approved frame's composition would remove a real functional capability
+that ships today, **the implementation wins and the frame is reconciled to it** — not the
+other way round.
+
+**The case that settled it.** The approved Date & time frame shows a **six-day strip**.
+`app/book/datetime.tsx` ships a **month grid**, which browses months, marks
+provider-blocked dates, and handles past dates. Building the strip to match the mockup
+would have removed month browsing and the blocked/past-date handling with it.
+
+**Ruling: the month grid is APPROVED and stands. Do not regress it to the six-day strip
+to match the static frame.** `components/ui/DayCell.tsx` was generalised (optional
+weekday, optional availability dot) so one component serves both shapes, and the strip
+remains buildable from it should the design later want it somewhere else.
+
+**This is a divergence of RECORD, not of drift.** The Figma Date & time frame should be
+updated to the approved month-grid pattern as visual housekeeping. **That housekeeping
+does not block implementation work** and no code change waits on it.
+
+**The general rule, binding beyond this case.** When a frame and the implementation
+disagree and matching the frame would cost capability, **stop and return to PM** rather
+than either silently diverging or silently regressing. Both are how a product loses
+behaviour nobody decided to give up.
+
+**Status:** Locked. Implemented. Figma frame reconciliation outstanding, non-blocking.
+
+---
+
+### PD-122 — Booking detail omits Length and Where rather than inventing them
+
+**Decided 2026-09-14. Ruled on the Phase 2C booking-detail divergence (PR #99, `f7b7722`).**
+
+The approved booking-detail frame carries **Length** and **Where**. The detail route's
+query returns **neither**. They are therefore **absent from the closed-beta screen**.
+
+**Approved to omit. Specifically forbidden in their place:**
+
+- a dash (`—`) or any placeholder that reads as data
+- an inferred or computed value
+- **the provider's neighbourhood presented as the booking's location** — it is not the
+  same fact, and showing it would tell the client something the product does not know
+
+A field the product cannot source is **absent**, not filled. An empty-looking value is a
+claim; absence is not.
+
+**The query is NOT to be widened to satisfy the frame.** Adding these fields is a data
+change with its own authority question — *what is the authoritative source for a booking's
+length and location?* — and that question is not answered by the fact that a mockup has a
+row for it. If and when the route gains an authoritative source, the fields may be added
+and this decision revisited.
+
+**Neither field blocks Phase 2C.**
+
+**Status:** Locked for closed beta. Revisit only with an authoritative data source.
+
+---
+
+### PD-123 — Reference photos are the one bounded completeness follow-up on booking detail
+
+**Decided 2026-09-14. Ruled alongside PR #99, deliberately NOT a blocker to it.**
+
+A client attaches up to three **reference photos** to a booking request
+(`app/book/message.tsx`), they are really uploaded and really attached
+(`lib/bookingPhotos.ts`, `booking_reference_photos`), and **the provider sees them** on the
+request screen (`app/bookings/request/[id].tsx`). **The client does not see them again on
+their own booking detail.**
+
+That is a genuine completeness gap rather than a cosmetic one: the capability exists on
+both sides of the record and is surfaced to only one of them.
+
+**Ruling:**
+
+- It did **not** hold PR #99.
+- It is the **one** approved bounded follow-up for client Bookings. It does not open a
+  broader booking-detail expansion, and it is not a licence to revisit PD-122.
+- It may be implemented **only** within existing approved data access: **no schema change,
+  no migration, no RLS change, no storage-policy change, no upload or deletion change, no
+  production change.**
+- **If displaying them required any database or RLS change, the work stops and the blocker
+  is reported.** The gap would then be deferred, not engineered around.
+
+**Investigation completed 2026-09-14 against `f7b7722`: no database change is required.**
+`booking_photos_participants_read` and `can_read_booking_photo` (`20261072000000`, refined
+by `20261073000000`) both authorise **the client of the booking** explicitly — *"The client
+sees their own attachments at any stage"* — and `supabase/tests/booking_integrity.test.sql`
+asserts it against the real non-production database in CI. `bookingPhotoUrls()` already
+exists and is already documented as serving *"whichever party is reading"*. Presentation is
+the whole of the remaining work.
+
+**Status:** Locked as approved scope. No database change required. Implementation in a
+dedicated PR.
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:

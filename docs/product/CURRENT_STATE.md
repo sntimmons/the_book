@@ -80,16 +80,50 @@ built.** The response window is still derived from the server's urgency, never a
 constant, and the detail now tells the **same** story as the list, from the same
 `bookingListNote` helper.
 
-**Two deliberate divergences from the approved frames, both flagged rather than resolved.**
+**Provider actions remain BUSINESS scope.** They are reachable from the shared detail route
+because the route is shared, not because Bookings has a provider mode. **There is no
+provider-side Bookings mode, and Phase 2C did not begin one.** A provider's own queue lives
+under Business (`/(tabs)/business/bookings`), and the `[My appointments] [My business]`
+segmented control stays rejected for closed beta (below). Anything that would give the client
+Bookings surface a provider mode is out of scope and returns to PM.
 
-- **Date & time is a month grid, not the frame's six-day strip.** The shipped picker browses
-  months, marks provider-blocked dates and handles past dates. Implementing the strip would
-  have **removed month browsing** — a functional loss to match a mockup. `DayCell` was
-  generalised (optional weekday, optional availability dot) to serve both shapes; the strip
-  is still buildable from the same component.
-- **Booking detail omits Length and Where.** The approved frame carries both. The detail
-  query returns neither, so they are **absent rather than filled with a dash that looks like
-  data**. Adding them is a query change, not a presentation change, and was left out of scope.
+**With the above recorded, the client Bookings visual migration is COMPLETE** — every
+approved client Bookings route is implemented and themed. The only open item against it is
+the reference-photo follow-up (PD-123), and Length/Where are closed as approved omissions
+(PD-122), not as gaps.
+
+**Two divergences from the approved frames. Both were flagged rather than resolved by PR
+#99, and both have since been RULED ON. Neither is drift, and neither is to be "fixed".**
+
+- **Date & time is a month grid, not the frame's six-day strip — APPROVED, PD-121.** The
+  shipped picker browses months, marks provider-blocked dates and handles past dates.
+  Implementing the strip would have **removed month browsing** — a functional loss to match
+  a mockup. **Do not regress it to the strip.** `DayCell` was generalised (optional weekday,
+  optional availability dot) to serve both shapes, so the strip stays buildable from the same
+  component. **Outstanding, non-blocking:** the Figma Date & time frame should be updated to
+  the approved month-grid pattern. That is visual housekeeping; no code waits on it.
+- **Booking detail omits Length and Where — APPROVED TO OMIT for closed beta, PD-122.** The
+  approved frame carries both; the detail query returns neither, so they are **absent rather
+  than filled with a dash that looks like data**. A placeholder, an inferred value, or the
+  **provider's neighbourhood standing in for the booking's location** are all specifically
+  forbidden. **The query is not to be widened to satisfy the frame** — that needs an
+  authoritative source for both facts, which is a separate question.
+
+**One bounded completeness follow-up remains open: reference photos on the client booking
+detail (PD-123).** A client attaches up to three reference photos to a request, they really
+upload and attach (`lib/bookingPhotos.ts`, `booking_reference_photos`), and **the provider
+sees them** on `app/bookings/request/[id].tsx` — but **the client never sees them again on
+their own booking detail**. The capability exists on both sides of the record and is
+surfaced to only one of them.
+
+**This requires no database change, and that was verified rather than assumed.**
+`booking_photos_participants_read` and `can_read_booking_photo` (`20261072000000`, refined
+by `20261073000000`) each authorise **the client of the booking** by name — *"The client
+sees their own attachments at any stage"* — and `supabase/tests/booking_integrity.test.sql`
+asserts exactly that against the real non-production database on every CI run.
+`bookingPhotoUrls()` already exists and its own contract says it serves *"whichever party is
+reading"*. What is missing is **presentation only**. It is scoped to one small PR and must
+not widen into a booking-detail expansion.
 
 **Bookings was PARTIALLY migrated in Phase 2** (`f911242`, PR #96, 2026-09-14).
 **Phase 2 is partial, not complete, and must not be read as finished.** Two surfaces moved:
