@@ -379,14 +379,25 @@ describe('the review confirmation explains why the review is not visible yet', (
 describe('the provider profile does not present followers as a trust stat', () => {
   const s = code('components/ProviderProfile.tsx')
 
-  it('the primary stat row carries no follower or following count', () => {
+  // Phase 3B rebuilt this screen from the approved Figma composition, so the
+  // old `<StatCol label="Bookings" />` row is gone. These assertions moved from
+  // the MARKUP to the BEHAVIOUR, which is what the rule was ever about — and
+  // they got stricter: there is now no stat row for a follower count to sit in,
+  // so the count must not be rendered anywhere on the profile at all.
+  it('renders no follower or following count anywhere', () => {
     expect(s).not.toMatch(/label="Followers"/)
     expect(s).not.toMatch(/label="Following"/)
+    // The count is never read into the tree, under any casing.
+    expect(s).not.toMatch(/\{\s*provider\.follow(er|ing)Count/)
+    expect(s).not.toMatch(/>\s*\{?\s*follow(er|ing)Count/i)
   })
 
   it('it still carries the marketplace facts', () => {
-    expect(s).toMatch(/label="Bookings"/)
-    expect(s).toMatch(/Rating/)
+    // Completed bookings and the rating, each through the one helper that owns
+    // how it may be phrased.
+    expect(s).toMatch(/completedBookingsLine/)
+    expect(s).toMatch(/reputationLine/)
+    expect(s).toMatch(/ratingClientLabel/)
   })
 
   it('the follow feature itself is untouched', () => {

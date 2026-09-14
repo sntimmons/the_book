@@ -68,8 +68,10 @@ export default function ProviderGoLive() {
     rating: 0,
     bookingCount: 0,
     followerCount: 0,
-    followingCount: 0,
-    isLive: false,
+    // `followingCount` and `isLive` left with ProviderData in Phase 3B: the first
+    // was always a hardcoded zero and the second a presence the product cannot
+    // know. The preview renders the unrated state, which is what a provider who
+    // has not gone live yet actually has.
   }
 
   async function handleGoLive() {

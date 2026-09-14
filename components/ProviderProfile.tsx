@@ -13,19 +13,41 @@ import {
   FlatList,
 } from 'react-native'
 import { LinearGradient } from 'expo-linear-gradient'
-import { ratingClientLabel } from '../lib/reputationLabel'
+import { ratingClientLabel, reviewTotalLabel, displayRating } from '../lib/reputationLabel'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BLOCKED_PROFILE_COPY } from '@/lib/safety'
+import { useTheme } from '@/context/ThemeContext'
 import ProviderReviewsSection from './ProviderReviewsSection'
 import ProviderShoutouts from './ProviderShoutouts'
+
+// THE PUBLIC PROVIDER PROFILE.
+//
+// Phase 3B: migrated onto the Third theme from the approved Figma composition
+// (`198:26` Light / `208:86` Dark). Every colour resolves from the semantic
+// tokens, so System / Light / Dark all work from one tree.
+//
+// ── THE ONE STRUCTURAL IDEA ───────────────────────────────────────────────
+//
+// The hero photograph does not stop at the image. It continues into the
+// identity band, which is painted with `mediaScrim` and lettered with
+// `textOnAction` — the two roles the token set defines as holding **on media in
+// both schemes**. That is what lets one tree give a dramatic dark-to-warm
+// opening in Light and a single continuous dark field in Dark, without a
+// hardcoded colour and without inverting anything.
+//
+// Everything below it is warm canvas with hairline-separated rows rather than a
+// stack of elevated cards, which is the Third language and is also what keeps
+// Dark flat instead of tiled.
 
 export interface ProviderService {
   id?: string
   name: string
   price: string
   duration?: string
+  /** From provider_services.description. Public, and shown only when set. */
+  description?: string
   depositRequired?: boolean
   depositAmount?: string
 }
@@ -33,6 +55,8 @@ export interface ProviderService {
 export interface ProviderData {
   name: string
   businessName?: string
+  /** providers.username — the handle, shown only when the provider has one. */
+  username?: string
   category: string
   location: string
   bio?: string
@@ -41,6 +65,10 @@ export interface ProviderData {
   services?: ProviderService[]
   portfolio?: string[]
   reels?: string[]
+  /** posts.content_type = 'process'. The provider's own account of the visit. */
+  process?: string[]
+  /** providers.specialties — already public, simply never surfaced before. */
+  specialties?: string[]
   rating?: number
   /**
    * How many DISTINCT clients the rating rests on. Not the review count: the
@@ -49,17 +77,16 @@ export interface ProviderData {
    * misleading in whichever direction it chose.
    */
   ratingClientCount?: number
+  reviewCount?: number
   bookingCount?: number
   followerCount?: number
-  followingCount?: number
-  isLive?: boolean
 }
 
 export interface ProviderProfileProps {
   previewMode?: boolean
   provider: ProviderData
   // Real provider db id. When present (and not preview), the live Client
-  // Reviews section is rendered below the tabs.
+  // Reviews section is rendered below the content.
   providerId?: string
   isFollowing?: boolean
   isSaved?: boolean
@@ -78,7 +105,7 @@ export interface ProviderProfileProps {
    * screens later with a raw error.
    *
    * Defaults to true so no caller that has not been updated silently hides a
-   * live provider's Book Now.
+   * live provider's booking control.
    */
   acceptingBookings?: boolean
   /**
@@ -94,6 +121,12 @@ export interface ProviderProfileProps {
    */
   blockedByMe?: boolean
   onBookNow?: () => void
+  /**
+   * Start a booking with THIS service already selected. Navigation convenience
+   * only — the same flow, entered at the same first step. When absent, a service
+   * row is inert rather than pretending to be a control.
+   */
+  onSelectService?: (service: ProviderService) => void
   onFollow?: () => void
   onSave?: () => void
   onMessage?: () => void
@@ -112,12 +145,47 @@ const MOCK_PROVIDER: ProviderData = {
   businessName: 'Blade Cuts Studio',
   category: 'Barber',
   location: 'Midtown, Houston',
-  bio: 'Master barber with 8 years experience. Specializing in fades, lineups, and creative designs. Book your spot today.',
+  bio: 'Master barber with 8 years experience. Specializing in fades, lineups, and creative designs.',
   rating: 0,
   bookingCount: 0,
   followerCount: 0,
-  followingCount: 0,
-  isLive: true,
+}
+
+/** Initials for a provider with no photo. Never an icon that implies a person. */
+export function providerInitials(name: string): string {
+  const parts = (name ?? '').trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+}
+
+/**
+ * The trust line under the portrait, and the rule it carries.
+ *
+ * Unrated is an ABSENCE, not a verdict: `displayRating` returns null for a
+ * provider nobody has reviewed (average_rating is 0, never null), so this never
+ * renders `0.0` as if it were a score. When there IS a rating, the number beside
+ * it is CLIENTS — a bare `(12)` reads as twelve opinions when PD-091 allows it
+ * to be two clients who each came back six times.
+ */
+export function reputationLine(p: {
+  rating?: number | null
+  ratingClientCount?: number | null
+  reviewCount?: number | null
+}): { rating: string | null; detail: string | null } {
+  const value = displayRating({ average_rating: p.rating ?? null })
+  if (value == null) return { rating: null, detail: 'No reviews yet' }
+  const parts = [ratingClientLabel(p.ratingClientCount), reviewTotalLabel(p.reviewCount)]
+    .filter(Boolean)
+    .join('  ·  ')
+  return { rating: value.toFixed(1), detail: parts.length > 0 ? parts : null }
+}
+
+/** Completed bookings, the one volume fact the marketplace actually knows. */
+export function completedBookingsLine(n: number | null | undefined): string | null {
+  const v = n ?? 0
+  if (v <= 0) return null
+  return `${v} completed ${v === 1 ? 'booking' : 'bookings'}`
 }
 
 export default function ProviderProfile({
@@ -130,6 +198,7 @@ export default function ProviderProfile({
   acceptingBookings = true,
   blockedByMe = false,
   onBookNow,
+  onSelectService,
   onFollow,
   onSave,
   onMessage,
@@ -137,14 +206,21 @@ export default function ProviderProfile({
 }: ProviderProfileProps) {
   const insets = useSafeAreaInsets()
   const { width } = useWindowDimensions()
-  const [activeTab, setActiveTab] = useState<'portfolio' | 'posts'>('portfolio')
+  const { colors, type } = useTheme()
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null)
 
   const provider = previewMode ? { ...MOCK_PROVIDER, ...providerProp } : providerProp
-  const cellSize = width / 3
   const portfolioPhotos = provider.portfolio ?? []
-  const reelItems = provider.reels ?? []
+  const reels = provider.reels ?? []
+  const processMedia = provider.process ?? []
   const services = provider.services ?? []
+  const specialties = (provider.specialties ?? []).filter(Boolean)
+  const showActions = !previewMode && !isOwnProfile
+
+  const reputation = reputationLine(provider)
+  const bookingsLine = completedBookingsLine(provider.bookingCount)
+  // Media is 3-up with 20pt gutters and 10pt gaps, matching the approved frame.
+  const tile = (width - 40 - 20) / 3
 
   async function handleShare() {
     try {
@@ -152,433 +228,326 @@ export default function ProviderProfile({
     } catch {}
   }
 
+  const onMediaSubtle = { color: colors.textOnAction, opacity: 0.6 }
+
+  function Section({
+    kicker,
+    title,
+    children,
+  }: {
+    kicker: string
+    title: string
+    children: React.ReactNode
+  }) {
+    return (
+      <View style={styles.section}>
+        <Text style={[type.caption, styles.kicker, { color: colors.statusLocal }]}>{kicker}</Text>
+        <Text style={[type.titleSection, { color: colors.textPrimary }]}>{title}</Text>
+        {children}
+      </View>
+    )
+  }
+
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: previewMode ? 40 : 120 }}
+        contentContainerStyle={{ paddingBottom: previewMode ? 40 : 128 }}
       >
-        {/* ── BANNER ── */}
-        <View style={styles.banner}>
+        {/* ── HERO ────────────────────────────────────────────────────────
+            A provider with no cover image gets the scrim field, not a grey
+            placeholder or a stock photo: the composition holds, and nothing
+            about the absence reads as a lesser business. */}
+        <View style={[styles.hero, { backgroundColor: colors.mediaScrim }]}>
           {provider.banner ? (
-            <Image source={{ uri: provider.banner }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : (
-            <LinearGradient
-              colors={['#1a1008', '#0d0804', '#080808']}
-              start={{ x: 0.3, y: 0 }}
-              end={{ x: 0, y: 1 }}
+            <Image
+              source={{ uri: provider.banner }}
               style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              accessible
+              accessibilityRole="image"
+              accessibilityLabel={`Cover photo for ${provider.name}`}
             />
-          )}
-          {/* Bottom fade */}
+          ) : null}
+          {/* Ink at alpha, and deliberately a literal: this is `mediaScrim`
+              (#211F1D), which the token set fixes to the SAME value in Light and
+              Dark precisely because a scrim over a photograph must not invert. A
+              gradient needs alpha stops, which a hex token cannot express. */}
           <LinearGradient
-            colors={['transparent', 'rgba(8,8,8,0.6)', '#080808']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 0, y: 1 }}
+            colors={['transparent', 'rgba(33,31,29,0.35)', 'rgba(33,31,29,0.95)']}
+            locations={[0, 0.55, 1]}
             style={StyleSheet.absoluteFill}
+            pointerEvents="none"
           />
-
-          {previewMode ? (
-            <View style={[styles.previewPill, { top: insets.top + 12 }]}>
-              <Feather name="eye" size={11} color="rgba(240,232,213,0.5)" />
-              <Text style={styles.previewPillText}>THIS IS YOUR PUBLIC PROFILE</Text>
+          {!previewMode && (
+            <View style={[styles.heroControls, { top: insets.top + 8 }]}>
+              <MediaButton icon="chevron-left" label="Go back" onPress={() => router.back()} />
+              <View style={styles.heroControlsRight}>
+                <MediaButton icon="share" label={`Share ${provider.name}`} onPress={handleShare} />
+                {showActions ? (
+                  <MediaButton
+                    icon="bookmark"
+                    label={isSaved ? `Saved ${provider.name}` : `Save ${provider.name}`}
+                    active={isSaved}
+                    onPress={onSave}
+                  />
+                ) : null}
+                {showActions && onSafetyMenu ? (
+                  <MediaButton icon="more-horizontal" label="More options" onPress={onSafetyMenu} />
+                ) : null}
+              </View>
             </View>
-          ) : (
-            <>
-              <TouchableOpacity
-                style={[styles.bannerBtn, { top: insets.top + 12, left: 16 }]}
-                onPress={() => router.back()}
-                activeOpacity={0.8}
-              >
-                <Feather name="chevron-left" size={18} color="#F0E8D5" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.bannerBtn, { top: insets.top + 12, right: 16 }]}
-                onPress={handleShare}
-                activeOpacity={0.8}
-              >
-                <Feather name="share" size={18} color="#F0E8D5" />
-              </TouchableOpacity>
-            </>
           )}
         </View>
 
-        {/* ── PROFILE PHOTO ROW ── */}
-        <View style={styles.photoRow}>
-          {/* Photo + badges */}
-          <View style={styles.photoWrap}>
+        {/* ── IDENTITY, on the same scrim the hero fades into ────────────── */}
+        <View style={[styles.identity, { backgroundColor: colors.mediaScrim }]}>
+          <View style={styles.avatarWrap}>
             {provider.photo ? (
               <Image
                 source={{ uri: provider.photo }}
-                style={styles.photo}
-                resizeMode="cover"
+                style={[styles.avatar, { borderColor: colors.textOnAction }]}
+                accessible
+                accessibilityRole="image"
+                accessibilityLabel={`${provider.name} profile photo`}
               />
             ) : (
-              <View style={[styles.photo, styles.photoPlaceholder]}>
-                {provider.name ? (
-                  <Text style={styles.photoInitial}>
-                    {provider.name.trim().charAt(0).toUpperCase()}
-                  </Text>
-                ) : (
-                  <Feather name="user" size={30} color="rgba(240,232,213,0.2)" />
-                )}
-              </View>
-            )}
-            {/* PRODUCT TRUTH: the verified check-mark overlay was drawn from
-                `isVerified` (providers.identity_verified). No user-completable
-                identity-verification process exists (PD-004), so nothing has
-                been verified and the mark asserted a completed check that never
-                happened. Marketplace approval / founder curation is NOT identity
-                verification and must not borrow its iconography. The flag is
-                still plumbed because the column is real; it renders nothing
-                until a real process stands behind it. See the badge strip below
-                and __tests__/guards/betaClaimsAbsent.test.ts. */}
-            {provider.isLive && (
-              <View style={styles.liveBadge}>
-                <Text style={styles.liveBadgeText}>LIVE</Text>
+              <View
+                style={[
+                  styles.avatar,
+                  styles.avatarInitials,
+                  { borderColor: colors.textOnAction, backgroundColor: colors.bgSubtle },
+                ]}
+                accessible
+                accessibilityLabel={`${provider.name}, no profile photo`}
+              >
+                <Text style={[type.titleSection, { color: colors.textPrimary }]}>
+                  {providerInitials(provider.name)}
+                </Text>
               </View>
             )}
           </View>
 
-          {/* Action buttons — hidden on your own profile */}
-          {!previewMode && !isOwnProfile && (
-            <View style={styles.actionButtons}>
-              <TouchableOpacity
-                style={[styles.followBtn, isFollowing && styles.followBtnActive]}
+          {/* Reputation reads as text, never as colour alone. */}
+          <View style={styles.repRow} accessibilityRole="text">
+            {reputation.rating ? (
+              <>
+                <Feather name="star" size={13} color={colors.textOnAction} />
+                <Text style={[type.labelAction, styles.repValue, { color: colors.textOnAction }]}>
+                  {reputation.rating}
+                </Text>
+              </>
+            ) : null}
+            {reputation.detail ? (
+              <Text style={[type.labelMeta, styles.repDetail, onMediaSubtle]}>
+                {reputation.rating ? `·  ${reputation.detail}` : reputation.detail}
+              </Text>
+            ) : null}
+          </View>
+          {bookingsLine ? (
+            <Text style={[type.caption, styles.bookingsLine, { color: colors.textOnAction, opacity: 0.45 }]}>
+              {bookingsLine}
+            </Text>
+          ) : null}
+
+          <Text style={[type.displayScreen, styles.name, { color: colors.textOnAction }]}>
+            {provider.name}
+          </Text>
+          {provider.username ? (
+            <Text style={[type.caption, styles.handle, { color: colors.textOnAction, opacity: 0.55 }]}>
+              @{provider.username}
+            </Text>
+          ) : null}
+
+          <Text style={[type.bodyDefault, styles.trade, { color: colors.textOnAction, opacity: 0.85 }]}>
+            {[provider.category, provider.businessName].filter(Boolean).join('  ·  ')}
+          </Text>
+          {provider.location ? (
+            <Text style={[type.bodySmall, styles.hood, onMediaSubtle]}>{provider.location}</Text>
+          ) : null}
+
+          {provider.bio ? (
+            <Text style={[type.bodyDefault, styles.bio, { color: colors.textOnAction, opacity: 0.8 }]}>
+              {provider.bio}
+            </Text>
+          ) : null}
+
+          {specialties.length > 0 ? (
+            <Text style={[type.caption, styles.specialties, { color: colors.textOnAction, opacity: 0.5 }]}>
+              {specialties.join('   ·   ').toUpperCase()}
+            </Text>
+          ) : null}
+
+          {/* BOOK IS PRIMARY HERE TOO. With Follow alone in this area it read as
+              the screen's main action, which inverts what the profile is for. */}
+          {showActions && !blockedByMe && acceptingBookings ? (
+            <Pressable
+              style={[styles.primaryBtn, { backgroundColor: colors.actionPrimary }]}
+              onPress={onBookNow}
+              accessibilityRole="button"
+              accessibilityLabel={`Request booking with ${provider.name}`}
+              testID="profile-request-booking"
+            >
+              <Text style={[type.titleCard, { color: colors.textOnAction }]}>Request booking</Text>
+            </Pressable>
+          ) : null}
+
+          {showActions ? (
+            <View style={styles.identityActions}>
+              <Pressable
+                style={[styles.secondaryBtn, { borderColor: colors.textOnAction }]}
                 onPress={onFollow}
-                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityState={{ selected: isFollowing }}
+                accessibilityLabel={
+                  isFollowing ? `Following ${provider.name}. Tap to unfollow.` : `Follow ${provider.name}`
+                }
               >
-                <Text
-                  style={[
-                    styles.followBtnText,
-                    isFollowing && styles.followBtnTextActive,
-                  ]}
-                >
+                <Text style={[type.labelAction, { color: colors.textOnAction }]}>
                   {isFollowing ? 'Following' : 'Follow'}
                 </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.messageBtn, isSaved && styles.saveBtnActive]}
-                onPress={onSave}
-                activeOpacity={0.8}
-              >
-                <Feather
-                  name="bookmark"
-                  size={16}
-                  color={isSaved ? '#C8922A' : '#F0E8D5'}
-                />
-              </TouchableOpacity>
-              {/* Gated for the SAME reason the sticky bar's message button is
-                  (see the note there): a blocked pair has no new-contact path,
-                  so this could only fail. It was missed the first time, which
-                  left two message controls on one screen for the same blocked
-                  provider — one withdrawn, one live — and the live one walked
-                  the user into a compose screen to be refused on send. */}
+              </Pressable>
               {blockedByMe ? null : (
-                <TouchableOpacity
-                  style={styles.messageBtn}
+                <Pressable
+                  style={[styles.iconBtn, { borderColor: colors.textOnAction }]}
                   onPress={onMessage}
-                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Message ${provider.name}`}
                 >
-                  <Feather name="message-circle" size={16} color="#F0E8D5" />
-                </TouchableOpacity>
+                  <Feather name="message-circle" size={18} color={colors.textOnAction} />
+                </Pressable>
               )}
-              {/* SESSION 8: the safety control.
-
-                  Quiet and last, deliberately. Block and Report are the two most
-                  consequential things a person can do from this screen and the
-                  two they will need fastest if something goes wrong — so they are
-                  always in the same place, never buried in a submenu of a submenu,
-                  and never styled to invite a curious tap. */}
-              {onSafetyMenu ? (
-                <TouchableOpacity
-                  style={styles.messageBtn}
-                  onPress={onSafetyMenu}
-                  activeOpacity={0.8}
-                  accessibilityLabel="Block or report this provider"
-                >
-                  <Feather name="more-horizontal" size={16} color="rgba(240,232,213,0.7)" />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-          )}
-        </View>
-
-        {/* ── IDENTITY ── */}
-        <View style={styles.identity}>
-          <Text style={styles.providerName}>{provider.name}</Text>
-          {provider.businessName ? (
-            <Text style={styles.businessName}>{provider.businessName}</Text>
-          ) : null}
-          <View style={styles.metaRow}>
-            <Feather name="map-pin" size={12} color="rgba(240,232,213,0.3)" />
-            <Text style={styles.metaText}>
-              {provider.category} · {provider.location}
-            </Text>
-          </View>
-        </View>
-
-        {/* ── STATS ── */}
-        <View style={styles.statsRow}>
-          {/* ── SOCIAL COUNTS ARE OUT OF THE TRUST ROW ──────────────────────
-              This row read Bookings | Followers | Following | Rating. Two of those
-              four are social, and this is the row a client reads to decide whether
-              to trust somebody — so a follower number sitting in it invites exactly
-              the inference the marketplace refuses to make. Discovery ranking uses
-              NO social signal at all (the types it receives carry none), and a
-              profile that presents followers as a peer of rating contradicts that
-              in the one place a client is actually deciding.
-
-              What remains is what the marketplace knows: completed bookings, and the
-              rating with the number of clients it rests on.
-
-              FOLLOW IS UNTOUCHED — the action, the counts and the underlying data
-              all still exist, and `app/providers/[id].tsx` still reads the live
-              count. Only its place in the trust summary changed. */}
-          <StatCol value={provider.bookingCount ?? 0} label="Bookings" />
-          <View style={styles.statDivider} />
-          <View style={styles.statCol}>
-            {(provider.rating ?? 0) > 0 ? (
-              <View style={styles.ratingRow}>
-                <Text style={styles.statValue}>{provider.rating}</Text>
-                <Feather name="star" size={12} color="#C8922A" />
-              </View>
-            ) : (
-              <Text style={styles.statValue}>New</Text>
-            )}
-            {/* REVIEWS PHASE 2 — the label carries the rule.
-                The rating is the mean of the LATEST review from each DISTINCT
-                client, so twenty reviews from one loyal client are one voice,
-                not twenty. That makes "Rating" on its own misleading in a
-                specific way: it invites a reader to assume it rests on however
-                many reviews they can scroll. Saying how many CLIENTS it rests on
-                is the smallest honest fix, and it is why
-                `providers.rating_client_count` exists at all. */}
-            <Text style={styles.statLabel}>
-              {ratingClientLabel(provider.ratingClientCount) != null
-                ? `Rating · ${ratingClientLabel(provider.ratingClientCount)}`
-                : 'Rating'}
-            </Text>
-          </View>
-        </View>
-
-        <View style={styles.separator} />
-
-        {/* ── TRUST BADGES ── */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.badgesRow}
-          style={styles.badgesScroll}
-        >
-          {/* ITEM W (Correction 3) resolves what the note below left open.
-              "Houston Beta Provider" is the beta's approved trust signal, and it
-              is a FACT rather than a claim: this provider was approved into the
-              Houston beta, which is a thing that either happened or did not. It
-              asserts no identity check, no background check and no government-ID
-              verification, none of which exist.
-
-              It is shown only while the provider IS approved. A provider who is
-              no longer taking new bookings does not carry a label saying they are
-              a current beta provider, and no replacement label is invented for
-              them — the availability line on the booking bar says what is true. */}
-          {acceptingBookings ? (
-            <View style={[styles.badge, styles.badgeMuted]}>
-              <Feather name="map-pin" size={12} color="rgba(240,232,213,0.4)" />
-              <Text style={styles.badgeText}>Houston Beta Provider</Text>
             </View>
           ) : null}
-          {/* PRODUCT TRUTH: an "ID Verified" badge used to render here whenever
-              `isVerified` was true, directly beside "Verification coming soon" —
-              two contradictory claims in one strip, and the affirmative one was
-              unsupported. There is no government-ID, selfie, liveness or
-              third-party verification flow in this beta, so no provider can have
-              completed one. Removed rather than reworded: a weaker word for the
-              same unproven claim is still the claim.
+        </View>
 
-              OQ-035 — whether approved beta providers should carry a visible
-              trust label, and what it may say — was the open question this note
-              recorded. Item W ANSWERS it: "Houston Beta Provider", rendered
-              above. The pill that used to sit here, "Verification coming soon",
-              is gone with it: it made a roadmap promise instead of stating
-              anything true about the provider a client was looking at. */}
-          <View style={[styles.badge, styles.badgeMuted]}>
-            <Feather name="scissors" size={12} color="rgba(240,232,213,0.4)" />
-            <Text style={styles.badgeText}>{provider.category}</Text>
-          </View>
-        </ScrollView>
-
-        {/* ── BIO ── */}
-        {provider.bio ? (
-          <Text style={styles.bio}>{provider.bio}</Text>
+        {/* ── SERVICES ──────────────────────────────────────────────────── */}
+        {services.length > 0 ? (
+          <Section kicker="WHAT YOU CAN BOOK" title="Services">
+            <View style={styles.rows}>
+              {services.map((svc, i) => {
+                const tappable = !!onSelectService && showActions && !blockedByMe && acceptingBookings
+                const Row = tappable ? Pressable : View
+                return (
+                  <Row
+                    key={svc.id ?? `${svc.name}-${i}`}
+                    onPress={tappable ? () => onSelectService?.(svc) : undefined}
+                    accessibilityRole={tappable ? 'button' : undefined}
+                    accessibilityLabel={
+                      tappable
+                        ? `${svc.name}, $${svc.price}${svc.duration ? `, ${svc.duration}` : ''}. Start a booking request.`
+                        : undefined
+                    }
+                    style={[
+                      styles.serviceRow,
+                      i < services.length - 1 && {
+                        borderBottomWidth: StyleSheet.hairlineWidth * 2,
+                        borderBottomColor: colors.borderSubtle,
+                      },
+                    ]}
+                  >
+                    <View style={styles.serviceText}>
+                      <Text style={[type.titleCard, { color: colors.textPrimary }]}>{svc.name}</Text>
+                      {svc.duration ? (
+                        <Text style={[type.bodySmall, styles.serviceMeta, { color: colors.textSecondary }]}>
+                          {svc.duration}
+                        </Text>
+                      ) : null}
+                      {svc.description ? (
+                        <Text style={[type.bodySmall, styles.serviceMeta, { color: colors.textSecondary }]}>
+                          {svc.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.servicePrice}>
+                      <Text style={[type.titleCard, { color: colors.textPrimary }]}>${svc.price}</Text>
+                      {tappable ? (
+                        <Feather name="chevron-right" size={18} color={colors.textSecondary} />
+                      ) : null}
+                    </View>
+                  </Row>
+                )
+              })}
+            </View>
+          </Section>
         ) : null}
 
-        <View style={styles.separator} />
-
-        {/* ── TABS ── */}
-        <View style={styles.tabBar}>
-          {(['portfolio', 'posts'] as const).map((tab) => (
-            <Pressable
-              key={tab}
-              style={[styles.tab, activeTab === tab && styles.tabActive]}
-              onPress={() => setActiveTab(tab)}
-            >
-              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        {/* ── PORTFOLIO TAB ── */}
-        {activeTab === 'portfolio' && (
-          <View>
-            {/* Services */}
-            <View style={styles.section}>
-              <Text style={styles.sectionLabel}>SERVICES</Text>
-              {services.length > 0 ? (
-                <>
-                  {services.slice(0, 3).map((s, i) => (
-                    <View
-                      key={s.id ?? i}
-                      style={[styles.serviceRow, i < Math.min(services.length, 3) - 1 && styles.serviceRowBorder]}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.serviceName}>{s.name}</Text>
-                        {s.duration ? (
-                          <Text style={styles.serviceDuration}>{s.duration}</Text>
-                        ) : null}
-                        {/* PRODUCT TRUTH: a shield icon used to sit beside this
-                            deposit amount — protection iconography on a deposit
-                            that is never taken (PD-042). Both provider-facing
-                            deposit surfaces carry a not-charged qualifier; the
-                            client-facing one carried a protection symbol
-                            instead. Icon changed, amount kept: the provider's
-                            stated terms are real, the protection is not. */}
-                        {s.depositRequired && s.depositAmount ? (
-                          <View style={styles.depositRow}>
-                            <Feather name="tag" size={10} color="#C8922A" />
-                            <Text style={styles.depositText}>Deposit: ${s.depositAmount}</Text>
-                          </View>
-                        ) : null}
-                      </View>
-                      <View style={styles.servicePriceCol}>
-                        <Text style={styles.servicePrice}>${s.price}</Text>
-                        {!previewMode && (
-                          <Text style={styles.bookLink}>Book</Text>
-                        )}
-                      </View>
-                    </View>
-                  ))}
-                </>
-              ) : (
-                <Text style={styles.emptyText}>No services listed yet.</Text>
-              )}
+        {/* ── PROCESS ───────────────────────────────────────────────────── */}
+        {processMedia.length > 0 ? (
+          <Section kicker="HOW AN APPOINTMENT GOES" title="Process">
+            <Text style={[type.bodyDefault, styles.sectionLead, { color: colors.textSecondary }]}>
+              {provider.name.split(' ')[0]} posted these so you know what to expect.
+            </Text>
+            <View style={styles.mediaRow}>
+              {processMedia.slice(0, 3).map((uri, i) => (
+                <Image
+                  key={uri + i}
+                  source={{ uri }}
+                  style={[styles.processTile, { width: tile, height: tile * 1.48, backgroundColor: colors.bgSubtle }]}
+                  accessible
+                  accessibilityRole="image"
+                  accessibilityLabel={`Process clip ${i + 1} of ${Math.min(processMedia.length, 3)}`}
+                />
+              ))}
             </View>
+          </Section>
+        ) : null}
 
-            <View style={[styles.separator, { marginHorizontal: 20, marginTop: 4 }]} />
-
-            {/* Portfolio photos */}
-            <View style={styles.portfolioHeader}>
-              <Text style={styles.sectionLabel}>PORTFOLIO</Text>
-              {previewMode ? (
-                <Text style={styles.portfolioAction}>Add photos →</Text>
-              ) : (
-                <Text style={styles.portfolioCount}>
-                  {portfolioPhotos.length} photos
-                </Text>
-              )}
+        {/* ── PORTFOLIO ─────────────────────────────────────────────────── */}
+        {portfolioPhotos.length > 0 ? (
+          <Section kicker="RECENT WORK" title="Portfolio">
+            <View style={styles.grid}>
+              {portfolioPhotos.slice(0, 9).map((uri, i) => (
+                <Pressable
+                  key={uri + i}
+                  onPress={() => setLightboxIndex(i)}
+                  accessibilityRole="imagebutton"
+                  accessibilityLabel={`Work photo ${i + 1} of ${Math.min(portfolioPhotos.length, 9)}. Open full screen.`}
+                >
+                  <Image
+                    source={{ uri }}
+                    style={[styles.tile, { width: tile, height: tile, backgroundColor: colors.bgSubtle }]}
+                  />
+                </Pressable>
+              ))}
             </View>
+          </Section>
+        ) : null}
 
-            <View style={styles.photoGrid}>
-              {portfolioPhotos.length > 0
-                ? portfolioPhotos.slice(0, 9).map((uri, i) => (
-                    <Pressable
-                      key={i}
-                      style={{ width: cellSize, height: cellSize }}
-                      onPress={() => setLightboxIndex(i)}
-                    >
-                      <Image
-                        source={{ uri }}
-                        style={{ width: cellSize, height: cellSize }}
-                        resizeMode="cover"
-                      />
-                    </Pressable>
-                  ))
-                : [0, 1, 2].map((i) => (
-                    <View
-                      key={i}
-                      style={[styles.photoPlaceholderCell, { width: cellSize, height: cellSize }]}
-                    >
-                      <Feather name="camera" size={20} color="rgba(240,232,213,0.1)" />
-                    </View>
-                  ))}
+        {/* ── REELS ─────────────────────────────────────────────────────── */}
+        {reels.length > 0 ? (
+          <Section kicker="IN MOTION" title="Reels">
+            <View style={styles.mediaRow}>
+              {reels.slice(0, 3).map((uri, i) => (
+                <Image
+                  key={uri + i}
+                  source={{ uri }}
+                  style={[styles.processTile, { width: tile, height: tile * 1.78, backgroundColor: colors.bgSubtle }]}
+                  accessible
+                  accessibilityRole="image"
+                  accessibilityLabel={`Reel ${i + 1} of ${Math.min(reels.length, 3)}`}
+                />
+              ))}
             </View>
+          </Section>
+        ) : null}
 
-            {/* Reels preview */}
-            <View style={[styles.section, { marginTop: 24 }]}>
-              <View style={styles.portfolioHeader}>
-                <Text style={styles.sectionLabel}>REELS</Text>
-              </View>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ gap: 10 }}
-              >
-                {[0, 1, 2].map((i) => {
-                  const reel = reelItems[i]
-                  return (
-                    <View key={i} style={styles.reelCell}>
-                      {reel ? (
-                        <View style={styles.reelFilled}>
-                          <Feather name="play" size={24} color="rgba(240,232,213,0.5)" />
-                        </View>
-                      ) : (
-                        <Feather name="play-circle" size={24} color="rgba(240,232,213,0.15)" />
-                      )}
-                    </View>
-                  )
-                })}
-              </ScrollView>
-            </View>
-          </View>
-        )}
-
-        {/* ── POSTS TAB ── */}
-        {activeTab === 'posts' && (
-          <View style={styles.section}>
-            <View style={styles.postsEmpty}>
-              <Feather name="edit" size={32} color="rgba(240,232,213,0.12)" />
-              {previewMode ? (
-                <>
-                  <Text style={styles.postsEmptyTitle}>Your posts will appear here</Text>
-                  <Text style={styles.postsEmptySub}>
-                    Share updates, photos, and reels to stay top of mind with clients.
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.postsEmptyTitle}>No posts yet</Text>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* ── RECOMMENDED BY CLIENTS (community shoutouts) ──
-            ABOVE the reviews and visibly separate from them. A shoutout is a
-            recommendation, not transaction reputation: it needs no booking, it
-            is public immediately, and it moves no rating. Renders nothing when
-            there are none. */}
         {!previewMode && providerId ? <ProviderShoutouts providerId={providerId} /> : null}
-
-        {/* ── CLIENT REVIEWS (live, revealed only) ── */}
-        {!previewMode && providerId ? (
-          <ProviderReviewsSection providerId={providerId} />
-        ) : null}
+        {!previewMode && providerId ? <ProviderReviewsSection providerId={providerId} /> : null}
       </ScrollView>
 
-      {/* ── STICKY BOOK NOW ── hidden on your own profile */}
-      {!previewMode && !isOwnProfile && (
-        <View style={[styles.bookBar, { paddingBottom: insets.bottom + 12 }]}>
+      {/* ── STICKY BOOK BAR ─────────────────────────────────────────────── */}
+      {showActions && (
+        <View
+          style={[
+            styles.bookBar,
+            {
+              paddingBottom: insets.bottom + 12,
+              backgroundColor: colors.bgCanvas,
+              borderTopColor: colors.borderSubtle,
+            },
+          ]}
+        >
           {/* The message control is withdrawn for someone you have blocked, and
               ONLY for that case. A de-approved provider keeps it — a client who
               already knows them can still reach them, which is the whole point
@@ -587,31 +556,41 @@ export default function ProviderProfile({
               from Messages, where it belongs. */}
           {blockedByMe ? null : (
             <TouchableOpacity
-              style={styles.messageBarBtn}
+              style={[styles.barIconBtn, { borderColor: colors.borderSubtle }]}
               onPress={onMessage}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel={`Message ${provider.name}`}
             >
-              <Feather name="message-circle" size={20} color="#F0E8D5" />
+              <Feather name="message-circle" size={20} color={colors.textPrimary} />
             </TouchableOpacity>
           )}
           {blockedByMe ? (
-            <View style={[styles.bookNowBtn, styles.bookNowBtnClosed]}>
-              <Text style={styles.bookNowClosedText}>
+            <View style={[styles.barPrimary, styles.barClosed, { borderColor: colors.borderSubtle }]}>
+              <Text style={[type.labelAction, { color: colors.textPrimary }]}>
                 {BLOCKED_PROFILE_COPY.bookBar}
               </Text>
-              <Text style={styles.bookNowClosedHint}>{BLOCKED_PROFILE_COPY.hint}</Text>
+              <Text style={[type.bodySmall, { color: colors.textSecondary }]}>
+                {BLOCKED_PROFILE_COPY.hint}
+              </Text>
             </View>
           ) : acceptingBookings ? (
-            <Pressable style={styles.bookNowBtn} onPress={onBookNow}>
-              <Text style={styles.bookNowText}>Book Now</Text>
+            <Pressable
+              style={[styles.barPrimary, { backgroundColor: colors.actionPrimary }]}
+              onPress={onBookNow}
+              accessibilityRole="button"
+              accessibilityLabel={`Request booking with ${provider.name}`}
+              testID="profile-book-bar"
+            >
+              <Text style={[type.titleCard, { color: colors.textOnAction }]}>Request booking</Text>
             </Pressable>
           ) : (
-            // Not a disabled Book Now: a greyed button invites a tap and says
+            // Not a disabled control: a greyed button invites a tap and says
             // nothing. It states the fact in the provider's own terms, and the
             // MESSAGE control beside it stays live — a client who already knows
             // this provider can still reach them.
-            <View style={[styles.bookNowBtn, styles.bookNowBtnClosed]}>
-              <Text style={styles.bookNowClosedText}>
+            <View style={[styles.barPrimary, styles.barClosed, { borderColor: colors.borderSubtle }]}>
+              <Text style={[type.labelAction, { color: colors.textPrimary }]}>
                 Not currently available for new bookings
               </Text>
             </View>
@@ -625,7 +604,7 @@ export default function ProviderProfile({
         animationType="fade"
         onRequestClose={() => setLightboxIndex(null)}
       >
-        <View style={styles.lightboxRoot}>
+        <View style={[styles.lightboxRoot, { backgroundColor: colors.mediaScrim }]}>
           <FlatList
             data={portfolioPhotos.slice(0, 9)}
             horizontal
@@ -639,524 +618,154 @@ export default function ProviderProfile({
               if (next !== lightboxIndex) setLightboxIndex(next)
             }}
             renderItem={({ item }) => (
-              <Pressable
-                style={{ width, height: '100%', justifyContent: 'center' }}
-                onPress={() => setLightboxIndex(null)}
-              >
-                <Image
-                  source={{ uri: item }}
-                  style={{ width, height: width }}
-                  resizeMode="contain"
-                />
-              </Pressable>
+              <View style={{ width, justifyContent: 'center' }}>
+                <Image source={{ uri: item }} style={styles.lightboxImage} resizeMode="contain" />
+              </View>
             )}
           />
           <TouchableOpacity
             style={[styles.lightboxClose, { top: insets.top + 12 }]}
             onPress={() => setLightboxIndex(null)}
-            activeOpacity={0.7}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel="Close photo"
           >
-            <Feather name="x" size={22} color="#F0E8D5" />
+            <Feather name="x" size={22} color={colors.textOnAction} />
           </TouchableOpacity>
-          {portfolioPhotos.length > 1 && lightboxIndex != null && (
-            <View style={[styles.lightboxCounter, { bottom: insets.bottom + 24 }]}>
-              <Text style={styles.lightboxCounterText}>
-                {(lightboxIndex + 1) + ' of ' + Math.min(portfolioPhotos.length, 9)}
-              </Text>
-            </View>
-          )}
         </View>
       </Modal>
     </View>
   )
 }
 
-function StatCol({ value, label }: { value: number | string; label: string }) {
+function MediaButton({
+  icon,
+  label,
+  onPress,
+  active,
+}: {
+  icon: React.ComponentProps<typeof Feather>['name']
+  label: string
+  onPress?: () => void
+  active?: boolean
+}) {
+  const { colors } = useTheme()
   return (
-    <View style={styles.statCol}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
+    <TouchableOpacity
+      // Same scrim ink at alpha, for the same reason: these controls sit on the
+      // photograph and must stay legible against it in either appearance.
+      style={[styles.mediaBtn, { backgroundColor: 'rgba(33,31,29,0.55)' }]}
+      onPress={onPress}
+      activeOpacity={0.8}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={active != null ? { selected: active } : undefined}
+    >
+      <Feather name={icon} size={17} color={colors.textOnAction} />
+    </TouchableOpacity>
   )
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#080808',
-  },
-
-  // Banner
-  banner: {
-    height: 200,
-  },
-  previewPill: {
+  root: { flex: 1 },
+  hero: { height: 300, width: '100%' },
+  heroControls: {
     position: 'absolute',
-    left: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(8,8,8,0.7)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.15)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  previewPillText: {
-    fontSize: 9,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_600SemiBold',
-    letterSpacing: 1,
-  },
-  bannerBtn: {
-    position: 'absolute',
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(8,8,8,0.5)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
-  // Profile photo row
-  photoRow: {
-    marginTop: -36,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  photoWrap: {
-    position: 'relative',
-  },
-  photo: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 3,
-    borderColor: '#080808',
-  },
-  photoPlaceholder: {
-    backgroundColor: 'rgba(240,232,213,0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoInitial: {
-    fontSize: 28,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-  liveBadge: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    backgroundColor: '#C8922A',
-    borderRadius: 6,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-  },
-  liveBadgeText: {
-    fontSize: 8,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  followBtn: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#F0E8D5',
-  },
-  followBtnActive: {
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.2)',
-    paddingVertical: 7,
-  },
-  followBtnText: {
-    fontSize: 13,
-    color: '#080808',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  followBtnTextActive: {
-    color: '#F0E8D5',
-  },
-  messageBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.15)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveBtnActive: {
-    backgroundColor: 'rgba(200,146,42,0.12)',
-    borderColor: 'rgba(200,146,42,0.5)',
-  },
-
-  // Identity
-  identity: {
-    paddingHorizontal: 20,
-    marginTop: 12,
-  },
-  providerName: {
-    fontSize: 22,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  businessName: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  metaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-  },
-  metaText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_400Regular',
-  },
-
-  // Stats
-  statsRow: {
-    flexDirection: 'row',
-    marginTop: 16,
-    paddingHorizontal: 20,
-  },
-  statCol: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  statDivider: {
-    width: 1,
-    height: 30,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    alignSelf: 'center',
-  },
-  statValue: {
-    fontSize: 18,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  statLabel: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 3,
-  },
-  ratingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-
-  // Separator
-  separator: {
-    height: 1,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    marginTop: 16,
-    marginHorizontal: 20,
-  },
-
-  // Trust badges
-  badgesScroll: {
-    marginTop: 14,
-  },
-  badgesRow: {
-    paddingHorizontal: 20,
-    gap: 8,
-  },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  badgeMuted: {
-    backgroundColor: 'rgba(240,232,213,0.05)',
-    borderColor: 'rgba(240,232,213,0.1)',
-  },
-  badgeText: {
-    fontSize: 11,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
-
-  // Bio
-  bio: {
-    paddingHorizontal: 20,
-    marginTop: 16,
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.7)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 21,
-  },
-
-  // Tabs
-  tabBar: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
-    marginTop: 16,
-    paddingHorizontal: 20,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  tabActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#F0E8D5',
-  },
-  tabText: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  tabTextActive: {
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-
-  // Section
-  section: {
-    paddingHorizontal: 20,
-    marginTop: 20,
-  },
-  sectionLabel: {
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_600SemiBold',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-    marginBottom: 12,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.25)',
-    fontFamily: 'Manrope_400Regular',
-    paddingVertical: 16,
-  },
-
-  // Service rows
-  serviceRow: {
-    paddingVertical: 14,
+    left: 20,
+    right: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  serviceRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.05)',
-  },
-  serviceName: {
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
-  serviceDuration: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  depositRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-  },
-  depositText: {
-    fontSize: 11,
-    color: '#C8922A',
-    fontFamily: 'Manrope_400Regular',
-    marginLeft: 4,
-  },
-  servicePriceCol: {
-    alignItems: 'flex-end',
-  },
-  servicePrice: {
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  bookLink: {
-    fontSize: 12,
-    color: '#C8922A',
-    fontFamily: 'Manrope_500Medium',
-    marginTop: 3,
-  },
-
-  // Portfolio
-  portfolioHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 12,
-    marginTop: 20,
-  },
-  portfolioAction: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.35)',
-    fontFamily: 'Manrope_500Medium',
-  },
-  portfolioCount: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  photoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 2,
-  },
-  photoPlaceholderCell: {
-    backgroundColor: 'rgba(240,232,213,0.05)',
+  heroControlsRight: { flexDirection: 'row', gap: 8 },
+  mediaBtn: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  identity: { paddingHorizontal: 20, paddingTop: 60, paddingBottom: 28 },
+  avatarWrap: { position: 'absolute', left: 20, top: -44 },
+  avatar: { width: 88, height: 88, borderRadius: 44, borderWidth: 3 },
+  avatarInitials: { alignItems: 'center', justifyContent: 'center' },
+  repRow: { flexDirection: 'row', alignItems: 'center', minHeight: 20, flexWrap: 'wrap' },
+  repValue: { marginLeft: 5 },
+  repDetail: { marginLeft: 6 },
+  bookingsLine: { marginTop: 3 },
+  name: { marginTop: 10 },
+  handle: { marginTop: 3 },
+  trade: { marginTop: 10 },
+  hood: { marginTop: 2 },
+  bio: { marginTop: 16 },
+  specialties: { marginTop: 16 },
+  primaryBtn: {
+    marginTop: 22,
+    height: 54,
+    borderRadius: 16,
+    borderCurve: 'continuous',
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // Reels
-  reelCell: {
-    width: 110,
-    aspectRatio: 9 / 16,
-    borderRadius: 10,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    overflow: 'hidden',
+  identityActions: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  secondaryBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    opacity: 0.95,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  reelFilled: {
-    ...StyleSheet.absoluteFillObject,
+  iconBtn: {
+    width: 50,
+    height: 46,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // Posts
-  postsEmpty: {
-    paddingVertical: 40,
-    alignItems: 'center',
-  },
-  postsEmptyTitle: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.35)',
-    fontFamily: 'Manrope_500Medium',
-    marginTop: 12,
-  },
-  postsEmptySub: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.25)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 6,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
-
-  // Book bar
+  section: { paddingHorizontal: 20, paddingTop: 36 },
+  kicker: { marginBottom: 8 },
+  sectionLead: { marginTop: 6 },
+  rows: { marginTop: 18 },
+  serviceRow: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 16 },
+  serviceText: { flex: 1 },
+  serviceMeta: { marginTop: 3 },
+  servicePrice: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  mediaRow: { flexDirection: 'row', gap: 10, marginTop: 18 },
+  processTile: { borderRadius: 14, borderCurve: 'continuous' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 },
+  tile: { borderRadius: 10, borderCurve: 'continuous' },
   bookBar: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(8,8,8,0.95)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.06)',
-    paddingHorizontal: 20,
-    paddingTop: 12,
+    bottom: 0,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth * 2,
   },
-  messageBarBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 14,
+  barIconBtn: {
+    width: 56,
+    height: 54,
+    borderRadius: 16,
     borderCurve: 'continuous',
-    backgroundColor: 'rgba(240,232,213,0.07)',
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  bookNowBtn: {
+  barPrimary: {
     flex: 1,
-    height: 52,
-    borderRadius: 14,
+    minHeight: 54,
+    borderRadius: 16,
     borderCurve: 'continuous',
-    backgroundColor: '#C8922A',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
   },
-  bookNowClosedHint: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  bookNowBtnClosed: {
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
-  },
-  bookNowClosedText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_500Medium',
-    textAlign: 'center',
-    paddingHorizontal: 12,
-  },
-  bookNowText: {
-    fontSize: 16,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-
-  lightboxRoot: {
-    flex: 1,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-  },
-  lightboxClose: {
-    position: 'absolute',
-    right: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(8,8,8,0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  lightboxCounter: {
-    position: 'absolute',
-    alignSelf: 'center',
-    backgroundColor: 'rgba(8,8,8,0.6)',
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  lightboxCounterText: {
-    fontSize: 12,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
+  barClosed: { borderWidth: 1 },
+  lightboxRoot: { flex: 1 },
+  lightboxImage: { width: '100%', height: '80%' },
+  lightboxClose: { position: 'absolute', right: 20 },
 })
