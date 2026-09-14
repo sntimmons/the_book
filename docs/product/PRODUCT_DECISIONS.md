@@ -3376,8 +3376,44 @@ asserts it against the real non-production database in CI. `bookingPhotoUrls()` 
 exists and is already documented as serving *"whichever party is reading"*. Presentation is
 the whole of the remaining work.
 
-**Status:** Locked as approved scope. No database change required. Implementation in a
-dedicated PR.
+**Status:** CLOSED. Shipped in PR #102 (`c5bb242`, 2026-09-14) with no database change of
+any kind. Visibility ruled by [PD-124](#pd-124--a-shared-booking-record-is-shared-only-actions-branch-by-role).
+
+### PD-124 — A shared booking record is shared; only actions branch by role
+
+**Decided 2026-09-14. Ruled on merging PR #102 (`c5bb242`).**
+
+`app/bookings/[id].tsx` is one route serving both parties to a booking. **The RECORD it
+shows is shared. Only the ACTIONS branch by role.** Reference photos are part of the record.
+
+**Ruling: reference photos render for BOTH authorised booking parties.** Approved because:
+
+- the booking-detail route is shared
+- the provider is **already authorised by the existing policy** — no access was granted
+- provider visibility **already exists elsewhere** in the booking workflow
+  (`app/bookings/request/[id].tsx`)
+- hiding them from the provider would create **a new asymmetry with no product requirement
+  behind it**
+
+**Labels are role-aware**, matching the note card beside them:
+
+| Viewer | Label |
+| --- | --- |
+| Client | `YOUR REFERENCE PHOTOS` |
+| Provider | `CLIENT'S REFERENCE PHOTOS` |
+
+**The boundary this does NOT move.** *Authorised* is the database's word, not the screen's.
+`booking_photos_participants_read` and `can_read_booking_photo` resolve through the booking
+and admit only its two parties — and the provider only once the request has actually been
+**SENT**. Photos are **never** exposed to an unauthorised viewer: one who may not read an
+object receives no signed URL for it and the helper drops it, so the path fails closed
+without the screen deciding anything.
+
+**The general rule, binding beyond photos.** On a shared route, **hiding part of the record
+by role is a product decision and returns to PM** — it is not a default, and it is not
+something to add while implementing something else. Role branches the actions.
+
+**Status:** Locked. Implemented in PR #102.
 
 ## Not decisions
 
