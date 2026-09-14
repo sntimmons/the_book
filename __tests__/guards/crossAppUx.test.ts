@@ -271,12 +271,34 @@ describe('the bookings list distinguishes an expired request from a live one', (
 
   it('derives expiry rather than reading it from the status enum', () => {
     expect(s).toMatch(/bookingRequestUrgency/)
-    expect(s).toMatch(/'Expired'/)
+  })
+
+  // The "Expired" LABEL moved into the shared StatusBadge when the list was
+  // migrated onto the theme system. The guarantee is unchanged and is now asserted
+  // in two halves: the list still derives expiry and hands the answer to the badge,
+  // and the badge is what says the word.
+  it('hands the derived answer to the shared badge', () => {
+    expect(s).toMatch(/<StatusBadge[\s\S]*expired=\{expired\}/)
+  })
+
+  it('says "Expired" where the badge now owns the label', () => {
+    const badge = code('components/ui/StatusBadge.tsx')
+    expect(badge).toMatch(/'Expired'/)
   })
 
   it('shows no raw enum value to the user', () => {
-    // Labels come from bookingStatusLabel; the pill must not print `status` itself.
+    // Labels come from bookingStatusLabel; the badge must not print `status` itself.
     expect(s).not.toMatch(/<Text[^>]*>\{status\}<\/Text>/)
+    const badge = code('components/ui/StatusBadge.tsx')
+    expect(badge).toMatch(/bookingStatusLabel/)
+    expect(badge).not.toMatch(/<Text[^>]*>\{status\}<\/Text>/)
+  })
+
+  it('keeps an expired request out of the danger family', () => {
+    // The tone rules are pure and separately tested; this guard exists so a future
+    // edit to the BADGE cannot quietly reintroduce a red Expired.
+    const tone = code('lib/theme/statusTone.ts')
+    expect(tone).not.toMatch(/statusDanger/)
   })
 
   it('does not blame the provider for a deadline passing', () => {

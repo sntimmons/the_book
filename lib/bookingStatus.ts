@@ -212,3 +212,33 @@ export function requestTimeRemaining(
   if (hours > 0) return `${hours}h left`
   return `${Math.floor((diff % HOURS) / (60 * 1000))}m left`
 }
+
+// ── WHY A REQUEST IS WHERE IT IS, ON THE ROW ─────────────────────────────
+//
+// The approved frame carries a short note under each booking, and it earns its
+// place: a status word alone does not tell a client whether anything is expected of
+// them. This derives that note from data the list already selects — nothing new is
+// fetched and nothing is guessed.
+//
+// NO BLAME, and no invented precision. An expired request says the request expired,
+// never that the provider ignored it. Anything we cannot state from the row returns
+// null and renders nothing, rather than padding the card with filler.
+export function bookingListNote(
+  booking: { status: string; submitted_at?: string | null },
+  expired: boolean,
+  providerName?: string,
+): string | null {
+  if (expired) return 'This request expired before it was answered.'
+  if (bookingStatusTone(booking.status) !== 'pending') return null
+  const first = (providerName ?? '').trim().split(/\s+/)[0]
+  const sent = booking.submitted_at
+    ? new Date(booking.submitted_at).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'America/Chicago',
+      })
+    : null
+  if (sent && first) return `Sent ${sent}. Waiting on ${first}.`
+  if (sent) return `Sent ${sent}. Waiting on your provider.`
+  return null
+}
