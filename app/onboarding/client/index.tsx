@@ -169,7 +169,7 @@ export default function ClientProfileSetup() {
           <View style={{ flex: 1 }}>
             <Text style={styles.trustTitle}>Why do we need this?</Text>
             <Text style={styles.trustBody}>
-              Providers see your profile before accepting bookings. This keeps The Book safe for everyone.
+              Providers see your profile before accepting bookings. This keeps Third safe for everyone.
             </Text>
           </View>
         </View>

@@ -369,7 +369,7 @@ export default function ProviderDashboard() {
       'Decline Booking',
       // PRODUCT TRUTH: promised a notification (no push channel exists, PD-059)
       // and implied a charge would otherwise have been made (none ever is).
-      'Are you sure? The client will see this in The Book.',
+      'Are you sure? The client will see this in Third.',
       [
         { text: 'Keep', style: 'cancel' },
         {

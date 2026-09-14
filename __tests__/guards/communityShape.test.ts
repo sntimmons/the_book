@@ -308,7 +308,7 @@ describe('a shoutout indicator states a booking, not a verdict', () => {
     for (const f of ['app/community/index.tsx', 'components/ProviderShoutouts.tsx']) {
       const src = read(f)
       expect(src).toContain('bookingBacked')
-      expect(src).toContain('Booked on The Book')
+      expect(src).toContain('Booked on Third')
     }
   })
 

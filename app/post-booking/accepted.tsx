@@ -261,7 +261,7 @@ export default function BookingAccepted() {
         endDate,
         location: data.providerLocation ?? undefined,
         notes:
-          'Booked on The Book.' +
+          'Booked on Third.' +
           (data.agreedAmount > 0
             ? ' Agreed price: ' + money(data.agreedAmount) + '. Pay your provider directly.'
             : ''),
@@ -375,7 +375,7 @@ export default function BookingAccepted() {
 
           <Text style={styles.subtext}>
             {data.providerName.split(' ')[0]} confirmed your booking.{'\n'}
-            The Book does not take payment — settle up with them directly.
+            Third does not take payment — settle up with them directly.
           </Text>
 
           <View style={styles.card}>

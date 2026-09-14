@@ -95,7 +95,7 @@ export default function BookConfirmed() {
             a response appears in the app. */}
         <Text style={styles.subtext}>
           Your booking request has been sent. {firstName} will review it and
-          accept or decline. You&apos;ll see their response in The Book.
+          accept or decline. You&apos;ll see their response in Third.
         </Text>
 
         {/* ITEM 2 (PM decision, PR #74): the client IS told the window.
@@ -163,7 +163,7 @@ export default function BookConfirmed() {
               n: '2',
               // PRODUCT TRUTH: was "You get notified instantly" / "you get a
               // notification". No push, device or email notification exists.
-              title: 'You see their answer in The Book',
+              title: 'You see their answer in Third',
               desc: `When ${firstName} responds you will see it in your bookings — whether they accept, decline, or suggest another time.`,
               green: false,
             },
@@ -172,7 +172,7 @@ export default function BookConfirmed() {
               // PRODUCT TRUTH: was "No payment upfront" / "No payment is taken
               // until ... accepts", both of which implied a later in-app charge.
               title: 'No in-app payment',
-              desc: `The Book does not take payment in this beta. You arrange payment directly with ${firstName}.`,
+              desc: `Third does not take payment in this beta. You arrange payment directly with ${firstName}.`,
               green: true,
             },
           ].map((step) => (

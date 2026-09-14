@@ -36,7 +36,7 @@ import {
 // The Book processes no payment in the closed beta (PD-042), so no helper beside
 // a fee field may say the fee is "charged" without saying by whom and how.
 const POLICY_FEE_COLLECTION_NOTE =
-  'The Book does not collect this — you settle it with your client.'
+  'Third does not collect this — you settle it with your client.'
 
 export type PolicyMode = 'onboarding' | 'dashboard'
 
@@ -528,7 +528,7 @@ export default function PolicyEditor({
         <View style={styles.footnoteRow}>
           <Feather name="info" size={14} color="rgba(240,232,213,0.25)" style={{ marginTop: 2 }} />
           <Text style={styles.footnoteText}>
-            Policies are legally binding agreements between you and your clients. The Book facilitates fee collection but you are responsible for maintaining fair practice.
+            Policies are legally binding agreements between you and your clients. Third facilitates fee collection but you are responsible for maintaining fair practice.
           </Text>
         </View>
 

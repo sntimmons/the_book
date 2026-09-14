@@ -259,7 +259,7 @@ export default function BusinessCommunity() {
                   </Text>
                   {hidden ? (
                     <Text style={s.hiddenBadge}>
-                      Hidden by The Book — not shown in Community
+                      Hidden by Third — not shown in Community
                     </Text>
                   ) : null}
                   <Text style={s.rowText} numberOfLines={3}>

@@ -121,7 +121,7 @@ export default function SignedContractViewer() {
               {detail.contract?.currentVersionNo
                 ? `Accepted version ${detail.contract.currentVersionNo} of this agreement.`
                 : 'Accepted version of this agreement.'}
-              {' '}The Book records who accepted it, which version, and when. It is not a
+              {' '}Third records who accepted it, which version, and when. It is not a
               witnessed or legally certified signature.
             </Text>
           </View>

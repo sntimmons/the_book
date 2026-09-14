@@ -236,7 +236,7 @@ export default function IssueReport() {
             style={styles.safetyIcon}
           />
           <Text style={styles.safetyText}>
-            Your report is recorded and sent to The Book. If you are in immediate danger, contact local emergency services.
+            Your report is recorded and sent to Third. If you are in immediate danger, contact local emergency services.
           </Text>
         </View>
       </ScrollView>

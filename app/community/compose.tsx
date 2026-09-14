@@ -295,7 +295,7 @@ export default function CommunityCompose() {
                   </TouchableOpacity>
                 ))}
                 <Text style={s.hint}>
-                  Linking one shows &ldquo;Booked on The Book&rdquo; on your recommendation.
+                  Linking one shows &ldquo;Booked on Third&rdquo; on your recommendation.
                   Optional — plenty of good recommendations do not have one, and leaving it
                   off says nothing against you.
                 </Text>

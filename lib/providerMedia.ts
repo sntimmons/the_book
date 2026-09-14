@@ -108,7 +108,7 @@ export async function deleteProviderMedia(
 export const DELETE_MEDIA_COPY = {
   title: 'Delete this?',
   body:
-    'This removes it from your profile and from The Book. It cannot be undone, and it does not'
+    'This removes it from your profile and from Third. It cannot be undone, and it does not'
     + ' remove copies anyone has already saved.',
   confirmLabel: 'Delete',
   cancelLabel: 'Keep it',

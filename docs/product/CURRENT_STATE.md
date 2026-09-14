@@ -21,6 +21,24 @@
 > than either. **In-context safety reporting is unaffected and real** — `ReportSheet` from a
 > profile or post, and `post-booking/issue` from a booking.
 
+**The customer-facing name is Third** (2026-09-14). **43 user-visible strings across 30
+files** were changed from "The Book" to "Third" — payment-beta copy, booking and contract
+copy, Community and Trades wording, Settings, onboarding, share sheets and operator copy.
+
+**This was a copy pass, not a technical rename.** Nothing renamed the repository, database
+objects, migrations, Supabase objects, route names or internal identifiers. The discovery
+lane is the clearest illustration: the user-visible `title` is now `'New to Third'` while its
+`key` is still `'new_to_the_book'`, because the key is a technical identifier that tests and
+callers depend on. **47 occurrences inside code comments were deliberately left alone** —
+they carry the reasoning and history behind past decisions, and rewriting them would distort
+the record.
+
+`__tests__/guards/customerFacingName.test.ts` stops the legacy brand returning to anything a
+user can read. It classifies per line rather than parsing character by character, because
+JSX text contains bare apostrophes — `a provider's profile` — which a naive string parser
+reads as the start of a literal and is then desynced, reporting comments as user-visible
+copy. The guard tests that failure mode against itself.
+
 **Bookings is PARTIALLY migrated onto the Third theme** (`f911242`, PR #96, 2026-09-14).
 **Phase 2 is partial, not complete, and must not be read as finished.** Two surfaces moved:
 the **Bookings list** (`app/(tabs)/bookings.tsx`) and the **booking message + reference
@@ -151,7 +169,7 @@ neighbourhood is **not** a `NOT NULL` constraint, because account erasure sets `
 `neighborhood` to null — a constraint would refuse to let somebody delete their account.
 
 **Discovery / Fairness is COMPLETE for the closed-beta scope** (`c444abb`, PR #89, 2026-09-13).
-Provider discovery is five named lanes — **Near You, Open Today, New to The Book, Worth a Look** —
+Provider discovery is five named lanes — **Near You, Open Today, New to Third, Worth a Look** —
 over a complete grid, each lane stating its own rule. Four decisions came out of it: **PD-114**
 (unrated is neutral, not zero quality), **PD-115** (`is_featured` may not reorder the marketplace),
 **PD-116** (search intent outranks popularity) and **PD-117** ("Popular Near You" does not ship).
@@ -242,7 +260,7 @@ belonged and where they had never been.
 - **A shoutout is a recommendation, not a review (PD-097, PD-098).** It names a real approved
   provider — not yourself, not across a block — and moves **nothing**: no rating, no count, no
   marketplace position. A booking link is **optional**; where the server verified one the shoutout
-  shows *"Booked on The Book"*, which states a booking and not a verdict, and whose **absence
+  shows *"Booked on Third"*, which states a booking and not a verdict, and whose **absence
   implies nothing**.
 - **A report now has an outcome (PD-099).** An authorized operator can **hide** and **restore**
   Community posts and replies. **Hiding is not deletion** — the row, the report, the case and every

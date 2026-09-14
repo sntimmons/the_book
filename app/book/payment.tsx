@@ -383,7 +383,7 @@ export default function BookPayment() {
           {/* PRODUCT TRUTH: "You won't be charged now" implied a later charge.
               The Book does not charge at any point in this beta. */}
           <Text style={styles.holdHelperText}>
-            Shown so you know the cost. The Book does not take payment.
+            Shown so you know the cost. Third does not take payment.
           </Text>
         </View>
 

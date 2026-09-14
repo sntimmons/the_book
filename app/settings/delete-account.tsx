@@ -277,7 +277,7 @@ export default function DeleteAccount() {
         </Bullet>
         <Bullet>
           Safety reports and their outcomes, so a report cannot be erased by deleting an account.
-          Access is restricted to The Book.
+          Access is restricted to Third.
         </Bullet>
         <Text style={s.small}>
           {/* No legal claim. Stated as an interim policy, because that is what it is. */}

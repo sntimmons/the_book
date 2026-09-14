@@ -259,7 +259,7 @@ export default function BookingDetailScreen() {
     Alert.alert(
       'Cancel Booking',
       byProvider
-        ? 'Cancel this appointment? The client will see this in The Book.'
+        ? 'Cancel this appointment? The client will see this in Third.'
         : 'Cancel this appointment? This cannot be undone.',
       [
         { text: 'Keep', style: 'cancel' },

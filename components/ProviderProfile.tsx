@@ -148,7 +148,7 @@ export default function ProviderProfile({
 
   async function handleShare() {
     try {
-      await Share.share({ message: `Check out ${provider.name} on The Book` })
+      await Share.share({ message: `Check out ${provider.name} on Third` })
     } catch {}
   }
 
