@@ -3415,6 +3415,61 @@ something to add while implementing something else. Role branches the actions.
 
 **Status:** Locked. Implemented in PR #102.
 
+### PD-125 — Booking details stay off the Provider Profile until a truthful public read path exists
+
+**Decided 2026-09-14. Ruled on merging PR #104 (`1aadff8`).**
+
+The approved Provider Profile frame carries a **Booking details** block — cancellation
+window and lateness grace. It is **not implemented, and the omission is approved.**
+
+**Why it could not be built truthfully.** Both values live only on
+`provider_booking_preferences`, whose sole SELECT policy is `provider_read_own_preferences`
+— the provider who owns the row. A **client read returns zero rows and no error**, so
+`rowsToPolicy` falls through to `DEFAULT_POLICY` and the screen would print
+*"24 hours before"* as this provider's own term when it is a constant. That is the defect
+PD-122 forbids: a value that looks like data and is not.
+
+`provider_policies` **is** client-readable, but carries only the fee, reschedule and travel
+terms — and the fee percentages are separately forbidden, because Third takes no payment in
+this beta.
+
+**Forbidden in the meantime:** `DEFAULT_POLICY` values presented as provider-specific truth,
+placeholders, dashes, and inferred values. The section is **absent**.
+
+**The unblocking condition** is a read path that returns the provider's REAL values to a
+client, without widening access to the rest of that table — which holds
+`vacation_mode`, `max_bookings_per_day`, `buffer_minutes`, `minimum_notice_hours`,
+`requires_manual_approval` and `timezone`, none of which are a client's business.
+
+**Status:** Locked as an approved omission. Revisit when the read path lands.
+
+---
+
+### PD-126 — Completed bookings is context, never popularity
+
+**Decided 2026-09-14. Ruled on merging PR #104.**
+
+The Provider Profile may show **completed bookings** (`providers.total_bookings`), and it is
+kept because it is one of the few things the marketplace actually knows about a provider.
+
+**Binding conditions, all of which it currently meets:**
+
+- sourced from real existing data, and accurate
+- **never framed as popularity** — it is a count of finished work, not of interest
+- **never an input to ranking.** Discovery and search carry no social or volume signal
+  (PD-115, PD-116, PD-120); this line is presentation only
+- **never visually dominant** over identity, services or reviews — it sits as a caption
+  under the reputation line
+- absent at zero, rather than announcing a nought
+
+**The distinction this preserves.** A follower count says how many people are interested; a
+completed-bookings count says how much work has actually been finished and closed. The first
+is social proof and is **absent from the profile entirely**; the second is a fact about the
+transaction record. They are not interchangeable and the first may not re-enter as the
+second.
+
+**Status:** Locked.
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:
