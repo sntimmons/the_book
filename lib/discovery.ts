@@ -305,7 +305,11 @@ export function buildDiscoveryLanes(inputs: DiscoveryInputs): DiscoveryLane[] {
   lanes.push({
     key: 'worth_a_look',
     title: 'Worth a Look',
-    subtitle: "Providers you haven't seen in the rows above.",
+    // PM ruling (Phase 4B): "Providers you haven't seen in the rows above" was
+    // accurate and faintly apologetic — it framed the lane as leftovers. These
+    // providers are not lesser; they are simply the ones the capped rows above
+    // did not reach. The copy now states the plain fact.
+    subtitle: 'Also working in Houston',
     providers: providers
       .filter((p) => !shown.has(p.id))
       .sort((a, b) => tiebreak(a.id) - tiebreak(b.id))
