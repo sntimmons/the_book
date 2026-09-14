@@ -87,10 +87,20 @@ under Business (`/(tabs)/business/bookings`), and the `[My appointments] [My bus
 segmented control stays rejected for closed beta (below). Anything that would give the client
 Bookings surface a provider mode is out of scope and returns to PM.
 
-**With the above recorded, the client Bookings visual migration is COMPLETE** — every
-approved client Bookings route is implemented and themed. The only open item against it is
-the reference-photo follow-up (PD-123), and Length/Where are closed as approved omissions
-(PD-122), not as gaps.
+**THE CLIENT BOOKINGS VISUAL MIGRATION IS COMPLETE.** Every approved client Bookings route
+is implemented and themed. Nothing is outstanding against it: reference photos shipped
+(PD-123, PR #102), Length and Where are **closed as approved omissions** (PD-122) rather
+than gaps, and the month grid is **approved behaviour** (PD-121) rather than a defect.
+
+**PHASE 2 — BOOKINGS is CLOSED for beta client presentation** as of `c5bb242`. Do not
+continue modifying Bookings unless a **real QA defect** appears, **PM reopens scope**, or
+**Figma housekeeping is explicitly requested**. The one piece of housekeeping outstanding is
+the Date & time frame (below); it is visual only and **no code waits on it**.
+
+**No backend work was required by any part of Phase 2.** Across PR #96, #99 and #102 there
+is **no schema, migration, RLS, storage-policy or Supabase change of any kind** — every
+change is presentation code. No booking logic, state machine, RPC, expiry engine or contract
+engine was altered.
 
 **Two divergences from the approved frames. Both were flagged rather than resolved by PR
 #99, and both have since been RULED ON. Neither is drift, and neither is to be "fixed".**
@@ -109,21 +119,41 @@ the reference-photo follow-up (PD-123), and Length/Where are closed as approved 
   forbidden. **The query is not to be widened to satisfy the frame** — that needs an
   authoritative source for both facts, which is a separate question.
 
-**One bounded completeness follow-up remains open: reference photos on the client booking
-detail (PD-123).** A client attaches up to three reference photos to a request, they really
-upload and attach (`lib/bookingPhotos.ts`, `booking_reference_photos`), and **the provider
-sees them** on `app/bookings/request/[id].tsx` — but **the client never sees them again on
-their own booking detail**. The capability exists on both sides of the record and is
-surfaced to only one of them.
+**Reference photos now display on the booking record — PD-123 is CLOSED** (`c5bb242`,
+PR #102, 2026-09-14). A client attaches up to three reference photos to a request; they
+really upload and attach (`lib/bookingPhotos.ts`, `booking_reference_photos`). The provider
+could see them on `app/bookings/request/[id].tsx` and **the client could not see them
+anywhere**. `components/ui/ReferencePhotos.tsx` closes that half of the record on
+`app/bookings/[id].tsx`.
 
-**This requires no database change, and that was verified rather than assumed.**
+**Rendered for BOTH authorised parties, with role-aware labels — PD-124.** `YOUR REFERENCE
+PHOTOS` for the client, `CLIENT'S REFERENCE PHOTOS` for the provider, matching the note card
+beside it. The record is shared; only **actions** branch by role.
+
+**No backend work was required, and that was verified rather than assumed.**
 `booking_photos_participants_read` and `can_read_booking_photo` (`20261072000000`, refined
 by `20261073000000`) each authorise **the client of the booking** by name — *"The client
 sees their own attachments at any stage"* — and `supabase/tests/booking_integrity.test.sql`
 asserts exactly that against the real non-production database on every CI run.
-`bookingPhotoUrls()` already exists and its own contract says it serves *"whichever party is
-reading"*. What is missing is **presentation only**. It is scoped to one small PR and must
-not widen into a booking-detail expansion.
+`bookingPhotoUrls()` already existed and its own contract already said it served *"whichever
+party is reading"*. **No schema, migration, RLS, storage-policy, upload or deletion change
+was made.**
+
+**Authorization stays the database's, and a guard keeps it there.** The screen reads through
+`bookingPhotoUrls()`, which scopes to one booking and signs one object at a time; a viewer
+who may not read an object gets no signed URL and the helper drops it, so the path **fails
+closed** without the screen deciding anything. `ReferencePhotos` is presentation only — it
+takes signed URLs and has no idea what a booking is, so it cannot learn to fetch.
+`__tests__/guards/bookingDetailPhotoAccess.test.ts` locks both halves: no direct table,
+bucket or `createSignedUrl` access from the screen, no data import in the component, no
+upload or delete from a detail screen, and `bookingPhotoUrls` still filtered by
+`booking_id` — without which the signing loop would fan out across every photo row the
+caller can see.
+
+**Absent, not empty.** A booking with no reference photos renders **nothing**: no empty
+state, because a booking without them is not missing anything, and no placeholder frame,
+because a grey box implies a photo the viewer cannot open. A failure to obtain the URLs
+lands in the same place.
 
 **Bookings was PARTIALLY migrated in Phase 2** (`f911242`, PR #96, 2026-09-14).
 **Phase 2 is partial, not complete, and must not be read as finished.** Two surfaces moved:
