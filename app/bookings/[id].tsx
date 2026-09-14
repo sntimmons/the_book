@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,16 +11,17 @@ import {
 import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import { StatusBar } from 'expo-status-bar'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { getOrCreateConversation } from '../../hooks/useMessaging'
-import {
-  bookingStatusLabel,
-  bookingRequestUrgency,
-  RequestUrgency,
-} from '../../lib/bookingStatus'
+import { bookingListNote, bookingRequestUrgency, RequestUrgency } from '../../lib/bookingStatus'
 import { reviewEntryFor, ReviewOpportunity } from '../../lib/reviews'
 import { useReviewOpportunity } from '../../hooks/useReviewOpportunity'
+import { useTheme } from '@/context/ThemeContext'
+import Button from '@/components/ui/Button'
+import StatusBadge from '@/components/ui/StatusBadge'
+import Avatar from '@/components/ui/Avatar'
 
 interface BookingDetail {
   id: string
@@ -85,37 +85,11 @@ export function statusBucket(status: string): StatusBucket {
   }
 }
 
-interface StatusStyle {
-  fg: string
-  bg: string
-  border: string
-}
-
-// Distinct fg/bg/border per status keeps the pill readable on the dark
-// background. The dropped beta states (arriving/checked_in/rescheduled) reuse
-// the accepted "Confirmed" green so any legacy rows look consistent.
-export function getStatusStyle(status: string): StatusStyle {
-  switch (status) {
-    case 'pending':
-      return { fg: '#C8922A', bg: 'rgba(200,146,42,0.12)', border: 'rgba(200,146,42,0.4)' }
-    case 'accepted':
-    case 'arriving':
-    case 'checked_in':
-    case 'rescheduled':
-      return { fg: '#4CAF50', bg: 'rgba(76,175,80,0.12)', border: 'rgba(76,175,80,0.4)' }
-    case 'completed':
-      return { fg: '#7CCB80', bg: 'rgba(76,175,80,0.1)', border: 'rgba(76,175,80,0.3)' }
-    case 'no_show':
-      return { fg: '#E05C5C', bg: 'rgba(224,92,92,0.12)', border: 'rgba(224,92,92,0.4)' }
-    default:
-      // declined + all cancel variants
-      return {
-        fg: 'rgba(240,232,213,0.55)',
-        bg: 'rgba(240,232,213,0.05)',
-        border: 'rgba(240,232,213,0.15)',
-      }
-  }
-}
+// `getStatusStyle` used to live here: a second, private colour table that painted
+// No show red and Pending amber. Both readings were ruled out — a no-show is a
+// transaction OUTCOME, not an error, and nothing here may blame either party. The
+// pill is now <StatusBadge>, whose tones come from lib/theme/statusTone.ts, so the
+// rule is stated once and tested once instead of being re-decided per screen.
 
 function money(n: number | null): string {
   if (n == null) return '$0.00'
@@ -123,6 +97,7 @@ function money(n: number | null): string {
 }
 
 export default function BookingDetailScreen() {
+  const { colors, scheme } = useTheme()
   const { id } = useLocalSearchParams<{ id: string }>()
   const { user } = useAuth()
   const insets = useSafeAreaInsets()
@@ -334,15 +309,20 @@ export default function BookingDetailScreen() {
 
   // ─── Render ────────────────────────────────────────────────────────
   const headerNode = (
-    <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+    <View
+      style={[
+        styles.topBar,
+        { paddingTop: insets.top + 12, borderBottomColor: colors.borderSubtle },
+      ]}
+    >
       <TouchableOpacity
         onPress={() => router.back()}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         activeOpacity={0.7}
       >
-        <Ionicons name="chevron-back" size={24} color="#F0E8D5" />
+        <Ionicons name="chevron-back" size={24} color={colors.iconPrimary} />
       </TouchableOpacity>
-      <Text style={styles.topBarTitle}>Booking Details</Text>
+      <Text style={[styles.topBarTitle, { color: colors.textPrimary }]}>Bookings</Text>
       {/* Providers can jump straight to their dashboard (and its drawer) from
           here, since this screen lives outside the provider drawer. Clients
           see only the back button. */}
@@ -352,7 +332,7 @@ export default function BookingDetailScreen() {
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           activeOpacity={0.7}
         >
-          <Ionicons name="home-outline" size={22} color="#F0E8D5" />
+          <Ionicons name="home-outline" size={22} color={colors.iconPrimary} />
         </TouchableOpacity>
       ) : (
         <View style={{ width: 24 }} />
@@ -362,10 +342,11 @@ export default function BookingDetailScreen() {
 
   if (loading) {
     return (
-      <View style={styles.root}>
+      <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {headerNode}
         <View style={styles.centerWrap}>
-          <ActivityIndicator color="#C8922A" />
+          <ActivityIndicator color={colors.textSecondary} />
         </View>
       </View>
     )
@@ -373,116 +354,151 @@ export default function BookingDetailScreen() {
 
   if (!booking) {
     return (
-      <View style={styles.root}>
+      <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
+        <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
         {headerNode}
         <View style={styles.centerWrap}>
-          <Text style={styles.notFoundText}>Booking not found</Text>
-          <Pressable
-            style={styles.primaryBtn}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.primaryBtnText}>Go Back</Text>
-          </Pressable>
+          <Text style={[styles.notFoundText, { color: colors.textSecondary }]}>
+            Booking not found
+          </Text>
+          <Button label="Go back" onPress={() => router.back()} fullWidth={false} />
         </View>
       </View>
     )
   }
 
-  const statusStyle = getStatusStyle(booking.status)
   const bucket = statusBucket(booking.status)
+  const urgency = bookingRequestUrgency(booking)
+
+  // The SAME note the Bookings list shows, from the same helper — a request must
+  // not say one thing in the list and another here.
+  const listNote = bookingListNote(booking, urgency === 'expired', providerName)
+
+  // PD-077, stated only while it is still true. `expires_at = LEAST(submitted_at +
+  // 72 hours, appointment_time)`, so the appointment is often the binding term and
+  // a flat "72 hours" would overstate the window in the ordinary case.
+  const windowNote =
+    urgency === 'expired'
+      ? null
+      : 'Your provider has up to 72 hours to respond, or until your requested time — whichever comes first.'
+
+  const whenLine = [booking.requested_date, booking.requested_time].filter(Boolean).join(' · ') || '-'
+  const providerFirstName = (providerName || 'your provider').split(' ')[0]
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
       {headerNode}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.scrollContent, { paddingBottom: insets.bottom + 220 }]}
       >
-        {/* Status pill */}
-        <View
-          style={[
-            styles.statusPill,
-            { backgroundColor: statusStyle.bg, borderColor: statusStyle.border },
-          ]}
-        >
-          <Text style={[styles.statusPillText, { color: statusStyle.fg }]}>
-            {bookingStatusLabel(booking.status)}
-          </Text>
+        {/* One pill, one rule. `expired` is NOT passed: this screen reads a single
+            booking and does no lapse maths of its own — the pending branch below
+            states the window from the server's derived urgency instead. */}
+        <View style={styles.statusRow}>
+          <StatusBadge status={booking.status} testID="booking-detail-status" />
         </View>
 
         {/* Service card */}
-        <View style={styles.card}>
-          <Text style={styles.serviceName}>
+        <View
+          style={[
+            styles.card,
+            { backgroundColor: colors.bgSurface, borderColor: colors.borderSubtle },
+          ]}
+        >
+          <Text style={[styles.serviceName, { color: colors.textPrimary }]}>
             {booking.service_name ?? 'Service'}
           </Text>
-          <Text style={styles.peerLine}>
-            {isProvider
-              ? `Client: ${clientName}`
-              : `Provider: ${providerName}${providerCategory ? ' · ' + providerCategory : ''}`}
-          </Text>
 
-          <View style={styles.divider} />
-
-          <View style={styles.detailRow}>
-            <Ionicons
-              name="calendar-outline"
-              size={16}
-              color="rgba(240,232,213,0.4)"
-              style={styles.detailIcon}
-            />
-            <Text style={styles.detailText}>
-              {booking.requested_date ?? '-'}
-            </Text>
+          {/* THE OTHER PARTY, not a label-and-colon. Whose booking this is reads
+              faster as a face and a name than as "Provider: …". */}
+          <View style={styles.peerRow}>
+            <Avatar name={isProvider ? clientName : providerName} size="medium" />
+            <View style={styles.peerText}>
+              <Text style={[styles.peerName, { color: colors.textPrimary }]}>
+                {(isProvider ? clientName : providerName) || 'Your provider'}
+              </Text>
+              {!isProvider && providerCategory ? (
+                <Text style={[styles.peerMeta, { color: colors.textSecondary }]}>
+                  {providerCategory}
+                </Text>
+              ) : null}
+            </View>
           </View>
 
-          <View style={styles.detailRow}>
-            <Ionicons
-              name="time-outline"
-              size={16}
-              color="rgba(240,232,213,0.4)"
-              style={styles.detailIcon}
-            />
-            <Text style={styles.detailText}>
-              {booking.requested_time ?? '-'}
-            </Text>
-          </View>
+          {/* WHERE THE REQUEST STANDS — derived, never asserted. `listNote` is the
+              same helper the Bookings list uses, so a request says the same thing
+              in both places. The window sentence beneath it comes from the SERVER's
+              urgency, so it stops being made once the window has closed. */}
+          {listNote ? (
+            <View style={[styles.stateNote, { borderLeftColor: colors.borderSubtle }]}>
+              <Text style={[styles.stateNoteTitle, { color: colors.textPrimary }]}>
+                {listNote}
+              </Text>
+              {!isProvider && windowNote ? (
+                <Text
+                  style={[styles.stateNoteBody, { color: colors.textSecondary }]}
+                  testID="detail-window-note"
+                >
+                  {windowNote}
+                </Text>
+              ) : null}
+              <Text style={[styles.stateNoteBody, { color: colors.textSecondary }]}>
+                Third does not take payment in this beta.
+              </Text>
+            </View>
+          ) : null}
 
-          <View style={styles.detailRow}>
-            <Ionicons
-              name="card-outline"
-              size={16}
-              color="rgba(240,232,213,0.4)"
-              style={styles.detailIcon}
-            />
-            <Text style={styles.detailText}>{money(booking.payment_amount)}</Text>
+          <View style={[styles.divider, { backgroundColor: colors.borderSubtle }]} />
+
+          <Text style={[styles.smallLabel, { color: colors.textSecondary }]}>BOOKING DETAILS</Text>
+
+          {/* Only the fields this screen actually reads. Length and location are in
+              the approved frame but are not in this query — they are omitted rather
+              than filled with a placeholder that looks like data. */}
+          <DetailRow label="When" value={whenLine} />
+          <DetailRow label="Price" value={money(booking.payment_amount)}>
             <PaymentBadge status={booking.payment_status} />
-          </View>
+          </DetailRow>
+          <DetailRow label="Booking ID" value={booking.id.slice(0, 8).toUpperCase()} last />
         </View>
 
-        {/* Message card */}
+        {/* The note the CLIENT wrote when they sent the request. */}
         {booking.message ? (
-          <View style={styles.card}>
-            <Text style={styles.smallLabel}>BOOKING NOTE</Text>
-            <Text style={styles.noteText}>{booking.message}</Text>
+          <View
+            style={[
+              styles.card,
+              { backgroundColor: colors.bgSurface, borderColor: colors.borderSubtle },
+            ]}
+          >
+            <Text style={[styles.smallLabel, { color: colors.textSecondary }]}>
+              {isProvider ? "CLIENT'S NOTE" : 'YOUR NOTE'}
+            </Text>
+            <Text style={[styles.noteText, { color: colors.textPrimary }]}>{booking.message}</Text>
           </View>
         ) : null}
-
-        {/* Booking ID */}
-        <View style={styles.idRow}>
-          <Text style={styles.idLabel}>Booking ID</Text>
-          <Text style={styles.idValue}>{booking.id.slice(0, 8)}</Text>
-        </View>
       </ScrollView>
 
       {/* Fixed bottom action bar */}
-      <View style={[styles.actionBar, { paddingBottom: insets.bottom + 16 }]}>
+      <View
+        style={[
+          styles.actionBar,
+          {
+            paddingBottom: insets.bottom + 16,
+            backgroundColor: colors.bgCanvas,
+            borderTopColor: colors.borderSubtle,
+          },
+        ]}
+      >
         <ActionButtons
           bucket={bucket}
           isProvider={isProvider}
           bookingId={booking.id}
           isDraft={booking.submitted_at === null}
-          requestUrgency={bookingRequestUrgency(booking)}
+          requestUrgency={urgency}
+          providerFirstName={providerFirstName}
           actionLoading={actionLoading}
           reviewOpp={reviewOpp}
           reviewOppLoading={reviewOppLoading}
@@ -501,14 +517,52 @@ export default function BookingDetailScreen() {
   )
 }
 
+// A label/value pair, the shape the approved frame uses for booking details. The
+// icon-per-row treatment it replaces gave a calendar, a clock and a card equal
+// visual weight without ever saying what any of them meant.
+function DetailRow({
+  label,
+  value,
+  children,
+  last,
+}: {
+  label: string
+  value: string
+  children?: React.ReactNode
+  last?: boolean
+}) {
+  const { colors } = useTheme()
+  return (
+    <View
+      style={[
+        styles.detailRow,
+        !last && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderSubtle },
+      ]}
+    >
+      <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <View style={styles.detailValueWrap}>
+        <Text style={[styles.detailText, { color: colors.textPrimary }]}>{value}</Text>
+        {children}
+      </View>
+    </View>
+  )
+}
+
+function PaymentBadgeNeutral() {
+  const { colors } = useTheme()
+  return (
+    <View style={[styles.payBadge, { backgroundColor: colors.bgSubtle }]}>
+      <Text style={[styles.payBadgeText, { color: colors.textSecondary }]}>No in-app payment</Text>
+    </View>
+  )
+}
+
 function PaymentBadge({ status }: { status: string | null }) {
   if (!status) return null
   if (status === 'unpaid') {
     return (
       // PRODUCT TRUTH: "Not charged yet" implied a charge was still to come.
-      <View style={[styles.payBadge, styles.payBadgeNeutral]}>
-        <Text style={styles.payBadgeTextNeutral}>No in-app payment</Text>
-      </View>
+      <PaymentBadgeNeutral />
     )
   }
   // PRODUCT TRUTH: two further branches rendered "Paid" (`captured`) and
@@ -539,6 +593,8 @@ interface ActionButtonsProps {
    * PD-077 exists to end.
    */
   requestUrgency: RequestUrgency
+  /** First name only — the frame addresses the provider by name on every control. */
+  providerFirstName: string
   actionLoading: boolean
   reviewOpp: ReviewOpportunity
   reviewOppLoading: boolean
@@ -551,8 +607,15 @@ interface ActionButtonsProps {
   onBack: () => void
 }
 
+// Half-width controls sit in a flexed wrapper so the shared Button keeps its own
+// padding and touch target instead of each screen re-deriving a button shape.
+function Half({ children }: { children: React.ReactNode }) {
+  return <View style={styles.half}>{children}</View>
+}
+
 function ActionButtons(props: ActionButtonsProps) {
-  const { bucket, isProvider, bookingId, isDraft, requestUrgency, actionLoading, reviewOpp, reviewOppLoading, canMarkNoShow, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onReviewClient, onBack } = props
+  const { colors } = useTheme()
+  const { bucket, isProvider, bookingId, isDraft, requestUrgency, providerFirstName, actionLoading, reviewOpp, reviewOppLoading, canMarkNoShow, onCancel, onMarkCompleted, onMarkNoShow, onMessage, onReviewClient, onBack } = props
 
   // Persistent provider→client review entry, keyed by booking_id so each booking is
   // independently reviewable. Driven ONLY by the server's answer — never by `bucket`
@@ -565,12 +628,15 @@ function ActionButtons(props: ActionButtonsProps) {
     : { kind: 'none' as const, label: '', body: '' }
   const reviewEntry =
     entry.kind === 'action' ? (
-      <Pressable style={styles.primaryBtnFull} onPress={onReviewClient}>
-        <Text style={styles.primaryBtnText}>{entry.label}</Text>
-      </Pressable>
+      <Button label={entry.label} onPress={onReviewClient} testID="detail-review-client" />
     ) : entry.kind === 'note' ? (
-      <View style={styles.reviewStateNote}>
-        <Text style={styles.reviewStateText}>{entry.body}</Text>
+      <View
+        style={[
+          styles.reviewStateNote,
+          { backgroundColor: colors.bgSurface, borderColor: colors.borderSubtle },
+        ]}
+      >
+        <Text style={[styles.reviewStateText, { color: colors.textSecondary }]}>{entry.body}</Text>
       </View>
     ) : null
   const isActionable = entry.kind === 'action'
@@ -580,14 +646,16 @@ function ActionButtons(props: ActionButtonsProps) {
     return (
       <>
         {reviewEntry}
-        <Pressable
-          style={isActionable ? styles.secondaryBtnFull : styles.primaryBtnFull}
-          onPress={onBack}
-        >
-          <Text style={isActionable ? styles.secondaryBtnText : styles.primaryBtnText}>
-            Back to Bookings
-          </Text>
-        </Pressable>
+        {/* Demoted to secondary only when the review above it is the real action,
+            so the screen never shows two primaries. */}
+        <View style={isActionable ? styles.stacked : null}>
+          <Button
+            label="Back to bookings"
+            variant={isActionable ? 'secondary' : 'primary'}
+            onPress={onBack}
+            testID="detail-back-to-bookings"
+          />
+        </View>
       </>
     )
   }
@@ -595,12 +663,11 @@ function ActionButtons(props: ActionButtonsProps) {
   if (bucket === 'pending') {
     if (isProvider) {
       return (
-        <Pressable
-          style={styles.primaryBtnFull}
+        <Button
+          label="Review request"
           onPress={() => router.replace(`/bookings/request/${bookingId}` as never)}
-        >
-          <Text style={styles.primaryBtnText}>Review Request</Text>
-        </Pressable>
+          testID="detail-review-request"
+        />
       )
     }
     // AN UNSENT DRAFT IS NOT A REQUEST. It is excluded from every list, so this
@@ -611,17 +678,17 @@ function ActionButtons(props: ActionButtonsProps) {
     if (isDraft) {
       return (
         <View>
-          <Text style={styles.draftNote}>
+          <Text style={[styles.draftNote, { color: colors.textSecondary }]}>
             You haven&apos;t sent this request yet. Start again from the provider&apos;s
             profile when you&apos;re ready.
           </Text>
-          <Pressable
-            style={[styles.secondaryBtnFull, actionLoading && styles.btnDisabled]}
-            onPress={onCancel}
+          <Button
+            label="Discard"
+            variant="secondary"
             disabled={actionLoading}
-          >
-            <Text style={styles.secondaryBtnText}>Discard</Text>
-          </Pressable>
+            onPress={onCancel}
+            testID="detail-discard-draft"
+          />
         </View>
       )
     }
@@ -646,28 +713,34 @@ function ActionButtons(props: ActionButtonsProps) {
             same-day and next-day slots, so the appointment is very often the
             binding term, and a flat "72 hours" would overstate the window in the
             ordinary case rather than an edge one. */}
+        {/* The window statement now lives with the rest of the request's state, at
+            the top of the screen. What stays here is the one thing that only
+            matters at the moment of deciding: that an expired request can no
+            longer be accepted, and what to do instead. */}
         {requestUrgency === 'expired' ? (
-          <Text style={styles.responseWindowNote}>
+          <Text
+            style={[styles.responseWindowNote, { color: colors.textSecondary }]}
+            testID="detail-expired-note"
+          >
             This request expired without an answer, so it can no longer be
             accepted. You can send a new one whenever you&apos;re ready.
           </Text>
-        ) : (
-          <Text style={styles.responseWindowNote}>
-            Your provider has up to 72 hours to respond, or until your requested
-            time — whichever comes first.
-          </Text>
-        )}
-        <View style={styles.row}>
-          <Pressable
-            style={[styles.secondaryBtnHalf, actionLoading && styles.btnDisabled]}
-            onPress={onCancel}
+        ) : null}
+        {/* Stacked, per the approved frame: messaging the provider is the action
+            with a future in it, and cancelling sits below it rather than beside. */}
+        <Button
+          label={`Message ${providerFirstName}`}
+          onPress={onMessage}
+          testID="detail-message"
+        />
+        <View style={styles.stacked}>
+          <Button
+            label="Cancel request"
+            variant="secondary"
             disabled={actionLoading}
-          >
-            <Text style={styles.secondaryBtnText}>Cancel Request</Text>
-          </Pressable>
-          <Pressable style={styles.primaryBtnHalf} onPress={onMessage}>
-            <Text style={styles.primaryBtnText}>Message Provider</Text>
-          </Pressable>
+            onPress={onCancel}
+            testID="detail-cancel-request"
+          />
         </View>
       </View>
     )
@@ -686,46 +759,55 @@ function ActionButtons(props: ActionButtonsProps) {
           {reviewEntry}
           <View style={styles.row}>
             {canMarkNoShow && (
-              <Pressable
-                style={[styles.dangerBtnHalf, actionLoading && styles.btnDisabled]}
-                onPress={onMarkNoShow}
-                disabled={actionLoading}
-              >
-                <Text style={styles.dangerBtnText}>No Show</Text>
-              </Pressable>
+              <Half>
+                <Button
+                  label="No show"
+                  variant="secondary"
+                  disabled={actionLoading}
+                  onPress={onMarkNoShow}
+                  testID="detail-mark-no-show"
+                />
+              </Half>
             )}
-            <Pressable
-              style={[styles.amberBtnHalf, actionLoading && styles.btnDisabled]}
-              onPress={onMarkCompleted}
-              disabled={actionLoading}
-            >
-              <Text style={styles.amberBtnText}>Mark Complete</Text>
-            </Pressable>
+            <Half>
+              <Button
+                label="Mark complete"
+                disabled={actionLoading}
+                onPress={onMarkCompleted}
+                testID="detail-mark-complete"
+              />
+            </Half>
           </View>
           <View style={[styles.row, { marginTop: 10 }]}>
-            <Pressable
-              style={[styles.secondaryBtnHalf, actionLoading && styles.btnDisabled]}
-              onPress={onCancel}
-              disabled={actionLoading}
-            >
-              <Text style={styles.secondaryBtnText}>Cancel Booking</Text>
-            </Pressable>
+            <Half>
+              <Button
+                label="Cancel booking"
+                variant="secondary"
+                disabled={actionLoading}
+                onPress={onCancel}
+                testID="detail-cancel-booking"
+              />
+            </Half>
           </View>
         </View>
       )
     }
     return (
-      <View style={styles.row}>
-        <Pressable
-          style={[styles.dangerBtnHalf, actionLoading && styles.btnDisabled]}
-          onPress={onCancel}
-          disabled={actionLoading}
-        >
-          <Text style={styles.dangerBtnText}>Cancel</Text>
-        </Pressable>
-        <Pressable style={styles.primaryBtnHalf} onPress={onMessage}>
-          <Text style={styles.primaryBtnText}>Message</Text>
-        </Pressable>
+      <View>
+        <Button
+          label={`Message ${providerFirstName}`}
+          onPress={onMessage}
+          testID="detail-message"
+        />
+        <View style={styles.stacked}>
+          <Button
+            label="Cancel booking"
+            variant="secondary"
+            disabled={actionLoading}
+            onPress={onCancel}
+            testID="detail-cancel-booking"
+          />
+        </View>
       </View>
     )
   }
@@ -734,46 +816,49 @@ function ActionButtons(props: ActionButtonsProps) {
   if (isProvider) {
     return (
       <View style={styles.row}>
-        <Pressable
-          style={[styles.dangerBtnHalf, actionLoading && styles.btnDisabled]}
-          onPress={onMarkNoShow}
-          disabled={actionLoading}
-        >
-          <Text style={styles.dangerBtnText}>Mark No Show</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.amberBtnHalf, actionLoading && styles.btnDisabled]}
-          onPress={onMarkCompleted}
-          disabled={actionLoading}
-        >
-          <Text style={styles.amberBtnText}>Mark Complete</Text>
-        </Pressable>
+        <Half>
+          <Button
+            label="Mark no show"
+            variant="secondary"
+            disabled={actionLoading}
+            onPress={onMarkNoShow}
+            testID="detail-mark-no-show"
+          />
+        </Half>
+        <Half>
+          <Button
+            label="Mark complete"
+            disabled={actionLoading}
+            onPress={onMarkCompleted}
+            testID="detail-mark-complete"
+          />
+        </Half>
       </View>
     )
   }
   return (
-    <Pressable style={styles.primaryBtnFull} onPress={onMessage}>
-      <Text style={styles.primaryBtnText}>Message Provider</Text>
-    </Pressable>
+    <Button
+      label={`Message ${providerFirstName}`}
+      onPress={onMessage}
+      testID="detail-message"
+    />
   )
 }
 
+// Geometry and type only. Colour is resolved from the theme at render time, so this
+// screen follows the viewer's Light/Dark/System preference instead of carrying a
+// fixed dark skin of its own.
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#080808' },
+  root: { flex: 1 },
   topBar: {
     paddingHorizontal: 24,
     paddingBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  topBarTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 18,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
+  topBarTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontFamily: 'Manrope_700Bold' },
   centerWrap: {
     flex: 1,
     alignItems: 'center',
@@ -781,116 +866,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
     gap: 16,
   },
-  notFoundText: {
-    fontSize: 16,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_500Medium',
-  },
-  scrollContent: {
-    paddingHorizontal: 24,
-  },
+  notFoundText: { fontSize: 16, fontFamily: 'Manrope_500Medium' },
+  scrollContent: { paddingHorizontal: 24 },
 
-  // Status pill
-  statusPill: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
-    marginBottom: 24,
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-  },
-  statusPillText: {
-    fontSize: 13,
-    fontFamily: 'Manrope_600SemiBold',
-  },
+  statusRow: { marginTop: 16, marginBottom: 20 },
 
   // Card
   card: {
-    backgroundColor: 'rgba(240,232,213,0.04)',
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.07)',
     borderRadius: 14,
+    borderCurve: 'continuous',
     padding: 20,
     marginBottom: 16,
   },
-  serviceName: {
-    fontSize: 22,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-    marginBottom: 4,
-  },
-  peerLine: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_400Regular',
-    marginBottom: 16,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    marginBottom: 16,
-  },
+  serviceName: { fontSize: 22, fontFamily: 'Manrope_700Bold', marginBottom: 4 },
+  divider: { height: 1, marginTop: 18, marginBottom: 16 },
+  peerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 14 },
+  peerText: { flex: 1 },
+  peerName: { fontSize: 15, fontFamily: 'Manrope_600SemiBold' },
+  peerMeta: { fontSize: 12, fontFamily: 'Manrope_400Regular', marginTop: 2 },
+  stateNote: { borderLeftWidth: 2, paddingLeft: 12, marginTop: 18, gap: 4 },
+  stateNoteTitle: { fontSize: 15, fontFamily: 'Manrope_600SemiBold' },
+  stateNoteBody: { fontSize: 13, fontFamily: 'Manrope_400Regular', lineHeight: 18 },
   detailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'space-between',
+    gap: 16,
+    paddingVertical: 11,
   },
-  detailIcon: {
-    marginRight: 10,
-  },
-  detailText: {
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
+  detailLabel: { fontSize: 14, fontFamily: 'Manrope_400Regular' },
+  detailValueWrap: { flexDirection: 'row', alignItems: 'center', flexShrink: 1 },
+  detailText: { fontSize: 14, fontFamily: 'Manrope_500Medium', textAlign: 'right' },
   smallLabel: {
     fontSize: 10,
-    color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_500Medium',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
     marginBottom: 8,
   },
-  noteText: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.8)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 21,
-  },
-  idRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    paddingHorizontal: 4,
-  },
-  idLabel: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  idValue: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.3)',
-    fontFamily: 'Manrope_400Regular',
-  },
+  noteText: { fontSize: 14, fontFamily: 'Manrope_400Regular', lineHeight: 21 },
 
   // Payment badge
-  payBadge: {
-    marginLeft: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  payBadgeNeutral: {
-    backgroundColor: 'rgba(240,232,213,0.06)',
-  },
-  payBadgeTextNeutral: {
-    fontSize: 10,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-  },
+  payBadge: { marginLeft: 10, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  payBadgeText: { fontSize: 10, fontFamily: 'Manrope_500Medium' },
 
   // Action bar
   actionBar: {
@@ -898,127 +917,32 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: '#080808',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,213,0.08)',
     paddingHorizontal: 24,
     paddingTop: 16,
   },
-  row: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  btnDisabled: {
-    opacity: 0.5,
-  },
-  primaryBtn: {
-    backgroundColor: '#F0E8D5',
-    borderRadius: 14,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 22,
-  },
-  primaryBtnFull: {
-    backgroundColor: '#F0E8D5',
-    borderRadius: 14,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryBtnHalf: {
-    flex: 1,
-    backgroundColor: '#F0E8D5',
-    borderRadius: 14,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  primaryBtnText: {
-    fontSize: 15,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-  secondaryBtnHalf: {
-    flex: 1,
-    borderRadius: 14,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(240,232,213,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
-  },
-  secondaryBtnText: {
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
+  row: { flexDirection: 'row', gap: 10 },
+  half: { flex: 1 },
+  stacked: { marginTop: 10 },
   responseWindowNote: {
     fontSize: 13,
-    color: 'rgba(240,232,213,0.55)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 19,
     marginBottom: 12,
   },
   draftNote: {
     fontSize: 13,
-    color: 'rgba(240,232,213,0.55)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 19,
     marginBottom: 12,
   },
-  secondaryBtnFull: {
-    borderRadius: 14,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(240,232,213,0.07)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
-    marginTop: 10,
-  },
   reviewStateNote: {
     borderRadius: 12,
+    borderCurve: 'continuous',
     paddingVertical: 12,
     paddingHorizontal: 14,
-    backgroundColor: 'rgba(240,232,213,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.10)',
     marginBottom: 10,
   },
-  reviewStateText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.7)',
-    fontFamily: 'Manrope_500Medium',
-    textAlign: 'center',
-  },
-  dangerBtnHalf: {
-    flex: 1,
-    borderRadius: 14,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(220,50,50,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(220,50,50,0.4)',
-  },
-  dangerBtnText: {
-    fontSize: 15,
-    color: 'rgba(220,50,50,0.85)',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  amberBtnHalf: {
-    flex: 1,
-    borderRadius: 14,
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#C8922A',
-  },
-  amberBtnText: {
-    fontSize: 15,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
+  reviewStateText: { fontSize: 13, fontFamily: 'Manrope_500Medium', textAlign: 'center' },
 })

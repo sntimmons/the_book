@@ -3,7 +3,10 @@
 // mocked globally in jest.setup.js.
 jest.mock('@/lib/supabase', () => ({ supabase: {} }))
 
-import { statusBucket, getStatusStyle } from '@/app/bookings/[id]'
+import { readFileSync } from 'fs'
+import { join } from 'path'
+import { statusBucket } from '@/app/bookings/[id]'
+import { badgeToneFor, rolesUsedByStatusTones } from '@/lib/theme/statusTone'
 
 // Locks the finer-grained action-state bucket used to drive the per-status
 // ActionButtons, including the Batch 4A fix that rescheduled stays action-active.
@@ -30,21 +33,57 @@ describe('statusBucket (action-state)', () => {
   })
 })
 
-describe('getStatusStyle', () => {
-  it('gives rescheduled the same confirmed-green as accepted', () => {
-    expect(getStatusStyle('rescheduled')).toEqual(getStatusStyle('accepted'))
+// The detail screen used to carry its own `getStatusStyle` colour table — a second
+// place where "what colour is a no-show" got decided, and it decided RED. The rule
+// now lives once, in lib/theme/statusTone.ts, and the screen renders <StatusBadge>.
+// These tests exist so that consolidation cannot be quietly undone.
+describe('the detail screen does not own status colour', () => {
+  const source = readFileSync(join(process.cwd(), 'app/bookings/[id].tsx'), 'utf8')
+
+  it('exports no private status colour table', () => {
+    const mod = require('@/app/bookings/[id]')
+    expect(mod.getStatusStyle).toBeUndefined()
   })
 
-  it('returns a style object for every branch', () => {
-    for (const s of ['pending', 'completed', 'no_show', 'cancelled_by_client']) {
-      const style = getStatusStyle(s)
-      expect(style).toEqual(
-        expect.objectContaining({
-          fg: expect.any(String),
-          bg: expect.any(String),
-          border: expect.any(String),
-        }),
-      )
+  it('renders the shared StatusBadge rather than a hand-rolled pill', () => {
+    expect(source).toContain('<StatusBadge')
+    expect(source).not.toContain('statusPillText')
+  })
+
+  it('holds no colour literal at all', () => {
+    expect(source).not.toMatch(/#[0-9A-Fa-f]{3,8}\b/)
+    expect(source).not.toMatch(/rgba?\(/)
+  })
+})
+
+// The reason the table had to go, stated as a test rather than a comment.
+describe('shared tones, applied to the statuses this screen shows', () => {
+  it('gives rescheduled the same tone as accepted', () => {
+    expect(badgeToneFor('rescheduled')).toBe(badgeToneFor('accepted'))
+  })
+
+  it('returns a tone for every status this screen can receive', () => {
+    for (const s of [
+      'pending',
+      'accepted',
+      'arriving',
+      'checked_in',
+      'completed',
+      'no_show',
+      'cancelled_by_client',
+      'cancelled_by_provider',
+      'declined',
+    ]) {
+      expect(typeof badgeToneFor(s)).toBe('string')
+    }
+  })
+
+  it('never paints an outcome with the danger role', () => {
+    // no_show, declined and cancelled are OUTCOMES of a transaction, not errors,
+    // and neither party is at fault in the UI's telling.
+    expect(rolesUsedByStatusTones()).not.toContain('statusDanger')
+    for (const s of ['no_show', 'declined', 'cancelled_by_provider']) {
+      expect(badgeToneFor(s)).toBe('outcome')
     }
   })
 })

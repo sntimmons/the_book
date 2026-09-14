@@ -2,20 +2,17 @@ import { useState } from 'react'
 import {
   View,
   Text,
-  ScrollView,
-  TouchableOpacity,
-  Pressable,
-  ActivityIndicator,
   Alert,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import * as Sentry from '@sentry/react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
-import { StepProgress } from '@/components/StepProgress'
 import { bookingProgressLabel } from '@/lib/bookingProgress'
+import { useTheme } from '@/context/ThemeContext'
+import BookingFlowScreen, { BookingFlowHeading } from '@/components/ui/BookingFlowScreen'
+import Button from '@/components/ui/Button'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import { checkRateLimit } from '@/lib/rateLimit'
@@ -35,7 +32,7 @@ function money(n: number): string {
 }
 
 export default function BookPayment() {
-  const insets = useSafeAreaInsets()
+  const { colors } = useTheme()
   const { user } = useAuth()
   const {
     providerId,
@@ -288,31 +285,37 @@ export default function BookPayment() {
   }
 
   return (
-    <View style={styles.root}>
-      {/* Top bar */}
-      <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={styles.backBtn}
-          activeOpacity={0.7}
-        >
-          <Feather name="chevron-left" size={18} color="#F0E8D5" />
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Confirm Request</Text>
-        <View style={styles.topBarSpacer}>
-          <StepProgress label={bookingProgressLabel('send', contractRequired)} />
-        </View>
-      </View>
-
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        bounces={true}
-        scrollEventThrottle={16}
-      >
+    <BookingFlowScreen
+      progressLabel={bookingProgressLabel('send', contractRequired)}
+      onBack={() => router.back()}
+      testID="book-payment"
+      footer={
+        <>
+          <View style={styles.priceRow}>
+            <Text style={[styles.ctaLabel, { color: colors.textSecondary }]}>Service price</Text>
+            <Text style={[styles.ctaAmount, { color: colors.textPrimary }]}>
+              {money(servicePrice)}
+            </Text>
+          </View>
+          {/* The ONLY control in this flow that may say a request is being sent,
+              because it is the one that sends it. */}
+          <Button
+            label="Send booking request"
+            loadingLabel="Sending your request…"
+            loading={isProcessing}
+            onPress={handleConfirm}
+            testID="payment-send"
+          />
+          {processError.length > 0 ? (
+            <Text style={[styles.errorText, { color: colors.statusDanger }]}>{processError}</Text>
+          ) : null}
+        </>
+      }
+    >
+      <BookingFlowHeading
+        title="Review and send"
+        subtitle="Check the details below. Nothing is sent until you send it."
+      />
         {/* PRODUCT TRUTH: this read "No payment now. You'll be asked to pay
             after the provider accepts your request." The first half was true;
             the second promised an in-app payment step that does not exist and
@@ -322,22 +325,29 @@ export default function BookPayment() {
             has settled on — and "for now" is the one forward-looking clause item
             D permits: payment is COMING LATER, which is true, as against the
             removed copy that implied a charge was already part of this flow. */}
-        <Text style={styles.headerSubtext}>
+        <Text style={[styles.headerSubtext, { color: colors.textSecondary }]}>
           In-app payments aren&apos;t available during beta. Payment is handled
           directly with your provider for now.
         </Text>
 
         {/* Order summary */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>ORDER SUMMARY</Text>
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.bgSurface, borderColor: colors.borderSubtle },
+          ]}
+        >
+          <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>ORDER SUMMARY</Text>
 
           <View style={styles.providerRow}>
-            <View style={styles.providerAvatar}>
-              <Feather name="user" size={16} color="rgba(240,232,213,0.4)" />
+            <View style={[styles.providerAvatar, { backgroundColor: colors.bgSubtle }]}>
+              <Feather name="user" size={16} color={colors.textSecondary} />
             </View>
             <View style={styles.providerInfo}>
-              <Text style={styles.providerName}>{providerName || 'Your provider'}</Text>
-              <Text style={styles.providerMeta}>
+              <Text style={[styles.providerName, { color: colors.textPrimary }]}>
+                {providerName || 'Your provider'}
+              </Text>
+              <Text style={[styles.providerMeta, { color: colors.textSecondary }]}>
                 {providerCategory}
                 {providerCategory && providerLocation ? ' · ' : ''}
                 {providerLocation}
@@ -345,238 +355,137 @@ export default function BookPayment() {
             </View>
           </View>
 
-          <View style={styles.separator} />
+          <View style={[styles.separator, { backgroundColor: colors.borderSubtle }]} />
 
           {/* Service details */}
           <View style={styles.detailRow}>
             <View style={styles.detailLeft}>
-              <Feather name="scissors" size={12} color="rgba(240,232,213,0.45)" />
-              <Text style={styles.detailLabel}>Service</Text>
+              <Feather name="scissors" size={12} color={colors.textSecondary} />
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Service</Text>
             </View>
             <View style={styles.detailRight}>
-              <Text style={styles.detailValue}>{selectedService?.name ?? '-'}</Text>
-              <Text style={styles.detailSub}>{selectedService?.duration ?? ''}</Text>
+              <Text style={[styles.detailValue, { color: colors.textPrimary }]}>
+                {selectedService?.name ?? '-'}
+              </Text>
+              <Text style={[styles.detailSub, { color: colors.textSecondary }]}>
+                {selectedService?.duration ?? ''}
+              </Text>
             </View>
           </View>
           <View style={styles.detailRow}>
             <View style={styles.detailLeft}>
-              <Feather name="calendar" size={12} color="rgba(240,232,213,0.45)" />
-              <Text style={styles.detailLabel}>Date</Text>
+              <Feather name="calendar" size={12} color={colors.textSecondary} />
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Date</Text>
             </View>
-            <Text style={styles.detailValue}>{selectedDate || '-'}</Text>
+            <Text style={[styles.detailValue, { color: colors.textPrimary }]}>
+              {selectedDate || '-'}
+            </Text>
           </View>
           <View style={styles.detailRow}>
             <View style={styles.detailLeft}>
-              <Feather name="clock" size={12} color="rgba(240,232,213,0.45)" />
-              <Text style={styles.detailLabel}>Time</Text>
+              <Feather name="clock" size={12} color={colors.textSecondary} />
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Time</Text>
             </View>
-            <Text style={styles.detailValue}>{selectedTime || '-'}</Text>
+            <Text style={[styles.detailValue, { color: colors.textPrimary }]}>
+              {selectedTime || '-'}
+            </Text>
           </View>
 
-          <View style={styles.separator} />
+          <View style={[styles.separator, { backgroundColor: colors.borderSubtle }]} />
 
           {/* Service price — information only; The Book never charges it. */}
           <View style={styles.priceRow}>
-            <Text style={styles.priceLabel}>Service price</Text>
-            <Text style={styles.priceValue}>{money(servicePrice)}</Text>
+            <Text style={[styles.priceLabel, { color: colors.textSecondary }]}>Service price</Text>
+            <Text style={[styles.priceValue, { color: colors.textPrimary }]}>
+              {money(servicePrice)}
+            </Text>
           </View>
           {/* PRODUCT TRUTH: "You won't be charged now" implied a later charge.
               The Book does not charge at any point in this beta. */}
-          <Text style={styles.holdHelperText}>
+          <Text style={[styles.holdHelperText, { color: colors.textSecondary }]}>
             Shown so you know the cost. Third does not take payment.
           </Text>
         </View>
 
         {/* What happens next */}
-        <View style={styles.authInfoBox}>
-          <Feather name="send" size={13} color="#4CAF50" style={{ marginTop: 1 }} />
+        {/* Neutral, not a status: the client has done nothing wrong and nothing
+            has succeeded yet. It borrows no outcome colour. */}
+        <View
+          style={[
+            styles.authInfoBox,
+            { backgroundColor: colors.bgSurface, borderColor: colors.borderSubtle },
+          ]}
+        >
+          <Feather name="send" size={13} color={colors.textSecondary} style={{ marginTop: 1 }} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.authInfoTitle}>This is a request, not a confirmed booking</Text>
+            <Text style={[styles.authInfoTitle, { color: colors.textPrimary }]}>
+              This is a request, not a confirmed booking
+            </Text>
             {/* PRODUCT TRUTH: the closing clause promised "you'll be asked to
                 pay only after they accept", which describes an in-app payment
                 step that does not exist. */}
-            <Text style={styles.authInfoSub}>
+            <Text style={[styles.authInfoSub, { color: colors.textSecondary }]}>
               The provider reviews your request and accepts or declines. No card, no payment, and no hold are taken — payment is arranged directly with your provider.
             </Text>
           </View>
         </View>
-      </ScrollView>
-
-      {/* Fixed bottom CTA */}
-      <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
-        <Text style={styles.ctaLabel}>Service price</Text>
-        <Text style={styles.ctaAmount}>{money(servicePrice)}</Text>
-
-        <Pressable
-          style={[styles.confirmBtn, isProcessing && styles.confirmBtnProcessing]}
-          onPress={handleConfirm}
-          disabled={isProcessing}
-        >
-          {isProcessing ? (
-            <View style={styles.processingRow}>
-              <ActivityIndicator color="#080808" size="small" />
-              <Text style={styles.confirmBtnText}>Sending your request...</Text>
-            </View>
-          ) : (
-            <Text style={styles.confirmBtnText}>Send Booking Request</Text>
-          )}
-        </Pressable>
-
-        {processError.length > 0 && (
-          <Text style={styles.errorText}>{processError}</Text>
-        )}
-      </View>
-    </View>
+    </BookingFlowScreen>
   )
 }
 
+// Geometry and type only — every colour is resolved from the theme at render time.
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#080808',
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
-  },
-  scroll: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 4,
-    paddingBottom: 220,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topBarTitle: {
-    fontSize: 17,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  topBarSpacer: {
-    // Widened from 36 to fit the step label. It still balances the back button
-    // so the title stays centred — the label sits in the slot that already
-    // existed for that purpose rather than a new element in the bar.
-    width: 76,
-    alignItems: 'flex-end',
-  },
   headerSubtext: {
     fontSize: 14,
-    color: 'rgba(240,232,213,0.55)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 20,
     textAlign: 'center',
     paddingHorizontal: 24,
-    paddingTop: 12,
     paddingBottom: 4,
   },
   section: {
     marginTop: 16,
+    borderWidth: 1,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    padding: 16,
   },
   sectionLabel: {
     fontSize: 10,
     fontWeight: '600',
-    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
     marginBottom: 12,
   },
-  providerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 12,
-  },
+  providerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
   providerAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  providerInfo: {
-    flex: 1,
-  },
-  providerName: {
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  providerMeta: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  separator: {
-    height: 1,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    marginVertical: 12,
-  },
+  providerInfo: { flex: 1 },
+  providerName: { fontSize: 14, fontFamily: 'Manrope_600SemiBold' },
+  providerMeta: { fontSize: 12, fontFamily: 'Manrope_400Regular', marginTop: 2 },
+  separator: { height: 1, marginVertical: 12 },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 5,
   },
-  detailLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  detailLabel: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  detailRight: {
-    alignItems: 'flex-end',
-  },
-  detailValue: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
-  detailSub: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  priceRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 5,
-  },
-  priceLabel: {
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
-  },
-  priceValue: {
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
-  },
+  detailLeft: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  detailLabel: { fontSize: 13, fontFamily: 'Manrope_400Regular' },
+  detailRight: { alignItems: 'flex-end' },
+  detailValue: { fontSize: 13, fontFamily: 'Manrope_500Medium' },
+  detailSub: { fontSize: 11, fontFamily: 'Manrope_400Regular', marginTop: 2 },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 },
+  priceLabel: { fontSize: 14, fontFamily: 'Manrope_400Regular' },
+  priceValue: { fontSize: 14, fontFamily: 'Manrope_500Medium' },
   holdHelperText: {
     fontSize: 11,
-    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 16,
     marginTop: 4,
@@ -586,77 +495,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 8,
     padding: 12,
-    backgroundColor: 'rgba(76,175,80,0.06)',
     borderWidth: 1,
-    borderColor: 'rgba(76,175,80,0.15)',
     borderRadius: 10,
     borderCurve: 'continuous',
     marginTop: 16,
+    marginBottom: 8,
   },
-  authInfoTitle: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontFamily: 'Manrope_600SemiBold',
-    marginBottom: 2,
-  },
-  authInfoSub: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 15,
-  },
-  cta: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#080808',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.06)',
-    paddingHorizontal: 24,
-    paddingTop: 16,
-    alignItems: 'center',
-  },
-  ctaLabel: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginBottom: 4,
-  },
-  ctaAmount: {
-    fontSize: 22,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-    marginBottom: 12,
-  },
-  confirmBtn: {
-    backgroundColor: '#C8922A',
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    height: 56,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  confirmBtnProcessing: {
-    opacity: 0.7,
-  },
-  confirmBtnText: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-  processingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
+  authInfoTitle: { fontSize: 12, fontFamily: 'Manrope_600SemiBold', marginBottom: 2 },
+  authInfoSub: { fontSize: 11, fontFamily: 'Manrope_400Regular', lineHeight: 15 },
+  ctaLabel: { fontSize: 13, fontFamily: 'Manrope_400Regular' },
+  ctaAmount: { fontSize: 17, fontFamily: 'Manrope_700Bold' },
   errorText: {
-    marginTop: 8,
     fontSize: 12,
-    color: '#E05C5C',
-    fontFamily: 'Manrope_400Regular',
+    fontFamily: 'Manrope_500Medium',
     textAlign: 'center',
+    marginTop: 10,
   },
 })

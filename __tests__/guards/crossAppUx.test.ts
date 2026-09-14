@@ -72,10 +72,27 @@ describe('every booking screen shows where the client is', () => {
     'app/book/payment.tsx',
   ] as const
 
+  // Every step still shows where the client is. Since the flow shell landed, a
+  // screen may render StepProgress directly OR hand its derived label to
+  // BookingFlowScreen, which renders it. Both are checked, and so is the shell —
+  // otherwise "uses the shell" could become a way to show nothing at all.
   it.each(SCREENS)('%s renders the shared progress label', (rel) => {
     const s = code(rel)
-    expect(s).toContain('StepProgress')
+    const direct = s.includes('StepProgress')
+    const viaShell = s.includes('BookingFlowScreen') && /progressLabel=\{/.test(s)
+    expect(direct || viaShell).toBe(true)
     expect(s).toMatch(/bookingProgressLabel\('(service|datetime|message|policy|contract|send)'/)
+  })
+
+  it('the shared flow shell actually renders the progress label', () => {
+    const shell = code('components/ui/BookingFlowScreen.tsx')
+    expect(shell).toContain('StepProgress')
+    expect(shell).toMatch(/label=\{progressLabel\}/)
+  })
+
+  it('a null label renders nothing rather than an invented total', () => {
+    // StepProgress owns this; the shell must pass the value straight through.
+    expect(code('components/StepProgress.tsx')).toMatch(/if \(!label\) return null/)
   })
 
   it('no booking screen hard-codes a step count', () => {

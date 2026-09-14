@@ -11,10 +11,17 @@ import {
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useBookingStore } from '@/store/bookingStore'
-import { StepProgress } from '@/components/StepProgress'
 import { bookingProgressLabel } from '@/lib/bookingProgress'
+import { useTheme } from '@/context/ThemeContext'
+import BookingFlowScreen, {
+  BookingFlowHeading,
+  BookingFlowNote,
+} from '@/components/ui/BookingFlowScreen'
+import Button from '@/components/ui/Button'
+import DayCell from '@/components/ui/DayCell'
+// Aliased: this file already has a `TimeSlot` TYPE for the server's slot data.
+import TimeSlotChip from '@/components/ui/TimeSlot'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { openMessageEntry } from '../../hooks/useMessaging'
@@ -95,6 +102,7 @@ function getTimeSlotsForDate(dateStr: string, schedule: ScheduleRow[]): TimeSlot
 }
 
 function Shimmer({ style }: { style: any }) {
+  const { colors } = useTheme()
   const opacity = useRef(new Animated.Value(0.4)).current
   useEffect(() => {
     const loop = Animated.loop(
@@ -109,15 +117,11 @@ function Shimmer({ style }: { style: any }) {
       opacity.stopAnimation()
     }
   }, [opacity])
-  return (
-    <Animated.View
-      style={[{ backgroundColor: 'rgba(240,232,213,0.06)', opacity }, style]}
-    />
-  )
+  return <Animated.View style={[{ backgroundColor: colors.bgSubtle, opacity }, style]} />
 }
 
 export default function BookDateTime() {
-  const insets = useSafeAreaInsets()
+  const { colors } = useTheme()
   const { width } = useWindowDimensions()
   const {
     providerId,
@@ -132,6 +136,9 @@ export default function BookDateTime() {
 } = useBookingStore()
   const { user } = useAuth()
   const scrollRef = useRef<ScrollView>(null)
+
+  // The approved frame addresses the provider by first name throughout.
+  const providerFirstName = (providerName || 'your provider').split(' ')[0]
 
   const today = useMemo(() => startOfDay(new Date()), [])
   const [currentMonth, setCurrentMonth] = useState<Date>(
@@ -279,60 +286,76 @@ export default function BookDateTime() {
   }, [availableSet, currentMonth])
 
   return (
-    <View style={styles.root}>
-      {/* Top bar */}
-      <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity
-          onPress={() => router.back()}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          style={styles.backBtn}
-          activeOpacity={0.7}
-        >
-          <Feather name="chevron-left" size={18} color="#F0E8D5" />
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Pick a Date & Time</Text>
-        <View style={styles.topBarSpacer}>
-          <StepProgress label={bookingProgressLabel('datetime', contractRequired)} />
-        </View>
-      </View>
-
-      {/* Provider strip */}
-      <View style={styles.providerStrip}>
-        <View style={styles.providerAvatar}>
-          <Feather name="user" size={16} color="rgba(240,232,213,0.4)" />
-        </View>
-        <View style={styles.providerInfo}>
-          <Text style={styles.providerName}>{providerName}</Text>
-          <Text style={styles.providerMeta}>
-            {providerCategory}
-            {providerCategory && providerLocation ? ' · ' : ''}
-            {providerLocation}
-          </Text>
-          {selectedService && (
-            <Text style={styles.serviceMeta}>
-              {selectedService.name} · {selectedService.duration}
+    <BookingFlowScreen
+      progressLabel={bookingProgressLabel('datetime', contractRequired)}
+      onBack={() => router.back()}
+      testID="book-datetime"
+      scrollable={false}
+      footer={
+        <>
+          {canContinue && selectedService ? (
+            <Text style={[styles.ctaSummary, { color: colors.textSecondary }]}>
+              {selectedService.name} · {formatSummaryDate(selectedDateStr!)} · {selectedTimeStr}
             </Text>
-          )}
-        </View>
-      </View>
-
+          ) : null}
+          {/* Unchanged destination: the message step. The label no longer has to
+              carry the step name now that the shell shows where in the flow we are. */}
+          <Button
+            label="Continue"
+            disabled={!canContinue}
+            onPress={() => canContinue && router.push('/book/message')}
+            testID="datetime-continue"
+          />
+        </>
+      }
+    >
+      {/* The shell does not own the scroll here: picking a date auto-scrolls to
+          the time grid (`scrollRef`), which needs a ref this screen holds. */}
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 140 }}
+        contentContainerStyle={{ paddingBottom: 24 }}
       >
+        <BookingFlowHeading title="Pick a date & time" />
+        {/* These are PUBLISHED HOURS, not a live capacity read. Picking one sends
+            a request; it is not a held or confirmed slot until the provider
+            accepts. Nothing here may imply live availability or scarcity. */}
+        <BookingFlowNote
+          title={`These are the hours ${providerFirstName} published.`}
+          body={`Picking one sends a request. It is not a confirmed slot until ${providerFirstName} accepts.`}
+        />
+
+        {/* Provider strip */}
+        <View style={[styles.providerStrip, { borderBottomColor: colors.borderSubtle }]}>
+          <View style={[styles.providerAvatar, { backgroundColor: colors.bgSubtle }]}>
+            <Feather name="user" size={16} color={colors.textSecondary} />
+          </View>
+          <View style={styles.providerInfo}>
+            <Text style={[styles.providerName, { color: colors.textPrimary }]}>{providerName}</Text>
+            <Text style={[styles.providerMeta, { color: colors.textSecondary }]}>
+              {providerCategory}
+              {providerCategory && providerLocation ? ' · ' : ''}
+              {providerLocation}
+            </Text>
+            {selectedService && (
+              <Text style={[styles.serviceMeta, { color: colors.textSecondary }]}>
+                {selectedService.name} · {selectedService.duration}
+              </Text>
+            )}
+          </View>
+        </View>
         {/* No-schedule empty state takes over the whole content area */}
         {!loading && !providerHasSchedule ? (
           <View style={styles.noScheduleWrap}>
-            <Feather name="clock" size={32} color="rgba(240,232,213,0.18)" />
-            <Text style={styles.noScheduleTitle}>
-              This provider hasn&apos;t set their availability yet.
+            <Feather name="clock" size={32} color={colors.textSecondary} />
+            <Text style={[styles.noScheduleTitle, { color: colors.textPrimary }]}>
+              This provider hasn&apos;t published any hours yet.
             </Text>
-            <Text style={styles.noScheduleSub}>
+            <Text style={[styles.noScheduleSub, { color: colors.textSecondary }]}>
               Message them directly to arrange a time.
             </Text>
             <Pressable
-              style={styles.messageBtn}
+              style={[styles.messageBtn, { backgroundColor: colors.actionPrimary }]}
               onPress={async () => {
                 if (!user || !providerId) return
                 // Pre-booking contact is a message REQUEST — same centralized entry
@@ -340,8 +363,10 @@ export default function BookDateTime() {
                 await openMessageEntry(user.id, providerId, providerName)
               }}
             >
-              <Feather name="message-circle" size={14} color="#080808" />
-              <Text style={styles.messageBtnText}>Message provider</Text>
+              <Feather name="message-circle" size={14} color={colors.textOnAction} />
+              <Text style={[styles.messageBtnText, { color: colors.textOnAction }]}>
+                Message provider
+              </Text>
             </Pressable>
           </View>
         ) : (
@@ -349,7 +374,11 @@ export default function BookDateTime() {
             {/* Month navigation */}
             <View style={styles.monthNav}>
               <TouchableOpacity
-                style={[styles.monthArrow, !canStepPrev() && styles.monthArrowDisabled]}
+                style={[
+                  styles.monthArrow,
+                  { borderColor: colors.borderSubtle },
+                  !canStepPrev() && styles.monthArrowDisabled,
+                ]}
                 onPress={prevMonth}
                 disabled={!canStepPrev()}
                 activeOpacity={0.7}
@@ -357,14 +386,18 @@ export default function BookDateTime() {
                 <Feather
                   name="chevron-left"
                   size={16}
-                  color={canStepPrev() ? '#F0E8D5' : 'rgba(240,232,213,0.2)'}
+                  color={canStepPrev() ? colors.iconPrimary : colors.textSecondary}
                 />
               </TouchableOpacity>
-              <Text style={styles.monthLabel}>
+              <Text style={[styles.monthLabel, { color: colors.textPrimary }]}>
                 {MONTHS[currentMonth.getMonth()]} {currentMonth.getFullYear()}
               </Text>
               <TouchableOpacity
-                style={[styles.monthArrow, !canStepNext() && styles.monthArrowDisabled]}
+                style={[
+                  styles.monthArrow,
+                  { borderColor: colors.borderSubtle },
+                  !canStepNext() && styles.monthArrowDisabled,
+                ]}
                 onPress={nextMonth}
                 disabled={!canStepNext()}
                 activeOpacity={0.7}
@@ -372,7 +405,7 @@ export default function BookDateTime() {
                 <Feather
                   name="chevron-right"
                   size={16}
-                  color={canStepNext() ? '#F0E8D5' : 'rgba(240,232,213,0.2)'}
+                  color={canStepNext() ? colors.iconPrimary : colors.textSecondary}
                 />
               </TouchableOpacity>
             </View>
@@ -380,7 +413,10 @@ export default function BookDateTime() {
             {/* Day of week header */}
             <View style={styles.dayHeader}>
               {DAY_LABELS.map((d) => (
-                <Text key={d} style={[styles.dayHeaderText, { width: cellSize }]}>
+                <Text
+                  key={d}
+                  style={[styles.dayHeaderText, { width: cellSize, color: colors.textSecondary }]}
+                >
                   {d}
                 </Text>
               ))}
@@ -420,31 +456,20 @@ export default function BookDateTime() {
                   const isPast = startOfDay(dateObj).getTime() < today.getTime()
 
                   return (
-                    <TouchableOpacity
+                    <DayCell
                       key={date}
-                      style={[
-                        styles.dayCell,
-                        { width: cellSize, height: cellSize },
-                        isToday && styles.dayCellToday,
-                        isSelected && styles.dayCellSelected,
-                      ]}
+                      day={String(date)}
+                      size={cellSize}
+                      selected={isSelected}
+                      today={isToday}
+                      // Unavailable covers "no published hours", "blocked by the
+                      // provider" and "already past". None of them is a capacity
+                      // read, and none is labelled as one.
+                      available={isAvailable && !isPast && !isBlocked}
+                      showAvailabilityDot={isAvailable}
                       onPress={() => handleDateTap(dateStr)}
-                      disabled={!isAvailable}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.dayNumber,
-                          (!isAvailable || isPast) && styles.dayNumberUnavailable,
-                          isToday && styles.dayNumberToday,
-                          isSelected && styles.dayNumberSelected,
-                          isBlocked && styles.dayNumberBlocked,
-                        ]}
-                      >
-                        {date}
-                      </Text>
-                      {isAvailable && !isSelected && <View style={styles.availableDot} />}
-                    </TouchableOpacity>
+                      testID={`datetime-day-${dateStr}`}
+                    />
                   )
                 })}
               </View>
@@ -453,77 +478,66 @@ export default function BookDateTime() {
             {/* No availability this month */}
             {!loading && !monthHasAvailability && (
               <View style={styles.monthEmptyWrap}>
-                <Text style={styles.monthEmptyText}>No availability in this period.</Text>
-                <Text style={styles.monthEmptySub}>
-                  Check back later or contact the provider directly.
+                <Text style={[styles.monthEmptyText, { color: colors.textPrimary }]}>
+                  No published hours in this period.
+                </Text>
+                <Text style={[styles.monthEmptySub, { color: colors.textSecondary }]}>
+                  Check another month or contact the provider directly.
                 </Text>
               </View>
             )}
 
             {/* Separator */}
-            <View style={styles.separator} />
+            <View style={[styles.separator, { backgroundColor: colors.borderSubtle }]} />
 
             {/* Time slots */}
             <View style={styles.timeSlotsSection}>
-              <Text style={styles.sectionLabel}>
-                {selectedDateStr ? 'AVAILABLE TIMES' : 'AVAILABLE TIMES'}
+              {/* Was "AVAILABLE TIMES" behind a ternary whose two branches were the
+                  same string. These are the times the provider PUBLISHES, read from
+                  their schedule — not a live capacity check, and picking one holds
+                  nothing. */}
+              <Text style={[styles.sectionLabel, { color: colors.textSecondary }]}>
+                PUBLISHED TIMES
               </Text>
 
               {!selectedDateStr ? (
-                <Text style={styles.noDateText}>Select a date to see available times</Text>
+                <Text style={[styles.noDateText, { color: colors.textSecondary }]}>
+                  Select a date to see their times.
+                </Text>
               ) : timeSlots.length === 0 ? (
-                <Text style={styles.noDateText}>
-                  No time slots available for this date.
+                <Text style={[styles.noDateText, { color: colors.textSecondary }]}>
+                  No hours published for this date.
                 </Text>
               ) : (
                 <View style={styles.timeGrid}>
                   {timeSlots.map((slot) => {
                     const isSlotSelected = selectedTimeStr === slot.time
                     return (
-                      <TouchableOpacity
+                      <TimeSlotChip
                         key={slot.time}
-                        style={[
-                          styles.timeSlot,
-                          isSlotSelected && styles.timeSlotSelected,
-                        ]}
+                        time={slot.time}
+                        selected={isSlotSelected}
                         onPress={() => handleTimeTap(slot)}
-                        activeOpacity={0.7}
-                      >
-                        <Text
-                          style={[
-                            styles.timeSlotText,
-                            isSlotSelected && styles.timeSlotTextSelected,
-                          ]}
-                        >
-                          {slot.time}
-                        </Text>
-                      </TouchableOpacity>
+                        testID={`datetime-slot-${slot.time}`}
+                      />
                     )
                   })}
                 </View>
               )}
+
+              {/* Says out loud what the greyed slots mean, so a disabled chip is
+                  never read as "someone else got there first". */}
+              {selectedDateStr && timeSlots.length > 0 ? (
+                <Text style={[styles.slotFootnote, { color: colors.textSecondary }]}>
+                  Greyed times are outside the hours {providerFirstName} published. Third does
+                  not show live availability.
+                </Text>
+              ) : null}
             </View>
           </>
         )}
       </ScrollView>
-
-      {/* Fixed bottom CTA */}
-      <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
-        {selectedDateStr && selectedTimeStr && selectedService && (
-          <Text style={styles.ctaSummary}>
-            {selectedService.name} · {formatSummaryDate(selectedDateStr)} · {selectedTimeStr}
-          </Text>
-        )}
-        <Pressable
-          style={[styles.nextBtn, !canContinue && styles.nextBtnInactive]}
-          onPress={() => canContinue && router.push('/book/message')}
-        >
-          <Text style={[styles.nextBtnText, !canContinue && styles.nextBtnTextInactive]}>
-            Next: Your Request
-          </Text>
-        </Pressable>
-      </View>
-    </View>
+    </BookingFlowScreen>
   )
 }
 
@@ -532,40 +546,9 @@ function formatSummaryDate(dateStr: string): string {
   return `${MONTHS[m - 1]} ${d}`
 }
 
+// Geometry and type only. Every colour comes from the theme at render time —
+// this screen has no appearance of its own.
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#080808',
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 4,
-  },
-  backBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  topBarTitle: {
-    fontSize: 17,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  topBarSpacer: {
-    // Widened from 36 to fit the step label. It still balances the back button
-    // so the title stays centred — the label sits in the slot that already
-    // existed for that purpose rather than a new element in the bar.
-    width: 76,
-    alignItems: 'flex-end',
-  },
   providerStrip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -573,36 +556,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
   },
   providerAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  providerInfo: {
-    flex: 1,
-  },
-  providerName: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  providerMeta: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 2,
-  },
-  serviceMeta: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 1,
-  },
+  providerInfo: { flex: 1 },
+  providerName: { fontSize: 13, fontFamily: 'Manrope_600SemiBold' },
+  providerMeta: { fontSize: 11, fontFamily: 'Manrope_400Regular', marginTop: 2 },
+  serviceMeta: { fontSize: 11, fontFamily: 'Manrope_400Regular', marginTop: 1 },
   monthNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -615,106 +580,23 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(240,232,213,0.07)',
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  monthArrowDisabled: {
-    opacity: 0.4,
-  },
-  monthLabel: {
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  dayHeader: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 8,
-  },
-  dayHeaderText: {
-    textAlign: 'center',
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 20,
-  },
-  dayCell: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 20,
-  },
-  dayCellToday: {
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.2)',
-  },
-  dayCellSelected: {
-    backgroundColor: '#F0E8D5',
-  },
-  dayNumber: {
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
-  dayNumberUnavailable: {
-    color: 'rgba(240,232,213,0.2)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  dayNumberBlocked: {
-    textDecorationLine: 'line-through',
-  },
-  dayNumberToday: {
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  dayNumberSelected: {
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-  availableDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#C8922A',
-    marginTop: 2,
-  },
-  monthEmptyWrap: {
-    paddingHorizontal: 24,
-    paddingTop: 12,
-    alignItems: 'center',
-    gap: 4,
-  },
-  monthEmptyText: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-  },
-  monthEmptySub: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.3)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
-  },
-  separator: {
-    height: 1,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    marginHorizontal: 20,
-    marginTop: 16,
-  },
-  timeSlotsSection: {
-    paddingHorizontal: 20,
-    marginTop: 16,
-  },
+  monthArrowDisabled: { opacity: 0.4 },
+  monthLabel: { fontSize: 16, fontFamily: 'Manrope_600SemiBold' },
+  dayHeader: { flexDirection: 'row', paddingHorizontal: 20, marginBottom: 8 },
+  dayHeaderText: { textAlign: 'center', fontSize: 12, fontFamily: 'Manrope_500Medium' },
+  calendarGrid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 20 },
+  monthEmptyWrap: { paddingHorizontal: 24, paddingTop: 12, alignItems: 'center', gap: 4 },
+  monthEmptyText: { fontSize: 13, fontFamily: 'Manrope_500Medium' },
+  monthEmptySub: { fontSize: 12, fontFamily: 'Manrope_400Regular', textAlign: 'center' },
+  separator: { height: 1, marginHorizontal: 20, marginTop: 16 },
+  timeSlotsSection: { paddingHorizontal: 20, marginTop: 16 },
   sectionLabel: {
     fontSize: 10,
     fontWeight: '600',
-    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
@@ -722,59 +604,26 @@ const styles = StyleSheet.create({
   },
   noDateText: {
     fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
     paddingVertical: 20,
   },
-  timeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  timeSlot: {
-    width: '48%',
-    paddingVertical: 12,
-    borderRadius: 10,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
-    backgroundColor: 'rgba(240,232,213,0.04)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  timeSlotSelected: {
-    borderColor: 'rgba(240,232,213,0.3)',
-    backgroundColor: 'rgba(240,232,213,0.1)',
-  },
-  timeSlotText: {
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_500Medium',
-  },
-  timeSlotTextSelected: {
-    fontFamily: 'Manrope_600SemiBold',
+  timeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  slotFootnote: {
+    fontSize: 12,
+    fontFamily: 'Manrope_400Regular',
+    lineHeight: 17,
+    marginTop: 14,
   },
   // No-schedule full takeover
-  noScheduleWrap: {
-    paddingHorizontal: 32,
-    paddingTop: 64,
-    alignItems: 'center',
-    gap: 8,
-  },
+  noScheduleWrap: { paddingHorizontal: 32, paddingTop: 64, alignItems: 'center', gap: 8 },
   noScheduleTitle: {
     marginTop: 12,
     fontSize: 16,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_600SemiBold',
     textAlign: 'center',
   },
-  noScheduleSub: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'center',
-  },
+  noScheduleSub: { fontSize: 13, fontFamily: 'Manrope_400Regular', textAlign: 'center' },
   messageBtn: {
     marginTop: 18,
     flexDirection: 'row',
@@ -783,50 +632,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     height: 46,
     borderRadius: 14,
-    backgroundColor: '#F0E8D5',
   },
-  messageBtnText: {
-    fontSize: 14,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-  cta: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#080808',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.06)',
-    paddingHorizontal: 24,
-    paddingTop: 16,
-  },
+  messageBtnText: { fontSize: 14, fontFamily: 'Manrope_700Bold' },
   ctaSummary: {
     fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
     marginBottom: 8,
-  },
-  nextBtn: {
-    backgroundColor: '#F0E8D5',
-    borderRadius: 14,
-    borderCurve: 'continuous',
-    height: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-  },
-  nextBtnInactive: {
-    backgroundColor: 'rgba(240,232,213,0.12)',
-  },
-  nextBtnText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
-  nextBtnTextInactive: {
-    color: 'rgba(240,232,213,0.35)',
   },
 })
