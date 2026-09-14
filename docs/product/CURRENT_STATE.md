@@ -39,6 +39,68 @@ JSX text contains bare apostrophes — `a provider's profile` — which a naive 
 reads as the start of a literal and is then desynced, reporting comments as user-visible
 copy. The guard tests that failure mode against itself.
 
+**Discover is FULLY migrated onto the Third theme** (Phase 4B, `04735d0`, PR #108,
+2026-09-14). **Founder visually approved the design before merge.** It was the **last
+primary surface** still painted in the legacy dark palette — `useTheme` used **zero** times
+and **64 colour literals** across three files — which meant the screen everyone lands on
+**could not render in Light at all**. `app/(tabs)/index.tsx`,
+`components/DiscoveryLanes.tsx`, `components/DiscoverCommunity.tsx` and the new
+`components/ui/ProviderCard.tsx` now carry **zero colour literals** and resolve every pixel
+from the semantic tokens, so **Light / Dark / System all work from one tree**.
+
+**No schema, RLS, migration or database change of any kind.** Zero files under `supabase/`.
+
+**The grid no longer picks favourites.** It was a two-column **masonry** whose tile heights
+(380 / 300 / 240 / 220) were chosen by **list position**, and the tall tiles were visibly more
+important — bigger photo, 24pt name, a label pill. That is unearned prominence handed out by
+array index. `lib/discovery.ts` sorts lanes on a *meaningless hash* precisely so ties favour
+nobody, and a grid that made the first provider look like the best one quietly undid that.
+The complete browse surface is now a **uniform two-column grid** where every card has the
+same structural weight.
+
+**One card, two variants.** A provider had been drawn twice by two components that each
+decided for themselves what a rating is and what to do with no photo — and they had already
+drifted: one showed a Featured badge the other did not, and only one used `displayRating`.
+`components/ui/ProviderCard` is now the single home for those rules, with a `lane` and a
+`grid` variant. **A fact that is not in `ProviderCardData` cannot be rendered by accident** —
+no completed bookings (PD-126), no follower count, no likes, no verification mark, no price.
+`Open today` appears **only on the grid variant and only when the server said true**; the
+lane that states it is not asked to repeat it twelve times.
+
+**Removed because it was never reachable.** The **Featured** and **Trending** badges: both
+columns are `DEFAULT false`, pinned immutable by the providers UPDATE policy, and written by
+nothing in the product — so neither badge could ever appear, and if one could, "Trending" is
+a popularity claim this beta does not make. **The columns are untouched**: a UI that stops
+reading a column is not a reason to drop it. Also removed: the **"Our Philosophy"** marketing
+block, and the **human silhouette** that stood in for a missing photo — which drew the absence
+of a *picture* as the absence of a *person*. The fallback chain is now portfolio → profile
+photo → **neutral tile**.
+
+**A failure is no longer an empty marketplace.** `fetchDiscoveryPool` returned `[]` for both a
+network failure and a market with nobody in it, so a dropped connection rendered as *"no
+providers yet"* — a claim about Houston rather than a report about the request. It returns
+**`null` on failure**, the screen tells the two apart, and a real **error state with retry**
+appears instead. A successful retry now **clears** the previous error, which it did not before.
+
+**Search is a field, and the header carries the viewer's area.** Search had been an icon in a
+four-action header on a screen whose first job is finding someone; it is now a persistent
+field opening the **existing** search screen — an entry point, not a second implementation.
+The header shows the viewer's neighbourhood, or **"Set your area"** as a live control opening
+the same profile editor that already owns `clients.neighborhood`. **No GPS, no mileage, no
+geocoding, no invented value.** Business left the client browse header; the provider route to
+their own dashboard is untouched elsewhere.
+
+**Lane logic was not changed.** Near You, Open Today, New to Third and Worth a Look keep their
+existing eligibility, ordering and empty-lane behaviour. Only one string moved: **Worth a Look
+now reads "Also working in Houston"**, because the previous subtitle framed those providers as
+leftovers. **Community stays secondary** — below the complete provider grid, capped, and hidden
+inside a category filter; a guard asserts the render order. The rebook nudge is retained as one
+quiet row rather than an accented card.
+
+**Deferred to Phase 4C, and asserted absent by guard: the Reels lane and From People You
+Follow** (PD-120). The Phase 4A audit confirmed `provider_follows` offers a separate, safe
+relationship path that never touches `DiscoveryProvider`; it was audited, **not built**.
+
 **The public Provider Profile is FULLY migrated onto the Third theme** (Phase 3B,
 `1aadff8`, PR #104, 2026-09-14). `components/ProviderProfile.tsx`, `app/providers/[id].tsx`,
 `components/ProviderReviewsSection.tsx` and `components/ProviderShoutouts.tsx` now carry
