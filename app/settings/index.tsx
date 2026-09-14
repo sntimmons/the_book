@@ -316,8 +316,12 @@ export default function SettingsScreen() {
           activeOpacity={0.7}
           onPress={handleSignOut}
         >
-          <Ionicons name="log-out-outline" size={20} color={colors.actionText} />
-          <Text style={[s.signOutText, { color: colors.actionText }]}>Sign Out</Text>
+          {/* Sign Out is a UTILITY action. Not the primary action, not a brand CTA,
+              not an error, and not destructive — so it takes the ordinary text
+              treatment. `actionText` would have read as a brand CTA, and danger
+              belongs to Delete Account, which is genuinely destructive. */}
+          <Ionicons name="log-out-outline" size={20} color={colors.textSecondary} />
+          <Text style={[s.signOutText, { color: colors.textPrimary }]}>Sign Out</Text>
         </TouchableOpacity>
 
         {/* VERSION */}
