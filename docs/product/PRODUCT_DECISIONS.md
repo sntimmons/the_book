@@ -3194,6 +3194,85 @@ placeholder destination was introduced. Obligations tracked in
 OPEN.**
 
 
+### PD-119 — Appearance is a user preference with two designed expressions, and System is the default
+
+**Decided 2026-09-13. Design approved; NOT yet implemented.**
+
+Third gets an **Appearance** setting at **Me → Settings → Appearance**, offering **System**,
+**Light** and **Dark**, defaulting to **System**.
+
+**System is a preference, not a third mode.** It resolves at runtime to one of the two
+modes. There are exactly two modes in the token system and there must not be a third.
+
+**One semantic token set serves both.** `Third / Color` carries modes `Light` and `Dark`,
+and every component binds to semantic roles — `bg/canvas`, `bg/surface`, `bg/elevated`,
+`bg/subtle`, `text/primary`, `text/secondary`, `text/on-action`, `border/subtle`,
+`icon/primary`, `action/primary`, `action/text`, `status/local`, `status/outcome`,
+`status/danger`. A second palette is not permitted.
+
+**Character is designed per surface, never derived by inversion.** Reels stays media-led in
+Light — its overlays bind to `text/on-action`, which is Linen in both modes, so the video
+field stays matte dark and only the chrome follows the preference. Bookings stays calm in
+both. Discover stays warm and community-led in both. Dark mode is deliberately flatter:
+separation comes from hairlines, spacing and tonal shift rather than raised cards.
+
+**It changes appearance only.** It is not a capability, privacy or visibility control, and
+the screen says so in as many words: *"This changes how Third looks. It does not change
+what you can see or do."*
+
+**What this does NOT do.** It does not alter navigation, permissions, ranking, booking
+behaviour or beta scope. It grants no new data access.
+
+**Implementation reality, stated so the cost is not under-read.** The app on `main` has no
+theme layer: colour is inline literals across `app/` and `components/`. This decision is
+the reason a token layer is introduced, not a consequence of one existing.
+
+**Evidence:** Figma `Foundations v1` (node `50:12`, § Appearance) and the Appearance frames
+(`113:2` Light, `113:38` Dark).
+
+**Status:** Locked as product behaviour. Implementation pending.
+
+### PD-120 — "From people you follow" is a relationship lane and may not touch the provider-ranking path
+
+**Decided 2026-09-13. Design approved; NOT yet implemented.**
+
+Discover gets a **From people you follow** lane. It is approved beta behaviour, and it is
+**relationship/activity context — never an endorsement, a quality signal, or a ranking.**
+
+**Rules, all binding:**
+
+- It reads from a **separate relationship/activity data path**.
+- It appears **only when eligible recent activity from followed accounts exists**.
+- It is **hidden completely when empty** — no placeholder, no unrelated filler.
+- Every card **states its source**: who it came from, and when.
+- It has **no effect on general provider ranking**.
+- **Engagement does not affect provider worth** anywhere.
+- **Posting remains unnecessary for marketplace visibility.** A provider who posts nothing
+  is not penalised.
+- **Direct search intent still outranks popularity** (PD-116 is unaffected).
+
+**The fairness boundary is enforced by TYPE, and that must survive this lane.**
+`DiscoveryProvider` and `SearchableProvider` in `lib/discovery.ts` and
+`lib/providerSearchRank.ts` carry **no social field at all**, which is why "a provider who
+posts nothing is not penalised" is structural rather than remembered.
+
+**This lane may NOT be built by adding a follow, engagement or activity field to either
+type.** It must read its own path and must not merge into the inputs the ranking modules
+receive. If implementing it appears to require widening those types, stop and return to PM
+— that requirement is the signal that the approach is wrong, not that the boundary should
+move.
+
+**Relationship to the lane set.** The approved lanes are From people you follow, Near You,
+Open Today, New to Third and Worth a Look, and they sit **above the complete provider
+grid**, never instead of it (PD-115, and `providersWithNoLane` in `lib/discovery.ts`).
+Popular Near You remains dormant and does not ship (PD-117).
+
+**Evidence:** Figma `Client — Discover — Approved` (node `127:2`), lane
+`From people you follow` with its stated rule line.
+
+**Status:** Locked as product behaviour. Implementation pending, and blocked on a data-path
+design that does not widen the ranking types.
+
 ## Not decisions
 
 Recorded so they are not mistaken for locked state:
