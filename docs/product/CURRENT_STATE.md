@@ -39,6 +39,59 @@ JSX text contains bare apostrophes — `a provider's profile` — which a naive 
 reads as the start of a literal and is then desynced, reporting comments as user-visible
 copy. The guard tests that failure mode against itself.
 
+**The public Provider Profile is FULLY migrated onto the Third theme** (Phase 3B,
+`1aadff8`, PR #104, 2026-09-14). `components/ProviderProfile.tsx`, `app/providers/[id].tsx`,
+`components/ProviderReviewsSection.tsx` and `components/ProviderShoutouts.tsx` now carry
+**zero colour literals** and resolve every pixel from the theme, so **System / Light / Dark
+all work from one tree**. **No schema, RLS or migration change** — Supabase was not touched.
+
+**The hero does not stop at the image.** The photograph continues into the identity band,
+which is painted with `mediaScrim` and lettered with `textOnAction` — the two roles the token
+set fixes to the **same value in both schemes**, because a scrim over a photograph must not
+invert. That is what gives one tree a dark-to-warm opening in Light and a single continuous
+dark field in Dark.
+
+**Book is primary where the decision is made.** Follow had been the only control in the
+identity area, which made it read as the screen's main action on a screen that exists to
+start a booking. **Request booking** is primary there and in the sticky bar; Follow is an
+outline beside it. The label says *request* because the provider still has to accept. **The
+follower count is absent from the profile entirely** — not demoted. Follow, its live count
+read and the underlying data are untouched.
+
+**Three reads were extended, none of them a new table.** Process is a **third partition of
+the existing `posts` read** (`content_type = 'process'`, already permitted by the canonical
+baseline), partitioned *out* of portfolio and reels so three posts cannot render as nine.
+`provider_services.description`, `providers.specialties` and `providers.username` were
+already public and simply never mapped.
+
+**A service row starts the EXISTING booking flow with that service preselected**, through the
+one `startBooking` boundary (CODE-DRIFT-001). The attempt still enters at `/book/service`,
+still shows every service, still requires Continue, and still walks date/time → policy →
+contract → review → send. **No step is skipped, reordered or bypassed**, and the verification
+gate is unchanged. Rows are inert wherever no booking could start from them.
+
+**Removed because it was never true:** `isLive` and its LIVE badge (the column was plumbed
+but the page always passed `false`, and the badge asserted a presence the product cannot
+know), `followingCount` (a hardcoded zero), and See all / View all (neither had a
+destination). **Share was RETAINED** — an earlier note that it had no handler was wrong;
+`Share.share()` is React Native's own API invoked inside the component, so it is supported
+behaviour and a static frame is not grounds to drop it. Save, the safety menu and Message are
+likewise all real and kept.
+
+**Booking details is deliberately absent — PD-125.** See the policy-truth defect recorded
+below; it is the same root cause.
+
+**⚠ A SHIPPED PRODUCT-TRUTH DEFECT WAS FOUND IN THE BOOKING FLOW, and it is not fixed.**
+`app/book/policy.tsx` reads `provider_policies` (client-readable: fees, reschedule, travel)
+**and** `provider_booking_preferences` (owner-only: cancellation window, lateness grace). For
+a client the second returns **zero rows and no error**, and because the first *does* return,
+the screen's `if (!policiesRes.data && !prefsRes.data) return` guard never fires — so
+`rowsToPolicy` substitutes `DEFAULT_POLICY` for those two fields and renders them beside the
+provider's real terms, **identically formatted**. The client then agrees to them via the
+acknowledgement row. The defaults do not even agree with the database's own: the column
+default for `lateness_grace_minutes` is **60**, `DEFAULT_POLICY.gracePeriod` is **15
+minutes**. This predates Phase 3B and is the highest-priority follow-up.
+
 **The client booking flow is FULLY migrated onto the Third theme** (Phase 2C, 2026-09-14).
 All eight remaining client-facing Bookings screens now carry **zero colour literals** and
 resolve every pixel from the theme: `app/book/service.tsx`, `datetime.tsx`, `policy.tsx`,
