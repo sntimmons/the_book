@@ -303,5 +303,5 @@ export const MODERATION_HELP =
   'or restrict a provider — those are separate actions.'
 
 export const NO_SLA_NOTE =
-  'The Book promises no response time for any of this (PD-068). Nothing here tells '
+  'Third promises no response time for any of this (PD-068). Nothing here tells '
   + 'the person waiting that you have looked.'

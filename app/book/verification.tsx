@@ -42,7 +42,7 @@ export default function BookVerification() {
         <Text style={styles.title}>Built on real people.</Text>
 
         <Text style={styles.body}>
-          The Book is being built around trust.
+          Third is being built around trust.
         </Text>
         <Text style={styles.body}>
           Before real transactions go live, both clients and providers will verify

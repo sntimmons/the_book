@@ -218,7 +218,7 @@ export default function SettingsScreen() {
             and every RPC refuses a non-operator on its own. */}
         {isOperator === true ? (
           <>
-            <GroupLabel>The Book</GroupLabel>
+            <GroupLabel>Third</GroupLabel>
             <View style={s.group}>
               <NavRow
                 icon="albums-outline"

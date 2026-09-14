@@ -417,7 +417,7 @@ export default function ReelsScreen() {
   async function handleShare(reel: Reel) {
     try {
       await Share.share({
-        message: `Check out ${reel.providerName} on The Book. ${reel.caption}`,
+        message: `Check out ${reel.providerName} on Third. ${reel.caption}`,
       })
     } catch {}
   }

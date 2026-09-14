@@ -541,17 +541,17 @@ export const NOT_RECEIVED_COPY: ObligationActionCopy = {
  * is not a reason to start promising.
  */
 export const REQUEST_REVIEW_COPY: ObligationActionCopy = {
-  title: 'Ask The Book to review this?',
+  title: 'Ask Third to review this?',
   body:
-    'This asks The Book to look at this part of the trade because the other provider has not'
+    'This asks Third to look at this part of the trade because the other provider has not'
     + ' answered. It does not decide anything, does not say they were at fault, and does not'
     + ' record that your delivery was received. There is no set response time.',
-  confirmLabel: 'Ask The Book to review',
+  confirmLabel: 'Ask Third to review',
   cancelLabel: 'Not yet',
 }
 
 /** The control's own label, so the screen and the confirmation cannot drift apart. */
-export const REQUEST_REVIEW_LABEL = 'Ask The Book to review'
+export const REQUEST_REVIEW_LABEL = 'Ask Third to review'
 
 /**
  * What the deliverer is told once they have asked. Deliberately the same destination as the
@@ -559,7 +559,7 @@ export const REQUEST_REVIEW_LABEL = 'Ask The Book to review'
  * not a better or faster kind of review, and the copy must not imply it is.
  */
 export const REVIEW_REQUESTED_NOTE =
-  'You asked The Book to look at this. Nothing has been decided.'
+  'You asked Third to look at this. Nothing has been decided.'
 
 /** The same 200-character bound the server enforces, and the same one cancellation uses. */
 export const MAX_NO_SHOW_REASON = 200

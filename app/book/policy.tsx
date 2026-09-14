@@ -181,7 +181,7 @@ export default function BookPolicy() {
               lets a percentage imply the platform will collect it. The wording of
               the terms themselves is a legal/product question and is untouched. */}
           <Text style={styles.feeNote}>
-            The Book does not take payment or collect these fees. Anything owed is
+            Third does not take payment or collect these fees. Anything owed is
             settled directly with your provider.
           </Text>
 

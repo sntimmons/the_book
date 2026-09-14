@@ -700,7 +700,7 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
     [INSUFFICIENT_PRIVILEGE]: {
       terminal: true,
       title: 'Not yours to send for review',
-      body: 'Only the provider who owed this delivery can ask The Book to review it.',
+      body: 'Only the provider who owed this delivery can ask Third to review it.',
     },
     [NOT_IN_PREREQUISITE_STATE]: {
       // NOT terminal, and NOT stale in the "you missed your chance" sense: the response window
@@ -710,7 +710,7 @@ const TERMINAL: Partial<Record<BarterWriteOp, Record<string, BarterWriteFailure>
       stale: true,
       title: 'Not yet',
       body:
-        'The other provider still has time to answer. You can ask The Book to review this once'
+        'The other provider still has time to answer. You can ask Third to review this once'
         + ' that time has passed. The details have been updated.',
     },
     [CHECK_VIOLATION]: {

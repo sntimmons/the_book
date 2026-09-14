@@ -292,7 +292,7 @@ export const REPORT_LIMITED_COPY = {
  */
 export const REPORT_SUBMITTED_COPY = {
   title: 'Report submitted',
-  body: 'Thanks — your report has been recorded and sent to The Book. There is no set'
+  body: 'Thanks — your report has been recorded and sent to Third. There is no set'
     + ' response time.',
 }
 
@@ -355,7 +355,7 @@ export function providerReviewCopy(status: ReviewCaseStatus | null): string | nu
   switch (status) {
     case 'open':
     case 'under_review':
-      return 'You asked The Book to review this. Nothing has been decided yet.'
+      return 'You asked Third to review this. Nothing has been decided yet.'
     case 'resolved':
     case 'dismissed':
       // Deliberately identical: the OUTCOME a provider cares about is whether
@@ -363,7 +363,7 @@ export function providerReviewCopy(status: ReviewCaseStatus | null): string | nu
       // state itself — not by a case label. Saying "dismissed" here would tell a
       // provider they lost an appeal in a word chosen for an operator's filing
       // system rather than for them.
-      return 'The Book has reviewed this.'
+      return 'Third has reviewed this.'
     default:
       return null
   }
@@ -376,9 +376,9 @@ export function providerReviewCopy(status: ReviewCaseStatus | null): string | nu
  * this?", is a mis-import that typechecks.
  */
 export const REQUEST_ELIGIBILITY_REVIEW_COPY = {
-  title: 'Ask The Book to review this?',
+  title: 'Ask Third to review this?',
   body:
-    'This asks The Book to look at why your business is not currently available for new'
+    'This asks Third to look at why your business is not currently available for new'
     + ' bookings. Your existing bookings, messages and history are not affected. There is no'
     + ' set response time.',
   confirmLabel: 'Request review',

@@ -266,7 +266,7 @@ export function buildDiscoveryLanes(inputs: DiscoveryInputs): DiscoveryLane[] {
   // lane FOR them that ranked on them would put the least new provider on top.
   lanes.push({
     key: 'new_to_the_book',
-    title: 'New to The Book',
+    title: 'New to Third',
     subtitle: `Joined in the last ${NEW_PROVIDER_DAYS} days.`,
     providers: providers.filter((p) => isNew(p, now)).sort(byNewestFirst).slice(0, LANE_LIMIT),
   })

@@ -206,7 +206,7 @@ export default function BookingRequestScreen() {
   function handleDecline() {
     // PRODUCT TRUTH: "The client will be notified" promised a notification
     // channel that does not exist (PD-059 — no push, device or email path).
-    Alert.alert('Decline Request', 'Decline this booking request? The client will see this in The Book.', [
+    Alert.alert('Decline Request', 'Decline this booking request? The client will see this in Third.', [
       { text: 'Keep', style: 'cancel' },
       {
         text: 'Decline',

@@ -235,7 +235,7 @@ export function ClientMe() {
   const showBadgesStrip = phoneVerified
 
   function handleShare() {
-    Share.share({ message: 'Check out my profile on The Book' }).catch(() => {})
+    Share.share({ message: 'Check out my profile on Third' }).catch(() => {})
   }
 
   return (

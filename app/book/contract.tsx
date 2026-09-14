@@ -375,7 +375,7 @@ export default function BookContract() {
             infrastructure, NOT a verified legal e-signature, and NOT a claim of
             enforceability. */}
         <Text style={styles.gateNote}>
-          The Book records that you opened this agreement, which version you accepted,
+          Third records that you opened this agreement, which version you accepted,
           and when. It does not verify that you read every word, and it is not a
           witnessed or legally certified signature.
         </Text>

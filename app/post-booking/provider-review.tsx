@@ -356,7 +356,7 @@ export default function ProviderReview() {
           <Text style={styles.skipText}>Skip for now</Text>
         </TouchableOpacity>
         <Text style={styles.reminderText}>
-          Client ratings help keep The Book safe for all providers.
+          Client ratings help keep Third safe for all providers.
         </Text>
       </View>
     </KeyboardAvoidingView>

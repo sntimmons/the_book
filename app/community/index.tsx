@@ -537,7 +537,7 @@ export function PostCard({
             // and its absence means nothing was claimed, not that something is
             // missing.
             <View style={s.verifiedChip}>
-              <Text style={s.verifiedText}>Booked on The Book</Text>
+              <Text style={s.verifiedText}>Booked on Third</Text>
             </View>
           ) : null}
           <Feather name="chevron-right" size={14} color="rgba(240,232,213,0.35)" />

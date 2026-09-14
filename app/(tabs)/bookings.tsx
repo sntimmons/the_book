@@ -253,7 +253,7 @@ export default function BookingsScreen() {
                     confirmed" asserted a stored card and a charge on
                     confirmation. Neither exists (PD-042). */}
                 <Text style={[styles.pendingBannerText, { color: colors.textPrimary }]}>
-                  Pending requests are waiting for provider confirmation. The Book does not take payment in this beta.
+                  Pending requests are waiting for provider confirmation. Third does not take payment in this beta.
                 </Text>
               </View>
             )}
