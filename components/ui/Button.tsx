@@ -21,6 +21,12 @@ export type ButtonProps = {
   onPress?: () => void
   variant?: ButtonVariant
   loading?: boolean
+  /**
+   * Shown beside the spinner while `loading`. Supply it where the wait is long
+   * enough that a bare spinner would leave the user guessing what is happening —
+   * sending a booking request, for one. Omitted, the button shows the spinner alone.
+   */
+  loadingLabel?: string
   disabled?: boolean
   /** Tertiary hugs its label by default; primary and secondary fill their row. */
   fullWidth?: boolean
@@ -33,6 +39,7 @@ export default function Button({
   onPress,
   variant = 'primary',
   loading = false,
+  loadingLabel,
   disabled = false,
   fullWidth,
   accessibilityLabel,
@@ -61,7 +68,8 @@ export default function Button({
       onPress={inactive ? undefined : onPress}
       disabled={inactive}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel ?? label}
+      // While busy, announce what is happening rather than the idle label.
+      accessibilityLabel={accessibilityLabel ?? (loading && loadingLabel ? loadingLabel : label)}
       accessibilityState={{ disabled: inactive, busy: loading }}
       testID={testID}
       style={({ pressed }) => [
@@ -78,6 +86,11 @@ export default function Button({
       {loading ? (
         <View style={s.loading} accessibilityElementsHidden>
           <ActivityIndicator color={labelColor} size="small" />
+          {loadingLabel ? (
+            <Text style={[type.labelAction, { color: labelColor }]} numberOfLines={1}>
+              {loadingLabel}
+            </Text>
+          ) : null}
         </View>
       ) : (
         <Text style={[type.labelAction, { color: labelColor }]} numberOfLines={1}>
@@ -101,5 +114,11 @@ const s = StyleSheet.create({
   hug: { alignSelf: 'flex-start' },
   pressed: { opacity: 0.72 },
   disabled: { opacity: 0.4 },
-  loading: { height: 20, justifyContent: 'center' },
+  loading: {
+    height: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+  },
 })

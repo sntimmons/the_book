@@ -39,7 +39,59 @@ JSX text contains bare apostrophes — `a provider's profile` — which a naive 
 reads as the start of a literal and is then desynced, reporting comments as user-visible
 copy. The guard tests that failure mode against itself.
 
-**Bookings is PARTIALLY migrated onto the Third theme** (`f911242`, PR #96, 2026-09-14).
+**The client booking flow is FULLY migrated onto the Third theme** (Phase 2C, 2026-09-14).
+All eight remaining client-facing Bookings screens now carry **zero colour literals** and
+resolve every pixel from the theme: `app/book/service.tsx`, `datetime.tsx`, `policy.tsx`,
+`contract.tsx`, `payment.tsx`, `confirmed.tsx`, `verification.tsx`, and the shared
+`app/bookings/[id].tsx`. **The interim Light-appearance seam recorded below is closed.**
+**No migration was needed** and **Supabase was not touched** — every change is presentation
+code. No booking logic, state machine, RPC, expiry engine or contract engine was altered.
+
+**One flow chrome replaces five.** `components/ui/BookingFlowScreen.tsx` owns the back
+control, the step label and the sticky footer for every step, so *where am I in this flow*
+is answered the same way once instead of being re-derived per screen. The step label still
+comes only from `lib/bookingProgress.ts`, so **no screen can claim a total the product does
+not yet know**. `components/ui/TerminalStatement.tsx` carries the confirmations, and it
+renders **no step progress at all** — a confirmation is not a step.
+
+**Three product-truth corrections were made on the way.**
+
+- **The date picker no longer implies live availability.** The section read `AVAILABLE
+  TIMES` (behind a ternary whose two branches were the same string) and the empty state read
+  *"No availability in this period."* Both described a **live capacity check the product does
+  not perform**. They now say **published hours**, the screen states outright that *"Picking
+  one sends a request. It is not a confirmed slot until they accept,"* and a footnote says
+  **Third does not show live availability**. A guard rejects urgency and scarcity language
+  outright.
+- **The detail screen's private colour table is gone.** `getStatusStyle` lived in
+  `app/bookings/[id].tsx` — a **second** place where *"what colour is a no-show"* got
+  decided, and it decided **red**. The screen now renders the shared `StatusBadge`, so the
+  rule lives once in `lib/theme/statusTone.ts`.
+- **`TerminalStatement`'s `onBack` rendered no back control.** It only changed the top
+  padding, so a caller could ask for one, see the layout shift, and never get the button.
+  `app/book/verification.tsx` was asking. It renders one now.
+
+**The detail screen shows client presentation without losing provider logic.**
+`app/bookings/[id].tsx` is a **shared route** and stays one: `isProvider` still branches, and
+**Review request, Mark complete, Mark no show and Cancel booking remain reachable from the
+provider branch**, themed but not redesigned and not expanded. A guard asserts none of those
+labels appears before the first `isProvider` branch. **No provider-side Bookings mode was
+built.** The response window is still derived from the server's urgency, never asserted as a
+constant, and the detail now tells the **same** story as the list, from the same
+`bookingListNote` helper.
+
+**Two deliberate divergences from the approved frames, both flagged rather than resolved.**
+
+- **Date & time is a month grid, not the frame's six-day strip.** The shipped picker browses
+  months, marks provider-blocked dates and handles past dates. Implementing the strip would
+  have **removed month browsing** — a functional loss to match a mockup. `DayCell` was
+  generalised (optional weekday, optional availability dot) to serve both shapes; the strip
+  is still buildable from the same component.
+- **Booking detail omits Length and Where.** The approved frame carries both. The detail
+  query returns neither, so they are **absent rather than filled with a dash that looks like
+  data**. Adding them is a query change, not a presentation change, and was left out of scope.
+
+**Bookings was PARTIALLY migrated in Phase 2** (`f911242`, PR #96, 2026-09-14).
 **Phase 2 is partial, not complete, and must not be read as finished.** Two surfaces moved:
 the **Bookings list** (`app/(tabs)/bookings.tsx`) and the **booking message + reference
 photos step** (`app/book/message.tsx`). Both now carry **zero colour literals** — the message
@@ -67,15 +119,10 @@ blocks.
 
 **What is NOT done, and is the reason this entry says PARTIAL.**
 
-- **Eight Bookings-related screens remain unmigrated**: `app/bookings/[id].tsx` and the seven
-  other `app/book/*` screens. **No approved Figma frame exists for any of them**, and a blind
-  theme-only migration was **rejected** — Figma is the visual source of truth and screen
-  composition is not to be invented in React Native. They are Phase 2b, and need a bounded
-  design pass using the existing Foundations and Components first.
-- **An interim Light-appearance seam is ACCEPTED, temporarily.** The migrated list is warm
-  light while the detail screen is still `#080808`, so opening a booking crosses a visible
-  seam in Light. In Dark there is effectively none. This is a **presentation seam, not a
-  product-truth or functional defect**, and it does not block.
+- ~~**Eight Bookings-related screens remain unmigrated**~~ — **CLOSED by Phase 2C above.**
+  They were designed in Phase 2b and implemented in Phase 2C.
+- ~~**An interim Light-appearance seam is ACCEPTED, temporarily.**~~ — **CLOSED by Phase 2C
+  above.** The list and the detail now share one appearance.
 - **The `[My appointments] [My business]` segmented control is REJECTED for closed beta.**
   The approved frame `78:2` showed it; the list queries `.eq('user_id', user.id)` and is
   client activity only. **No provider booking query, no new RLS, no new navigation and no

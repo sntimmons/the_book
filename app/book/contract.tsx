@@ -3,18 +3,19 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Pressable,
   ScrollView,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native'
 import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import * as Sentry from '@sentry/react-native'
 import { useBookingStore } from '@/store/bookingStore'
-import { StepProgress } from '@/components/StepProgress'
 import { bookingProgressLabel } from '@/lib/bookingProgress'
+import { useTheme } from '@/context/ThemeContext'
+import BookingFlowScreen, { BookingFlowHeading } from '@/components/ui/BookingFlowScreen'
+import Button from '@/components/ui/Button'
+import AcknowledgeRow from '@/components/ui/AcknowledgeRow'
 import { useAuth } from '@/context/AuthContext'
 import { fetchContractForBooking, Contract } from '@/lib/contracts'
 import {
@@ -27,7 +28,7 @@ import {
 } from '@/lib/bookingDraft'
 
 export default function BookContract() {
-  const insets = useSafeAreaInsets()
+  const { colors } = useTheme()
   const { user } = useAuth()
   const {
     providerId,
@@ -191,9 +192,9 @@ export default function BookContract() {
 
   if (loading) {
     return (
-      <View style={styles.root}>
+      <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
         <View style={styles.centerBody}>
-          <ActivityIndicator color="rgba(240,232,213,0.4)" />
+          <ActivityIndicator color={colors.textSecondary} />
         </View>
       </View>
     )
@@ -202,10 +203,10 @@ export default function BookContract() {
   if (blocked) {
     // Permanent, and says so. No "try again": the write was refused, not lost.
     return (
-      <View style={styles.root}>
+      <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
         <View style={styles.centerBody}>
-          <Text style={styles.title}>We could not start this request</Text>
-          <Text style={styles.bodyText}>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>We could not start this request</Text>
+          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
             Something about this booking could not be saved. Go back and start a new
             request with this provider.
           </Text>
@@ -226,10 +227,10 @@ export default function BookContract() {
     // client is untouched and still reachable — only NEW bookings are closed —
     // and nothing here is a verification claim or a judgement of the provider.
     return (
-      <View style={styles.root}>
+      <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
         <View style={styles.centerBody}>
-          <Text style={styles.title}>Not currently available for new bookings</Text>
-          <Text style={styles.bodyText}>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Not currently available for new bookings</Text>
+          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
             This provider is not taking new bookings right now. Any bookings and
             messages you already have with them are unaffected.
           </Text>
@@ -248,10 +249,10 @@ export default function BookContract() {
   if (loadError) {
     // Contract lookup failed technically — do not silently skip signing.
     return (
-      <View style={styles.root}>
+      <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
         <View style={styles.centerBody}>
-          <Text style={styles.title}>Could not load the agreement</Text>
-          <Text style={styles.bodyText}>
+          <Text style={[styles.title, { color: colors.textPrimary }]}>Could not load the agreement</Text>
+          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>
             We could not load this service agreement. Please check your connection
             and try again before continuing.
           </Text>
@@ -261,8 +262,8 @@ export default function BookContract() {
               label) — a tap target smaller than the words inside it. The gate was
               unreachable before this correction, so the state had never rendered
               for anyone. */}
-          <TouchableOpacity style={styles.recoveryBtn} onPress={retryLoad} activeOpacity={0.85}>
-            <Text style={styles.recoveryBtnText}>Try again</Text>
+          <TouchableOpacity style={[styles.recoveryBtn, { backgroundColor: colors.actionPrimary }]} onPress={retryLoad} activeOpacity={0.85}>
+            <Text style={[styles.recoveryBtnText, { color: colors.textOnAction }]}>Try again</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.recoveryBtn, styles.recoveryBtnQuiet]}
@@ -277,22 +278,33 @@ export default function BookContract() {
   }
 
   return (
-    <View style={styles.root}>
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()} activeOpacity={0.8}>
-          <Feather name="chevron-left" size={20} color="#F0E8D5" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Service Agreement</Text>
-        {/* The step label sits in the slot that already balanced the back button,
-            so the title stays centred and the bar gains no new element. */}
-        <View style={styles.headerStep}>
-          <StepProgress label={bookingProgressLabel('contract', contractRequired)} />
-        </View>
-      </View>
-
+    <BookingFlowScreen
+      progressLabel={bookingProgressLabel('contract', contractRequired)}
+      onBack={() => router.back()}
+      // The body owns its scroll — the open-before-accept gate depends on it.
+      scrollable={false}
+      testID="book-contract"
+      footer={
+        <>
+          <Button
+            label="Accept and continue"
+            // The open-gate is REAL and unchanged: the agreement must be opened
+            // before this activates.
+            disabled={!agreed || !opened}
+            onPress={acceptAndContinue}
+            testID="contract-accept"
+          />
+          <Button label="Decline" variant="secondary" onPress={decline} testID="contract-decline" />
+        </>
+      }
+    >
+      <BookingFlowHeading
+        title="Service agreement"
+        subtitle="Read it, then accept to continue."
+      />
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 20, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingBottom: 8 }}
         scrollEventThrottle={16}
         onLayout={(e) => {
           viewportHeight.current = e.nativeEvent.layout.height
@@ -306,10 +318,10 @@ export default function BookContract() {
           if (contract?.contractType !== 'pdf') noteBodyScroll(e.nativeEvent.contentOffset.y)
         }}
       >
-        <Text style={styles.title}>{contract?.title}</Text>
+        <Text style={[styles.title, { color: colors.textPrimary }]}>{contract?.title}</Text>
 
         {contract?.contractType === 'pdf' ? (
-          <View style={styles.pdfBlock}>
+          <View style={[styles.pdfBlock, { backgroundColor: colors.bgSurface, borderColor: colors.borderSubtle }]}>
             {/* Was "You must read the full contract before signing." — a rule the
                 app could not enforce and did not check. What it can require, and
                 now does, is that the contract be OPENED. */}
@@ -319,7 +331,7 @@ export default function BookContract() {
                 : 'Open the contract to read it. You can sign once you have opened it.'}
             </Text>
             <TouchableOpacity
-              style={styles.readBtn}
+              style={[styles.readBtn, { backgroundColor: colors.actionPrimary }]}
               activeOpacity={0.85}
               onPress={() => {
                 if (contract?.pdfUrl) {
@@ -331,14 +343,14 @@ export default function BookContract() {
                 }
               }}
             >
-              <Feather name="file-text" size={16} color="#080808" />
-              <Text style={styles.readBtnText}>
+              <Feather name="file-text" size={16} color={colors.textOnAction} />
+              <Text style={[styles.readBtnText, { color: colors.textOnAction }]}>
                 {opened ? 'Reopen Contract' : 'Read Contract'}
               </Text>
             </TouchableOpacity>
           </View>
         ) : (
-          <Text style={styles.bodyText}>{contract?.body}</Text>
+          <Text style={[styles.bodyText, { color: colors.textSecondary }]}>{contract?.body}</Text>
         )}
 
         {/* THE FAKE SIGNATURE CANVAS IS GONE.
@@ -351,14 +363,15 @@ export default function BookContract() {
             What replaces it is what the record actually holds: an explicit
             ACCEPTANCE of a specific document version. That is a real thing, it
             is durable, and it does not pretend to be a signature. */}
-        <Pressable style={styles.checkboxRow} onPress={() => setAgreed((v) => !v)}>
-          <View style={[styles.checkbox, agreed && styles.checkboxChecked]}>
-            {agreed ? <Feather name="check" size={13} color="#080808" /> : null}
-          </View>
-          <Text style={styles.checkboxText}>
-            I accept the terms of this service agreement.
-          </Text>
-        </Pressable>
+        {/* The same acknowledge shape the policy step uses. Ticking it is an
+            acceptance of a specific document VERSION — it is not a signature, and
+            the versioning, stale-version refusal and durable record are unchanged. */}
+        <AcknowledgeRow
+          label="I accept the terms of this service agreement."
+          checked={agreed}
+          onToggle={() => setAgreed((v) => !v)}
+          testID="contract-acknowledge"
+        />
 
         {/* ITEM I. The gate above is real: the contract must be opened before the
             Sign control activates. This line exists so the product does not imply
@@ -374,95 +387,44 @@ export default function BookContract() {
             durable document acceptance and NOT DocuSign-equivalent
             infrastructure, NOT a verified legal e-signature, and NOT a claim of
             enforceability. */}
-        <Text style={styles.gateNote}>
+        <Text style={[styles.gateNote, { color: colors.textSecondary }]}>
           Third records that you opened this agreement, which version you accepted,
           and when. It does not verify that you read every word, and it is not a
           witnessed or legally certified signature.
         </Text>
       </ScrollView>
 
-      <View style={[styles.cta, { paddingBottom: insets.bottom + 16 }]}>
-        <TouchableOpacity style={styles.declineBtn} activeOpacity={0.8} onPress={decline}>
-          <Text style={styles.declineText}>Decline</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.continueBtn, (!agreed || !opened) && styles.continueBtnInactive]}
-          activeOpacity={0.85}
-          onPress={acceptAndContinue}
-          disabled={!agreed || !opened}
-        >
-          <Text
-            style={[
-              styles.continueText,
-              (!agreed || !opened) && styles.continueTextInactive,
-            ]}
-          >
-            Accept and Continue
-          </Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+    </BookingFlowScreen>
   )
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#080808' },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
-  },
+  root: { flex: 1 },
+  centerBody: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 28, gap: 10 },
+  title: { fontSize: 22, lineHeight: 28, fontFamily: 'Manrope_800ExtraBold', textAlign: 'center' },
+  bodyText: { fontSize: 15, lineHeight: 22, fontFamily: 'Manrope_400Regular', textAlign: 'center' },
   recoveryBtn: {
     marginTop: 16,
     alignSelf: 'stretch',
     minHeight: 48,
     borderRadius: 14,
-    backgroundColor: '#F0E8D5',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24,
   },
   recoveryBtnQuiet: {
     marginTop: 10,
-    backgroundColor: 'transparent',
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.2)',
   },
   recoveryBtnText: {
     fontSize: 15,
-    color: '#080808',
     fontFamily: 'Manrope_700Bold',
   },
   recoveryBtnTextQuiet: {
-    color: '#F0E8D5',
-  },
-  iconBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  headerStep: {
-    width: 76,
-    alignItems: 'flex-end',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 17,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  centerBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 22, color: '#F0E8D5', fontFamily: 'Manrope_700Bold', marginBottom: 14 },
-  bodyText: {
-    fontSize: 15,
-    color: 'rgba(240,232,213,0.85)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 23,
   },
   pdfBlock: { marginTop: 4 },
   pdfHint: {
     fontSize: 14,
-    color: 'rgba(240,232,213,0.6)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 20,
     marginBottom: 16,
@@ -474,12 +436,10 @@ const styles = StyleSheet.create({
     gap: 8,
     height: 52,
     borderRadius: 14,
-    backgroundColor: '#F0E8D5',
   },
-  readBtnText: { fontSize: 15, color: '#080808', fontFamily: 'Manrope_700Bold' },
+  readBtnText: { fontSize: 15, fontFamily: 'Manrope_700Bold' },
   sigLabel: {
     fontSize: 10,
-    color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
@@ -490,9 +450,7 @@ const styles = StyleSheet.create({
     minHeight: 140,
     borderRadius: 14,
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
     borderStyle: 'dashed',
-    backgroundColor: 'rgba(240,232,213,0.03)',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
@@ -500,7 +458,6 @@ const styles = StyleSheet.create({
   },
   sigPlaceholderText: {
     fontSize: 13,
-    color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_500Medium',
     textAlign: 'center',
   },
@@ -510,73 +467,19 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#F0E8D5',
   },
-  sigSimBtnText: { fontSize: 14, color: '#080808', fontFamily: 'Manrope_700Bold' },
-  sigSimBtnInactive: { backgroundColor: 'rgba(240,232,213,0.1)' },
-  sigSimBtnTextInactive: { color: 'rgba(240,232,213,0.3)' },
+  sigSimBtnText: { fontSize: 14, fontFamily: 'Manrope_700Bold' },
   sigGateText: {
     fontSize: 12,
-    color: 'rgba(240,232,213,0.4)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },
   gateNote: {
     marginTop: 12,
     fontSize: 12,
-    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
     lineHeight: 17,
   },
   sigSignedRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sigSignedText: { fontSize: 15, color: '#4CAF50', fontFamily: 'Manrope_700Bold' },
-  checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginTop: 24 },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: 'rgba(240,232,213,0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
-  },
-  checkboxChecked: { backgroundColor: '#C8922A', borderColor: '#C8922A' },
-  checkboxText: {
-    flex: 1,
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.8)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 20,
-  },
-  cta: {
-    flexDirection: 'row',
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.06)',
-  },
-  declineBtn: {
-    paddingHorizontal: 24,
-    height: 54,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(240,232,213,0.05)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
-  },
-  declineText: { fontSize: 15, color: 'rgba(240,232,213,0.7)', fontFamily: 'Manrope_600SemiBold' },
-  continueBtn: {
-    flex: 1,
-    height: 54,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F0E8D5',
-  },
-  continueBtnInactive: { backgroundColor: 'rgba(240,232,213,0.1)' },
-  continueText: { fontSize: 15, color: '#080808', fontFamily: 'Manrope_700Bold' },
-  continueTextInactive: { color: 'rgba(240,232,213,0.3)' },
+  sigSignedText: { fontSize: 15, fontFamily: 'Manrope_700Bold' },
 })
