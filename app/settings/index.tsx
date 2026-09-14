@@ -8,6 +8,8 @@ import {
   Alert,
 } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
+import { useAppearance, useTheme } from '@/context/ThemeContext'
+import type { Appearance } from '@/lib/theme/tokens'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
@@ -24,8 +26,15 @@ import { supabase } from '@/lib/supabase'
 
 // ── Row primitives ────────────────────────────────────────────────────────────
 
+const APPEARANCE_LABELS: Record<Appearance, string> = {
+  system: 'System',
+  light: 'Light',
+  dark: 'Dark',
+}
+
 function GroupLabel({ children }: { children: string }) {
-  return <Text style={s.groupLabel}>{children}</Text>
+  const { colors } = useTheme()
+  return <Text style={[s.groupLabel, { color: colors.textSecondary }]}>{children}</Text>
 }
 
 function NavRow({
@@ -41,23 +50,26 @@ function NavRow({
   onPress: () => void
   isLast?: boolean
 }) {
+  const { colors } = useTheme()
   return (
     <TouchableOpacity
-      style={[s.row, !isLast && s.rowBorder]}
+      style={[s.row, !isLast && { borderBottomWidth: 1, borderBottomColor: colors.borderSubtle }]}
       activeOpacity={0.7}
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={value ? `${label}, ${value}` : label}
     >
       <View style={s.rowLeft}>
-        <Ionicons name={icon} size={20} color="rgba(240,232,213,0.45)" />
-        <Text style={s.rowLabel}>{label}</Text>
+        <Ionicons name={icon} size={20} color={colors.textSecondary} />
+        <Text style={[s.rowLabel, { color: colors.textPrimary }]}>{label}</Text>
       </View>
       <View style={s.rowRight}>
         {value ? (
-          <Text style={s.rowValue} numberOfLines={1}>
+          <Text style={[s.rowValue, { color: colors.textSecondary }]} numberOfLines={1}>
             {value}
           </Text>
         ) : null}
-        <Ionicons name="chevron-forward" size={18} color="rgba(240,232,213,0.45)" />
+        <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
       </View>
     </TouchableOpacity>
   )
@@ -67,6 +79,8 @@ function NavRow({
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets()
+  const { appearance } = useAppearance()
+  const { colors } = useTheme()
   const { user, isProvider } = useAuth()
   // Null until known, and never assumed. See the row it controls below.
   const [isOperator, setIsOperator] = useState<boolean | null>(null)
@@ -100,18 +114,18 @@ export default function SettingsScreen() {
   }
 
   return (
-    <View style={s.root}>
+    <View style={[s.root, { backgroundColor: colors.bgCanvas }]}>
       {/* Header */}
-      <View style={[s.header, { paddingTop: insets.top + 4 }]}>
+      <View style={[s.header, { paddingTop: insets.top + 4, backgroundColor: colors.bgSurface }]}>
         <TouchableOpacity
           style={s.headerSide}
           activeOpacity={0.7}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           onPress={() => router.back()}
         >
-          <Ionicons name="chevron-back" size={22} color="#F0E8D5" />
+          <Ionicons name="chevron-back" size={22} color={colors.iconPrimary} />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Settings</Text>
+        <Text style={[s.headerTitle, { color: colors.textPrimary }]}>Settings</Text>
         <View style={s.headerSide} />
       </View>
 
@@ -126,6 +140,19 @@ export default function SettingsScreen() {
             icon="person-outline"
             label="Personal Information"
             onPress={() => router.push('/settings/personal-info' as never)}
+            isLast
+          />
+        </View>
+
+        {/* PREFERENCES. Appearance is device-local and changes how Third LOOKS and
+            nothing else — not visibility, privacy, permissions or ranking (PD-119). */}
+        <GroupLabel>Preferences</GroupLabel>
+        <View style={s.group}>
+          <NavRow
+            icon="contrast-outline"
+            label="Appearance"
+            value={APPEARANCE_LABELS[appearance]}
+            onPress={() => router.push('/settings/appearance' as never)}
             isLast
           />
         </View>
@@ -289,12 +316,16 @@ export default function SettingsScreen() {
           activeOpacity={0.7}
           onPress={handleSignOut}
         >
-          <Ionicons name="log-out-outline" size={20} color="rgba(200,146,42,0.6)" />
-          <Text style={s.signOutText}>Sign Out</Text>
+          {/* Sign Out is a UTILITY action. Not the primary action, not a brand CTA,
+              not an error, and not destructive — so it takes the ordinary text
+              treatment. `actionText` would have read as a brand CTA, and danger
+              belongs to Delete Account, which is genuinely destructive. */}
+          <Ionicons name="log-out-outline" size={20} color={colors.textSecondary} />
+          <Text style={[s.signOutText, { color: colors.textPrimary }]}>Sign Out</Text>
         </TouchableOpacity>
 
         {/* VERSION */}
-        <Text style={s.version}>Version 1.0.0 Beta</Text>
+        <Text style={[s.version, { color: colors.textSecondary }]}>Version 1.0.0 Beta</Text>
       </ScrollView>
     </View>
   )
@@ -303,7 +334,6 @@ export default function SettingsScreen() {
 const s = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#080808',
   },
 
   // Header
@@ -322,7 +352,6 @@ const s = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 20,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
     letterSpacing: -0.2,
   },
@@ -330,7 +359,6 @@ const s = StyleSheet.create({
   // Group label
   groupLabel: {
     fontSize: 10,
-    color: 'rgba(240,232,213,0.35)',
     fontFamily: 'Manrope_500Medium',
     letterSpacing: 1.2,
     textTransform: 'uppercase',
@@ -350,10 +378,6 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  rowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
-  },
   rowLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -362,7 +386,6 @@ const s = StyleSheet.create({
   },
   rowLabel: {
     fontSize: 14,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_500Medium',
   },
   rowRight: {
@@ -374,7 +397,6 @@ const s = StyleSheet.create({
   },
   rowValue: {
     fontSize: 14,
-    color: 'rgba(240,232,213,0.45)',
     fontFamily: 'Manrope_400Regular',
     flexShrink: 1,
   },
@@ -391,14 +413,12 @@ const s = StyleSheet.create({
   },
   signOutText: {
     fontSize: 14,
-    color: 'rgba(200,146,42,0.7)',
     fontFamily: 'Manrope_500Medium',
   },
 
   // Version
   version: {
     fontSize: 11,
-    color: 'rgba(240,232,213,0.2)',
     fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
     marginTop: 12,

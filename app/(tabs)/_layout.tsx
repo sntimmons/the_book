@@ -1,29 +1,33 @@
 import { Tabs } from 'expo-router'
-import { Pressable, StyleSheet, View } from 'react-native'
+import { Pressable, StyleSheet, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs'
 import TabIcon from '@/components/TabIcon'
 import { useAuth } from '@/context/AuthContext'
+import { useTheme } from '@/context/ThemeContext'
 
 type IconTabName = 'index' | 'reels' | 'bookings' | 'messages' | 'me'
 
 type Slot = {
   routeName: IconTabName
   iconName: 'home' | 'reels' | 'bookings' | 'messages' | 'me'
+  /** Founder-approved visible label. */
+  label: string
 }
 
 // Mode 3 shared bottom nav: Discover, Reels, Bookings, Messages, Me.
 const SLOTS: Slot[] = [
-  { routeName: 'index', iconName: 'home' },
-  { routeName: 'reels', iconName: 'reels' },
-  { routeName: 'bookings', iconName: 'bookings' },
-  { routeName: 'messages', iconName: 'messages' },
-  { routeName: 'me', iconName: 'me' },
+  { routeName: 'index', iconName: 'home', label: 'Discover' },
+  { routeName: 'reels', iconName: 'reels', label: 'Reels' },
+  { routeName: 'bookings', iconName: 'bookings', label: 'Bookings' },
+  { routeName: 'messages', iconName: 'messages', label: 'Messages' },
+  { routeName: 'me', iconName: 'me', label: 'Me' },
 ]
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets()
   const { user } = useAuth()
+  const { colors, type } = useTheme()
 
   // TODO: pull display name/avatar from a profile store once it exists
   const avatarUrl = (user?.user_metadata?.avatar_url as string | undefined) ?? undefined
@@ -34,7 +38,12 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
     <View
       style={[
         bar.container,
-        { paddingBottom: insets.bottom, height: 64 + insets.bottom },
+        {
+          paddingBottom: insets.bottom,
+          height: 68 + insets.bottom,
+          backgroundColor: colors.bgSurface,
+          borderTopColor: colors.borderSubtle,
+        },
       ]}
     >
       {SLOTS.map((slot) => {
@@ -54,7 +63,9 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
           }
         }
 
-        const showAmberBar = isFocused && slot.iconName !== 'me'
+        // The active tab is named by colour and weight now. The amber underline is
+        // gone: with labels visible it was a third signal saying the same thing.
+        const tint = isFocused ? colors.actionText : colors.textSecondary
 
         return (
           <Pressable
@@ -62,14 +73,29 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             onPress={press}
             style={bar.slot}
             android_ripple={null}
+            accessibilityRole="tab"
+            accessibilityLabel={slot.label}
+            accessibilityState={{ selected: isFocused }}
           >
             <TabIcon
               name={slot.iconName}
               focused={isFocused}
+              color={tint}
+              fallbackBg={colors.bgSubtle}
               avatarUrl={slot.iconName === 'me' ? avatarUrl : undefined}
               initials={slot.iconName === 'me' ? initials : undefined}
             />
-            {showAmberBar && <View style={bar.activeBar} />}
+            <Text
+              numberOfLines={1}
+              style={[
+                type.caption,
+                bar.label,
+                { color: tint },
+                isFocused && { fontFamily: 'Manrope_600SemiBold' },
+              ]}
+            >
+              {slot.label}
+            </Text>
           </Pressable>
         )
       })}
@@ -105,26 +131,22 @@ export default function TabLayout() {
   )
 }
 
+// Colour comes from the theme at render time; only geometry lives here.
 const bar = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: '#080808',
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,213,0.08)',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    paddingTop: 10,
   },
   slot: {
     flex: 1,
-    height: 64,
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    gap: 4,
+    minHeight: 48,
   },
-  activeBar: {
-    position: 'absolute',
-    bottom: 10,
-    width: 4,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: '#C8922A',
+  label: {
+    textAlign: 'center',
   },
 })

@@ -1,4 +1,5 @@
-import { Text, StyleSheet } from 'react-native'
+import { Text } from 'react-native'
+import { useTheme } from '@/context/ThemeContext'
 
 // ── ONE PROGRESS LABEL, SO THE APP COUNTS ITSELF THE SAME WAY EVERYWHERE ──
 //
@@ -26,19 +27,18 @@ import { Text, StyleSheet } from 'react-native'
 //
 // It also never says "done", "complete" or "finished". In the booking flow the last
 // step is SENDING, and the user still has to do it.
+// ── NOW THEMED, AND DELIBERATELY THE SAME WEIGHT ─────────────────────────
+//
+// The literal was `rgba(240,232,213,0.45)` on the `#080808` top bars every caller
+// still draws — an effective `#706D64`, about 4.1:1. The `textSecondary` role is
+// `#72766D` on light and `#D8CEC2` on dark, which is ~4.3:1 and far higher
+// respectively against that same background. So this swap is equal-or-better
+// contrast under both appearances on screens that have NOT been migrated yet, which
+// is what made it safe to theme this component ahead of its hosts.
 export function StepProgress({ label }: { label: string | null }) {
+  const { colors, type } = useTheme()
   if (!label) return null
-  return <Text style={s.step}>{label}</Text>
+  return <Text style={[type.bodySmall, { color: colors.textSecondary }]}>{label}</Text>
 }
-
-const s = StyleSheet.create({
-  // Matched to the existing onboarding top-bar treatment so the booking flow reads
-  // as the same product rather than as a new pattern.
-  step: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_500Medium',
-  },
-})
 
 export default StepProgress
