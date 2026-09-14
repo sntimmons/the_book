@@ -1996,6 +1996,50 @@ annotated where it fires.
 `.env.tooling.local` resolve to `wcoyjeklscuqsumpjpfo`; no production credential
 exists in the working environment.
 
+## 2026-09-14 — `20261137000000` **APPLIED to non-production and VERIFIED** (policy truth, PR #106)
+
+One file, one function, no table change.
+
+**`20261137000000` — a default is not a provider's term.** `app/book/policy.tsx` read the
+cancellation window and lateness grace directly from `provider_booking_preferences`, whose
+only SELECT policy is `provider_read_own_preferences`. For a client that read returns **zero
+rows and no error**, and the screen's `if (!policiesRes.data && !prefsRes.data) return` guard
+never fired because `provider_policies` *does* return — so `rowsToPolicy` substituted
+`DEFAULT_POLICY` and the client agreed to a constant presented as that provider's term. It
+was not even self-consistent: the column default for `lateness_grace_minutes` is **60** and
+`DEFAULT_POLICY.gracePeriod` is **15 minutes**.
+
+Adds `public.provider_public_booking_terms(uuid)` returning exactly
+`(cancellation_window_hours, lateness_grace_minutes)`. **No table, column, RLS policy or
+table grant was changed** — `provider_booking_preferences` stays owner-only, because the same
+row carries `vacation_mode`, `max_bookings_per_day`, `buffer_minutes`, `minimum_notice_hours`,
+`requires_manual_approval`, `appointment_time_required`, `same_day_booking` and `timezone`.
+It answers through the existing `provider_content_hidden` gate (`20261120000000`) rather than
+repeating the erasure test, so a departed provider's terms stop being served on the same
+clock as their services, availability, blocked dates and policies.
+
+**Apply.** `supabase migration list --linked` showed `20261137000000` as the **only** entry
+with an empty `remote` and **no remote-only drift across all 176 entries**, so `db push`
+applied exactly this file and nothing else — confirmed by its own output
+(`"migrations":["20261137000000_a_default_is_not_a_providers_term.sql"]`).
+
+**Verified against the DEPLOYED object, not the file** — which is what this ledger requires
+before a migration may be marked applied. `pg_proc` on non-production reports:
+`TABLE(cancellation_window_hours integer, lateness_grace_minutes integer)`, `provolatile = s`
+(STABLE), `prosecdef = true`, `proconfig = search_path=""`, execute **granted to
+`authenticated`** and **denied to `anon` and `PUBLIC`**, the definition referencing
+`provider_content_hidden`, and **no** fee, deposit, payment or private scheduling identifier
+anywhere in it.
+
+**B5B: 2299/2299 passed, 0 failed**, including seventeen new `policyterms` assertions — the
+table stays shut to a client and to a stranger, the owner still reads their own row, the
+client reads **48 / 7** and provably not 24, 15 or 60, a provider who set nothing returns
+nothing, the signature admits only two columns, and a departed provider's terms are withheld.
+
+**Production untouched and never connected to.** Both `.env` and `.env.tooling.local` resolve
+to `wcoyjeklscuqsumpjpfo`; the linked project ref was re-verified immediately before the push,
+and no production credential exists in the working environment.
+
 ## 2026-09-13 — `20261135000000`, `20261136000000` **APPLIED to non-production** (Discovery / Fairness, PR #89, merged `c444abb`)
 
 Two files, one capability and one correction to it.
