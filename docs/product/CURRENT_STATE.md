@@ -81,16 +81,50 @@ likewise all real and kept.
 **Booking details is deliberately absent — PD-125.** See the policy-truth defect recorded
 below; it is the same root cause.
 
-**⚠ A SHIPPED PRODUCT-TRUTH DEFECT WAS FOUND IN THE BOOKING FLOW, and it is not fixed.**
-`app/book/policy.tsx` reads `provider_policies` (client-readable: fees, reschedule, travel)
-**and** `provider_booking_preferences` (owner-only: cancellation window, lateness grace). For
-a client the second returns **zero rows and no error**, and because the first *does* return,
-the screen's `if (!policiesRes.data && !prefsRes.data) return` guard never fires — so
-`rowsToPolicy` substitutes `DEFAULT_POLICY` for those two fields and renders them beside the
-provider's real terms, **identically formatted**. The client then agrees to them via the
-acknowledgement row. The defaults do not even agree with the database's own: the column
-default for `lateness_grace_minutes` is **60**, `DEFAULT_POLICY.gracePeriod` is **15
-minutes**. This predates Phase 3B and is the highest-priority follow-up.
+**The booking-policy truth defect is CLOSED** (`33bafea`, PR #106, 2026-09-14).
+
+`app/book/policy.tsx` used to read `provider_policies` (client-readable: fees, reschedule,
+travel) **and** `provider_booking_preferences` (owner-only: cancellation window, lateness
+grace). For a client the second returned **zero rows and no error**, and because the first
+*did* return, the screen's `if (!policiesRes.data && !prefsRes.data) return` guard never
+fired — so `rowsToPolicy` substituted `DEFAULT_POLICY` for those two fields and rendered them
+beside the provider's real terms, **identically formatted**, and the client agreed to them via
+the acknowledgement row. The substitution was not even self-consistent: the column default for
+`lateness_grace_minutes` is **60** and `DEFAULT_POLICY.gracePeriod` is **15 minutes**.
+
+**A narrow RPC, not a widened table.** `public.provider_public_booking_terms(uuid)`
+(`20261137000000`) returns **exactly** the cancellation window and the lateness grace.
+`provider_booking_preferences` **stays owner-only** — the same row carries `vacation_mode`,
+`max_bookings_per_day`, `buffer_minutes`, `minimum_notice_hours`, `requires_manual_approval`,
+`appointment_time_required`, `same_day_booking` and `timezone`, which are how a business is
+run rather than what a client agreed to. **No table, column, RLS policy or table grant was
+changed.** The function answers through the existing `provider_content_hidden` gate, so a
+departed provider's terms stop being served on the same clock as their services, availability,
+blocked dates and policies.
+
+**Applied to non-production and verified against the DEPLOYED object** — STABLE, SECURITY
+DEFINER, `search_path` fixed, execute granted to `authenticated` and denied to `anon` and
+`PUBLIC`, returning only the two columns, with no fee, deposit, payment or private scheduling
+identifier in its definition. See
+[MIGRATION_LEDGER.md](../operations/MIGRATION_LEDGER.md). **Production remains untouched and
+was never connected to.**
+
+**`DEFAULT_POLICY` can no longer reach a client screen.** `app/book/policy.tsx` does not
+import it at all, and `rowsToPolicy` is handed `null` for the prefs row so its defaults cannot
+return by the back door. A provider with no `provider_policies` row now renders **no** fee or
+reschedule lines rather than platform defaults, and the cancellation **fee** line is suppressed
+while the window is unpublished, because it names the window it applies within. The
+provider-side editors are untouched: they own the row and still read it directly.
+
+**Not published is not a default.** No row means the provider has not published the term, and
+every layer keeps that distinct — *"Cancellation window not published"*, *"Lateness grace not
+published"*, and once: *"Ask your provider directly if you need to change or cancel this
+booking."* Zero grace and unpublished grace remain different values, because collapsing them
+is how a default becomes a claim.
+
+**Provider Profile Booking details now use that same truthful path** — closing the omission
+PD-125 approved. Only the two terms, only when published, section absent when neither is, and
+no fee, deposit or charge language.
 
 **The client booking flow is FULLY migrated onto the Third theme** (Phase 2C, 2026-09-14).
 All eight remaining client-facing Bookings screens now carry **zero colour literals** and
