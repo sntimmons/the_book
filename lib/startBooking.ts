@@ -13,7 +13,7 @@
 // service step. It does NOT own the booking flow itself.
 
 import { router } from 'expo-router'
-import { useBookingStore } from '@/store/bookingStore'
+import { useBookingStore, BookingService } from '@/store/bookingStore'
 import {
   VERIFICATION_ENFORCEMENT_MODE,
   VerificationEnforcementMode,
@@ -60,6 +60,17 @@ export interface BookingProviderContext {
   name: string
   category?: string
   location?: string
+  /**
+   * Optional service to arrive at the service step already selected.
+   *
+   * NAVIGATION CONVENIENCE ONLY, and deliberately nothing more. The attempt
+   * still enters at `/book/service`, still shows every service, still requires
+   * Continue, and still walks date/time → policy → contract → review → send. No
+   * step is skipped, no step is reordered, and there is no second entry point:
+   * this writes the same store field the service step's own tap handler writes,
+   * one moment earlier. A caller that omits it gets exactly the old behaviour.
+   */
+  service?: BookingService
 }
 
 // Establish provider context for a NEW attempt (setProvider also resets the
@@ -70,6 +81,9 @@ export interface BookingProviderContext {
 export function startBooking(ctx: BookingProviderContext): BookingStartDecision {
   const store = useBookingStore.getState()
   store.setProvider(ctx.id, ctx.name, ctx.category ?? '', ctx.location ?? '')
+  // AFTER setProvider, never before: setProvider starts a fresh attempt and a
+  // preselection written first would be part of the state it is clearing.
+  if (ctx.service) store.setSelectedService(ctx.service)
   const decision = resolveBookingStartDecision(
     isClientIdentityVerified(),
     useBookingStore.getState().verificationNoticeAcknowledged,

@@ -24,11 +24,15 @@ import { openSafetyMenu } from '@/lib/safetyMenu'
 import ReportSheet from '@/components/ReportSheet'
 import { useProvider, useCategories } from '../../hooks/useProviders'
 import { useAuth } from '@/context/AuthContext'
+import { useTheme } from '@/context/ThemeContext'
 import { supabase } from '@/lib/supabase'
 import { cacheBustedPhoto } from '@/lib/image'
 import { openMessageEntry } from '../../hooks/useMessaging'
 
 export default function ProviderProfilePage() {
+  // Phase 3B: the skeleton and the not-found state belong to this screen, so
+  // they answer the same appearance as the profile they stand in for.
+  const { colors } = useTheme()
   const { id } = useLocalSearchParams<{ id: string }>()
   const insets = useSafeAreaInsets()
   const { provider, services, loading } = useProvider(id as string)
@@ -41,6 +45,11 @@ export default function ProviderProfilePage() {
   const [saveBusy, setSaveBusy] = useState(false)
   const [portfolioImages, setPortfolioImages] = useState<string[]>([])
   const [reelVideos, setReelVideos] = useState<string[]>([])
+  // Process media is a THIRD partition of the same posts read, not a new query
+  // and not a new content type: `posts.content_type` has allowed 'process' since
+  // the canonical baseline. It is the provider's own account of how an
+  // appointment goes.
+  const [processMedia, setProcessMedia] = useState<string[]>([])
   // Session 8. `null` = not known yet, and every control that depends on it
   // reads `=== true` so an unknown never hides a live provider's Book Now.
   const [blockedByMe, setBlockedByMe] = useState<boolean | null>(null)
@@ -191,6 +200,7 @@ export default function ProviderProfilePage() {
     if (!providerId) {
       setPortfolioImages([])
       setReelVideos([])
+      setProcessMedia([])
       return
     }
     ;(async () => {
@@ -206,12 +216,18 @@ export default function ProviderProfilePage() {
         console.log('Fetch provider posts error:', error)
         return
       }
-      const rows = (data as { media_url: string; media_type: string }[]) ?? []
+      const rows =
+        (data as { media_url: string; media_type: string; content_type: string }[]) ?? []
+      // Process is partitioned OUT of the other two rather than layered on top,
+      // so a process clip cannot also appear as a portfolio shot or a reel and
+      // make one provider's three posts look like nine.
+      const isProcess = (r: { content_type: string }) => r.content_type === 'process'
+      setProcessMedia(rows.filter(isProcess).map((r) => r.media_url))
       setPortfolioImages(
-        rows.filter((r) => r.media_type === 'image').map((r) => r.media_url),
+        rows.filter((r) => !isProcess(r) && r.media_type === 'image').map((r) => r.media_url),
       )
       setReelVideos(
-        rows.filter((r) => r.media_type === 'video').map((r) => r.media_url),
+        rows.filter((r) => !isProcess(r) && r.media_type === 'video').map((r) => r.media_url),
       )
     })()
     return () => {
@@ -263,32 +279,32 @@ export default function ProviderProfilePage() {
 
   if (loading) {
     return (
-      <View style={[s.loadingRoot, { paddingTop: insets.top }]}>
-        <View style={s.skeletonBanner} />
-        <View style={s.skeletonPhoto} />
-        <View style={[s.skeletonBar, { width: 180, marginTop: 16 }]} />
-        <View style={[s.skeletonBar, { width: 120, marginTop: 10 }]} />
+      <View style={[s.loadingRoot, { paddingTop: insets.top, backgroundColor: colors.bgCanvas }]}>
+        <View style={[s.skeletonBanner, { backgroundColor: colors.bgSubtle }]} />
+        <View style={[s.skeletonPhoto, { backgroundColor: colors.bgSubtle }]} />
+        <View style={[s.skeletonBar, { width: 180, marginTop: 16, backgroundColor: colors.bgSubtle }]} />
+        <View style={[s.skeletonBar, { width: 120, marginTop: 10, backgroundColor: colors.bgSubtle }]} />
         <View style={s.skeletonStats}>
-          <View style={s.skeletonStat} />
-          <View style={s.skeletonStat} />
-          <View style={s.skeletonStat} />
-          <View style={s.skeletonStat} />
+          <View style={[s.skeletonStat, { backgroundColor: colors.bgSubtle }]} />
+          <View style={[s.skeletonStat, { backgroundColor: colors.bgSubtle }]} />
+          <View style={[s.skeletonStat, { backgroundColor: colors.bgSubtle }]} />
+          <View style={[s.skeletonStat, { backgroundColor: colors.bgSubtle }]} />
         </View>
-        <ActivityIndicator color="rgba(240,232,213,0.4)" style={{ marginTop: 32 }} />
+        <ActivityIndicator color={colors.textSecondary} style={{ marginTop: 32 }} />
       </View>
     )
   }
 
   if (!provider) {
     return (
-      <View style={[s.errorRoot, { paddingTop: insets.top + 60 }]}>
-        <Text style={s.errorTitle}>Provider not found</Text>
+      <View style={[s.errorRoot, { paddingTop: insets.top + 60, backgroundColor: colors.bgCanvas }]}>
+        <Text style={[s.errorTitle, { color: colors.textPrimary }]}>Provider not found</Text>
         <TouchableOpacity
-          style={s.errorBtn}
+          style={[s.errorBtn, { backgroundColor: colors.actionPrimary }]}
           activeOpacity={0.85}
           onPress={() => router.replace('/(tabs)/' as any)}
         >
-          <Text style={s.errorBtnText}>Back to discovery</Text>
+          <Text style={[s.errorBtnText, { color: colors.textOnAction }]}>Back to discovery</Text>
         </TouchableOpacity>
       </View>
     )
@@ -306,6 +322,9 @@ export default function ProviderProfilePage() {
     name: svc.name,
     price: svc.price.toFixed(2),
     duration: `${svc.duration_minutes} min`,
+    // Already on provider_services and already public-readable; it simply never
+    // reached the profile before.
+    description: svc.description ?? undefined,
     depositRequired: false,
     depositAmount: '0',
   }))
@@ -323,15 +342,21 @@ export default function ProviderProfilePage() {
     services: profileServices,
     portfolio: portfolioImages,
     reels: reelVideos,
+    process: processMedia,
+    specialties: provider.specialties ?? undefined,
+    username: provider.username ?? undefined,
     rating: ratingValue,
     ratingClientCount: (provider as { rating_client_count?: number }).rating_client_count ?? 0,
     bookingCount: provider.total_bookings ?? 0,
     followerCount: followerCount,
-    followingCount: 0,
-    isLive: false,
+    reviewCount: provider.review_count ?? 0,
   }
 
-  function handleBookNow() {
+  // ONE booking entry for this screen. Both the identity-area control and the
+  // sticky bar call this, and so does a service row — the only difference is
+  // whether a service travels with it. Nothing else may start a booking here
+  // (CODE-DRIFT-001).
+  function handleBookNow(service?: ProviderService) {
     if (!provider) return
     // Centralized booking-start boundary: establishes provider context (resetting
     // the per-attempt verification-notice acknowledgement) and evaluates the
@@ -342,6 +367,21 @@ export default function ProviderProfilePage() {
       name: provider.display_name,
       category: categoryName,
       location,
+      // Preselection only. The attempt still enters at the service step and
+      // still walks every step after it; the gate above is unchanged, so a row
+      // tap cannot route around the verification notice.
+      service:
+        service && service.id
+          ? {
+              id: service.id,
+              name: service.name,
+              price: service.price,
+              duration: service.duration ?? '',
+              depositRequired: false,
+              depositAmount: '0',
+              addOns: [],
+            }
+          : undefined,
     })
   }
 
@@ -425,7 +465,8 @@ export default function ProviderProfilePage() {
       // control.
       blockedByMe={blockedByMe === true}
       onSafetyMenu={isOwnProfile ? undefined : safetyMenu}
-      onBookNow={handleBookNow}
+      onBookNow={() => handleBookNow()}
+      onSelectService={(service) => handleBookNow(service)}
       onFollow={handleToggleFollow}
       onSave={handleToggleSave}
       onMessage={async () => {
@@ -449,27 +490,22 @@ export default function ProviderProfilePage() {
 const s = StyleSheet.create({
   loadingRoot: {
     flex: 1,
-    backgroundColor: '#080808',
     alignItems: 'center',
   },
   skeletonBanner: {
     height: 200,
     width: '100%',
-    backgroundColor: 'rgba(240,232,213,0.06)',
   },
   skeletonPhoto: {
     width: 80,
     height: 80,
     borderRadius: 40,
     marginTop: -36,
-    backgroundColor: 'rgba(240,232,213,0.06)',
     borderWidth: 3,
-    borderColor: '#080808',
   },
   skeletonBar: {
     height: 14,
     borderRadius: 4,
-    backgroundColor: 'rgba(240,232,213,0.06)',
   },
   skeletonStats: {
     flexDirection: 'row',
@@ -481,22 +517,18 @@ const s = StyleSheet.create({
     flex: 1,
     height: 40,
     borderRadius: 6,
-    backgroundColor: 'rgba(240,232,213,0.06)',
   },
   errorRoot: {
     flex: 1,
-    backgroundColor: '#080808',
     alignItems: 'center',
     paddingHorizontal: 24,
   },
   errorTitle: {
     fontSize: 18,
-    color: '#F0E8D5',
     fontFamily: 'Manrope_700Bold',
     marginBottom: 24,
   },
   errorBtn: {
-    backgroundColor: '#F0E8D5',
     borderRadius: 14,
     paddingHorizontal: 24,
     height: 48,
@@ -505,7 +537,6 @@ const s = StyleSheet.create({
   },
   errorBtnText: {
     fontSize: 14,
-    color: '#080808',
     fontFamily: 'Manrope_700Bold',
   },
 })

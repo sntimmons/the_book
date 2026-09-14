@@ -23,7 +23,13 @@ export default function BookService() {
     contractRequired,
   } = useBookingStore()
   const { services, loading } = useProvider(providerId)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  // Seeded from the store so a service preselected at the booking-start boundary
+  // (lib/startBooking) shows as selected here. This screen still owns selection
+  // and Continue is still gated on it — the seed only stops the step forgetting
+  // a choice the client already made one screen earlier.
+  const [selectedId, setSelectedId] = useState<string | null>(
+    useBookingStore.getState().selectedService?.id ?? null,
+  )
 
   useEffect(() => {
     if (!providerId) {
