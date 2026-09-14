@@ -14,6 +14,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
 import { resolveUserRole } from '@/lib/resolveUserRole'
+import { destinationForRole } from '@/lib/postAuthRouting'
 
 const COUNTDOWN_START = 45
 
@@ -30,6 +31,16 @@ export default function VerifyScreen() {
     email?: string
     method?: string
   }>()
+  // THIS SCREEN IS THE PHONE (SMS) OTP SCREEN.
+  //
+  // The email branch below is retained but is NOT on the normal email sign-in
+  // path any more: the Supabase email template for this project sends a MAGIC
+  // LINK, so app/auth/email.tsx now routes to /auth/check-email and nothing
+  // navigates here with `method: 'email'`. The branch stays because it is the
+  // working implementation of email OTP, which we would want back the moment the
+  // template is switched to a code template — not because anything uses it
+  // today. Do not treat it as live behavior.
+  //
   // Email when explicitly flagged, or inferred when only an email was passed.
   // Falls back to phone so the existing phone flow keeps working untouched
   // (phone.tsx routes here with just `phone` and no `method`).
@@ -96,20 +107,15 @@ export default function VerifyScreen() {
     }
 
     // Resolve role to decide where to route (same precedence/destinations as
-    // before — provider > client > new user).
+    // before — provider > client > new user). The destination itself now comes
+    // from lib/postAuthRouting, which app/_layout.tsx also consults for
+    // magic-link arrivals, so the two paths cannot land a user in different
+    // places.
     const { role } = await resolveUserRole(data.user.id)
 
     setIsLoading(false)
 
-    if (role === 'provider') {
-      // Providers land in the shared tabs and reach the dashboard via the Me
-      // tab's My Studio entrance (NAVIGATION_ARCHITECTURE.md: one shell, no modes).
-      router.replace('/(tabs)/')
-    } else if (role === 'client') {
-      router.replace('/(tabs)/')
-    } else {
-      router.replace('/path-selection')
-    }
+    router.replace(destinationForRole(role === 'error' ? null : role))
   }
 
   async function handleResend() {

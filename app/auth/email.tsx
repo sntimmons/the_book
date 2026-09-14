@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons'
 import { router } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { supabase } from '@/lib/supabase'
+import { magicLinkRedirectTo } from '@/lib/authCallback'
 
 // Basic shape check only — Supabase is the source of truth for deliverability.
 function isValidEmail(value: string): boolean {
@@ -36,7 +37,17 @@ export default function EmailScreen() {
     if (error) setError('')
   }
 
-  async function handleSendOTP() {
+  // EMAIL SIGN-IN IS A MAGIC LINK, NOT A CODE.
+  //
+  // The Supabase email template for this project is a magic-link template
+  // ("Follow the link below to sign in"), so the mail contains a link and never
+  // six digits. This used to call signInWithOtp with no options and then push
+  // /auth/verify unconditionally, asking for a code the email did not contain —
+  // an unwinnable screen. Two things fix it: send `emailRedirectTo` so the link
+  // comes back into the app, and hold the user on a "check your email" screen
+  // instead of a keypad. The session is opened by hooks/useMagicLinkSession when
+  // the link lands; nothing on this screen waits for it.
+  async function handleSendLink() {
     if (!isValid || isLoading) return
 
     setIsLoading(true)
@@ -44,6 +55,7 @@ export default function EmailScreen() {
 
     const { error: otpError } = await supabase.auth.signInWithOtp({
       email: trimmed,
+      options: { emailRedirectTo: magicLinkRedirectTo() },
     })
 
     if (otpError) {
@@ -54,8 +66,8 @@ export default function EmailScreen() {
 
     setIsLoading(false)
     router.push({
-      pathname: '/auth/verify',
-      params: { email: trimmed, method: 'email' },
+      pathname: '/auth/check-email',
+      params: { email: trimmed },
     })
   }
 
@@ -99,7 +111,7 @@ export default function EmailScreen() {
               autoCorrect={false}
               textContentType="emailAddress"
               autoComplete="email"
-              onSubmitEditing={handleSendOTP}
+              onSubmitEditing={handleSendLink}
               returnKeyType="next"
               style={[
                 styles.input,
@@ -124,7 +136,7 @@ export default function EmailScreen() {
               isValid && !isLoading ? styles.nextBtnActive : styles.nextBtnInactive,
             ]}
             disabled={!isValid || isLoading}
-            onPress={handleSendOTP}
+            onPress={handleSendLink}
           >
             {isLoading ? (
               <ActivityIndicator color="#080808" />

@@ -14,6 +14,7 @@ import * as SplashScreen from 'expo-splash-screen'
 import * as Sentry from '@sentry/react-native'
 import { AuthProvider, useAuth } from '@/context/AuthContext'
 import { ThemeProvider } from '@/context/ThemeContext'
+import { postAuthRedirect } from '@/lib/postAuthRouting'
 
 // Crash + error reporting. Disabled in dev (errors still hit the console) so we
 // only ingest real production failures. Must run before the root renders.
@@ -110,9 +111,54 @@ function RoleErrorScreen({ message, onRetry }: { message: string; onRetry: () =>
 }
 
 function RootNavigator() {
-  const { session, isLoading, role, roleLoading, roleError, retryRole } = useAuth()
+  const {
+    session,
+    isLoading,
+    role,
+    roleLoading,
+    roleError,
+    retryRole,
+    magicLinkPending,
+    clearMagicLinkRedirect,
+  } = useAuth()
   const segments = useSegments()
   const router = useRouter()
+
+  // Carry a signed-in user to where they belong. Before magic-link email sign-in
+  // this was unnecessary: every session was born on a screen that routed itself
+  // (app/auth/verify.tsx after verifyOtp). A magic-link session arrives
+  // asynchronously through a deep link, with no such moment — and at a cold
+  // start it arrives while the user is still on Welcome. lib/postAuthRouting
+  // owns the decision so this and the phone path cannot drift apart.
+  useEffect(() => {
+    if (isLoading) return
+
+    const redirect = postAuthRedirect({
+      hasSession: !!session,
+      roleLoading,
+      roleError: !!roleError,
+      role,
+      segments,
+      magicLinkPending,
+    })
+    if (!redirect) return
+
+    if (redirect.clearMagicLink) clearMagicLinkRedirect()
+    router.replace(redirect.href)
+    // `clearMagicLinkRedirect` and `router` are both stable identities
+    // (useCallback in AuthContext, useRouter in expo-router), so naming them
+    // here costs no extra runs and keeps the dependency list honest.
+  }, [
+    session,
+    isLoading,
+    role,
+    roleLoading,
+    roleError,
+    magicLinkPending,
+    segments,
+    clearMagicLinkRedirect,
+    router,
+  ])
 
   useEffect(() => {
     if (isLoading) return

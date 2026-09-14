@@ -41,6 +41,21 @@ jest.mock('@react-native-async-storage/async-storage', () =>
   require('@react-native-async-storage/async-storage/jest/async-storage-mock'),
 )
 
+// Deep-link + app-config modules the magic-link auth path imports at module
+// load. `lib/authCallback.ts` builds the redirect URL from the app's own scheme,
+// so expo-constants has to report one; the pure parsers under test never call
+// either of these.
+jest.mock('expo-linking', () => ({
+  createURL: (path) => `thebook://${String(path).replace(/^\/+/, '')}`,
+  getInitialURL: jest.fn(async () => null),
+  addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+}))
+
+jest.mock('expo-constants', () => ({
+  __esModule: true,
+  default: { expoConfig: { scheme: 'thebook' } },
+}))
+
 jest.mock('@sentry/react-native', () => ({
   captureException: jest.fn(),
   captureMessage: jest.fn(),
@@ -80,6 +95,11 @@ jest.mock('@/context/AuthContext', () => ({
     roleError: null,
     retryRole: jest.fn(),
     signOut: jest.fn(),
+    magicLinkStatus: 'idle',
+    magicLinkError: null,
+    magicLinkPending: false,
+    clearMagicLinkRedirect: jest.fn(),
+    clearMagicLinkError: jest.fn(),
   }),
   AuthProvider: ({ children }) => children,
 }))
