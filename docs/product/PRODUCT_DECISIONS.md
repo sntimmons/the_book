@@ -3441,7 +3441,10 @@ client, without widening access to the rest of that table — which holds
 `vacation_mode`, `max_bookings_per_day`, `buffer_minutes`, `minimum_notice_hours`,
 `requires_manual_approval` and `timezone`, none of which are a client's business.
 
-**Status:** Locked as an approved omission. Revisit when the read path lands.
+**Status:** CLOSED. The read path landed in PR #106 (`33bafea`, 2026-09-14) as the narrow RPC
+`provider_public_booking_terms`, applied to non-production and verified against the deployed
+object. Booking details now render the provider's REAL window and grace, and are absent when
+the provider has published neither. `provider_booking_preferences` remains owner-only.
 
 ---
 
