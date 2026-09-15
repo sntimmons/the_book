@@ -1235,13 +1235,52 @@ reminder is *created*, so creation and display now agree.
   the base table. Narrowing it would hide a live booking counterparty, which is precisely what
   PD-089's existing-transaction access exists to prevent.
 
+**The Discover rebook banner is RULED AND LEFT UNCHANGED** (PM/founder, 2026-09-15). It is a
+second consumer of the same reminder data, but it exposes **no provider identity** and routes
+into `/care`, where provider-bound reminder rows are now visibility-gated. No block-aware
+behaviour was added to it, deliberately.
+
 **Still true and worth keeping in mind:** the `saved_providers` census cannot see a
 `care_reminders` reader, so a future third consumer of `fetchActiveReminders` will not be caught
-automatically. The Discover rebook banner is one such consumer today — it renders **no provider
-identity** and routes to `/care` rather than to a profile, so nothing is disclosed, but whether
-the ruling extends to a surface that names no provider is **open and returned to PM**.
+automatically.
 
-#### Returned, not actioned#### Returned, not actioned
+#### Open follow-up: the provider-side "Due for Rebook" mirror
+
+**Recorded as a separate safety/product follow-up. Deliberately not fixed in the block-visibility
+correction** (PM/founder, 2026-09-15).
+
+`app/(tabs)/business/client-intelligence.tsx` renders a **Due for Rebook** list on the provider
+side. It is the mirror image of the client-side reminder this work just gated, and it has the
+same three properties that decided that ruling: **it names a client**, it is **forward-looking
+rather than historical**, and it exposes a **Remind** action. So it may need the provider-side
+equivalent of PD-089 re-engagement hiding.
+
+**It was not fixed here because the smallest safe implementation is not yet known**, and guessing
+would have meant inventing exactly the things this area must not gain casually:
+
+- there is **no block-filtered client view**. `clients_provider` is scoped to an existing
+  booking or conversation and carries **no block predicate**; `clients_public` filters only
+  `account_unavailable`. So this is not a one-line swap to a `_visible` relation — one would have
+  to be designed.
+- **no new block oracle may be created.** `20261055000000` removed the client-callable block
+  predicate on purpose, and PD-089 is implemented as views returning already-filtered content
+  precisely so there is no question to ask.
+
+**The follow-up must begin by inventorying the existing provider/client visibility and block
+primitives** — what `clients_provider`, `clients_public`, `providers_visible` and
+`account_unavailable` already give — and only then decide the smallest safe change. It is a
+product question as much as an engineering one, because the provider side has no equivalent
+ruling yet.
+
+#### Carried to later QA / hardening
+
+The Care Hub does not inspect the errors from its bookings and saved reads — only the visibility
+read is handled — so a failed query renders as *"No upcoming appointments"* rather than as an
+unavailable state. **The fail direction is HIDE, so no boundary is weakened**, and the same
+pattern the product already ruled on for Discover (a failed read must not be presented as an
+empty truth) applies. Deliberately not widened into the block-visibility correction.
+
+#### Returned, not actioned
 
 - **`/reviews/all/[id]`** reads base `providers`. **PD-089 explicitly preserves review access**,
   so it is unchanged and is **not** a defect. Recorded separately: the route also offers a **Book
