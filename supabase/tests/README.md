@@ -184,3 +184,21 @@ the gate.
 Configure this in GitHub repository settings; the repository itself cannot report whether
 it is currently set (see the note above). A fork PR skips regardless, because GitHub
 withholds secrets from forks.
+
+## Discover QA content (non-production only)
+
+`scripts/seed-nonprod.mjs` also seeds the small amount of CONTENT the Discover social rows
+need to be visible: one follow (QA client → QA provider), two image posts and one video
+post by the QA provider.
+
+This exists because **`From people you follow` and `See the work` are hidden when empty by
+design** — no filler, no fallback to unrelated providers — so against an empty database
+they suppress themselves correctly and appear to be broken. They are not.
+
+The seeded video sets `thumbnail_url` **explicitly**. Nothing in the product does, which is
+a recorded deferred defect (see `docs/product/CURRENT_STATE.md`); without it the Discover
+reel row has nothing renderable and stays invisible even with content present.
+
+Media is uploaded from the repository's own assets into the non-production `posts-media`
+bucket under `<providerUserId>/qa-seed/`, at deterministic paths so re-running the seed
+overwrites rather than accumulates.

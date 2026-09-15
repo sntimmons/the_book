@@ -39,6 +39,50 @@ JSX text contains bare apostrophes — `a provider's profile` — which a naive 
 reads as the start of a literal and is then desynced, reporting comments as user-visible
 copy. The guard tests that failure mode against itself.
 
+**⚠ DEFERRED DEFECT — product-created video posts carry no `thumbnail_url`, so every
+surface that draws a video STILL shows nothing.** Found during Phase 4C QA (2026-09-15).
+**Not fixed, deliberately, and not caused by Phase 4C.**
+
+All three post-creation sites — `app/(tabs)/business/posts.tsx`,
+`app/(tabs)/business/portfolio.tsx` and `app/onboarding/provider/golive.tsx` — insert
+`media_url`, `media_type`, `content_type` and `is_demo`, and **never** `thumbnail_url`. The
+column has no default, so **every video a provider uploads has `thumbnail_url = NULL`.**
+
+**Affected surfaces**, all of which resolve a video's still from that column:
+
+| Surface | Behaviour with a NULL thumbnail |
+|---|---|
+| Discover → **See the work** (`lib/discoverSocial.ts`) | The item is **dropped**; the row can never render from product-created video |
+| **Provider search** content grid (`app/(tabs)/search.tsx`) | Renders a **blank tile** |
+| **Business → Posts** grid (`app/(tabs)/business/posts.tsx`) | Renders a **blank tile** |
+| **Reels tab** (`app/(tabs)/reels.tsx`) | **Works** — it plays `media_url` and needs no still |
+
+That last row is the cross-surface inconsistency: once a provider uploads a reel it plays
+in the Reels tab while Discover stays empty and two grids show blanks. Discover fails
+*closed* (shows nothing) where the grids fail *blank* (show an empty box) — different
+symptoms, one cause.
+
+**Why it is not fixed here.** A real fix is thumbnail generation at upload, which is new
+media infrastructure and outside the Phase 4C scope (*"no second Reels implementation"*).
+The alternatives — rendering a video player inside a horizontal row, or showing an
+unrelated image in its place — are both worse than showing nothing. **Recorded as a
+follow-up rather than improvised.**
+
+**Non-production QA state required to review the Discover social rows.** Both rows are
+hidden when empty by design, with no filler and no fallback to strangers, so they are
+invisible against an empty database — which is exactly what non-production was. Seeded by
+`scripts/seed-nonprod.mjs` (idempotent, service-role, production-ref-guarded):
+
+- one `provider_follows` row — QA client → QA provider
+- two image posts and one video post by the QA provider, `is_active`, `is_demo = false`,
+  `created_at` left to `now()` so they fall inside the 30-day activity window
+- the video's `thumbnail_url` is **set explicitly**, because of the defect above; without
+  it `See the work` stays invisible even with content present
+
+Media is the repository's own photographic assets uploaded to the non-production
+`posts-media` bucket under a `qa-seed/` folder, so it is never mistaken for a real
+provider's work.
+
 **Discover is FULLY migrated onto the Third theme** (Phase 4B, `04735d0`, PR #108,
 2026-09-14). **Founder visually approved the design before merge.** It was the **last
 primary surface** still painted in the legacy dark palette — `useTheme` used **zero** times
