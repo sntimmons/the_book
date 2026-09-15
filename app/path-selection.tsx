@@ -74,7 +74,7 @@ export default function PathSelection() {
 
   return (
     <View style={styles.root}>
-      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>
+      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THIRD</Text>
 
       <View style={styles.center}>
         <Text style={styles.headline}>How are you here?</Text>

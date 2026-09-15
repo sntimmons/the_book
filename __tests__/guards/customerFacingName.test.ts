@@ -24,6 +24,22 @@ import { join } from 'path'
 const ROOTS = ['app', 'components', 'lib', 'hooks', 'store', 'context']
 const LEGACY = 'The Book'
 
+// ── WHY THE MATCH IS CASE-INSENSITIVE ────────────────────────────────────
+//
+// It was `line.indexOf('The Book')`, which is case-SENSITIVE — and the six auth
+// screens render the brand as a letter-spaced wordmark, `>THE BOOK<`. So this
+// guard passed over six live violations from the day it was written: every
+// client who tapped Sign In or Sign Up saw the old name at the top of the
+// screen, and the test that exists to prevent exactly that could not see them.
+//
+// A brand string is the same brand string in any casing. Matching is now
+// case-insensitive — with a TRAILING WORD BOUNDARY, which is load-bearing: the
+// app says "Tap the bookmark on a provider's profile", and without `\\b` a
+// case-insensitive `the book` swallows "the bookmark", "the booking" and "the
+// booked" and reports ordinary copy as a brand violation. The self-tests below
+// pin that exact case.
+const LEGACY_RE = new RegExp(`${LEGACY.replace(/ /g, '\\s+')}\\b`, 'i')
+
 /** Line numbers (1-based) where LEGACY appears OUTSIDE any comment. */
 export function visibleOccurrences(src: string): number[] {
   const out: number[] = []
@@ -47,8 +63,10 @@ export function visibleOccurrences(src: string): number[] {
       }
     }
 
-    const at = line.indexOf(LEGACY)
-    if (at === -1) return
+    // `at` is the offset of the match, which the comment tests below need.
+    const m = line.match(LEGACY_RE)
+    if (!m || m.index === undefined) return
+    const at = m.index
     if (startedInBlock) return // continuation of a block comment
 
     const trimmed = line.trim()
@@ -85,7 +103,7 @@ describe('no user-visible copy calls the product "The Book"', () => {
     for (const root of ROOTS) {
       for (const file of sourceFiles(join(process.cwd(), root))) {
         const src = readFileSync(file, 'utf8')
-        if (!src.includes(LEGACY)) continue
+        if (!LEGACY_RE.test(src)) continue
         for (const line of visibleOccurrences(src)) {
           offenders.push(`${file.replace(`${process.cwd()}/`, '')}:${line}`)
         }

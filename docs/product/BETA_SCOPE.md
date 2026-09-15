@@ -35,9 +35,9 @@ create *trust*.
 
 | Surface | Status | Current truth |
 |---|---|---|
-| Authentication (email/phone OTP) | **REAL** | OTP sign-in/verify; session + role resolution. |
+| Authentication | **PARTIAL — email sign-in is NOT usable** | Phone OTP, session and role resolution are real. **Email is broken and has been since before 2026-09-14:** the Supabase template for this project sends a MAGIC LINK, while `app/auth/email.tsx` calls `signInWithOtp` with no `emailRedirectTo` and then routes to a 6-digit code screen — a code the email never contains. A fix existed (PR #100) and was **closed unmerged** by PM ruling; final beta authentication is **deferred to Phase 9**. Local QA uses the `__DEV__` account switcher (password, non-prod only). **A tester who taps “Continue with email” today cannot get in.** |
 | Discover / browse | **REAL** | Landing feed for everyone; **browsing is allowed without identity verification** (verification gates transactions, not browsing). |
-| Provider profiles | **REAL** | Profile, services, portfolio, reels, follower count. Trust badges → see Identity verification. |
+| Provider profiles | **REAL** | Profile, services, portfolio, process media, reels, reviews, and the provider's real cancellation window and lateness grace. **No follower count** — Phase 3B removed it from the profile entirely (not demoted): a follower count says how many people are interested, which is not a marketplace fact. Follow itself is untouched. Completed bookings appear as context only (**PD-126**), never as ranking. Trust badges → see Identity verification. |
 | Services | **REAL** | Client selects one to book. Deposit fields exist but nothing is charged. |
 | Availability | **REAL** | Availability + blocked dates drive the client picker. |
 | Booking request creation | **REAL** | A **DRAFT** row is created before the contract step and carried through signing (`submitted_at IS NULL`, invisible to the provider, at most one live draft per client/provider pair); it becomes a real request only when the client submits it. `status='pending'`, `payment_status='unpaid'`. A request, not a confirmed/paid booking. See PD-071. |

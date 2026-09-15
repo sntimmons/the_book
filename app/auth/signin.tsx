@@ -46,7 +46,7 @@ export default function SigninScreen() {
         <Feather name="chevron-left" size={24} color="rgba(240,232,213,0.8)" />
       </Pressable>
 
-      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>
+      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THIRD</Text>
 
       <View style={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
         <Text style={styles.headline}>Welcome back.</Text>
