@@ -218,6 +218,11 @@ support-facing changes:
   a working thread by design), the "…" safety menu is still in the thread header, and the
   refusal copy still names no cause — PD-082 means a blocked person is never told they were
   blocked.
+- **Starting a conversation looks like Third now too.** The first-contact composer reached from
+  a provider's **Message** control (and from the booking flow) was the last screen on the old
+  palette; it was migrated in Session 7C. **Nothing about starting a conversation changed** —
+  same eligibility, same recipient, same one-request-then-wait behaviour, and the same wording
+  when the server refuses.
 - **No read receipts, typing indicators, presence or online status were added**, and none exist.
   If someone asks whether the other person has "seen" a message: the product does not report
   that, and `is_read` drives only the recipient's own unread mark.

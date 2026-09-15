@@ -911,10 +911,15 @@ indicator, presence, read receipt, reaction or attachment exists in this data la
 `is_read` is one boolean serving two readers, so it could not support a truthful read receipt
 even if one were wanted.
 
-**`app/messages/new.tsx` is unmigrated and reachable** from the provider profile's Message
-control and the booking flow, so a user passes from a migrated profile through a legacy-styled
-first-contact composer into a migrated thread. Recorded rather than silently closed —
-conversation creation is not a visual question.
+**The first-contact composer (`app/messages/new.tsx`) was migrated in Session 7C**, closing the
+seam Session 7B reported: it is reached from the provider profile's Message control and from the
+booking flow's datetime step whenever `messageEntryAction` resolves to `compose`, and a client
+was crossing from a migrated Third profile into a legacy The Book composer and back into a
+migrated Third thread to send one sentence. **Presentation only** — `sendPrebookingRequest`
+still decides who may start a conversation, whether an existing thread is reused rather than
+duplicated, and the re-request path for a declined one; the screen touches no table itself and
+reports the helper's refusal verbatim. **Messages is now three migrated screens**: inbox,
+first-contact composer, thread.
 
 Guards: `__tests__/guards/messagesWorkingLetter.test.ts`, plus
 `__tests__/app/messagesInbox.render.test.tsx` and

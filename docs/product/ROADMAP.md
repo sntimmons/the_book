@@ -1402,9 +1402,11 @@ these as **structurally stable for the current beta scope**:
   no compose control. Day separators were added, derived only from existing timestamps. The
   approved treatment is [docs/design/MESSAGES.md](../design/MESSAGES.md).
 
-  **`app/messages/new.tsx` was deliberately left unmigrated** and is reachable from the provider
-  profile and the booking flow — a real visual seam, recorded rather than silently closed,
-  because conversation creation is not a visual question.
+  **Session 7C then migrated the first-contact composer** (`app/messages/new.tsx`), closing the
+  seam 7B reported — the journey runs provider profile → composer → thread, and the middle step
+  was the last one on the retired palette. Presentational only; `sendPrebookingRequest` still
+  owns conversation creation. **Messages is three migrated screens**, and the guard now pins
+  that the composer is reachable, so it cannot quietly become dead code.
 
 - **Reels** — Session 6A art direction ("Held Light", PM/founder approved) and Session 6B
   implementation. **Engineering-complete for the buildout phase; final visual consistency
