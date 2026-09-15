@@ -1333,6 +1333,47 @@ general support route, and it was missing before PR #91 too.
 
 ---
 
+### How the remaining visual migration proceeds — BUILD-FIRST (founder ruling, 2026-09-15)
+
+**The remaining surfaces are migrated build-first. A surface does NOT wait on a founder device
+review before the next one may begin.**
+
+```
+per surface:   art direction → implementation → light build-phase validation → continue
+then, once:    whole-app visual / navigation consistency pass
+               → founder final visual review
+               → deep end-to-end device QA
+```
+
+**This replaced a per-screen gate**, under which each surface needed a full founder on-device
+visual approval before the next could start. It is recorded here because the earlier wording is
+still readable in this repository's history and in the Discover entry below, and a future
+engineer could otherwise reasonably infer that the old gate still applies. **It does not.**
+
+**A surface finished under this process is "engineering-complete for the buildout phase; final
+visual consistency approval deferred to the whole-app visual pass."** It is **not** "founder
+visually final", and that phrase must not be written for a screen unless a founder review
+actually happened — Discover is the only surface that has one.
+
+**What this does NOT relax**, and none of it is negotiable on visual grounds:
+
+- **safety and privacy review**, and a known safety/privacy defect still gets immediate,
+  separate handling rather than joining the buildout queue
+- **security defects**
+- **product-rule approval** — a visual pass may not decide a product question, and this ruling
+  is not permission to skip PM/founder approval for one
+- the **locked five-tab navigation** and every other navigation constraint
+- **ranking and fairness rules**
+- **functional blockers.** A visual gate and a functional one are different things: PR #112's
+  requirement for a rebuilt dev client is *functional* — `expo-video-thumbnails` is a native
+  module and nothing has ever executed it — so it stands regardless of this change.
+
+**Native and device-specific behaviour that cannot be proven in the development environment
+stays explicitly tracked for the later device pass** rather than being treated as verified.
+Each surface's design document carries its own list.
+
+---
+
 ### Design readiness — what is structurally stable, and what Design may not change
 
 **The UX structure is ready for visual design on the changed core surfaces.** Design may treat
@@ -1352,6 +1393,18 @@ these as **structurally stable for the current beta scope**:
   approved 2026-09-15 and CLOSED**. The approved treatment is
   [docs/design/DISCOVER.md](../design/DISCOVER.md); the cross-app principles behind it are
   [docs/design/THIRD_VISUAL_SYSTEM.md](../design/THIRD_VISUAL_SYSTEM.md)
+- **Reels** — Session 6A art direction ("Held Light", PM/founder approved) and Session 6B
+  implementation. **Engineering-complete for the buildout phase; final visual consistency
+  approval deferred to the whole-app visual pass.** It was the last unmigrated primary surface,
+  and the migration also removed a
+  decorative centre glyph that could not be pressed, added the pause control the screen never
+  had, dropped every engagement count by PM ruling, and renamed "Book" to **"View & book"**
+  because the control opens a profile rather than starting a booking. The approved treatment is
+  [docs/design/REELS.md](../design/REELS.md).
+
+  **The process changed here, and that is the durable part.** Art direction is now a separate,
+  explicitly approved step (6A) that precedes implementation (6B), rather than an outcome of
+  it. Direction B was produced, rejected, and is recorded in neither document as a rule.
 
 **Design must NOT change any of the following without PM review:** workflow rules, fairness,
 permissions, safety, privacy, or marketplace policy. Two specifics worth naming because they

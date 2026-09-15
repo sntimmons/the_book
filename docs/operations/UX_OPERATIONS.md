@@ -197,6 +197,24 @@ inference marketplace ranking refuses to make. The row now shows Bookings and Ra
 could never render, and "available" is not something this beta can establish. Commenting on
 a **sample** reel now says so honestly instead of claiming the feature is "coming soon".
 
+**Reels after Session 6B** (design: [design/REELS.md](../design/REELS.md)) — the support-facing
+changes:
+
+- **A single tap pauses and resumes.** There was previously no way to pause a reel at all; the
+  thing that looked like a play button was a decorative glyph that could not be pressed. A
+  paused reel says **PAUSED** and shows a brightened seek line.
+- **No like, comment, view or follower number appears anywhere on the surface.** Liking,
+  saving, commenting and sharing all still work. *"Where did my like count go"* is expected and
+  correct: counts were removed deliberately, the interaction was not.
+- **"Book" is now "View & book"** and opens the provider's profile, where the booking action
+  lives. The old label promised a booking the control never started.
+- **Providers see a small `+` in the top right that opens Posts & Reels.** Clients do not see
+  it, and neither does a provider who has not finished onboarding — it needs both a provider
+  role and a provider row. It is a shortcut to the existing uploader, not a second one, and the
+  durable path is still Me → My Studio.
+- **A blocked provider's reels are still absent in both directions** — the feed reads
+  `posts_visible`, unchanged by this work.
+
 ## 9. OPEN LAUNCH OBLIGATIONS — none of these are complete
 
 | # | Obligation | Notes |
