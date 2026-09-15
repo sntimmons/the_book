@@ -11,7 +11,8 @@ against it.
 | Inbox | `app/(tabs)/messages.tsx` | Session 7B |
 | First-contact composer | `app/messages/new.tsx` | Session 7C |
 | Conversation thread | `app/messages/[id].tsx` | Session 7B |
- Cross-app principles live in
+
+Cross-app principles live in
 [THIRD_VISUAL_SYSTEM.md](THIRD_VISUAL_SYSTEM.md); nothing here is a global rule unless that
 document says so.
 
