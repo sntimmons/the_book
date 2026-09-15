@@ -1166,13 +1166,33 @@ viewer who had blocked a provider — **or been blocked by one** — could open 
 profile from a saved entry, a follow or a remembered link and see their identity, portfolio,
 reels and process shots in full. Confirmed at runtime against non-production in both directions.
 
-**This was not covered by PD-090's carve-out, and PD-100 says so in its own words:** the accepted
-residual is that *"sophisticated inference from otherwise-authorized data"* is possible, and the
-reason that was judged acceptable is stated as **"the ordinary app reads only the views."** That
-premise was false on this surface. **The fix restores the premise rather than changing the rule
-— no new product rule is minted here.** Inferring that a block exists and having the app serve
-the blocked person's profile in ordinary navigation are different things, and only the first was
-ever accepted.
+> **THIS IS CONTESTED AND IS NOT SETTLED. A FOUNDER RULING IS OWED.**
+>
+> The change was built on the reading that PD-090's carve-out never covered this — PD-100
+> justifies accepting the inference residual with the words *"the ordinary app reads only the
+> views,"* and that premise was false on this surface.
+>
+> **Two authoritative artifacts say the opposite, and both were missed when this was built.**
+> **PD-104 (LOCKED)** describes the profile reading base `providers` as *"an explicit earlier
+> decision that a directly-opened profile is not a discovery surface — **correct for a PD-089
+> block**."* And **OQ-076, REAFFIRMED on 2026-09-13**, states that *"a **directly-opened profile
+> deliberately still reads base `providers`** — which is the diffability PD-090 accepted for the
+> Houston closed beta, **not a new leak**… Nothing in the audit narrowed it and **nothing may be
+> read as having done so.**"* That last clause forecloses precisely the reinterpretation this
+> change rests on.
+>
+> **A counter-argument was also never rebutted.** `20261064000000` left the profile on the base
+> table partly because *"Hiding it would also ANNOUNCE: a profile that 404s for one person and
+> not another is a louder signal than a card missing from a list."* That is a safety argument
+> **against** this change, and it has not been answered either way.
+>
+> **What the change does alter in the old reasoning:** that same comment justified the exemption
+> because the profile is *"reached from a saved provider, a message thread or a past booking, all
+> of which PD-089 preserves."* Gating Saved removes one of those three reach paths. Whether that
+> is enough to reclassify the profile is a product question, not an engineering one.
+>
+> **Until a ruling: this is an unmerged branch, not the state of `main`.** It must not be read as
+> having narrowed OQ-076 or amended PD-104.
 
 **What changed.** `useProvider()` now reads `providers_visible`; the profile's media read now uses
 `posts_visible`; and Client Me → Saved gates its rendered rows through `providers_visible`. A

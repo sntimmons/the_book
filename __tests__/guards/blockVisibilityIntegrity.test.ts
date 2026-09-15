@@ -56,6 +56,14 @@ function stripComments(src: string): string {
 const PROFILE_SCREEN = 'app/providers/[id].tsx'
 const PROVIDER_HOOK = 'hooks/useProviders.ts'
 const CLIENT_ME = 'components/ClientMe.tsx'
+// THE LIST WAS THREE FILES AND IT WAS GREEN WHILE A FOURTH SURFACE LEAKED.
+// `app/care/index.tsx` renders a SECOND saved-providers list, one tap from the
+// first, and `app/care/add-reminder.tsx` offers the same set as chips. Both were
+// in the original census output and both were missed. Every surface that renders
+// a saved provider belongs here.
+const CARE_HUB = 'app/care/index.tsx'
+const CARE_ADD_REMINDER = 'app/care/add-reminder.tsx'
+const SAVED_SURFACES = [CLIENT_ME, CARE_HUB, CARE_ADD_REMINDER] as const
 
 describe('the public provider profile reads the block-aware views', () => {
   it('its identity comes from providers_visible, not the base table', () => {
@@ -97,10 +105,37 @@ describe('the public provider profile reads the block-aware views', () => {
 })
 
 describe('Saved does not surface a provider the viewer is blocked with', () => {
-  it('gates the rendered list through providers_visible', () => {
-    const src = stripComments(code(CLIENT_ME))
+  it.each(SAVED_SURFACES)('%s gates its rendered list through providers_visible', (rel) => {
+    const src = stripComments(code(rel))
     expect(src).toMatch(/from\(\s*['"]providers_visible['"]\s*\)/)
-    expect(src).toMatch(/visible\.has\(p\.id\)/)
+    // The gate has to be APPLIED, not merely fetched.
+    expect(src).toMatch(/\.filter\(\([^)]*\) => visible(Saved)?\.has\(/)
+  })
+
+  it('every saved_providers reader is on the list above', () => {
+    // A census, not an allow-list: the previous version of this guard could not
+    // fail on a file it did not name, which is exactly how the Care Hub survived.
+    const found: string[] = []
+    const walk = (dir: string) => {
+      for (const e of require('fs').readdirSync(join(process.cwd(), dir), { withFileTypes: true })) {
+        const rel = `${dir}/${e.name}`
+        if (e.isDirectory()) walk(rel)
+        else if (/\.tsx?$/.test(e.name) && code(rel).includes("from('saved_providers')")) {
+          found.push(rel)
+        }
+      }
+    }
+    ;['app', 'components', 'lib', 'hooks'].forEach(walk)
+    // The profile screen reads saved_providers to drive its own Save toggle —
+    // own-data, rendering no third party — so it is listed as a known reader
+    // rather than gated.
+    const OWN_DATA = ['app/providers/[id].tsx']
+    expect(found.sort()).toEqual([...SAVED_SURFACES, ...OWN_DATA].sort())
+  })
+
+  it.each(SAVED_SURFACES)('%s NEVER DELETES THE SAVED ROW', (rel) => {
+    const src = stripComments(code(rel))
+    expect(src).not.toMatch(/from\(\s*['"]saved_providers['"]\s*\)[\s\S]{0,200}\.delete\(\)/)
   })
 
   it('NEVER DELETES THE SAVED ROW', () => {

@@ -436,6 +436,22 @@ export function useProvider(providerId: string) {
       setServices((servicesRes.data as Service[]) || [])
     } catch (err: any) {
       console.log('Fetch provider error:', err)
+      // A REFETCH THAT FINDS NO ROW MUST CLEAR WHAT IS ON SCREEN.
+      //
+      // This hook refetches on focus. On first mount an error leaves `provider`
+      // null and the screen shows "Provider not found", which is correct — but
+      // on a refetch the previously-fetched row stayed rendered, so if the OTHER
+      // party blocked while the screen sat in the nav stack, their identity and
+      // media kept rendering on every focus until unmount.
+      //
+      // Cleared ONLY on PGRST116 — PostgREST's "no rows for .single()", which is
+      // what a filtered, deleted or missing row produces. A network failure or a
+      // transient 5xx must NOT blank a profile the viewer is legitimately
+      // looking at, so those fall through and leave the last good render alone.
+      if (err?.code === 'PGRST116') {
+        setProvider(null)
+        setServices([])
+      }
     } finally {
       setLoading(false)
     }

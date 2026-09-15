@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
+import * as Sentry from '@sentry/react-native'
 import { supabase } from '@/lib/supabase'
 import { cacheBustedPhoto } from '@/lib/image'
 import { fetchProviderInfoMap, initials } from '@/lib/community'
@@ -180,9 +181,38 @@ export default function CareHub() {
             } | null
           }[]
         | null) ?? []
+    // PD-089: THE SAME GATE THE Me -> SAVED LIST CARRIES.
+    //
+    // This is a SECOND saved-providers list, one tap from the first, and it was
+    // missed when the first was fixed (CODE-DRIFT-008): it renders a card with
+    // photo, name, category, neighbourhood and a Book control from the same
+    // un-gated `saved_providers -> providers` embed. Base-table RLS does not
+    // compensate — `providers_public_read` carries no block predicate, because
+    // the block filter lives only in `providers_visible`.
+    //
+    // THE SAVED ROW IS NOT TOUCHED. A block is not an unsave; only the render is
+    // gated, and the relationship returns on unblock.
+    const savedIds = savedRows.map((r) => r.providers?.id).filter(Boolean) as string[]
+    let visibleSaved = new Set<string>()
+    if (savedIds.length > 0) {
+      const { data: vis, error: visError } = await supabase
+        .from('providers_visible')
+        .select('id')
+        .in('id', savedIds)
+      if (visError) {
+        // FAIL CLOSED, for the same reason the Me list does: falling back to the
+        // ungated rows would put a blocked provider back on screen at exactly
+        // the moment the check that would have caught it stopped working.
+        Sentry.captureException(visError, { extra: { where: 'Care Hub saved visibility' } })
+      } else {
+        visibleSaved = new Set(((vis as { id: string }[] | null) ?? []).map((v) => v.id))
+      }
+    }
+
     const savedMapped: SavedProvider[] = savedRows
       .map((r) => r.providers)
       .filter((p): p is NonNullable<typeof p> => !!p)
+      .filter((p) => visibleSaved.has(p.id))
       .map((p) => ({
         id: p.id,
         name: p.display_name ?? 'Provider',
