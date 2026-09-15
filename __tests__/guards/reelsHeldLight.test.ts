@@ -206,6 +206,28 @@ describe('the provider-only creation affordance', () => {
   })
 })
 
+describe('the surface claims no feed it does not have', () => {
+  it('renders no "For You" label', () => {
+    // It was static copy wearing a selected-tab underline, over a strictly
+    // reverse-chronological feed. It claimed a personalization the product does
+    // not perform and a selector that did not exist. Removed, not renamed.
+    expect(src()).not.toMatch(/For You/)
+  })
+
+  it('carries no feed-selector affordance at all', () => {
+    const s = src()
+    expect(s).not.toMatch(/tabUnderline|styles\.tab\b|styles\.tabText/)
+  })
+
+  it('the feed is still strictly reverse-chronological, unranked', () => {
+    // The correction was to the LABEL. If this ever stops being true, the
+    // question of what the surface may claim reopens.
+    const s = src()
+    expect(s).toMatch(/\.order\('created_at', \{ ascending: false \}\)/)
+    expect(s).not.toMatch(/\.sort\(|rankReels|personaliz/i)
+  })
+})
+
 describe('navigation and product rules are untouched', () => {
   it('Reels still reads posts_visible, so PD-089 blocking still applies', () => {
     expect(src()).toMatch(/from\(\s*['"]posts_visible['"]\s*\)/)

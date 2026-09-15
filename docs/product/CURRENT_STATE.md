@@ -911,7 +911,13 @@ Now: one identity block instead of a duplicated avatar, tap-to-pause with **PAUS
 a word, **no like / comment / view / follower number anywhere on the surface** (the
 interactions all still work — PM ruling removed the tallies, not the features), a single
 Mulberry **"View & book"** control that says what it does, and a provider-only shortcut into
-the **existing** Posts & Reels uploader. No new upload system, no sixth tab, no floating
+the **existing** Posts & Reels uploader.
+
+**The header carries no "For You" label.** It was static copy wearing a selected-tab underline
+over a strictly reverse-chronological feed — claiming a personalization the product does not
+perform and a selector that did not exist — and was removed by founder approval on 2026-09-15.
+The feed query, ordering, ranking and follow logic were unchanged by that correction; the Reels
+wordmark already identifies the surface. No new upload system, no sixth tab, no floating
 button, no booking-flow change. Reels still reads `posts_visible`, so PD-089 blocking is
 unaffected.
 

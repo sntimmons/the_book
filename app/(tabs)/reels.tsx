@@ -754,8 +754,9 @@ function ReelItem({
         pointerEvents="none"
       />
 
-      {/* Top header: Reels wordmark and For You tab. No back chevron here:
-          Reels is a root tab, so switch away via the bottom bar. */}
+      {/* Top header: the Reels wordmark, the paused state, and the provider's
+          way in. No back chevron here: Reels is a root tab, so switch away via
+          the bottom bar. */}
       <View style={[styles.header, { top: insets.top + 8 }]}>
         <View style={styles.headerLeft}>
           <Text style={[styles.wordmark, type.titleCard, { color: colors.textOnAction }]}>
@@ -779,12 +780,21 @@ function ReelItem({
           )}
         </View>
 
-        <View style={styles.tab}>
-          <Text style={[styles.tabText, type.labelAction, { color: colors.textOnAction }]}>
-            For You
-          </Text>
-          <View style={[styles.tabUnderline, { backgroundColor: colors.textOnAction }]} />
-        </View>
+        {/* A "For You" label sat here under a full-width selected-tab underline.
+            It was NOT a control — no Pressable, no handler — so it wore the
+            standard "this option is selected" affordance while being the only
+            option that existed. And the feed underneath it is `posts_visible`
+            ordered by `created_at` descending: strictly reverse-chronological
+            eligible video, with no personalization, no follow input and no
+            ranking of any kind. The only viewer-dependent part is PD-089's
+            block filter, which removes rows for safety and does not order them.
+            So the label claimed a personalization the product does not perform
+            and a selector that does not exist. Removed rather than renamed: the
+            wordmark already says what this surface is, and PD-073 asks a lane to
+            print the rule that put content in front of you rather than imply a
+            different one. Founder-approved truthfulness correction, 2026-09-15.
+            A second feed, a Following feed or a category switcher would each be
+            a product decision, not a reinstatement of this. */}
 
         {/* THE PROVIDER-ONLY WAY IN. This slot was reserved as an empty spacer
             with a note that a capture entry point would live here once one
@@ -1315,18 +1325,6 @@ const styles = StyleSheet.create({
   pausedWord: {
     letterSpacing: 1.4,
     opacity: 0.75,
-  },
-  tab: {
-    alignItems: 'center',
-  },
-  tabText: {
-    letterSpacing: 0.04,
-  },
-  tabUnderline: {
-    marginTop: 4,
-    height: 2,
-    width: '100%',
-    borderRadius: 9999,
   },
   cameraBtn: {
     width: 44,

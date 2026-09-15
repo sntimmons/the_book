@@ -201,40 +201,40 @@ place name rendered in the colour this system reserves for place.
 
 ---
 
-## 11. Open, and NOT to be cleaned up unilaterally: the "For You" label
+## 11. The surface claims no feed it does not have
 
-**Do not change this without a founder decision.** It is recorded here because it looks exactly
-like tidy-up work, and it is not — it touches what the feed claims to be.
+**There is no "For You" label, and there is no feed selector.** One sat in the header until
+2026-09-15, and it was removed by founder approval as a truthfulness correction rather than a
+redesign.
 
-**What it is.** A `View` holding a `Text` and a 2pt full-width `textOnAction` underline. It is
-**not** wrapped in a `Pressable` or `TouchableOpacity` and has no handler: it is **static copy
-styled as a selected tab**. The underline is the standard "this option is selected" affordance,
-so it reads as one choice out of several while being the only one that exists.
+**What it was.** A `View` holding a `Text` and a 2pt full-width `textOnAction` underline — the
+standard *this option is selected* affordance — with **no `Pressable` and no handler**. Static
+copy dressed as the selected item in a set of one.
 
-**What the feed actually is.** `posts_visible`, `media_type = 'video'`, active, non-demo,
-`order('created_at', desc)`. Nothing re-sorts it afterwards. That is **strict reverse
-chronology over every eligible video in the marketplace** — no personalization, no follow
-input, no engagement input, no ranking of any kind. The only viewer-dependent element is
-PD-089's block filter, which *removes* rows for safety; it does not *order* them.
+**What the feed actually is, and still is.** `posts_visible`, `media_type = 'video'`, active,
+non-demo, `order('created_at', desc)`, nothing re-sorting it afterwards: **strictly
+reverse-chronological eligible video**, with no personalization, no follow input and no ranking.
+The only viewer-dependent element is PD-089's block filter, which *removes* rows for safety and
+does not *order* them.
 
-**The mismatch.** "For You" is the category term for an algorithmically personalized feed, so
-the label claims a personalization the product does not perform, and the underline claims a
-selector that does not exist. Two repository rules bear on it directly: the visual system rules
-out *copy that sounds confident about something the product cannot do*, and **PD-073** requires
-beta discovery lanes to **print the rule that put content in front of you** — "For You" prints
-no rule, and the rule it implies is not the rule in force.
+**Why removed rather than renamed.** "For You" is the category term for an algorithmic feed, so
+it claimed a personalization the product does not perform. The visual system rules out copy that
+sounds confident about something the product cannot do, and **PD-073** asks a lane to print the
+rule that put content in front of you rather than imply a different one. "Latest" would have
+been true, but the **Reels wordmark already identifies the surface** — a second word earns
+nothing, and the header now reads wordmark on the left, the provider's way in on the right.
 
-**Smallest correction, recommended but NOT implemented:** delete the label and its underline,
-leaving the "Reels" wordmark and the provider-only `+`. It removes a false claim and a phantom
-selector, and it adds nothing. If a word is wanted in that space, **"Latest"** is the only one
-that is true today.
+**The feed query, its ordering, ranking and follow logic were not touched by this correction.**
+A Following feed, a second feed or a category switcher would each be a product decision, and
+none of them is a reinstatement of this label.
 
-**Explicitly out of scope without founder approval:** a Following feed, a second feed, a
-category switcher, or any ranking behaviour.
+Guarded: `__tests__/guards/reelsHeldLight.test.ts` asserts the label and every selector style
+are absent, **and** that the ordering is still the unranked reverse chronology the removal was
+justified by — if that stops being true, what the surface may claim reopens.
 
 ---
 
-## 11. Guards
+## 12. Guards
 
 - `__tests__/guards/reelsHeldLight.test.ts` — source-level: zero colour literals, no retired
   palette value anywhere, no count, no engagement-red, no centre glyph, the label is
