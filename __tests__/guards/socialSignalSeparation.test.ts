@@ -84,8 +84,19 @@ describe('the social path cannot reach into ranking', () => {
 
   it('has no fallback query to pad an empty row', () => {
     // A row titled "from people you follow" that quietly shows strangers is a
-    // lie about a relationship. There must be no second read to fall back to.
-    expect((social.match(/from\('/g) ?? []).length).toBe(4)
+    // lie about a relationship, so there must be no second read to fall back to.
+    //
+    // Asserted on WHICH TABLES are read rather than on a count: a count has to
+    // be bumped whenever anything is added and stops meaning anything, while
+    // this fails the moment an unexpected source appears — which is the actual
+    // risk. `providers` is attribution, resolved after each set is already
+    // final, and a test in discoverSocial.test.ts pins that it cannot filter.
+    const tables = new Set((social.match(/from\('([a-z_]+)'\)/g) ?? []))
+    expect([...tables].sort()).toEqual([
+      "from('posts_visible')",
+      "from('provider_follows')",
+      "from('providers')",
+    ])
     expect(social).not.toMatch(/popular|nearby|fallback|instead/i)
   })
 })

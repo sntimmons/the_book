@@ -1,7 +1,6 @@
 import {
   FOLLOWED_ACTIVITY_DAYS,
   FOLLOWED_ACTIVITY_LIMIT,
-  activitySource,
   fetchDiscoverReels,
   fetchFollowedActivity,
   isRecentActivity,
@@ -45,13 +44,6 @@ describe('isRecentActivity', () => {
     expect(isRecentActivity(null, NOW)).toBe(false)
     expect(isRecentActivity('not a date', NOW)).toBe(false)
     expect(isRecentActivity(new Date(NOW + DAY).toISOString(), NOW)).toBe(false)
-  })
-})
-
-describe('activitySource', () => {
-  it('states who it came from and when — PD-120’s card requirement', () => {
-    expect(activitySource('Southline Grooming', new Date(Date.now() - 2 * 3600 * 1000).toISOString()))
-      .toMatch(/^Southline Grooming · \d+h$/)
   })
 })
 
@@ -142,12 +134,18 @@ describe('fetchDiscoverReels — real content, recency only', () => {
   it('reads real video posts from posts_visible, newest first', async () => {
     const chain = q({ data: [post({ media_type: 'video', thumbnail_url: 'https://x.test/t.jpg' })], error: null })
     from.mockImplementationOnce(() => chain)
+    from.mockImplementationOnce(() =>
+      q({ data: [{ id: 'prov-1', display_name: 'Jordan', business_name: 'Southline Grooming' }], error: null }),
+    )
     const reels = await fetchDiscoverReels()
     expect(from).toHaveBeenCalledWith('posts_visible')
     expect(chain.eq).toHaveBeenCalledWith('media_type', 'video')
     expect(chain.eq).toHaveBeenCalledWith('is_demo', false)
     expect(chain.order).toHaveBeenCalledWith('created_at', { ascending: false })
-    expect(reels).toEqual([{ postId: 'post-1', media: 'https://x.test/t.jpg' }])
+    // Attribution rides along; the business name wins when there is one.
+    expect(reels).toEqual([
+      { postId: 'post-1', media: 'https://x.test/t.jpg', providerName: 'Southline Grooming' },
+    ])
   })
 
   it('orders on nothing but recency — no engagement signal is read', async () => {
@@ -160,6 +158,16 @@ describe('fetchDiscoverReels — real content, recency only', () => {
     }
     const selected = (chain.select as jest.Mock).mock.calls[0][0] as string
     expect(selected).not.toMatch(/like_count|comment_count|view|follower|rating|is_featured|is_trending/)
+  })
+
+  it('names the provider AFTER the set is decided, never as a filter', async () => {
+    // A reel whose provider name cannot be read still appears — the tile is the
+    // work, the name is a caption on it. Attribution must never remove content.
+    const chain = q({ data: [post({ media_type: 'video', thumbnail_url: 'https://x.test/t.jpg' })], error: null })
+    from.mockImplementationOnce(() => chain).mockImplementationOnce(() => q({ data: [], error: null }))
+    const reels = await fetchDiscoverReels()
+    expect(reels).toHaveLength(1)
+    expect(reels[0].providerName).toBe('')
   })
 
   it('drops a reel with no still rather than showing a placeholder tile', async () => {

@@ -7,10 +7,10 @@ import { cacheBustedPhoto } from '@/lib/image'
 import {
   DiscoverReelItem,
   FollowedActivityItem,
-  activitySource,
   fetchDiscoverReels,
   fetchFollowedActivity,
 } from '@/lib/discoverSocial'
+import { timeAgo } from '@/lib/community'
 
 // DISCOVER'S TWO SOCIAL / CONTENT ENTRY POINTS (Phase 4C).
 //
@@ -124,12 +124,26 @@ export function FollowedActivityRow({ userId }: { userId: string | null | undefi
                 router.push({ pathname: '/providers/[id]', params: { id: item.providerId } })
               }
             />
-            {/* THE SOURCE, ON EVERY CARD (PD-120). Who it came from and when.
+            {/* THE SOURCE, ON EVERY CARD (PD-120): who it came from, and when.
                 Media with no attribution is indistinguishable from a
-                recommendation, which is the one thing this row must not be. */}
-            <Text numberOfLines={1} style={[type.caption, s.source, { color: colors.textSecondary }]}>
-              {activitySource(item.providerName, item.createdAt)}
-            </Text>
+                recommendation, which is the one thing this row must not be.
+
+                Two lines rather than one so the PERSON reads first and the
+                timestamp stays subordinate — "Southline Grooming" then "3d",
+                not a single grey run where the name is as faint as the clock.
+                Both values already existed; nothing new is fetched, and nothing
+                here evaluates the provider. */}
+            <View style={s.attribution}>
+              <Text
+                numberOfLines={1}
+                style={[type.labelMeta, { color: colors.textPrimary }]}
+              >
+                {item.providerName}
+              </Text>
+              <Text numberOfLines={1} style={[type.caption, { color: colors.textSecondary }]}>
+                {timeAgo(item.createdAt)}
+              </Text>
+            </View>
           </View>
         ))}
       </ScrollView>
@@ -179,29 +193,51 @@ export function ReelsEntryRow() {
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.row}>
         {items.map((item, i) => (
-          <MediaTile
-            key={item.postId}
-            uri={item.media}
-            width={104}
-            height={168}
-            video
-            label={`Reel ${i + 1} of ${items.length}. Open Reels.`}
-            onPress={() => router.push('/(tabs)/reels' as never)}
-          />
+          <View key={item.postId} style={s.reel}>
+            <MediaTile
+              uri={item.media}
+              width={104}
+              height={168}
+              video
+              label={
+                item.providerName
+                  ? `Reel by ${item.providerName}. Open Reels.`
+                  : `Reel ${i + 1} of ${items.length}. Open Reels.`
+              }
+              onPress={() => router.push('/(tabs)/reels' as never)}
+            />
+            {/* Whose work this is. A wall of anonymous clips on a marketplace
+                reads as stock footage; naming the provider is what makes it
+                somebody's work. Attribution only — no rating, no counts, no
+                claim about them. Omitted rather than faked when unreadable. */}
+            {item.providerName ? (
+              <Text numberOfLines={1} style={[type.caption, { color: colors.textSecondary }]}>
+                {item.providerName}
+              </Text>
+            ) : null}
+          </View>
         ))}
       </ScrollView>
     </View>
   )
 }
 
+// ONE vertical rhythm for every Discover section, named so it cannot drift
+// apart section by section. Matches the browse heading's own top margin in
+// app/(tabs)/index.tsx, so followed activity → Everyone on Third → See the work
+// all breathe identically.
+const SECTION_GAP = 32
+
 const s = StyleSheet.create({
-  section: { marginTop: 32 },
+  section: { marginTop: SECTION_GAP },
   headRow: { flexDirection: 'row', alignItems: 'flex-start', paddingRight: 20 },
   headText: { flex: 1 },
   title: { paddingHorizontal: 20 },
   rule: { paddingHorizontal: 20, marginTop: 2 },
   row: { paddingHorizontal: 20, paddingTop: 14, gap: 12 },
   card: { width: 132, gap: 6 },
+  attribution: { gap: 1 },
+  reel: { width: 104, gap: 6 },
   tile: {
     borderRadius: 12,
     borderCurve: 'continuous',

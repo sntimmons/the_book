@@ -1,5 +1,4 @@
 import { supabase } from './supabase'
-import { timeAgo } from './community'
 
 // DISCOVER'S SOCIAL / CONTENT ENTRY POINTS — A SEPARATE PATH, ON PURPOSE.
 //
@@ -48,6 +47,12 @@ export interface FollowedActivityItem {
 export interface DiscoverReelItem {
   postId: string
   media: string | null
+  /**
+   * Who made it. Attribution ONLY — it is not a ranking input, it does not
+   * change what is eligible or in what order, and it is read after the set is
+   * already decided, exactly as `fetchFollowedActivity` does it.
+   */
+  providerName: string
 }
 
 /** Recent enough to be worth showing. Server ISO in, boolean out — pure. */
@@ -63,17 +68,6 @@ export function isRecentActivity(
   return now - at <= days * 24 * 60 * 60 * 1000
 }
 
-/**
- * The line under a followed-activity card: WHO it came from and WHEN.
- *
- * PD-120 requires the source be stated on the card, and this is that. It is not
- * decoration: a row of media with no attribution is indistinguishable from a
- * recommendation, which is the one thing this lane must never look like.
- */
-export function activitySource(providerName: string, createdAt: string): string {
-  return `${providerName} · ${timeAgo(createdAt)}`
-}
-
 interface RawPostRow {
   id: string
   provider_id: string
@@ -87,6 +81,22 @@ function mediaFor(r: RawPostRow): string | null {
   // A video needs its still; rendering a player in a horizontal row would be
   // heavy and would start playing things nobody asked to play.
   return r.media_type === 'video' ? r.thumbnail_url : (r.media_url ?? r.thumbnail_url)
+}
+
+/**
+ * Display names for a set of provider ids, resolved AFTER the content set is
+ * final. Extracted because both fetches need it and neither may let it
+ * influence what they return — a name is attribution, never eligibility.
+ */
+async function namesFor(providerIds: string[]): Promise<Map<string, string>> {
+  if (providerIds.length === 0) return new Map()
+  const { data } = await supabase
+    .from('providers')
+    .select('id, display_name, business_name')
+    .in('id', providerIds)
+  const rows =
+    (data as { id: string; display_name: string; business_name: string | null }[] | null) ?? []
+  return new Map(rows.map((p) => [p.id, p.business_name?.trim() || p.display_name]))
 }
 
 /**
@@ -133,14 +143,7 @@ export async function fetchFollowedActivity(
   const recent = (posts as RawPostRow[]).filter((r) => isRecentActivity(r.created_at, now))
   if (recent.length === 0) return []
 
-  const { data: providers } = await supabase
-    .from('providers')
-    .select('id, display_name, business_name')
-    .in('id', Array.from(new Set(recent.map((r) => r.provider_id))))
-  const nameById = new Map(
-    ((providers as { id: string; display_name: string; business_name: string | null }[] | null) ?? [])
-      .map((p) => [p.id, p.business_name?.trim() || p.display_name]),
-  )
+  const nameById = await namesFor(Array.from(new Set(recent.map((r) => r.provider_id))))
 
   return recent
     .map((r) => ({
@@ -175,8 +178,19 @@ export async function fetchDiscoverReels(
     .order('created_at', { ascending: false })
     .limit(limit)
   if (error || !data) return []
-  return (data as RawPostRow[])
-    .map((r) => ({ postId: r.id, media: mediaFor(r) }))
-    // No placeholder tiles: a reel with no still is simply not in the row.
-    .filter((r) => !!r.media)
+
+  const rows = (data as RawPostRow[]).filter((r) => !!mediaFor(r))
+  if (rows.length === 0) return []
+
+  // Attribution, resolved AFTER the set is final. Which reels appear and in what
+  // order was decided entirely above this line; a provider with no readable name
+  // is still in the row, unnamed, because the tile is the work and the name is a
+  // caption on it.
+  const nameById = await namesFor(Array.from(new Set(rows.map((r) => r.provider_id))))
+
+  return rows.map((r) => ({
+    postId: r.id,
+    media: mediaFor(r),
+    providerName: nameById.get(r.provider_id) ?? '',
+  }))
 }

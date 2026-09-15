@@ -39,6 +39,18 @@ JSX text contains bare apostrophes — `a provider's profile` — which a naive 
 reads as the start of a literal and is then desynced, reporting comments as user-visible
 copy. The guard tests that failure mode against itself.
 
+**Discover's two social rows are FINAL for Phase 4C** (visual polish approved 2026-09-15).
+`From people you follow` sits after the marketplace lanes and before the grid; `See the
+work` sits below the grid. Both carry **attribution only** — provider identity, and for
+followed activity a subordinate timestamp. Neither carries a rating, follower count, likes,
+engagement, badge, verification, completed bookings, price or any quality language, and the
+types behind them have no field that could. **Social activity is visually supportive of
+marketplace discovery and structurally separate from its ranking**: `lib/discovery.ts` has
+no follow input, so a social signal cannot reach placement even by mistake. The full
+treatment is recorded in
+[operations/DISCOVERY_OPERATIONS.md](../operations/DISCOVERY_OPERATIONS.md) and the
+attribution rule in [operations/UX_OPERATIONS.md](../operations/UX_OPERATIONS.md).
+
 **⚠ DEFERRED DEFECT — product-created video posts carry no `thumbnail_url`, so every
 surface that draws a video STILL shows nothing.** Found during Phase 4C QA (2026-09-15).
 **Not fixed, deliberately, and not caused by Phase 4C.**

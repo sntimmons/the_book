@@ -574,7 +574,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   loadMore: {
-    marginTop: 28,
+    marginTop: 20,
     marginHorizontal: GUTTER,
     height: 48,
     borderRadius: 14,

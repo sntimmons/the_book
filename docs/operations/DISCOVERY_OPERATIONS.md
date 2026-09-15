@@ -223,3 +223,65 @@ and prompting providers to set a neighborhood would do more for discovery than a
 - **Do not promise placement**, to anybody, for any reason.
 - **A provider asking whether to post more Reels to get booked should be told no.** Content and
   marketplace are separate systems, and telling them otherwise would make the promise false.
+
+## Discover's social rows — the approved Phase 4C treatment (2026-09-15)
+
+Two rows draw content rather than providers. Both are **structurally separate from
+marketplace ranking** and only **visually supportive** of it.
+
+### The separation, stated once
+
+`lib/discoverSocial.ts` does not import `lib/discovery.ts`, never sees a
+`DiscoveryProvider` and never returns one. `lib/discovery.ts` has **no follow input at
+all** — which is the proof rather than a promise. A social field cannot reach placement
+because the type that decides placement has nowhere to put one.
+`__tests__/guards/socialSignalSeparation.test.ts` asserts this in both directions, and that
+the lane output is identical however the viewer follows.
+
+Following is a **relationship**. Posting is **optional activity**. Neither is a marketplace
+fact, and neither moves a provider in the lanes, the grid or search.
+
+### From people you follow
+
+Placed **after the four marketplace lanes and before the complete grid**. Above them it
+would read as the primary way Discover works and imply that following someone lifts them in
+the marketplace; below the paginated grid it would be unreachable.
+
+- Gated on **viewer follow state, not role** — a provider browsing Discover is a client like
+  anyone else and sees the row whenever their own follows qualify.
+- 132pt square media, unchanged.
+- **Attribution is two lines**: the provider identity first in `labelMeta` at
+  `textPrimary`, the relative time beneath in `caption` at `textSecondary`. Two lines
+  because the person should read before the clock — a single grey run made the name as
+  faint as the timestamp. Both values already existed; nothing extra is fetched.
+- Attribution is **relationship-focused**: who and when, nothing evaluative. No rating,
+  followers, likes, engagement, badges, verification, completed bookings, price, or quality
+  language — none of which the card type can even carry.
+
+### See the work
+
+Placed **below the complete grid**, so provider discovery stays the page. One doorway into
+the Reels experience that already exists; it owns no playback and builds nothing second.
+
+- 104 × 168 portrait stills, unchanged. **No autoplay, and no single reel promoted into a
+  hero card** — every tile is the same size.
+- A **small provider identity line** beneath each tile, in `caption` at `textSecondary`.
+  Named because a wall of anonymous clips on a marketplace reads as stock footage; naming
+  the provider is what makes it somebody's work.
+- Attribution is resolved **after** the set is final and **cannot filter it**: a reel whose
+  provider name is unreadable still appears, unnamed. A test pins that.
+- Ordered by **recency alone** — no like count, view count or engagement is even selected.
+
+### Rhythm
+
+One `SECTION_GAP` of 32, shared by both rows and matching the browse heading's own top
+margin, so **followed activity → Everyone on Third → See the work** breathe identically. The
+load-more control sits 20 above, not 32: a control belongs nearer the thing it extends than
+the section that follows it. No containers, no separators, no cards around cards.
+
+### What stays true regardless of polish
+
+Hidden when the viewer has no eligible activity. No filler. No fallback to strangers — the
+guard asserts the module reads only `provider_follows`, `posts_visible` and `providers`, so
+there is nothing to fall back to. A query failure hides the row rather than showing
+unrelated providers.
