@@ -215,7 +215,7 @@ export default function ProviderProfilePage() {
     ;(async () => {
       const { data, error } = await supabase
         .from('posts')
-        .select('id, media_url, media_type, content_type, caption, sort_order')
+        .select('id, media_url, thumbnail_url, media_type, content_type, caption, sort_order')
         .eq('provider_id', providerId)
         .eq('is_active', true)
         .eq('is_demo', false)
@@ -226,17 +226,38 @@ export default function ProviderProfilePage() {
         return
       }
       const rows =
-        (data as { media_url: string; media_type: string; content_type: string }[]) ?? []
+        (data as {
+          media_url: string
+          thumbnail_url: string | null
+          media_type: string
+          content_type: string
+        }[]) ?? []
+
+      // A non-playing surface draws the STILL, never the video URL. This screen
+      // renders every tile through <Image>, which has nothing to show for an
+      // .mp4 — so a video row resolves to its thumbnail and a video row without
+      // one is omitted rather than rendered as an empty rectangle. Same rule as
+      // lib/discoverSocial.ts mediaFor and app/(tabs)/search.tsx; Reels is the
+      // only surface in the product that plays media_url.
+      const displayMedia = (r: { media_url: string; thumbnail_url: string | null; media_type: string }) =>
+        r.media_type === 'video' ? r.thumbnail_url : r.media_url
+      const drawable = (u: string | null): u is string => typeof u === 'string' && u.length > 0
       // Process is partitioned OUT of the other two rather than layered on top,
       // so a process clip cannot also appear as a portfolio shot or a reel and
       // make one provider's three posts look like nine.
       const isProcess = (r: { content_type: string }) => r.content_type === 'process'
-      setProcessMedia(rows.filter(isProcess).map((r) => r.media_url))
+      setProcessMedia(rows.filter(isProcess).map(displayMedia).filter(drawable))
       setPortfolioImages(
-        rows.filter((r) => !isProcess(r) && r.media_type === 'image').map((r) => r.media_url),
+        rows
+          .filter((r) => !isProcess(r) && r.media_type === 'image')
+          .map(displayMedia)
+          .filter(drawable),
       )
       setReelVideos(
-        rows.filter((r) => !isProcess(r) && r.media_type === 'video').map((r) => r.media_url),
+        rows
+          .filter((r) => !isProcess(r) && r.media_type === 'video')
+          .map(displayMedia)
+          .filter(drawable),
       )
     })()
     return () => {

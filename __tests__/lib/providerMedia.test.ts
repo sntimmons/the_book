@@ -26,7 +26,9 @@ const URL = 'https://x.supabase.co/storage/v1/object/public/posts-media/user-1/p
 beforeEach(() => {
   jest.clearAllMocks()
   ;(supabase.storage.from as jest.Mock).mockReturnValue({
-    remove: jest.fn(() => Promise.resolve({ error: null })),
+    remove: jest.fn((paths: string[]) =>
+      Promise.resolve({ data: paths.map((name) => ({ name })), error: null }),
+    ),
   })
 })
 
@@ -61,7 +63,9 @@ describe('storagePathFromPublicUrl', () => {
 describe('deleteProviderMedia', () => {
   it('deletes the row and then its file', async () => {
     ;(supabase.from as jest.Mock).mockReturnValue(deleteChain({ data: [{ id: 'p1' }], error: null }))
-    const remove = jest.fn(() => Promise.resolve({ error: null }))
+    const remove = jest.fn((paths: string[]) =>
+      Promise.resolve({ data: paths.map((name) => ({ name })), error: null }),
+    )
     ;(supabase.storage.from as jest.Mock).mockReturnValue({ remove })
 
     const r = await deleteProviderMedia('p1', URL)
@@ -102,7 +106,7 @@ describe('deleteProviderMedia', () => {
     // profile, which is the failure worth avoiding.
     ;(supabase.from as jest.Mock).mockReturnValue(deleteChain({ data: [{ id: 'p1' }], error: null }))
     ;(supabase.storage.from as jest.Mock).mockReturnValue({
-      remove: jest.fn(() => Promise.resolve({ error: { message: 'nope' } })),
+      remove: jest.fn(() => Promise.resolve({ data: null, error: { message: 'nope' } })),
     })
 
     const r = await deleteProviderMedia('p1', URL)
@@ -118,5 +122,75 @@ describe('deleteProviderMedia', () => {
     const r = await deleteProviderMedia('p1', 'https://cdn.example.com/a.jpg')
     expect(r).toEqual({ ok: true, fileOrphaned: true, error: null })
     expect(remove).not.toHaveBeenCalled()
+  })
+
+  // A VIDEO POST IS TWO STORAGE OBJECTS. The upload boundary stores the clip and
+  // a still generated from it, so a delete that removes only `media_url` leaves a
+  // recognisable frame of that video publicly readable — which is exactly the
+  // takedown this module exists to make real.
+  describe('a video post owns two objects', () => {
+    const VIDEO = 'https://x.supabase.co/storage/v1/object/public/posts-media/user-1/reels/v.mp4'
+    const STILL = 'https://x.supabase.co/storage/v1/object/public/posts-media/user-1/reels/v.jpg'
+
+    it('removes BOTH the clip and its still', async () => {
+      ;(supabase.from as jest.Mock).mockReturnValue(
+        deleteChain({ data: [{ id: 'p1' }], error: null }),
+      )
+      const remove = jest.fn((paths: string[]) =>
+        Promise.resolve({ data: paths.map((name) => ({ name })), error: null }),
+      )
+      ;(supabase.storage.from as jest.Mock).mockReturnValue({ remove })
+
+      const r = await deleteProviderMedia('p1', VIDEO, 'posts-media', STILL)
+      expect(r).toEqual({ ok: true, fileOrphaned: false, error: null })
+      expect(remove).toHaveBeenCalledWith(['user-1/reels/v.mp4', 'user-1/reels/v.jpg'])
+    })
+
+    it('removes exactly one object when there is no still', async () => {
+      ;(supabase.from as jest.Mock).mockReturnValue(
+        deleteChain({ data: [{ id: 'p1' }], error: null }),
+      )
+      const remove = jest.fn((paths: string[]) =>
+        Promise.resolve({ data: paths.map((name) => ({ name })), error: null }),
+      )
+      ;(supabase.storage.from as jest.Mock).mockReturnValue({ remove })
+
+      const r = await deleteProviderMedia('p1', URL, 'posts-media', null)
+      expect(r.fileOrphaned).toBe(false)
+      expect(remove).toHaveBeenCalledWith(['user-1/portfolio/a.jpg'])
+    })
+
+    it('REPORTS AN ORPHAN when storage removed fewer objects than asked', async () => {
+      // Storage RLS FILTERS a refused remove rather than raising: it returns no
+      // error and simply omits the object from the removed set. Verified against
+      // the Storage API — removing a real object returns one entry, removing
+      // nothing returns zero. Treating a short set as success would let a
+      // takedown report itself complete while a frame of the video survives.
+      ;(supabase.from as jest.Mock).mockReturnValue(
+        deleteChain({ data: [{ id: 'p1' }], error: null }),
+      )
+      ;(supabase.storage.from as jest.Mock).mockReturnValue({
+        remove: jest.fn(() => Promise.resolve({ data: [{ name: 'user-1/reels/v.mp4' }], error: null })),
+      })
+
+      const r = await deleteProviderMedia('p1', VIDEO, 'posts-media', STILL)
+      expect(r.ok).toBe(true)
+      expect(r.fileOrphaned).toBe(true)
+    })
+
+    it('still removes the clip when the still URL does not parse, and says so', async () => {
+      ;(supabase.from as jest.Mock).mockReturnValue(
+        deleteChain({ data: [{ id: 'p1' }], error: null }),
+      )
+      const remove = jest.fn((paths: string[]) =>
+        Promise.resolve({ data: paths.map((name) => ({ name })), error: null }),
+      )
+      ;(supabase.storage.from as jest.Mock).mockReturnValue({ remove })
+
+      const r = await deleteProviderMedia('p1', VIDEO, 'posts-media', 'https://cdn.example.com/x.jpg')
+      expect(remove).toHaveBeenCalledWith(['user-1/reels/v.mp4'])
+      // The clip is gone but something we could not address may remain.
+      expect(r.fileOrphaned).toBe(true)
+    })
   })
 })

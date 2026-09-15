@@ -123,20 +123,26 @@ export default function ProviderPosts() {
 
     setUploadingKind(kind)
     try {
-      const { url, error: uploadError } = await uploadMedia(
+      const { url, thumbnailUrl, error: uploadError } = await uploadMedia(
         result.assets[0].uri,
         user.id,
         kind === 'image' ? 'portfolio' : 'reels',
         'posts-media',
       )
       if (uploadError || !url) {
-        setError('Upload failed. Please try again.')
+        // Surface the boundary's own message when it has one: a failed
+        // thumbnail explains itself ("could not create a preview image")
+        // and a generic retry line would hide why the clip was refused.
+        setError(uploadError ?? 'Upload failed. Please try again.')
         return
       }
 
       const { error: insertError } = await supabase.from('posts').insert({
         provider_id: providerId,
         media_url: url,
+        // A video always carries its still — the upload boundary will not return
+        // one without it. An image is its own still and stores null.
+        thumbnail_url: thumbnailUrl,
         media_type: kind === 'image' ? 'image' : 'video',
         content_type: 'portfolio',
         visibility: 'public',
@@ -186,7 +192,14 @@ export default function ProviderPosts() {
     // RLS FILTERS a refused delete instead of raising, so "no error" is not proof
     // the row is gone, and a provider must never be shown an empty tile for
     // something still on their public profile and still in Reels.
-    const result = await deleteProviderMedia(post.id, post.media_url)
+    // The still is passed explicitly: a video post is two storage objects and
+    // this is the only place that knows both of them.
+    const result = await deleteProviderMedia(
+      post.id,
+      post.media_url,
+      'posts-media',
+      post.thumbnail_url,
+    )
     if (!result.ok) setError(DELETE_MEDIA_FAILED)
     await loadPosts(providerId)
     setDeletingId(null)

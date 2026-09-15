@@ -165,7 +165,25 @@ of interest, never a ranking input, never visually dominant.
 
 ---
 
-## 7. What is excluded from this system
+## 7. Media that cannot play
+
+Several surfaces show video where video cannot play — a browse row, a search grid, a
+management grid. **Only the Reels tab plays anything.**
+
+**The invariant:** *every product-created video post must have a usable thumbnail/still for
+surfaces that cannot play video.* It is enforced at the shared upload boundary
+(`lib/storage.ts`), which generates a still from the uploaded video and **fails the whole
+upload if it cannot** — a video that plays in one place and is blank in three others is
+worse than a video that was never accepted.
+
+Two rules follow from it:
+
+- **Never substitute an unrelated image for a missing still.** A picture that is not a frame
+  of that video is somebody else's work on somebody's post.
+- **Never introduce autoplay to make a still unnecessary.** A grid of playing video is a
+  different product, and battery and data are not the browse surface's to spend.
+
+## 8. What is excluded from this system
 
 **The founder-protected Welcome experience is out of scope.** `app/index.tsx`, the welcome
 video and the first-open / setup flow are **not** migrated onto these tokens and must not be
@@ -174,7 +192,7 @@ a consistency argument.
 
 ---
 
-## 8. Where this is already true
+## 9. Where this is already true
 
 Bookings list and booking flow, booking detail, the provider profile, Me and Settings,
 Discover, and **Reels** all resolve every colour from these tokens and support Light / Dark /
