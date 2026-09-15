@@ -1217,6 +1217,23 @@ shell** — precisely the case **PD-104 records the profile screen getting wrong
 is about the row and applies to everyone. A network failure deliberately does not clear, so a
 transient error cannot blank a profile the viewer is legitimately looking at.
 
+#### Open, and NOT decided here: the Care Hub reminder row
+
+Both reviewers found the same thing, and it is **not** a regression — it behaved this way before
+this work and behaves the same after. The Care Hub's **reminders** section resolves provider names
+through `fetchProviderInfoMap(ids, 'transaction')`, which reads base `providers`, and each row
+carries a **Book** control. So a provider the viewer is blocked with is still named there, on the
+same screen whose saved list is now gated.
+
+**It is recorded rather than fixed because it turns on a product question this session may not
+answer:** is an existing care reminder *preserved history* — in which case the transaction scope is
+right and nothing changes — or a *forward-looking artefact*, in which case it should be gated?
+`add-reminder.tsx` gates the chips on the second reading, so the two are not yet reconciled.
+
+Noted so it is not later discovered as a defect on a screen this entry says was corrected. The
+`saved_providers` census cannot see it — it reads `care_reminders` — so nothing will re-raise it
+automatically.
+
 #### Returned, not actioned
 
 - **`/reviews/all/[id]`** reads base `providers`. **PD-089 explicitly preserves review access**,
@@ -2017,10 +2034,14 @@ internal Review Queue (PD-085). See § Safety, trust and operator handling below
 
 What is **still unbuilt**: the **operator SURFACE** over that queue, without which PD-068 stays
 PARTIALLY SATISFIED and no case can be worked outside `psql`; the **Open to Trades** opt-in; the
-post-decline reverse-contact episode (PD-048); the bounded report-intake abuse control (PD-088 —
-locked, **not implemented**); and hiding a blocked person from ordinary discovery and community
-surfaces (PD-089 — locked, **not implemented**). The first is a pre-beta requirement and the fourth
-is required before broad beta; both are sequenced in [ROADMAP.md](ROADMAP.md) § Next.
+post-decline reverse-contact episode (PD-048); and the bounded report-intake abuse control
+(PD-088 — locked, **not implemented**). The first is a pre-beta requirement and the last is
+required before broad beta; both are sequenced in [ROADMAP.md](ROADMAP.md) § Next.
+
+*(PD-089 was listed here as unimplemented. **It has been implemented since Session 8C**
+(`0b1f563`, 2026-09-10) — five `SECURITY DEFINER` views — and the ordinary saved-provider surfaces
+were brought onto it on 2026-09-15. Corrected because a reader greping PD-089 in this document was
+getting two stale answers alongside the current one.)*
 
 **Recorded as exploratory only, and none of it is committed work** — the Needs Attention → Under
 Review question that used to head this list is **closed** by PD-072 and has been moved out of it:
@@ -2102,10 +2123,11 @@ Three Founder rulings on the finished branch, and two of them are requirements r
   reporting is neither rate-limited nor idempotent per subject. The limits are decided and written
   down (one open case per reporter/target pair, 5/hour and 20/day, **no standing requirement**);
   none of it is built. Closes OQ-074.
-- **PD-089 — a blocked person disappears from ordinary discovery and community surfaces.
-  NOT IMPLEMENTED**, and explicitly **not** Session 8B. Session 8 stopped at CONTACT: neither the
-  feed nor the barter board filters a blocked person's content, so a blocker still sees them, can
-  still tap Respond, and gets a refusal that points them at their own eligibility. Closes OQ-075.
+- **PD-089 — a blocked person disappears from ordinary discovery and community surfaces.**
+  *(Dated record: **not implemented AT SESSION 8B**, and explicitly not that session's work.
+  **Session 8C implemented it** — `0b1f563`, 2026-09-10.)* Session 8 stopped at CONTACT: neither the
+  feed nor the barter board filtered a blocked person's content, so a blocker still saw them, could
+  still tap Respond, and got a refusal that pointed them at their own eligibility. Closes OQ-075.
 
 ---
 

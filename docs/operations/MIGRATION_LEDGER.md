@@ -2019,6 +2019,15 @@ and the `20261066000000` grants restored in the same statement. Confirmed by cat
 held by `anon` and `authenticated`.** The `20261138000000` row was then deleted from
 `supabase_migrations.schema_migrations`, and `max(version)` is back to `20261137000000`.
 
+**A `drop view` also destroys the view's COMMENT, and the first pass of this revert missed it.**
+`create or replace` preserves a comment; a drop does not, and the `20261111000000` definition the
+view was restored from does not restate one — the live text was last set by `20261102000000`. A
+catalog query confirmed `obj_description('public.posts_visible'::regclass)` was **null** after the
+revert. It has been restored verbatim from `20261102000000` and re-verified non-null. Recorded
+because this repository treats view comments as load-bearing documentation rather than decoration
+— `hooks/useProviders.ts` tells the reader to "see the view's comment" — so a silently missing one
+is the same class of object-vs-file drift this entry exists to prevent.
+
 The migration file is deleted from the branch. **`20261111000000` remains the live definition of
 `posts_visible` and was never edited.**
 

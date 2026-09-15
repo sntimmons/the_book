@@ -89,13 +89,22 @@ describe('the directly-opened profile is deliberately OUT of scope', () => {
     expect(src).not.toMatch(/posts_visible/)
   })
 
-  it('no migration in this branch alters the visibility views', () => {
-    // The `posts_visible` + sort_order migration was removed with the profile
-    // change it existed to serve. Nothing here touches a view.
+  it('no migration newer than the recorded baseline alters a visibility view', () => {
+    // EXPRESSES THE RULE, NOT THE DATE. This asserted the exact filename of the
+    // latest migration, so ANY unrelated future migration turned a block-safety
+    // guard red — and the repair would be to edit a constant inside a safety
+    // guard, which is how a guard stops being trusted. Now an unrelated
+    // migration passes and one that touches a `_visible` view fails.
     const fs = require('fs')
+    const BASELINE = '20261137000000'
     const dir = join(process.cwd(), 'supabase/migrations')
-    const versions = fs.readdirSync(dir).filter((f: string) => f.endsWith('.sql')).sort()
-    expect(versions[versions.length - 1]).toBe('20261137000000_a_default_is_not_a_providers_term.sql')
+    const offenders = fs
+      .readdirSync(dir)
+      .filter((f: string) => f.endsWith('.sql') && f.slice(0, 14) > BASELINE)
+      .filter((f: string) => /providers_visible|posts_visible|community_posts_visible/.test(
+        fs.readFileSync(join(dir, f), 'utf8'),
+      ))
+    expect(offenders).toEqual([])
   })
 })
 
@@ -111,16 +120,21 @@ describe('Saved does not surface a provider the viewer is blocked with', () => {
     // A census, not an allow-list: the previous version of this guard could not
     // fail on a file it did not name, which is exactly how the Care Hub survived.
     const found: string[] = []
+    // Widened after review: the first version walked four directories and matched
+    // ONE exact single-quoted literal on RAW source, so a reader in `store/` or
+    // `context/`, or one written with double quotes or wrapped by Prettier, was
+    // invisible to a test whose whole purpose is not being blind.
+    const READER = /\.from\(\s*['"]saved_providers['"]\s*\)/
     const walk = (dir: string) => {
       for (const e of require('fs').readdirSync(join(process.cwd(), dir), { withFileTypes: true })) {
         const rel = `${dir}/${e.name}`
         if (e.isDirectory()) walk(rel)
-        else if (/\.tsx?$/.test(e.name) && code(rel).includes("from('saved_providers')")) {
+        else if (/\.tsx?$/.test(e.name) && READER.test(stripComments(code(rel)))) {
           found.push(rel)
         }
       }
     }
-    ;['app', 'components', 'lib', 'hooks'].forEach(walk)
+    ;['app', 'components', 'lib', 'hooks', 'store', 'context'].forEach(walk)
     // The profile screen reads saved_providers to drive its own Save toggle —
     // own-data, rendering no third party — so it is listed as a known reader
     // rather than gated.

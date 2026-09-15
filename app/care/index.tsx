@@ -145,8 +145,18 @@ export default function CareHub() {
       ...upRows.map((r) => r.provider_id),
       ...compRows.map((r) => r.provider_id),
     ]
-    // TRANSACTION scope: these are providers the client SAVED and has history
-    // with. PD-089 filters ordinary discovery, not your own saved list.
+    // TRANSACTION scope, and these ids are REMINDERS AND BOOKINGS — not the saved
+    // list. The saved list is a separate query below and IS gated; an earlier
+    // version of this comment said "PD-089 filters ordinary discovery, not your
+    // own saved list", which was wrong about both its own inputs and the rule,
+    // and sat thirty lines above a gate implementing the opposite.
+    //
+    // OPEN, AND NOT DECIDED HERE: whether an existing care REMINDER is preserved
+    // history (transaction scope, as now) or a forward-looking artefact that
+    // should be gated. `add-reminder.tsx` gates the chips on the second reading,
+    // so the two are not yet reconciled. Returned to PM/founder — a reminder row
+    // names a provider and offers Book, so this is a product call about what a
+    // reminder IS, not a code cleanup.
     const infoMap = await fetchProviderInfoMap(providerIds, 'transaction')
 
     setReminders(

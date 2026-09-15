@@ -597,8 +597,7 @@ function SavedTab() {
       }
       // PD-089: A SAVED PROVIDER YOU ARE BLOCKED WITH STOPS APPEARING HERE.
       //
-      // This list was the reachable door into the profile leak (CODE-DRIFT-008):
-      // it embeds the base `providers` table, so a provider the viewer had
+      // This list embeds the base `providers` table, so a provider the viewer had
       // blocked — or been blocked by — kept sitting in Saved with their name and
       // photo, one tap from a full profile.
       //
@@ -615,7 +614,11 @@ function SavedTab() {
       // what PD-090 accepts, and what PD-090 does NOT accept is the app putting
       // that provider on the screen, which is what this stops.
       const savedIds = (data ?? []).map((r: any) => r?.providers?.id).filter(Boolean)
-      let visible = new Set<string>(savedIds)
+      // SEEDED EMPTY, like the two sibling surfaces. Seeding it with every saved
+      // id made "show everyone" the default: correct today only because the
+      // branch below always reassigns or returns, and silently fail-OPEN the
+      // moment an edit adds a path that does neither.
+      let visible = new Set<string>()
       if (savedIds.length > 0) {
         const { data: vis, error: visError } = await supabase
           .from('providers_visible')
