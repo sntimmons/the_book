@@ -120,7 +120,8 @@ describe('the data path reads only what already exists', () => {
     //
     // BASE `posts`, AND THAT IS THE RULING. A directly-opened profile sits
     // outside PD-089's ordinary-surface hiding rule for the closed beta
-    // (founder ruling 2026-09-15, preserving PD-090/PD-104/OQ-076). This
+    // — the closed-beta direct-profile exception preserved under PD-090 /
+    // PD-104 / OQ-076. This
     // assertion was briefly retargeted to `posts_visible` and is restored.
     expect((page.match(/\.from\('posts'\)/g) ?? []).length).toBe(1)
   })

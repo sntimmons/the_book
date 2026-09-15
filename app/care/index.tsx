@@ -145,25 +145,65 @@ export default function CareHub() {
       ...upRows.map((r) => r.provider_id),
       ...compRows.map((r) => r.provider_id),
     ]
-    // TRANSACTION scope, and these ids are REMINDERS AND BOOKINGS — not the saved
-    // list. The saved list is a separate query below and IS gated; an earlier
-    // version of this comment said "PD-089 filters ordinary discovery, not your
-    // own saved list", which was wrong about both its own inputs and the rule,
-    // and sat thirty lines above a gate implementing the opposite.
-    //
-    // OPEN, AND NOT DECIDED HERE: whether an existing care REMINDER is preserved
-    // history (transaction scope, as now) or a forward-looking artefact that
-    // should be gated. `add-reminder.tsx` gates the chips on the second reading,
-    // so the two are not yet reconciled. Returned to PM/founder — a reminder row
-    // names a provider and offers Book, so this is a product call about what a
-    // reminder IS, not a code cleanup.
+    // TRANSACTION scope, DELIBERATELY, and it stays that way. Upcoming
+    // appointments and completed booking history are the narrow existing-
+    // transaction access PD-089 preserves: two people inside a live obligation
+    // must still see each other's name, or a block strands the trade. Narrowing
+    // this call would hide a booking counterparty, which is the one thing the
+    // exception exists to prevent.
     const infoMap = await fetchProviderInfoMap(providerIds, 'transaction')
 
+    // ── PROVIDER-BOUND REMINDERS ARE GATED; BOOKING HISTORY IS NOT ──────────
+    //
+    // A care reminder tied to a provider is a FORWARD-LOOKING RE-ENGAGEMENT
+    // surface, not preserved history: it names the provider, it says "Time to
+    // rebook", it offers Book Now / Book Again, and it exists to drive another
+    // transaction. So it honours PD-089 while a block applies — the same reading
+    // `add-reminder.tsx` already applies when the reminder is CREATED, so
+    // creation and display now agree rather than contradicting each other.
+    //
+    // THE `care_reminders` ROW IS NOT TOUCHED. It is not deleted, not
+    // deactivated, and reappears on unblock under its existing active/due rules.
+    // Only the render is gated.
+    //
+    // A generic reminder — no `providerId` — is unaffected, because there is no
+    // provider identity in it to hide.
+    //
+    // This one read covers the reminder ids AND the saved ids below, so the two
+    // gates cannot disagree about who is visible.
+    const gatedIds = Array.from(
+      new Set([
+        ...remRows.map((r) => r.providerId).filter((x): x is string => !!x),
+        ...(((savedRes.data as { providers: { id: string } | null }[] | null) ?? [])
+          .map((r) => r?.providers?.id)
+          .filter(Boolean) as string[]),
+      ]),
+    )
+    let visibleProviders = new Set<string>()
+    if (gatedIds.length > 0) {
+      const { data: vis, error: visError } = await supabase
+        .from('providers_visible')
+        .select('id')
+        .in('id', gatedIds)
+      if (visError) {
+        // FAIL CLOSED. Falling back to the ungated rows would put a blocked
+        // provider back on screen at exactly the moment the check that would
+        // have caught it stopped working.
+        Sentry.captureException(visError, { extra: { where: 'Care Hub visibility' } })
+      } else {
+        visibleProviders = new Set(((vis as { id: string }[] | null) ?? []).map((v) => v.id))
+      }
+    }
+
     setReminders(
-      remRows.map((r) => ({
-        ...r,
-        providerName: r.providerId ? infoMap.get(r.providerId)?.name ?? 'Provider' : null,
-      })),
+      remRows
+        // A provider-bound reminder survives in the database and disappears from
+        // the screen. A generic one has no provider to hide and always stays.
+        .filter((r) => !r.providerId || visibleProviders.has(r.providerId))
+        .map((r) => ({
+          ...r,
+          providerName: r.providerId ? infoMap.get(r.providerId)?.name ?? 'Provider' : null,
+        })),
     )
 
     setUpcoming(
@@ -202,27 +242,10 @@ export default function CareHub() {
     //
     // THE SAVED ROW IS NOT TOUCHED. A block is not an unsave; only the render is
     // gated, and the relationship returns on unblock.
-    const savedIds = savedRows.map((r) => r.providers?.id).filter(Boolean) as string[]
-    let visibleSaved = new Set<string>()
-    if (savedIds.length > 0) {
-      const { data: vis, error: visError } = await supabase
-        .from('providers_visible')
-        .select('id')
-        .in('id', savedIds)
-      if (visError) {
-        // FAIL CLOSED, for the same reason the Me list does: falling back to the
-        // ungated rows would put a blocked provider back on screen at exactly
-        // the moment the check that would have caught it stopped working.
-        Sentry.captureException(visError, { extra: { where: 'Care Hub saved visibility' } })
-      } else {
-        visibleSaved = new Set(((vis as { id: string }[] | null) ?? []).map((v) => v.id))
-      }
-    }
-
     const savedMapped: SavedProvider[] = savedRows
       .map((r) => r.providers)
       .filter((p): p is NonNullable<typeof p> => !!p)
-      .filter((p) => visibleSaved.has(p.id))
+      .filter((p) => visibleProviders.has(p.id))
       .map((p) => ({
         id: p.id,
         name: p.display_name ?? 'Provider',

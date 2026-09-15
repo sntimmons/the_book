@@ -3,7 +3,7 @@ import { join } from 'path'
 
 // ORDINARY SAVED-PROVIDER LIST AND SELECTION SURFACES HONOUR PD-089.
 //
-// SCOPE, BECAUSE THE SCOPE IS THE DECISION (founder ruling, 2026-09-15):
+// SCOPE, BECAUSE THE SCOPE IS THE DECISION:
 //
 //   * A DIRECTLY-OPENED PROVIDER PROFILE IS **OUT** OF PD-089'S HIDING RULE for
 //     the Houston closed beta. It reads base `providers` and base `posts` ON
@@ -112,8 +112,11 @@ describe('Saved does not surface a provider the viewer is blocked with', () => {
   it.each(SAVED_SURFACES)('%s gates its rendered list through providers_visible', (rel) => {
     const src = stripComments(code(rel))
     expect(src).toMatch(/from\(\s*['"]providers_visible['"]\s*\)/)
-    // The gate has to be APPLIED, not merely fetched.
-    expect(src).toMatch(/\.filter\(\([^)]*\) => visible(Saved)?\.has\(/)
+    // The gate has to be APPLIED, not merely fetched — but this must not pin a
+    // LOCAL VARIABLE NAME. An earlier version matched `visible.has(`, so renaming
+    // the set failed a guard that is supposed to be about visibility semantics.
+    // What matters is that a Set membership test filters the rendered rows.
+    expect(src).toMatch(/\.filter\([\s\S]{0,120}?\.has\(/)
   })
 
   it('every saved_providers reader is on the list above', () => {
@@ -160,6 +163,44 @@ describe('Saved does not surface a provider the viewer is blocked with', () => {
     // screen at exactly the moment the check that would have caught it broke.
     const src = stripComments(code(CLIENT_ME))
     expect(src).toMatch(/if \(visError\)[\s\S]{0,200}setSaved\(\[\]\)/)
+  })
+})
+
+describe('provider-bound care reminders are gated; booking history is not', () => {
+  const CARE = stripComments(code(CARE_HUB))
+
+  it('a provider-bound reminder is filtered, a generic one is not', () => {
+    // A reminder tied to a provider names them, says "Time to rebook" and offers
+    // Book — a forward-looking re-engagement surface, so PD-089 applies. One
+    // with no provider id has no identity to hide and must always render.
+    expect(CARE).toMatch(/\.filter\(\(r\) => !r\.providerId \|\| visibleProviders\.has\(r\.providerId\)\)/)
+  })
+
+  it('BOOKING HISTORY IS NOT GATED — PD-089 preserves it', () => {
+    // Narrowing this would hide a live booking counterparty, which is the one
+    // thing the transaction exception exists to prevent.
+    expect(CARE).toMatch(/fetchProviderInfoMap\(providerIds, 'transaction'\)/)
+    // Anchored to the BOOKING ROW ARRAYS, not to a slice between two setters: the
+    // saved-list gate legitimately sits between them, so a positional slice
+    // swept it in and failed on the one use that is supposed to be there.
+    expect(CARE).toMatch(/upRows\.map\(/)
+    expect(CARE).toMatch(/compRows\.map\(/)
+    expect(CARE).not.toMatch(/upRows[\s\S]{0,160}?visibleProviders/)
+    expect(CARE).not.toMatch(/compRows[\s\S]{0,160}?visibleProviders/)
+  })
+
+  it('THE BLOCK GATE NEVER WRITES TO care_reminders', () => {
+    // Scoped to the LOAD path on purpose. `removeReminder` deactivates a
+    // reminder and that is correct — it is the viewer's own explicit "remove
+    // this" action. What must never happen is a BLOCK deactivating one: the row
+    // survives and returns on unblock under its existing active/due rules.
+    const loadStart = CARE.indexOf('const load = useCallback')
+    const loadEnd = CARE.indexOf('useFocusEffect(', loadStart)
+    expect(loadStart).toBeGreaterThan(-1)
+    expect(loadEnd).toBeGreaterThan(loadStart)
+    expect(CARE.slice(loadStart, loadEnd)).not.toMatch(/care_reminders/)
+    // And the one legitimate write is still the user-initiated one.
+    expect(CARE).toMatch(/async function removeReminder/)
   })
 })
 

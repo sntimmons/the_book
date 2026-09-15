@@ -404,9 +404,10 @@ export function useProvider(providerId: string) {
         // BASE `providers`, DELIBERATELY — and this is a decision, not an oversight.
         //
         // A directly-opened profile sits OUTSIDE PD-089's ordinary-surface hiding
-        // rule for the Houston closed beta. Founder ruling 2026-09-15, preserving
-        // PD-090, PD-104 and the reaffirmed OQ-076, which states that "nothing may
-        // be read as having" narrowed it.
+        // rule for the Houston closed beta. THE CLOSED-BETA DIRECT-PROFILE
+        // EXCEPTION IS PRESERVED UNDER PD-090 / PD-104 / OQ-076 — it is not a new
+        // decision and supersedes none of them. OQ-076, reaffirmed 2026-09-13,
+        // states that "nothing may be read as having" narrowed it.
         //
         // The safety reasoning is the point, not a technicality: a profile that
         // 404s for one viewer and resolves for another is a LOUDER viewer-facing
