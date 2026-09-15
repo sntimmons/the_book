@@ -1,7 +1,17 @@
 # Messages — "Working Letter"
 
-**Authoritative for this surface.** The approved art direction for the Messages inbox and the
-conversation thread, and what Session 7B built against it. Cross-app principles live in
+**Authoritative for this surface.** The approved art direction for Messages — the inbox, the
+**first-contact composer**, and the conversation thread — and what Sessions 7B and 7C built
+against it.
+
+**The surface is three screens, not two:**
+
+| Screen | File | Migrated |
+|---|---|---|
+| Inbox | `app/(tabs)/messages.tsx` | Session 7B |
+| First-contact composer | `app/messages/new.tsx` | Session 7C |
+| Conversation thread | `app/messages/[id].tsx` | Session 7B |
+ Cross-app principles live in
 [THIRD_VISUAL_SYSTEM.md](THIRD_VISUAL_SYSTEM.md); nothing here is a global rule unless that
 document says so.
 
@@ -169,17 +179,43 @@ Not provable in the development environment (no Xcode on this machine, Command L
 - **Long-thread scrolling** with day separators interleaved, and `FlatList` performance.
 - **Light/Dark legibility of the slabs** — `bgSurface` against `bgElevated` is one tonal step,
   and one step is exactly where a real screen decides whether it reads.
+- **The composer's `autoFocus`** — the keyboard opens on mount, and how that lands against the
+  header and the docked action is a device question.
 
 ---
 
-## 8. Open, not decided here
+## 8. The first-contact composer
 
-**`app/messages/new.tsx` is unmigrated and IS reachable** — from the provider profile's Message
-control and from the booking flow's datetime step, whenever `messageEntryAction` returns
-`compose`. It is the first-contact request composer. It was left alone in this session because
-conversation creation is not a visual question, and migrating it silently would have widened
-scope. **A user therefore passes from a migrated profile, through a legacy-styled composer, into
-a migrated thread.** That seam is real and is PM's call.
+`app/messages/new.tsx`. Reached from the **provider profile's Message control** and from the
+**booking flow's datetime step**, whenever `messageEntryAction` resolves to `compose` — that is,
+when no conversation exists between the pair, or the one that does was declined.
+
+**It was the broken step in the middle of a migrated journey.** The provider profile is
+migrated and the thread is migrated; this screen was still on the retired The Book palette, so a
+client crossed from Third into The Book and back into Third to send one sentence. Session 7C
+closed that, presentationally and only presentationally.
+
+**It is the entry page into Working Letter, not a third Messages style.** It borrows the
+thread's own vocabulary rather than inventing one: the same hairline-bounded header with the
+monogram in the same place, the same input surface and radius, and a single Mulberry action —
+the same fill Send and Accept take in the thread, appearing exactly once here.
+
+**Nothing functional changed.** `sendPrebookingRequest` still decides everything that matters:
+who may start a conversation, whether an existing thread is reused rather than duplicated, and
+the re-request path for a declined one. The screen calls it, and reports what it says. It
+touches no table itself.
+
+**It reports the helper's refusal verbatim** and falls back to a generic line only when the
+helper gave no reason. That matters because those messages are already curated to avoid raw
+trigger text — including the deliberately neutral *"This conversation cannot be re-opened from
+here."*, which covers a case the repository records as an open product question rather than a
+decided one.
+
+**On success it `replace()`s into the thread**, never pushes, so Back returns to the profile
+rather than to a spent composer.
+
+**The copy was not rewritten.** The one claim worth checking — *"Once they accept, you can chat
+normally"* — is true: `composerState` opens the composer on `accepted`.
 
 ---
 
@@ -197,3 +233,9 @@ a migrated thread.** That seam is real and is PM's call.
 - `__tests__/app/messagesThread.render.test.tsx` — **renders the real thread**: day separators
   derive correctly and emit one per calendar day rather than one per message, and the composer
   opens or closes exactly as `composerState` dictates for open, pending and declined.
+- `__tests__/app/messagesComposer.render.test.tsx` — **renders the real first-contact composer**:
+  the recipient the route supplied is the recipient the send uses, an empty message never sends,
+  success `replace()`s into the thread, a refusal surfaces the helper's own words and stays put,
+  and Back still returns. The guard additionally pins that the screen is **reachable** from both
+  entry points — if that ever stops being true it becomes dead code, and somebody should find
+  out from a failing test rather than a styling audit.

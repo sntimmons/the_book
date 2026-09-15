@@ -45,7 +45,11 @@ function stripComments(src: string): string {
 
 const INBOX = 'app/(tabs)/messages.tsx'
 const THREAD = 'app/messages/[id].tsx'
-const SURFACES = [INBOX, THREAD] as const
+// The first-contact composer is part of this surface, not a neighbour of it: the
+// journey runs provider profile -> composer -> thread, and it was the one step
+// still on the retired palette.
+const COMPOSER = 'app/messages/new.tsx'
+const SURFACES = [INBOX, THREAD, COMPOSER] as const
 
 describe('Messages resolves every colour from the theme', () => {
   it.each(SURFACES)('%s carries no colour literal', (rel) => {
@@ -244,6 +248,54 @@ describe('day separators are derived, not stored', () => {
     const src = stripComments(code(THREAD))
     const helpers = src.slice(src.indexOf('function dayKey'), src.indexOf('export default'))
     expect(helpers).not.toMatch(/supabase|insert|update|\.from\(/)
+  })
+})
+
+describe('the first-contact composer is the entry page into the thread', () => {
+  it('sends through the shared helper and nowhere else', () => {
+    const src = stripComments(code(COMPOSER))
+    expect(src).toMatch(/sendPrebookingRequest\(user\.id, providerId, text\)/)
+    // The screen must not reach the database itself: eligibility, duplicate
+    // handling and the re-request rule all live in that helper.
+    expect(src).not.toMatch(/supabase|\.from\(|\.insert\(/)
+  })
+
+  it('lands the new conversation in the migrated thread', () => {
+    const src = stripComments(code(COMPOSER))
+    expect(src).toMatch(/router\.replace\(`\/messages\/\$\{res\.conversationId\}`/)
+  })
+
+  it('reports the helper\'s error rather than authoring one', () => {
+    const src = stripComments(code(COMPOSER))
+    expect(src).toMatch(/res\.error \?\? 'Please try again\.'/)
+  })
+
+  it('carries one Mulberry action and no other', () => {
+    const src = stripComments(code(COMPOSER))
+    expect((src.match(/actionPrimary/g) ?? []).length).toBe(1)
+  })
+
+  it('IS REACHABLE — the journey this migration exists to join up', () => {
+    // provider profile / booking flow -> openMessageEntry -> (compose) -> here.
+    // If this ever stops being true the screen becomes dead code, and somebody
+    // should find out from a failing test rather than from a styling audit.
+    const hook = stripComments(code('hooks/useMessaging.ts'))
+    expect(hook).toMatch(/pathname: '\/messages\/new'/)
+    expect(hook).toMatch(/messageEntryAction\(/)
+    for (const entry of ['app/providers/[id].tsx', 'app/book/datetime.tsx']) {
+      expect(stripComments(code(entry))).toMatch(/openMessageEntry\(/)
+    }
+  })
+
+  it('adds no capability the thread does not have', () => {
+    const src = stripComments(code(COMPOSER))
+    for (const absent of ['attachment', 'voice', 'typing', 'presence', 'online']) {
+      expect(src.toLowerCase()).not.toContain(absent)
+    }
+    // 'search' is NOT in that list on purpose: `useLocalSearchParams` is the
+    // routing API this screen reads the provider from, and matching the bare
+    // word flagged it. Contact search is asserted by its own shape instead.
+    expect(src).not.toMatch(/searchResults|contactSearch|<SearchInput/)
   })
 })
 
