@@ -248,21 +248,81 @@ async function seedDiscoverContent(admin, providerUserId, providerId, clientUser
     }),
   }
 
-  // The follow that makes `From people you follow` eligible for this viewer.
-  const { data: follow } = await admin
+  // ── THE FOLLOWS ─────────────────────────────────────────────────────
+  //
+  // `From people you follow` is gated on VIEWER FOLLOW STATE, not on role. A
+  // provider browsing Discover is a client like anyone else, and sees the row
+  // whenever THEY follow somebody with recent work.
+  //
+  // Both reserved accounts are therefore seeded as followers, so QA can review
+  // the row from either side of the switcher. Seeding only the client made the
+  // row look client-only and cost a review cycle to a false defect report.
+  await ensureFollow(admin, providerId, clientUserId)
+
+  // The provider account needs somebody ELSE to follow — a provider cannot
+  // follow themselves, and the row would be meaningless if they could. Any
+  // second approved provider will do; it is discovered rather than hardcoded so
+  // this does not pin the seed to one non-production row.
+  const second = await findSecondProvider(admin, providerId)
+  let providerFollows = null
+  if (second) {
+    const work = await putMedia(admin, second.user_id, 'work1')
+    await ensurePost(admin, second.id, {
+      provider_id: second.id,
+      media_url: work,
+      media_type: 'image',
+      content_type: 'portfolio',
+      caption: 'QA seed — portfolio image',
+      is_active: true,
+      is_demo: false,
+    })
+    await ensureFollow(admin, second.id, providerUserId)
+    providerFollows = { providerId: second.id, displayName: second.display_name }
+  }
+
+  return {
+    posts,
+    follows: {
+      clientFollows: { providerId, follower: clientUserId },
+      // Null when non-production has only one approved provider. Reported rather
+      // than silently skipped: without it the provider account sees no row, and
+      // a QA reviewer needs to know that is the data and not the code.
+      providerFollows: providerFollows
+        ? { ...providerFollows, follower: providerUserId }
+        : null,
+    },
+  }
+}
+
+/** Insert a follow once. The pair is the identity, so a re-run is a no-op. */
+async function ensureFollow(admin, providerId, followerUserId) {
+  const { data: existing } = await admin
     .from('provider_follows')
     .select('id')
     .eq('provider_id', providerId)
-    .eq('follower_user_id', clientUserId)
+    .eq('follower_user_id', followerUserId)
     .maybeSingle()
-  if (!follow) {
-    const { error } = await admin
-      .from('provider_follows')
-      .insert({ provider_id: providerId, follower_user_id: clientUserId })
-    if (error) throw new Error(`follow insert: ${error.message}`)
-  }
+  if (existing) return existing.id
+  const { data, error } = await admin
+    .from('provider_follows')
+    .insert({ provider_id: providerId, follower_user_id: followerUserId })
+    .select('id')
+    .single()
+  if (error) throw new Error(`follow insert: ${error.message}`)
+  return data.id
+}
 
-  return { posts, followedProviderId: providerId, follower: clientUserId }
+/** Any approved provider that is not the QA provider and still has an owner. */
+async function findSecondProvider(admin, excludeProviderId) {
+  const { data } = await admin
+    .from('providers')
+    .select('id, user_id, display_name')
+    .eq('is_approved', true)
+    .not('user_id', 'is', null)
+    .neq('id', excludeProviderId)
+    .order('display_name')
+    .limit(1)
+  return data && data.length > 0 ? data[0] : null
 }
 
 main().catch((e) => {

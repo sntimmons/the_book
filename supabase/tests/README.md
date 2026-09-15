@@ -203,25 +203,34 @@ Media is uploaded from the repository's own assets into the non-production `post
 bucket under `<providerUserId>/qa-seed/`, at deterministic paths so re-running the seed
 overwrites rather than accumulates.
 
-### ⚠ Which QA account you sign in as decides what you see
+### The followed row depends on FOLLOW STATE, not on role
 
-**`From people you follow` only renders for `client@thebook.dev`.**
+**`From people you follow` is not client-only.** A provider browsing Discover is a client
+like anyone else: any signed-in account sees the row whenever **that account** follows a
+provider with recent eligible activity. There is no role gate anywhere in the path —
+`lib/discoverSocial.ts` takes a user id and reads `provider_follows.follower_user_id`, and
+`app/(tabs)/index.tsx` does not reference `isProvider` at all.
 
-The seed makes the QA **client** follow the QA **provider**. The row is viewer-specific by
-construction — the follow set is read first and bounds everything after it — so signing in
-as `provider@thebook.dev`, who follows nobody, correctly renders **nothing**. So does any
-other account.
+The seed therefore makes **both** reserved accounts followers, so the row can be reviewed
+from either side of the `__DEV__` switcher:
 
-`See the work` is **not** viewer-specific and appears for every signed-in account, which
-makes the two rows easy to misread: seeing the reel row but not the followed row looks like
-a bug in the followed row and is usually just the wrong account.
-
-**If the followed row is missing, check the signed-in account first.** Verified 2026-09-15
-by running the shipped `fetchFollowedActivity` against non-production:
-
-| Account | `provider_follows` rows | `fetchFollowedActivity()` | `fetchDiscoverReels()` |
+| Account | Follows | `fetchFollowedActivity()` | `fetchDiscoverReels()` |
 |---|---|---|---|
-| `client@thebook.dev` | 1 | **3 items** | 1 item |
-| `provider@thebook.dev` | 0 | **0 items** | 1 item |
+| `client@thebook.dev` | the QA provider | **3 items** | 1 item |
+| `provider@thebook.dev` | a second approved provider | **1 item** | 1 item |
 
-Nothing hides the row for the client account; nothing can show it for the provider account.
+Verified 2026-09-15 by running the shipped `fetchFollowedActivity` against non-production,
+once per account.
+
+The provider account follows a **different** provider because nobody can follow themselves,
+and the second provider is **discovered at seed time** rather than hardcoded. If
+non-production ever has only one approved provider, the seed reports
+`providerFollows: null` in its output rather than skipping silently — without it the
+provider account sees no row, and a reviewer needs to know that is the data and not a
+defect.
+
+**If the row is missing, check what that specific account follows.** An account that
+follows nobody correctly sees nothing — that is the locked behaviour (hidden when empty, no
+filler, no fallback to strangers), not a bug. `See the work` is not viewer-specific and
+appears for everyone, so seeing one row and not the other is normal and says nothing about
+either.
