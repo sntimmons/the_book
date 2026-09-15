@@ -1153,70 +1153,83 @@ edited historical file. Process and the dated record:
 > migrations").
 
 
-### Block visibility — the public provider profile was reading base tables (CODE-DRIFT-008)
+### Block visibility on ordinary saved-provider surfaces (CODE-DRIFT-008, split)
 
-**Fixed 2026-09-15.** A safety/privacy correction, handled separately from the visual buildout
-because build-first explicitly does not waive safety defects.
+**2026-09-15.** CODE-DRIFT-008 was originally filed as one finding covering both the directly
+opened provider profile and the saved-provider lists. **A founder ruling split it**, and the two
+halves have opposite answers. They are recorded separately here so a future engineer does not
+reopen the same conflict.
 
-**PD-089** says a blocked person disappears from each other's ordinary discovery and content
-surfaces, and it is implemented as `SECURITY DEFINER` views that return already-filtered content.
-Discover, search, Reels and Community all read those views. **The public provider profile did
-not.** `useProvider()` read base `providers` and the profile's media read base `posts`, so a
-viewer who had blocked a provider — **or been blocked by one** — could open that provider's
-profile from a saved entry, a follow or a remembered link and see their identity, portfolio,
-reels and process shots in full. Confirmed at runtime against non-production in both directions.
+#### The directly opened provider profile — ACCEPTED BEHAVIOUR, NOT A DEFECT
 
-> **THIS IS CONTESTED AND IS NOT SETTLED. A FOUNDER RULING IS OWED.**
->
-> The change was built on the reading that PD-090's carve-out never covered this — PD-100
-> justifies accepting the inference residual with the words *"the ordinary app reads only the
-> views,"* and that premise was false on this surface.
->
-> **Two authoritative artifacts say the opposite, and both were missed when this was built.**
-> **PD-104 (LOCKED)** describes the profile reading base `providers` as *"an explicit earlier
-> decision that a directly-opened profile is not a discovery surface — **correct for a PD-089
-> block**."* And **OQ-076, REAFFIRMED on 2026-09-13**, states that *"a **directly-opened profile
-> deliberately still reads base `providers`** — which is the diffability PD-090 accepted for the
-> Houston closed beta, **not a new leak**… Nothing in the audit narrowed it and **nothing may be
-> read as having done so.**"* That last clause forecloses precisely the reinterpretation this
-> change rests on.
->
-> **A counter-argument was also never rebutted.** `20261064000000` left the profile on the base
-> table partly because *"Hiding it would also ANNOUNCE: a profile that 404s for one person and
-> not another is a louder signal than a card missing from a list."* That is a safety argument
-> **against** this change, and it has not been answered either way.
->
-> **What the change does alter in the old reasoning:** that same comment justified the exemption
-> because the profile is *"reached from a saved provider, a message thread or a past booking, all
-> of which PD-089 preserves."* Gating Saved removes one of those three reach paths. Whether that
-> is enough to reclassify the profile is a product question, not an engineering one.
->
-> **Until a ruling: this is an unmerged branch, not the state of `main`.** It must not be read as
-> having narrowed OQ-076 or amended PD-104.
+**A directly opened provider profile remains outside PD-089's ordinary-surface hiding rule for
+the Houston closed beta.** It reads base `providers` and base `posts`, deliberately.
+**PD-090 is unchanged. PD-104 is unchanged. OQ-076 remains reaffirmed** and carried to the
+pre-public-launch privacy/security revisit.
 
-**What changed.** `useProvider()` now reads `providers_visible`; the profile's media read now uses
-`posts_visible`; and Client Me → Saved gates its rendered rows through `providers_visible`. A
-filtered provider falls into the screen's **pre-existing "Provider not found" state** — the same
-words a genuinely missing id produces, so the unavailable state never explains itself.
+**The safety rationale is the substance, not a formality:** making a profile 404 for one viewer
+while it resolves for another would create a **louder viewer-facing block signal** than the
+diffability the closed beta already accepts. Hiding here would announce.
 
-**A block is not an unsave.** The `saved_providers` row is never deleted; it stops being rendered
-while the block applies and returns on unblock. Asserted in the DB suite.
+A branch briefly moved this surface onto the `_visible` views and was **reverted before merge**.
+Nothing was narrowed and **nothing may be read as having narrowed it**. There is deliberately no
+partial state: identity and media answer the same way, because a profile that resolved the
+provider while emptying their portfolio would signal the block louder than either consistent
+answer.
 
-**One migration, additive only.** `20261138000000_a_profile_is_an_ordinary_surface.sql` recreates
-`posts_visible` with `sort_order` — the provider's own curation of how their work is presented,
-which the view could not express, which is exactly why the profile had a motive to stay on the
-base table. **Every predicate, `security_invoker = false`, ownership and the `anon, authenticated`
-grants are carried over unchanged**; the superseded `20261111000000` is not edited.
+The live `providers_visible` database comment describing this exception is intentionally left
+intact.
 
-**Deliberately unchanged:** every live-transaction and own-data read. PD-089's exception is not a
-courtesy — two people inside a live booking or barter must still see each other's name, terms and
-appointment, or a block would strand a trade. Bookings, message threads, reviews, contracts,
-notifications, the provider's own Business tabs, and the blocked-people list in `lib/safety.ts`
-all still read the base tables, and a guard asserts they continue to.
+#### Ordinary saved-provider list and selection surfaces — DRIFT CORRECTED
 
-Coverage: `supabase/tests/blocked_surfaces.test.sql` § 6 (both directions, unblock restores,
-saved row survives, curation order intact, deletion rule unchanged) and
-`__tests__/guards/blockVisibilityIntegrity.test.ts`.
+Three surfaces rendered a provider the viewer is blocked with, from an un-gated
+`saved_providers → providers` embed. These are lists and pickers, not a directly opened profile,
+and PD-089 covers them:
+
+| Surface | Was | Now |
+|---|---|---|
+| **Client Me → Saved** | base embed, rendered | gated through `providers_visible` |
+| **Care Hub → saved providers** | base embed, rendered **with a Book control** | gated |
+| **Care Hub → Add Reminder chips** | base embed, selectable | gated |
+
+All three **fail closed**: if the visibility read itself errors, none render, because falling
+back to the ungated list would put a blocked provider back on screen at exactly the moment the
+check that would have caught it stopped working.
+
+**A block hides; it does not delete.** The `saved_providers` row is never touched — the
+relationship is the viewer's own choice, it survives the block, and it returns on unblock.
+Asserted in the DB suite.
+
+**No migration, no view change, no schema change.** The `posts_visible` + `sort_order` migration
+existed only to serve the profile change and was removed with it; non-production was restored to
+the `20261111000000` definition (14 columns, no `sort_order`, owner and grants verified) and its
+migration record removed, so the database and the migration set match exactly.
+
+#### One client fix that is NOT about blocking
+
+`useProvider` refetches on focus, and its error path left the previously-fetched provider
+rendered. It now clears on **PGRST116 only** — PostgREST's "no rows for `.single()`".
+
+**Verified at runtime that this cannot touch block behaviour:** base `providers` carries no block
+predicate, so under a block in either direction the row still returns and no PGRST116 occurs. The
+condition that *does* reach it is an **open deletion request, an erased account or an ownerless
+shell** — precisely the case **PD-104 records the profile screen getting wrong**, where the rule
+is about the row and applies to everyone. A network failure deliberately does not clear, so a
+transient error cannot blank a profile the viewer is legitimately looking at.
+
+#### Returned, not actioned
+
+- **`/reviews/all/[id]`** reads base `providers`. **PD-089 explicitly preserves review access**,
+  so it is unchanged and is **not** a defect. Recorded separately: the route also offers a **Book
+  action**, which may warrant a later action-state review. That is not a reason to hide the
+  review surface.
+- **`provider_services`** left unchanged; no `provider_services_visible` was created.
+- The `lib/providerVisibility.ts` extraction and brittle-test cleanup are **deferred**.
+
+Coverage: `supabase/tests/blocked_surfaces.test.sql` § 6 — which pins **both** halves, including
+that a directly-opened profile **still resolves under a block** — and
+`__tests__/guards/blockVisibilityIntegrity.test.ts`, whose census enumerates every
+`saved_providers` reader and fails when a new one appears unclassified.
 
 ---
 

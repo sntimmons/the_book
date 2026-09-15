@@ -1996,35 +1996,31 @@ annotated where it fires.
 `.env.tooling.local` resolve to `wcoyjeklscuqsumpjpfo`; no production credential
 exists in the working environment.
 
-## 2026-09-15 — `20261138000000` **APPLIED to non-production and VERIFIED** (block visibility, CODE-DRIFT-008)
+## 2026-09-15 — `20261138000000` **APPLIED, THEN REVERTED AND WITHDRAWN** (block visibility ruling)
 
-One view, one column added. No table, no RLS policy, no function, no grant change.
+**No migration survives from this work. The highest applied version on non-production is
+`20261137000000`, and it matches the migration set exactly.** This entry exists because the file
+was briefly applied, and a version row with no corresponding file is the drift this ledger is for.
 
-**`20261138000000` — a profile is an ordinary surface.** `posts_visible` did not expose
-`sort_order`, and the public provider profile orders portfolio, reels and process media by it —
-the provider's own curation of how their work is presented. Lacking it in the view, the profile
-read base `posts` instead, which meant it also bypassed the view's **bidirectional block filter**:
-a viewer who had blocked a provider, or been blocked by one, saw their media in full. The same
-screen read base `providers` for identity, with the same result.
+`20261138000000_a_profile_is_an_ordinary_surface.sql` recreated `posts_visible` with
+`sort_order`, to let the public provider profile read the block-filtered view while preserving
+the provider's own curation order. It was applied to `wcoyjeklscuqsumpjpfo` via
+`supabase db push --linked`.
 
-The view is recreated with **`p.sort_order` as the only addition**. Every predicate is carried
-over character for character — the `is_active` gate, both legs of the block filter, and the
-`account_unavailable` exclusion. `security_invoker = false` is retained, so the view keeps
-applying its predicate as its postgres owner rather than as the caller, which is the mechanism
-`20261066000000` and `20261094000000` exist to defend. Ownership is restated and the grants are
-restated to exactly what `20261066000000` set: `select` to `anon, authenticated`, nothing wider.
+**A founder ruling then withdrew the change it existed to serve.** A directly opened provider
+profile remains outside PD-089's ordinary-surface hiding rule for the Houston closed beta,
+preserving PD-090, PD-104 and the reaffirmed OQ-076. With the profile back on base `posts`,
+nothing required `sort_order` in the view.
 
-**Supersedes** the definition in `20261111000000`. That file is **not edited** — the superseded
-definition remains there, without `sort_order`, and a guard asserts it stays that way.
+**Reverted, and verified rather than assumed.** `create or replace view` cannot drop a column, so
+`posts_visible` was dropped and recreated from the `20261111000000` definition, with ownership
+and the `20261066000000` grants restored in the same statement. Confirmed by catalog query:
+**14 columns, no `sort_order`, owner `postgres`, `reloptions = security_invoker=false`, SELECT
+held by `anon` and `authenticated`.** The `20261138000000` row was then deleted from
+`supabase_migrations.schema_migrations`, and `max(version)` is back to `20261137000000`.
 
-Applied to `wcoyjeklscuqsumpjpfo` via `supabase db push --linked` — an ordinary forward apply.
-
-**Verified at runtime, not only by reading SQL.** With two real seeded accounts: before any
-block the profile's exact queries return identity and 3 media items; with A→B blocked, identity
-returns `PGRST116` (no row) and media returns 0; with B→A blocked, the same in reverse; after
-unblock both return in full. A deliberate non-default curation order (`10,20,30`) round-trips
-through the view in the same sequence the base table produces. The `saved_providers` row survives
-every block and unblock. Non-production seed data was restored afterwards.
+The migration file is deleted from the branch. **`20261111000000` remains the live definition of
+`posts_visible` and was never edited.**
 
 ---
 

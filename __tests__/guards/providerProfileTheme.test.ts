@@ -116,13 +116,15 @@ describe('the data path reads only what already exists', () => {
   it('partitions process out of the same posts read, with no new content type', () => {
     expect(page).toMatch(/content_type === 'process'/)
     // One posts read, partitioned three ways — not three queries and not a
-    // second content type. THE PROPERTY IS "ONE READ", NOT "THE BASE TABLE":
-    // CODE-DRIFT-008 moved this read to `posts_visible`, because reading base
-    // `posts` here rendered a blocked provider's portfolio in full. The
-    // partitioning this guards is unchanged, and the count still has to be one.
-    expect((page.match(/\.from\('posts_visible'\)/g) ?? []).length).toBe(1)
-    expect((page.match(/\.from\('posts'\)/g) ?? []).length).toBe(0)
+    // second content type.
+    //
+    // BASE `posts`, AND THAT IS THE RULING. A directly-opened profile sits
+    // outside PD-089's ordinary-surface hiding rule for the closed beta
+    // (founder ruling 2026-09-15, preserving PD-090/PD-104/OQ-076). This
+    // assertion was briefly retargeted to `posts_visible` and is restored.
+    expect((page.match(/\.from\('posts'\)/g) ?? []).length).toBe(1)
   })
+
 
   it('does not read the owner-only booking preferences table', () => {
     // provider_booking_preferences is readable ONLY by the provider who owns the

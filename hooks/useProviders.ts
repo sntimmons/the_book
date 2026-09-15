@@ -401,27 +401,22 @@ export function useProvider(providerId: string) {
       setLoading(true)
 
       const [providerRes, servicesRes] = await Promise.all([
-        // PD-089: `providers_visible`, not `providers`. A profile reached
-        // DIRECTLY — from a saved entry, a follow, a past thread or a remembered
-        // link — used to read the base table, so a viewer who had blocked this
-        // provider, or been blocked by them, still got the whole profile. Every
-        // other discovery surface already read the view; this one did not, and it
-        // is the surface all of them navigate INTO (CODE-DRIFT-008).
+        // BASE `providers`, DELIBERATELY — and this is a decision, not an oversight.
         //
-        // PD-090 does not authorise the old behaviour. It accepts that a
-        // determined user may INFER a block by diffing a table against its view;
-        // it does not accept the app serving the blocked person's profile in
-        // ordinary navigation.
+        // A directly-opened profile sits OUTSIDE PD-089's ordinary-surface hiding
+        // rule for the Houston closed beta. Founder ruling 2026-09-15, preserving
+        // PD-090, PD-104 and the reaffirmed OQ-076, which states that "nothing may
+        // be read as having" narrowed it.
         //
-        // The view exposes exactly PUBLIC_PROVIDER_FIELDS, so nothing is lost. A
-        // filtered row returns no rows, `.single()` errors, and the screen falls
-        // into its EXISTING "Provider not found" state — the same words a genuine
-        // missing id produces, which is what keeps it from announcing a block.
-        supabase
-          .from('providers_visible')
-          .select(PUBLIC_PROVIDER_FIELDS)
-          .eq('id', providerId)
-          .single(),
+        // The safety reasoning is the point, not a technicality: a profile that
+        // 404s for one viewer and resolves for another is a LOUDER viewer-facing
+        // block signal than the diffability the closed beta already accepts. So
+        // this read is not a leak to be closed — hiding here would announce.
+        //
+        // The ordinary LIST and SELECTION surfaces are a different question and
+        // are gated: Me -> Saved, the Care Hub saved list, and the Add Reminder
+        // chips all filter through `providers_visible`.
+        supabase.from('providers').select(PUBLIC_PROVIDER_FIELDS).eq('id', providerId).single(),
         supabase
           .from('provider_services')
           .select('*')
@@ -438,16 +433,24 @@ export function useProvider(providerId: string) {
       console.log('Fetch provider error:', err)
       // A REFETCH THAT FINDS NO ROW MUST CLEAR WHAT IS ON SCREEN.
       //
-      // This hook refetches on focus. On first mount an error leaves `provider`
-      // null and the screen shows "Provider not found", which is correct — but
-      // on a refetch the previously-fetched row stayed rendered, so if the OTHER
-      // party blocked while the screen sat in the nav stack, their identity and
-      // media kept rendering on every focus until unmount.
+      // THIS IS THE PD-102 / PD-104 RULE, NOT THE BLOCK RULE, and the distinction
+      // is load-bearing. This read is base `providers`, whose policy is
+      // `not account_unavailable(user_id) or owner or operator or
+      // caller_deals_with_provider` — it carries NO block predicate. Verified at
+      // runtime against non-production: under a block in either direction the row
+      // still returns and the profile still resolves, exactly as before. A block
+      // cannot reach this branch, so nothing here narrows PD-090 or OQ-076.
       //
-      // Cleared ONLY on PGRST116 — PostgREST's "no rows for .single()", which is
-      // what a filtered, deleted or missing row produces. A network failure or a
-      // transient 5xx must NOT blank a profile the viewer is legitimately
-      // looking at, so those fall through and leave the last good render alone.
+      // What DOES reach it is an open deletion request, an erased account or an
+      // ownerless shell — the case PD-104 records the profile screen getting
+      // wrong, where the rule is about the row and applies to everyone. This hook
+      // refetches on focus, and the error path used to leave the last good row
+      // rendered: a provider who requested deletion while the viewer had their
+      // profile open kept rendering on every focus until unmount.
+      //
+      // Cleared ONLY on PGRST116 — PostgREST's "no rows for .single()". A network
+      // failure or a transient 5xx must not blank a profile the viewer is
+      // legitimately looking at, so those fall through untouched.
       if (err?.code === 'PGRST116') {
         setProvider(null)
         setServices([])

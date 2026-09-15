@@ -396,123 +396,99 @@ begin
   perform pg_temp.act_service();
 end $$;
 
--- ══ 6. THE PUBLIC PROVIDER PROFILE IS AN ORDINARY SURFACE ═════════════════
+-- ══ 6. ORDINARY SAVED-PROVIDER SURFACES, AND THE PROFILE EXCEPTION ════════
 --
--- CODE-DRIFT-008. Every assertion above proved the VIEWS filter correctly; none
--- proved the profile screen used them, and it did not. `useProvider` read base
--- `providers` and the profile's media read base `posts`, so the one surface the
--- whole discovery funnel navigates INTO rendered a blocked provider in full,
--- reachable from a saved entry, a follow or a remembered link.
+-- SCOPE IS THE DECISION HERE, so it is stated before the assertions.
 --
--- PD-090 does not cover it. Inferring a block by diffing a table against its
--- view is the accepted residual; the app serving the blocked person's profile in
--- ordinary navigation is not, and these pin the difference.
+-- A DIRECTLY-OPENED PROVIDER PROFILE IS OUTSIDE PD-089's hiding rule for the
+-- Houston closed beta — founder ruling 2026-09-15, preserving PD-090, PD-104 and
+-- the reaffirmed OQ-076. It reads base `providers` and base `posts` on purpose.
+-- The reasoning is a safety argument, not an oversight: a profile that 404s for
+-- one viewer and resolves for another is a LOUDER viewer-facing block signal than
+-- the diffability the closed beta already accepts. The first assertion below pins
+-- that exception so a future reader does not "fix" it back into a defect.
 --
--- `sort_order` is asserted alongside, because it is the reason the profile had a
--- motive to stay on the base table: the view could not express the provider's
--- own curation until 20261138000000 added it.
+-- ORDINARY LIST AND SELECTION surfaces are a different question and ARE filtered:
+-- Me -> Saved, the Care Hub saved list, the Add Reminder chips. Those read
+-- `providers_visible`, and the rest of this section is about them.
+--
+-- A BLOCK HIDES; IT DOES NOT DELETE. The saved relationship is the viewer's own
+-- choice and survives, or unblocking would silently lose it.
 do $$
 declare
   au uuid := current_setting('b5c.a')::uuid;
   bu uuid := current_setting('b5c.b')::uuid;
   cu uuid := current_setting('b5c.c')::uuid;
-  pa uuid := current_setting('b5c.pa')::uuid;
   pb uuid := current_setting('b5c.pb')::uuid;
-  v_n integer; v_order text;
+  v_n integer;
 begin
-  perform pg_temp.act_service();
-  delete from public.posts where provider_id in (pa, pb);
-  -- A deliberately non-default curation order, so "ordered" cannot pass by
-  -- accident on rows that all carry 0.
-  insert into public.posts(provider_id, media_url, media_type, content_type,
-                           is_active, is_demo, sort_order)
-  values (pb, 'https://example.invalid/b3.jpg', 'image', 'portfolio', true, false, 30),
-         (pb, 'https://example.invalid/b1.jpg', 'image', 'portfolio', true, false, 10),
-         (pb, 'https://example.invalid/b2.jpg', 'image', 'portfolio', true, false, 20);
-
-  -- Before any block, the profile's exact reads both answer.
-  perform pg_temp.act(au);
-  select count(*) into v_n from public.providers_visible where id = pb;
-  perform pg_temp.chk('blockedsurfaces', 'profile identity resolves before a block',
-    '1', v_n::text);
-  select string_agg(sort_order::text, ',' order by sort_order) into v_order
-    from public.posts_visible where provider_id = pb and is_demo = false;
-  perform pg_temp.chk('blockedsurfaces',
-    'and the view carries the provider''s own curation order', '10,20,30', v_order);
-
-  -- A blocks B. The blocker gets neither identity nor media.
   perform pg_temp.act_service();
   insert into public.user_blocks(blocker_user_id, blocked_user_id) values (au, bu)
     on conflict do nothing;
-  perform pg_temp.act(au);
-  select count(*) into v_n from public.providers_visible where id = pb;
-  perform pg_temp.chk('blockedsurfaces',
-    'THE BLOCKER CANNOT RESOLVE THEIR PROFILE IDENTITY', '0', v_n::text);
-  select count(*) into v_n from public.posts_visible where provider_id = pb;
-  perform pg_temp.chk('blockedsurfaces',
-    'nor any of their public profile media', '0', v_n::text);
-
-  -- The other direction, which a one-sided filter gets wrong.
-  perform pg_temp.act(bu);
-  select count(*) into v_n from public.providers_visible where id = pa;
-  perform pg_temp.chk('blockedsurfaces',
-    'AND THE BLOCKED PARTY CANNOT RESOLVE THE BLOCKER''S PROFILE', '0', v_n::text);
-  select count(*) into v_n from public.posts_visible where provider_id = pa;
-  perform pg_temp.chk('blockedsurfaces',
-    'nor the blocker''s public profile media', '0', v_n::text);
-
-  -- A saved relationship is a choice the viewer made. A block hides it; a block
-  -- must not delete it, or unblocking would silently lose it.
-  perform pg_temp.act_service();
   insert into public.saved_providers(user_id, provider_id) values (au, pb)
     on conflict do nothing;
+
+  -- THE EXCEPTION, PINNED. Base `providers` carries no block predicate, so a
+  -- directly-opened profile still resolves for a blocker. If this ever starts
+  -- returning 0, PD-090 / PD-104 / OQ-076 have been narrowed without a ruling.
   perform pg_temp.act(au);
+  select count(*) into v_n from public.providers where id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'A DIRECTLY-OPENED PROFILE STILL RESOLVES UNDER A BLOCK (PD-090/PD-104/OQ-076)',
+    '1', v_n::text);
+
+  -- And the ordinary saved LIST does not, because it reads the view.
   select count(*) into v_n from public.providers_visible where id = pb;
   perform pg_temp.chk('blockedsurfaces',
-    'a saved provider under a block is not visible to render', '0', v_n::text);
+    'but the saved-list read of the same provider returns nothing', '0', v_n::text);
+
+  -- The relationship itself is untouched by either.
   perform pg_temp.act_service();
   select count(*) into v_n from public.saved_providers
     where user_id = au and provider_id = pb;
   perform pg_temp.chk('blockedsurfaces',
-    'BUT THE SAVED ROW ITSELF SURVIVES THE BLOCK', '1', v_n::text);
+    'THE SAVED ROW SURVIVES THE BLOCK', '1', v_n::text);
 
-  -- A bystander is unaffected, in identity, media and order.
+  -- Symmetry: the blocked party's saved-list read is filtered too.
+  perform pg_temp.act(bu);
+  select count(*) into v_n from public.providers_visible
+    where id = current_setting('b5c.pa')::uuid;
+  perform pg_temp.chk('blockedsurfaces',
+    'and the blocked party''s saved list is filtered in the same way', '0', v_n::text);
+
+  -- A bystander is unaffected on both.
   perform pg_temp.act(cu);
   select count(*) into v_n from public.providers_visible where id = pb;
   perform pg_temp.chk('blockedsurfaces',
-    'an unrelated viewer still resolves the profile', '1', v_n::text);
-  select string_agg(sort_order::text, ',' order by sort_order) into v_order
-    from public.posts_visible where provider_id = pb and is_demo = false;
-  perform pg_temp.chk('blockedsurfaces',
-    'with the curation order intact', '10,20,30', v_order);
+    'an unrelated viewer still sees them in a saved list', '1', v_n::text);
 
-  -- Unblocking restores ordinary visibility, and the saved row is still there.
+  -- Unblocking restores the list, and the saved row is still there to restore.
   perform pg_temp.act(au);
   delete from public.user_blocks where blocker_user_id = au and blocked_user_id = bu;
   select count(*) into v_n from public.providers_visible where id = pb;
   perform pg_temp.chk('blockedsurfaces',
-    'unblocking restores the profile identity', '1', v_n::text);
-  select count(*) into v_n from public.posts_visible where provider_id = pb;
-  perform pg_temp.chk('blockedsurfaces', 'and its media', '3', v_n::text);
-
-  -- The deletion rule is a DIFFERENT rule and this change must not have moved
-  -- it: an unavailable owner hides the content from everyone, block or no block.
+    'unblocking restores them to the saved list', '1', v_n::text);
   perform pg_temp.act_service();
+  select count(*) into v_n from public.saved_providers
+    where user_id = au and provider_id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'with the saved relationship intact throughout', '1', v_n::text);
+
+  -- THE DELETION RULE IS A DIFFERENT RULE and applies to everyone, including on
+  -- the directly-opened profile the block rule deliberately leaves alone. This is
+  -- what PD-104 records the profile screen getting wrong, and it is the condition
+  -- the client's PGRST116 handling exists for.
   insert into public.account_deletion_requests(subject_user_id, subject_id, status,
                                                grace_ends_at, disclosed_grace_days)
   values (bu, bu, 'requested', now() + interval '7 days', 7);
   perform pg_temp.act(cu);
-  select count(*) into v_n from public.providers_visible where id = pb;
+  select count(*) into v_n from public.providers where id = pb;
   perform pg_temp.chk('blockedsurfaces',
-    'provider-content-hidden still hides an unavailable owner from a bystander',
-    '0', v_n::text);
-  select count(*) into v_n from public.posts_visible where provider_id = pb;
-  perform pg_temp.chk('blockedsurfaces', 'and their media with them', '0', v_n::text);
+    'an unavailable owner IS hidden from the base table, for everyone', '0', v_n::text);
 
   perform pg_temp.act_service();
   delete from public.account_deletion_requests where subject_user_id = bu;
   delete from public.saved_providers where user_id = au and provider_id = pb;
-  delete from public.posts where provider_id in (pa, pb);
 end $$;
 
 select pg_temp.act_service();

@@ -213,21 +213,17 @@ export default function ProviderProfilePage() {
       return
     }
     ;(async () => {
-      // PD-089: `posts_visible`, not `posts`. This screen used to read the base
-      // table, so a provider's portfolio, reels and process shots rendered in
-      // full across a block in either direction — on the one surface the whole
-      // discovery funnel routes into (CODE-DRIFT-008).
-      //
-      // `is_active` is dropped from the filter because the view already enforces
-      // it; `is_demo` stays, because the view deliberately carries the column
-      // rather than filtering on it — demo content is a seeding concern, not a
-      // visibility one. `sort_order` is the provider's own curation of how their
-      // work reads, and 20261138000000 added it to the view precisely so this
-      // screen would not have to return to the base table to get it.
+      // BASE `posts`, MATCHING THE IDENTITY READ ABOVE. A directly-opened
+      // profile is outside PD-089's ordinary-surface rule for the closed beta
+      // (founder ruling 2026-09-15), and identity and media have to answer the
+      // same way: a profile that resolves the provider but empties their
+      // portfolio and reels under a block would be a partial state that signals
+      // the block louder than either consistent answer.
       const { data, error } = await supabase
-        .from('posts_visible')
+        .from('posts')
         .select('id, media_url, media_type, content_type, caption, sort_order')
         .eq('provider_id', providerId)
+        .eq('is_active', true)
         .eq('is_demo', false)
         .order('sort_order', { ascending: true })
       if (cancelled) return

@@ -1,22 +1,26 @@
 import { readFileSync } from 'fs'
 import { join } from 'path'
 
-// ORDINARY VIEWER-FACING SURFACES READ THE BLOCK-AWARE VIEWS (CODE-DRIFT-008).
+// ORDINARY SAVED-PROVIDER LIST AND SELECTION SURFACES HONOUR PD-089.
 //
-// PD-089 says a blocked person disappears from each other's ordinary discovery
-// and content surfaces. The VIEWS enforce that; a screen only inherits it by
-// reading them. Discover and search did. The public provider profile — the
-// surface the whole funnel navigates into — did not, and rendered a blocked
-// provider's identity and portfolio in full.
+// SCOPE, BECAUSE THE SCOPE IS THE DECISION (founder ruling, 2026-09-15):
+//
+//   * A DIRECTLY-OPENED PROVIDER PROFILE IS **OUT** OF PD-089'S HIDING RULE for
+//     the Houston closed beta. It reads base `providers` and base `posts` ON
+//     PURPOSE, preserving PD-090, PD-104 and the reaffirmed OQ-076. That is
+//     ACCEPTED BEHAVIOUR, NOT A DEFECT, and this file asserts it stays that way
+//     so nobody "fixes" it again. The safety reasoning is the point: a profile
+//     that 404s for one viewer and resolves for another is a louder block signal
+//     than the diffability the closed beta already accepts.
+//
+//   * ORDINARY LISTS AND SELECTION SURFACES are **in**. Me -> Saved, the Care Hub
+//     saved list and the Add Reminder chips each rendered a provider the viewer
+//     was blocked with, from an un-gated `saved_providers -> providers` embed.
+//     Those are corrected here.
 //
 // Source-level because the failure is a one-word substitution that renders
-// perfectly: `from('providers')` instead of `from('providers_visible')` throws
-// nothing, shows a complete screen, and is invisible to anyone not holding two
-// accounts and a block between them.
-//
-// PD-090 is not a defence for it. Inferring that a block exists by diffing a
-// table against its view is the accepted residual; the app itself serving the
-// blocked person in ordinary navigation is not.
+// perfectly. The census below exists because the first version of this guard was
+// an allow-list of three files and was GREEN while a fourth surface leaked.
 
 const code = (rel: string) => readFileSync(join(process.cwd(), rel), 'utf8')
 
@@ -65,42 +69,33 @@ const CARE_HUB = 'app/care/index.tsx'
 const CARE_ADD_REMINDER = 'app/care/add-reminder.tsx'
 const SAVED_SURFACES = [CLIENT_ME, CARE_HUB, CARE_ADD_REMINDER] as const
 
-describe('the public provider profile reads the block-aware views', () => {
-  it('its identity comes from providers_visible, not the base table', () => {
+describe('the directly-opened profile is deliberately OUT of scope', () => {
+  it('identity still reads base providers, by founder ruling', () => {
     const src = stripComments(code(PROVIDER_HOOK))
-    const fetchBlock = src.slice(src.indexOf('const fetchProvider'), src.indexOf('export function useCategories'))
-    expect(fetchBlock).toMatch(/from\(\s*['"]providers_visible['"]\s*\)/)
-    expect(fetchBlock).not.toMatch(/from\(\s*['"]providers['"]\s*\)/)
+    const fetchBlock = src.slice(
+      src.indexOf('const fetchProvider'),
+      src.indexOf('export function useCategories'),
+    )
+    expect(fetchBlock).toMatch(/from\('providers'\)\.select\(PUBLIC_PROVIDER_FIELDS\)/)
+    expect(fetchBlock).not.toMatch(/providers_visible/)
   })
 
-  it('its media comes from posts_visible, not the base table', () => {
+  it('profile media still reads base posts, so identity and media agree', () => {
+    // A profile that resolves the provider but empties their portfolio under a
+    // block is a PARTIAL state, and it signals the block louder than either
+    // consistent answer.
     const src = stripComments(code(PROFILE_SCREEN))
-    expect(src).toMatch(/from\(\s*['"]posts_visible['"]\s*\)/)
-    expect(src).not.toMatch(/from\(\s*['"]posts['"]\s*\)/)
+    expect(src).toMatch(/from\('posts'\)/)
+    expect(src).not.toMatch(/posts_visible/)
   })
 
-  it('still orders by the provider\'s own curation', () => {
-    // The reason this screen had a motive to stay on the base table. If the
-    // ordering is dropped the next person will "fix" it by going back.
-    const src = stripComments(code(PROFILE_SCREEN))
-    expect(src).toMatch(/\.order\('sort_order', \{ ascending: true \}\)/)
-  })
-
-  it('a filtered provider falls into the EXISTING not-found state', () => {
-    // Not a block-specific screen, and not block-specific copy: the same words a
-    // genuine missing id produces. Anything else would announce the block.
-    const src = stripComments(code(PROFILE_SCREEN))
-    const start = src.indexOf('if (!provider)')
-    expect(start).toBeGreaterThan(-1)
-    const notFound = src.slice(start, start + 900)
-    expect(notFound).toMatch(/Provider not found/)
-    // Scoped to the NOT-FOUND RENDER, not the whole file. `blockedByMe` and
-    // `iBlocked` live elsewhere on this screen and are correct: PD-082 lets the
-    // BLOCKER see their own block, and only them. What must never happen is the
-    // unavailable state explaining itself.
-    for (const reveal of ['blocked', 'Blocked', 'unavailable to you']) {
-      expect(notFound).not.toContain(reveal)
-    }
+  it('no migration in this branch alters the visibility views', () => {
+    // The `posts_visible` + sort_order migration was removed with the profile
+    // change it existed to serve. Nothing here touches a view.
+    const fs = require('fs')
+    const dir = join(process.cwd(), 'supabase/migrations')
+    const versions = fs.readdirSync(dir).filter((f: string) => f.endsWith('.sql')).sort()
+    expect(versions[versions.length - 1]).toBe('20261137000000_a_default_is_not_a_providers_term.sql')
   })
 })
 
@@ -181,28 +176,3 @@ describe('the block rule was not widened or reinterpreted', () => {
   })
 })
 
-describe('the view change is additive only', () => {
-  it('posts_visible gained sort_order and kept every predicate', () => {
-    const mig = code('supabase/migrations/20261138000000_a_profile_is_an_ordinary_surface.sql')
-    expect(mig).toMatch(/p\.sort_order/)
-    expect(mig).toMatch(/security_invoker = false/)
-    // Bidirectional block filter, both legs.
-    expect(mig).toMatch(/b\.blocker_user_id = \(select auth\.uid\(\)\) and b\.blocked_user_id = pr\.user_id/)
-    expect(mig).toMatch(/b\.blocked_user_id = \(select auth\.uid\(\)\) and b\.blocker_user_id = pr\.user_id/)
-    // Deletion / unavailability rule.
-    expect(mig).toMatch(/public\.account_unavailable\(pr2\.user_id\)/)
-    // Grants restated, not widened.
-    expect(mig).toMatch(/grant select on public\.posts_visible to anon, authenticated;/)
-    expect(mig).not.toMatch(/grant all|to public;/)
-  })
-
-  it('does not edit the migration it supersedes', () => {
-    const superseded = code('supabase/migrations/20261111000000_hidden_is_a_property_of_the_row.sql')
-    // The old definition is still there, untouched, without sort_order.
-    const view = superseded.slice(
-      superseded.indexOf('create or replace view public.posts_visible'),
-      superseded.indexOf('alter view public.posts_visible owner'),
-    )
-    expect(view).not.toMatch(/sort_order/)
-  })
-})
