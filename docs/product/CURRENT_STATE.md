@@ -52,7 +52,19 @@ treatment is recorded in
 attribution rule in [operations/UX_OPERATIONS.md](../operations/UX_OPERATIONS.md).
 
 **Every product-created video post now carries a usable still — the thumbnail defect is
-CLOSED** (Session 5, 2026-09-15).
+ENGINEERING-COMPLETE, NOT YET CLOSED** (Session 5, 2026-09-15, PR #112, unmerged).
+
+> **Session 5 is not closed and this defect is not closed.** The fix depends on
+> `expo-video-thumbnails`, a **native** module, and no build containing it has been run on a
+> device — this machine has no Xcode, only Command Line Tools. **PM device gate: a rebuilt dev
+> client and one real video upload on a device are required before either is called closed.**
+> Everything below is verified by typecheck, lint, 1633 Jest tests and the 2299-assertion
+> db-security harness; none of that exercises the native module.
+
+*Status vocabulary, so the distinction survives this document:* **engineering implementation
+complete** means the code, tests, guards and docs are done and CI is green. **Real-device
+verification pending** means no human has watched it work. Only the second one closes a session
+whose fix is native.
 
 **The invariant, stated once:** *every product-created video post must have a usable
 thumbnail/still for surfaces that cannot play video.* It is enforced at the **shared upload
@@ -113,13 +125,20 @@ unnoticed), `__tests__/lib/storageVideoStill.test.ts`, and the two-object cases 
 `__tests__/lib/providerMedia.test.ts`. The upload contract itself is documented in
 [operations/MEDIA_UPLOAD.md](../operations/MEDIA_UPLOAD.md).
 
-**One thing the code does NOT enforce, and a reviewer should know it.** `posts.thumbnail_url`
-and `posts.media_url` are unconstrained `text`: row ownership binds *who* may insert, never
-*what* the URL points at, so nothing server-side stops a crafted insert from naming another
-provider's object. This is pre-existing and identical for both columns — the still adds a
-second door to an open room rather than opening the room — and it is open for a PM ruling
-rather than settled here. The canonical schema comment on `thumbnail_url` still reads
-"Server-generated", which is now inaccurate: the value is produced on the device.
+**Two things the code does NOT enforce, both ACCEPTED for the closed beta by PM ruling
+(2026-09-15) and carried to pre-public-launch hardening.**
+
+- **Post media URLs are unbound server-side (SEC-DATA-001).** `posts.thumbnail_url` and
+  `posts.media_url` are unconstrained `text`: row ownership binds *who* may insert, never *what*
+  the URL points at, so nothing server-side stops a crafted insert from naming another
+  provider's object or an external host. **Pre-existing and identical for both columns** — the
+  still adds a second door to an open room rather than opening the room. **Accepted as tracked
+  hardening debt; the media architecture is deliberately NOT redesigned in PR #112.** Any future
+  bound must be decided for `media_url` and `thumbnail_url` together.
+- **The canonical schema comment is inaccurate (SEC-TRUTH-001).** `COMMENT ON COLUMN
+  public.posts.thumbnail_url` still reads *"Server-generated thumbnail for video posts"*; the
+  value is produced on the device at the upload boundary and inserted by the client. **PM ruling:
+  correct it, but not in PR #112** — a metadata-only follow-up migration is owed.
 
 **Non-production QA state required to review the Discover social rows.** Both rows are
 hidden when empty by design, with no filler and no fallback to strangers, so they are

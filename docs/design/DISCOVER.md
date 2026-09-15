@@ -175,9 +175,10 @@ the shared upload boundary: `lib/storage.ts` generates a still from the uploaded
 **fails the whole upload if it cannot**, so a video row without a still cannot exist. This
 row therefore renders from real product video, not only from seeded content.
 
-> *Fixed in Session 5 (2026-09-15). It previously read as a deferred defect here: nothing
-> wrote `thumbnail_url`, so this row dropped every product-created video while the Reels tab
-> played the same clip happily.*
+> *Addressed in Session 5 (2026-09-15), engineering-complete in PR #112 and **awaiting a real
+> device upload** before it is called closed — the fix depends on a native module. It
+> previously read as a deferred defect here: nothing wrote `thumbnail_url`, so this row dropped
+> every product-created video while the Reels tab played the same clip happily.*
 
 ---
 

@@ -86,6 +86,11 @@ upload* with a clear message, which is the failure we want.
 **A native rebuild of the dev client and of any EAS build is required** before video upload
 works. Expo Go cannot run it.
 
+**No build containing it has been run on a device yet.** Everything documented here is verified
+by unit tests, guards and the db-security harness; none of that exercises the native module. The
+still-generation path itself is proven only in principle until someone uploads a real video from
+a rebuilt client.
+
 ---
 
 ## Storage and boundaries
