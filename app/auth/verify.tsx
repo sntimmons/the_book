@@ -128,7 +128,7 @@ export default function VerifyScreen() {
   return (
     <View style={styles.root}>
       {/* Wordmark */}
-      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>
+      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THIRD</Text>
 
       {/* Back arrow */}
       <TouchableOpacity

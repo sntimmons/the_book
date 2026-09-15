@@ -163,7 +163,18 @@ export function ClientMe() {
       setStats({
         totalBookings,
         following: followingCount,
-        // TODO: wire to real review table when client rating schema confirmed.
+        // NOT WIRED, AND THE OLD NOTE HERE WAS STALE. It read "when client rating
+        // schema confirmed" — that schema IS confirmed and in use: providers
+        // review clients, `providers.rating_client_count` is real, and
+        // `fetchClientCompletionRate` / `aggregateClientDimensions` already render
+        // a client's reputation on the provider's request screen.
+        //
+        // So these zeros are a deliberate GAP, not a pending schema question, and
+        // the consequence is visible: `rating > 0 ? … : 'New'` below means every
+        // client reads "New" on their own profile for ever, however many providers
+        // have reviewed them. Surfacing a client's own reputation to them is a
+        // product decision (what it says, and whether a client should see it at
+        // all), so it is recorded rather than quietly implemented here.
         rating: 0,
         reviewCount: 0,
       })

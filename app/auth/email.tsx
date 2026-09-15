@@ -62,7 +62,7 @@ export default function EmailScreen() {
   return (
     <View style={[styles.root, { backgroundColor: '#080808' }]}>
       {/* Wordmark */}
-      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>
+      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THIRD</Text>
 
       {/* Back arrow */}
       <TouchableOpacity

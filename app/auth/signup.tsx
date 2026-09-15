@@ -29,7 +29,7 @@ export default function SignupScreen() {
       </Pressable>
 
       {/* Wordmark */}
-      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THE BOOK</Text>
+      <Text style={[styles.wordmark, { top: insets.top + 16 }]}>THIRD</Text>
 
       {/* Bottom content */}
       <View style={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
