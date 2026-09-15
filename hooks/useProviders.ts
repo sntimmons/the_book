@@ -401,7 +401,27 @@ export function useProvider(providerId: string) {
       setLoading(true)
 
       const [providerRes, servicesRes] = await Promise.all([
-        supabase.from('providers').select(PUBLIC_PROVIDER_FIELDS).eq('id', providerId).single(),
+        // PD-089: `providers_visible`, not `providers`. A profile reached
+        // DIRECTLY — from a saved entry, a follow, a past thread or a remembered
+        // link — used to read the base table, so a viewer who had blocked this
+        // provider, or been blocked by them, still got the whole profile. Every
+        // other discovery surface already read the view; this one did not, and it
+        // is the surface all of them navigate INTO (CODE-DRIFT-008).
+        //
+        // PD-090 does not authorise the old behaviour. It accepts that a
+        // determined user may INFER a block by diffing a table against its view;
+        // it does not accept the app serving the blocked person's profile in
+        // ordinary navigation.
+        //
+        // The view exposes exactly PUBLIC_PROVIDER_FIELDS, so nothing is lost. A
+        // filtered row returns no rows, `.single()` errors, and the screen falls
+        // into its EXISTING "Provider not found" state — the same words a genuine
+        // missing id produces, which is what keeps it from announcing a block.
+        supabase
+          .from('providers_visible')
+          .select(PUBLIC_PROVIDER_FIELDS)
+          .eq('id', providerId)
+          .single(),
         supabase
           .from('provider_services')
           .select('*')

@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import * as Sentry from '@sentry/react-native'
 import { supabase } from '../lib/supabase'
 import { cacheBustedPhoto } from '../lib/image'
 import { useAuth } from '../context/AuthContext'
@@ -594,9 +595,53 @@ function SavedTab() {
         setLoading(false)
         return
       }
+      // PD-089: A SAVED PROVIDER YOU ARE BLOCKED WITH STOPS APPEARING HERE.
+      //
+      // This list was the reachable door into the profile leak (CODE-DRIFT-008):
+      // it embeds the base `providers` table, so a provider the viewer had
+      // blocked — or been blocked by — kept sitting in Saved with their name and
+      // photo, one tap from a full profile.
+      //
+      // THE SAVED ROW IS NOT TOUCHED. A block is not an unsave: the relationship
+      // survives in `saved_providers` and comes back on unblock, because
+      // deleting it would destroy a choice the viewer made and could not undo.
+      // Only the RENDER is gated.
+      //
+      // The gate is a second read of `providers_visible` restricted to the ids
+      // already saved — the smallest pattern that fits, because the display needs
+      // the nested `categories` embed that PostgREST cannot resolve through a
+      // view. The base embed does still return the blocked row over the wire and
+      // it is dropped here rather than never fetched; that residual is exactly
+      // what PD-090 accepts, and what PD-090 does NOT accept is the app putting
+      // that provider on the screen, which is what this stops.
+      const savedIds = (data ?? []).map((r: any) => r?.providers?.id).filter(Boolean)
+      let visible = new Set<string>(savedIds)
+      if (savedIds.length > 0) {
+        const { data: vis, error: visError } = await supabase
+          .from('providers_visible')
+          .select('id')
+          .in('id', savedIds)
+        if (cancelled) return
+        if (visError) {
+          // FAIL CLOSED. If we cannot establish who is visible we show none of
+          // them, rather than falling back to the unfiltered list and putting a
+          // blocked provider back on screen at exactly the moment the check that
+          // would have caught it stopped working.
+          // Sentry rather than a console line: this is the fail-closed branch of
+          // a safety filter, and a silent one means a block quietly stops being
+          // enforced in Saved with nothing anywhere to say so.
+          Sentry.captureException(visError, { extra: { where: 'ClientMe saved visibility' } })
+          setSaved([])
+          setLoading(false)
+          return
+        }
+        visible = new Set(((vis as { id: string }[] | null) ?? []).map((v) => v.id))
+      }
+
       const rows: SavedRow[] = (data ?? [])
         .map((r: any) => r.providers)
         .filter(Boolean)
+        .filter((p: any) => visible.has(p.id))
         .map((p: any) => ({
           id: p.id,
           name: p.display_name ?? 'Provider',

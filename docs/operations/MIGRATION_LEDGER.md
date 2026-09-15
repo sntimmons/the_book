@@ -1996,6 +1996,38 @@ annotated where it fires.
 `.env.tooling.local` resolve to `wcoyjeklscuqsumpjpfo`; no production credential
 exists in the working environment.
 
+## 2026-09-15 — `20261138000000` **APPLIED to non-production and VERIFIED** (block visibility, CODE-DRIFT-008)
+
+One view, one column added. No table, no RLS policy, no function, no grant change.
+
+**`20261138000000` — a profile is an ordinary surface.** `posts_visible` did not expose
+`sort_order`, and the public provider profile orders portfolio, reels and process media by it —
+the provider's own curation of how their work is presented. Lacking it in the view, the profile
+read base `posts` instead, which meant it also bypassed the view's **bidirectional block filter**:
+a viewer who had blocked a provider, or been blocked by one, saw their media in full. The same
+screen read base `providers` for identity, with the same result.
+
+The view is recreated with **`p.sort_order` as the only addition**. Every predicate is carried
+over character for character — the `is_active` gate, both legs of the block filter, and the
+`account_unavailable` exclusion. `security_invoker = false` is retained, so the view keeps
+applying its predicate as its postgres owner rather than as the caller, which is the mechanism
+`20261066000000` and `20261094000000` exist to defend. Ownership is restated and the grants are
+restated to exactly what `20261066000000` set: `select` to `anon, authenticated`, nothing wider.
+
+**Supersedes** the definition in `20261111000000`. That file is **not edited** — the superseded
+definition remains there, without `sort_order`, and a guard asserts it stays that way.
+
+Applied to `wcoyjeklscuqsumpjpfo` via `supabase db push --linked` — an ordinary forward apply.
+
+**Verified at runtime, not only by reading SQL.** With two real seeded accounts: before any
+block the profile's exact queries return identity and 3 media items; with A→B blocked, identity
+returns `PGRST116` (no row) and media returns 0; with B→A blocked, the same in reverse; after
+unblock both return in full. A deliberate non-default curation order (`10,20,30`) round-trips
+through the view in the same sequence the base table produces. The `saved_providers` row survives
+every block and unblock. Non-production seed data was restored afterwards.
+
+---
+
 ## 2026-09-14 — `20261137000000` **APPLIED to non-production and VERIFIED** (policy truth, PR #106)
 
 One file, one function, no table change.

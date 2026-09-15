@@ -1153,6 +1153,53 @@ edited historical file. Process and the dated record:
 > migrations").
 
 
+### Block visibility — the public provider profile was reading base tables (CODE-DRIFT-008)
+
+**Fixed 2026-09-15.** A safety/privacy correction, handled separately from the visual buildout
+because build-first explicitly does not waive safety defects.
+
+**PD-089** says a blocked person disappears from each other's ordinary discovery and content
+surfaces, and it is implemented as `SECURITY DEFINER` views that return already-filtered content.
+Discover, search, Reels and Community all read those views. **The public provider profile did
+not.** `useProvider()` read base `providers` and the profile's media read base `posts`, so a
+viewer who had blocked a provider — **or been blocked by one** — could open that provider's
+profile from a saved entry, a follow or a remembered link and see their identity, portfolio,
+reels and process shots in full. Confirmed at runtime against non-production in both directions.
+
+**This was not covered by PD-090's carve-out, and PD-100 says so in its own words:** the accepted
+residual is that *"sophisticated inference from otherwise-authorized data"* is possible, and the
+reason that was judged acceptable is stated as **"the ordinary app reads only the views."** That
+premise was false on this surface. **The fix restores the premise rather than changing the rule
+— no new product rule is minted here.** Inferring that a block exists and having the app serve
+the blocked person's profile in ordinary navigation are different things, and only the first was
+ever accepted.
+
+**What changed.** `useProvider()` now reads `providers_visible`; the profile's media read now uses
+`posts_visible`; and Client Me → Saved gates its rendered rows through `providers_visible`. A
+filtered provider falls into the screen's **pre-existing "Provider not found" state** — the same
+words a genuinely missing id produces, so the unavailable state never explains itself.
+
+**A block is not an unsave.** The `saved_providers` row is never deleted; it stops being rendered
+while the block applies and returns on unblock. Asserted in the DB suite.
+
+**One migration, additive only.** `20261138000000_a_profile_is_an_ordinary_surface.sql` recreates
+`posts_visible` with `sort_order` — the provider's own curation of how their work is presented,
+which the view could not express, which is exactly why the profile had a motive to stay on the
+base table. **Every predicate, `security_invoker = false`, ownership and the `anon, authenticated`
+grants are carried over unchanged**; the superseded `20261111000000` is not edited.
+
+**Deliberately unchanged:** every live-transaction and own-data read. PD-089's exception is not a
+courtesy — two people inside a live booking or barter must still see each other's name, terms and
+appointment, or a block would strand a trade. Bookings, message threads, reviews, contracts,
+notifications, the provider's own Business tabs, and the blocked-people list in `lib/safety.ts`
+all still read the base tables, and a guard asserts they continue to.
+
+Coverage: `supabase/tests/blocked_surfaces.test.sql` § 6 (both directions, unblock restores,
+saved row survives, curation order intact, deletion rule unchanged) and
+`__tests__/guards/blockVisibilityIntegrity.test.ts`.
+
+---
+
 ### Security posture — Pre-Beta Correction 2 (2026-09-08)
 
 **Bounded update by the correction slice itself, not by a Steward reconciliation.** It records
