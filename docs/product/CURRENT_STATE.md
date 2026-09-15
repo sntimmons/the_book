@@ -39,7 +39,7 @@ JSX text contains bare apostrophes — `a provider's profile` — which a naive 
 reads as the start of a literal and is then desynced, reporting comments as user-visible
 copy. The guard tests that failure mode against itself.
 
-**Discover's two social rows are FINAL for Phase 4C** (visual polish approved 2026-09-15).
+**PHASE 4C IS CLOSED. Discover's two social rows are FOUNDER VISUALLY APPROVED and FINAL for this phase** — approved 2026-09-15 on real-device screenshots, not on a code review. No further product or visual change to either row without reopening the phase.
 `From people you follow` sits after the marketplace lanes and before the grid; `See the
 work` sits below the grid. Both carry **attribution only** — provider identity, and for
 followed activity a subordinate timestamp. Neither carries a rating, follower count, likes,

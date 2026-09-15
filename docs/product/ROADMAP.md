@@ -1348,12 +1348,19 @@ these as **structurally stable for the current beta scope**:
 - **provider-profile** follower treatment
 - **barter terminology**
 - **Reels** cleanup
+- **Discover** — Phase 4B core redesign and Phase 4C social entry points, **founder visually
+  approved 2026-09-15 and CLOSED**. The approved treatment is
+  [docs/design/DISCOVER.md](../design/DISCOVER.md); the cross-app principles behind it are
+  [docs/design/THIRD_VISUAL_SYSTEM.md](../design/THIRD_VISUAL_SYSTEM.md)
 
 **Design must NOT change any of the following without PM review:** workflow rules, fairness,
 permissions, safety, privacy, or marketplace policy. Two specifics worth naming because they
 look like styling decisions and are not: the **step indicator must never state a total the flow
 has not established**, and **`COMPLETED SERVICE VALUE` must not be renamed** to earnings,
-balance, payout or wallet.
+balance, payout or wallet. A third, added with Discover's closure: **social activity may
+support discovery and may never visually imply provider quality or marketplace rank** — no
+rating, follower count, likes, engagement or badge may join a content row, and the types
+behind those rows carry no field that could.
 
 ---
 
