@@ -115,6 +115,10 @@ beforeEach(() => {
   mockRole.providerId = 'prov-1'
 })
 
+// Mirrors DOUBLE_TAP_MS in the screen: a single tap is not acted on until the
+// double-tap window has closed, so a double-tap-to-like does not also pause.
+const DOUBLE_TAP_WINDOW_MS = 280
+
 async function mount() {
   const utils = render(<ReelsScreen />)
   await act(async () => {
@@ -173,18 +177,21 @@ describe('playback', () => {
   })
 
   it('a single tap pauses, and the paused state is stated in a word', async () => {
-    jest.useFakeTimers()
+    // REAL TIMERS, DELIBERATELY. The screen defers the single-tap action past
+    // the double-tap window with a setTimeout, and faking timers here leaked
+    // across suites under `--runInBand` — the mode CI uses — and hung two
+    // unrelated render suites that pass on their own. Waiting out the real 280ms
+    // window costs a fraction of a second and cannot leak.
     const { getByLabelText, getByText } = await mount()
     await waitFor(() => expect(getByLabelText('Pause video')).toBeTruthy())
 
     await act(async () => {
       fireEvent.press(getByLabelText('Pause video'))
-      jest.advanceTimersByTime(400)
+      await new Promise((r) => setTimeout(r, DOUBLE_TAP_WINDOW_MS + 80))
     })
 
-    expect(getByText('PAUSED')).toBeTruthy()
+    await waitFor(() => expect(getByText('PAUSED')).toBeTruthy())
     expect(getByLabelText('Play video')).toBeTruthy()
-    jest.useRealTimers()
   })
 
   it('there is no centre play control to press', async () => {
