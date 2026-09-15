@@ -877,6 +877,51 @@ Authoritative: **[docs/architecture/NAVIGATION.md](../architecture/NAVIGATION.md
 
 Five shared tabs: **Discover · Reels · Bookings · Messages · Me** (`app/(tabs)/`).
 
+**Messages was migrated onto the Third visual system in Session 7B** — direction "Working
+Letter", approved by PM/founder as art direction and built against it. Covers the inbox
+(`app/(tabs)/messages.tsx`) and the conversation thread (`app/messages/[id].tsx`). Design:
+[design/MESSAGES.md](../design/MESSAGES.md). **Engineering-complete for the buildout phase;
+final visual consistency approval deferred to the whole-app visual pass.**
+
+Both screens were unmigrated — **~72 colour literals between them**, zero `useTheme`, a
+hardcoded light status bar that is invisible on a Porch canvas, and gold and bone values from
+the retired The Book palette. Both are now zero-literal and follow Light / Dark / System.
+**Messages has no media on it, so nothing here is scheme-invariant** — unlike Reels, every
+surface follows the viewer's choice.
+
+**Two things the legacy presentation was asserting that were not true, both corrected:**
+
+- **The inbox filter labelled "All" was not all.** It excluded pending requests, which live
+  under Requests, and declined ones, which are hidden. A viewer whose only conversation was a
+  pending request opened Messages, landed on All, and was told there was nothing there. The
+  label is now **Conversations**; **the predicate is unchanged**.
+- **The empty state instructed an impossible action** — *"Message a provider to get started"* on
+  a screen whose compose control was deliberately removed because conversation creation is not
+  wired from here. Each filter now describes itself and instructs nothing.
+
+Added: **day separators** in the thread, derived only from timestamps the messages already
+carry, and a **context band** under the thread header carrying the booking service and the
+request state — both previously in bad places. **Safety notices were deliberately not moved into
+that band**; relocating one is a safety change, not a visual one.
+
+Unchanged, and asserted by guard: request-state gating via `composerState`, accept/decline
+semantics, the neutral PD-082 refusal copy, block/unblock, reporting, the safety menu, realtime,
+and message permissions. **No engagement or presence capability was added** — no typing
+indicator, presence, read receipt, reaction or attachment exists in this data layer, and
+`is_read` is one boolean serving two readers, so it could not support a truthful read receipt
+even if one were wanted.
+
+**`app/messages/new.tsx` is unmigrated and reachable** from the provider profile's Message
+control and the booking flow, so a user passes from a migrated profile through a legacy-styled
+first-contact composer into a migrated thread. Recorded rather than silently closed —
+conversation creation is not a visual question.
+
+Guards: `__tests__/guards/messagesWorkingLetter.test.ts`, plus
+`__tests__/app/messagesInbox.render.test.tsx` and
+`__tests__/app/messagesThread.render.test.tsx`, which **render the real screens** and assert the
+renamed filter selects exactly the rows the old one did and that day separators emit one per
+calendar day rather than one per message.
+
 **Reels was migrated onto the Third visual system in Session 6B** — direction "Held Light",
 approved by PM/founder as art direction and built against it. Design:
 [design/REELS.md](../design/REELS.md). **Engineering-complete for the buildout phase; final

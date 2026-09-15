@@ -1393,6 +1393,19 @@ these as **structurally stable for the current beta scope**:
   approved 2026-09-15 and CLOSED**. The approved treatment is
   [docs/design/DISCOVER.md](../design/DISCOVER.md); the cross-app principles behind it are
   [docs/design/THIRD_VISUAL_SYSTEM.md](../design/THIRD_VISUAL_SYSTEM.md)
+- **Messages** — Session 7A art direction ("Working Letter", PM/founder approved) and Session
+  7B implementation of the inbox and the conversation thread. **Engineering-complete for the
+  buildout phase; final visual consistency approval deferred to the whole-app visual pass.**
+  The migration also corrected two things the legacy styling was asserting: the inbox filter
+  labelled **All** did not include pending or declined requests and is now **Conversations**,
+  and the empty state told the viewer to *"Message a provider to get started"* on a screen with
+  no compose control. Day separators were added, derived only from existing timestamps. The
+  approved treatment is [docs/design/MESSAGES.md](../design/MESSAGES.md).
+
+  **`app/messages/new.tsx` was deliberately left unmigrated** and is reachable from the provider
+  profile and the booking flow — a real visual seam, recorded rather than silently closed,
+  because conversation creation is not a visual question.
+
 - **Reels** — Session 6A art direction ("Held Light", PM/founder approved) and Session 6B
   implementation. **Engineering-complete for the buildout phase; final visual consistency
   approval deferred to the whole-app visual pass.** It was the last unmigrated primary surface,
