@@ -173,7 +173,11 @@ describe('provider-bound care reminders are gated; booking history is not', () =
     // A reminder tied to a provider names them, says "Time to rebook" and offers
     // Book — a forward-looking re-engagement surface, so PD-089 applies. One
     // with no provider id has no identity to hide and must always render.
-    expect(CARE).toMatch(/\.filter\(\(r\) => !r\.providerId \|\| visibleProviders\.has\(r\.providerId\)\)/)
+    // Not pinned to a local variable name, for the same reason the saved-surface
+    // assertion above is not: renaming the set must not fail a guard that is
+    // about visibility semantics. What is pinned is the SHAPE — a provider-bound
+    // row is membership-tested, a generic one short-circuits before the test.
+    expect(CARE).toMatch(/\.filter\(\(r\) => !r\.providerId \|\|[\s\S]{0,60}?\.has\(r\.providerId\)\)/)
   })
 
   it('BOOKING HISTORY IS NOT GATED — PD-089 preserves it', () => {

@@ -1191,6 +1191,7 @@ and PD-089 covers them:
 | **Client Me → Saved** | base embed, rendered | gated through `providers_visible` |
 | **Care Hub → saved providers** | base embed, rendered **with a Book control** | gated |
 | **Care Hub → Add Reminder chips** | base embed, selectable | gated |
+| **Care Hub → provider-bound reminders** | base read, rendered **with Book Now / Book Again** | gated |
 
 All three **fail closed**: if the visibility read itself errors, none render, because falling
 back to the ungated list would put a blocked provider back on screen at exactly the moment the
@@ -1217,24 +1218,30 @@ shell** — precisely the case **PD-104 records the profile screen getting wrong
 is about the row and applies to everyone. A network failure deliberately does not clear, so a
 transient error cannot blank a profile the viewer is legitimately looking at.
 
-#### Open, and NOT decided here: the Care Hub reminder row
+#### Provider-bound care reminders — RULED, AND GATED
 
-Both reviewers found the same thing, and it is **not** a regression — it behaved this way before
-this work and behaves the same after. The Care Hub's **reminders** section resolves provider names
-through `fetchProviderInfoMap(ids, 'transaction')`, which reads base `providers`, and each row
-carries a **Book** control. So a provider the viewer is blocked with is still named there, on the
-same screen whose saved list is now gated.
+**PM/founder ruling:** an active care reminder tied to a provider is a **forward-looking
+re-engagement surface, not preserved transaction history**. It names the provider, says *Time to
+rebook*, offers **Book Now / Book Again**, and exists to drive another transaction. So it honours
+PD-089 while a block applies — the same reading `add-reminder.tsx` already applied when the
+reminder is *created*, so creation and display now agree.
 
-**It is recorded rather than fixed because it turns on a product question this session may not
-answer:** is an existing care reminder *preserved history* — in which case the transaction scope is
-right and nothing changes — or a *forward-looking artefact*, in which case it should be gated?
-`add-reminder.tsx` gates the chips on the second reading, so the two are not yet reconciled.
+- **The `care_reminders` row is preserved.** Not deleted, not deactivated. It returns on unblock
+  under its existing active/due rules. The one write to that table is `removeReminder` — the
+  viewer's own explicit action — and it is untouched.
+- **A generic reminder with no provider id always renders.** There is no identity in it to hide.
+- **Booking history is deliberately not gated.** `fetchProviderInfoMap(…, 'transaction')` is
+  unchanged, so upcoming appointments and completed bookings still resolve their counterparty from
+  the base table. Narrowing it would hide a live booking counterparty, which is precisely what
+  PD-089's existing-transaction access exists to prevent.
 
-Noted so it is not later discovered as a defect on a screen this entry says was corrected. The
-`saved_providers` census cannot see it — it reads `care_reminders` — so nothing will re-raise it
-automatically.
+**Still true and worth keeping in mind:** the `saved_providers` census cannot see a
+`care_reminders` reader, so a future third consumer of `fetchActiveReminders` will not be caught
+automatically. The Discover rebook banner is one such consumer today — it renders **no provider
+identity** and routes to `/care` rather than to a profile, so nothing is disclosed, but whether
+the ruling extends to a surface that names no provider is **open and returned to PM**.
 
-#### Returned, not actioned
+#### Returned, not actioned#### Returned, not actioned
 
 - **`/reviews/all/[id]`** reads base `providers`. **PD-089 explicitly preserves review access**,
   so it is unchanged and is **not** a defect. Recorded separately: the route also offers a **Book
