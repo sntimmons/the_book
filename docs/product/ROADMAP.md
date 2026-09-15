@@ -1352,6 +1352,17 @@ these as **structurally stable for the current beta scope**:
   approved 2026-09-15 and CLOSED**. The approved treatment is
   [docs/design/DISCOVER.md](../design/DISCOVER.md); the cross-app principles behind it are
   [docs/design/THIRD_VISUAL_SYSTEM.md](../design/THIRD_VISUAL_SYSTEM.md)
+- **Reels** — Session 6A art direction ("Held Light", PM/founder approved) and Session 6B
+  implementation. **Engineering-complete and NOT closed: founder on-device visual approval is
+  outstanding.** It was the last unmigrated primary surface, and the migration also removed a
+  decorative centre glyph that could not be pressed, added the pause control the screen never
+  had, dropped every engagement count by PM ruling, and renamed "Book" to **"View & book"**
+  because the control opens a profile rather than starting a booking. The approved treatment is
+  [docs/design/REELS.md](../design/REELS.md).
+
+  **The process changed here, and that is the durable part.** Art direction is now a separate,
+  explicitly approved step (6A) that precedes implementation (6B), rather than an outcome of
+  it. Direction B was produced, rejected, and is recorded in neither document as a rule.
 
 **Design must NOT change any of the following without PM review:** workflow rules, fairness,
 permissions, safety, privacy, or marketplace policy. Two specifics worth naming because they

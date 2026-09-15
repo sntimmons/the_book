@@ -877,6 +877,35 @@ Authoritative: **[docs/architecture/NAVIGATION.md](../architecture/NAVIGATION.md
 
 Five shared tabs: **Discover · Reels · Bookings · Messages · Me** (`app/(tabs)/`).
 
+**Reels was migrated onto the Third visual system in Session 6B** — direction "Held Light",
+approved by PM/founder as art direction and built against it. Design:
+[design/REELS.md](../design/REELS.md). **Engineering-complete, unmerged, and NOT final:
+founder on-device visual approval is required**, as it is for Session 5.
+
+It was the last unmigrated primary surface, and three defects were sitting behind that fact:
+
+- **35 colour literals and no `useTheme`.** Two of the values — gold `#C8922A` and bone
+  `#F0E8D5` — are from the retired The Book palette and **are not roles in the Third system at
+  all**. The screen could not follow a Light/Dark/System change.
+- **There was no way to pause a reel.** A single tap did nothing; the only thing that looked
+  like a play control was a 48pt glyph at 5% opacity with `pointerEvents="none"`, mounted on
+  every reel in every state and commented as a load-failure fallback that nothing conditioned.
+- **The conversion action was the fifth icon in a five-icon rail**, labelled "Book", and it did
+  not book — it opened the provider profile.
+
+Now: one identity block instead of a duplicated avatar, tap-to-pause with **PAUSED** stated in
+a word, **no like / comment / view / follower number anywhere on the surface** (the
+interactions all still work — PM ruling removed the tallies, not the features), a single
+Mulberry **"View & book"** control that says what it does, and a provider-only shortcut into
+the **existing** Posts & Reels uploader. No new upload system, no sixth tab, no floating
+button, no booking-flow change. Reels still reads `posts_visible`, so PD-089 blocking is
+unaffected.
+
+Guards: `__tests__/guards/reelsHeldLight.test.ts` (source) and
+`__tests__/app/reelsHeldLight.render.test.tsx`, which **renders the real screen** and asserts
+that a four-figure like count is absent from the tree and that a client never sees the
+creation control.
+
 There is **no client/provider mode architecture** — no global `currentMode`. Role follows
 the domain relationship and capability, not a UI toggle (PD-010). Provider tools live under
 **Business** (`app/(tabs)/business/`), not as a parallel tab set (PD-012).

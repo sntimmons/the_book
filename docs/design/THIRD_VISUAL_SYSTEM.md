@@ -176,9 +176,15 @@ a consistency argument.
 
 ## 8. Where this is already true
 
-Bookings list and booking flow, booking detail, the provider profile, Me and Settings, and
-Discover all resolve every colour from these tokens and support Light / Dark / System from
-one tree. Guards assert zero colour literals on those surfaces.
+Bookings list and booking flow, booking detail, the provider profile, Me and Settings,
+Discover, and **Reels** all resolve every colour from these tokens and support Light / Dark /
+System from one tree. Guards assert zero colour literals on those surfaces.
+
+**Reels is the surface that shows what the two scheme-invariant roles are for.** Nearly all of
+its chrome reads `textOnAction` and `mediaScrim`, so it looks the same in Light and Dark — that
+is §3 working, not a migration left half-done. Its screen-specific decisions, including the
+Cypress treatment of the neighbourhood, live in [REELS.md](REELS.md) and **are not
+cross-app rules**.
 
 `components/ui/` holds the shared primitives — Button, Avatar, StatusBadge, TextField,
 SearchInput, EmptyState, ErrorState, ProviderCard, BookingFlowScreen, TerminalStatement,

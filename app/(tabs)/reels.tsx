@@ -25,9 +25,19 @@ import { Ionicons } from '@expo/vector-icons'
 import { Audio, Video, ResizeMode } from 'expo-av'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
+import { useTheme } from '@/context/ThemeContext'
 
-const LIKE_RED = '#FF2D55'
 const DOUBLE_TAP_MS = 280
+
+// The scrim over media is Ink in BOTH schemes (`mediaScrim`) — a scrim over a
+// photograph must not invert. A gradient needs alpha stops and a hex token
+// cannot express one, so Ink's channels are written out here and nowhere else.
+// This is the same exception the provider profile takes.
+const INK = '33,31,29'
+const scrim = (alpha: number) => `rgba(${INK},${alpha})`
+
+// How long the word "Paused" and the seek line linger after a tap.
+const PAUSE_FADE_MS = 160
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window')
 
@@ -44,7 +54,6 @@ interface Reel {
   isLiked: boolean
   isSaved: boolean
   isFollowing: boolean
-  thumbnailColor: string
   // Video source for expo-av's Video. Bundled mock assets are a `require()`
   // number; real reels from the posts table are a { uri } streaming URL from
   // the posts-media bucket. Video's source prop accepts either form.
@@ -68,10 +77,6 @@ interface RawReelRow {
     profile_photo_url: string | null
   } | null
 }
-
-// Default background shown behind a video while it loads. Real reels have no
-// per-item accent color the way the mock set does; the video covers this.
-const REEL_FALLBACK_COLOR = '#0d0d0d'
 
 // Fetch real reels (posts with a video) joined to provider info, mapped to the
 // Reel shape the feed already renders. Returns [] on error or when there are
@@ -125,16 +130,15 @@ async function fetchReels(): Promise<Reel[]> {
         isLiked: false,
         isSaved: false,
         isFollowing: false,
-        thumbnailColor: REEL_FALLBACK_COLOR,
         video: { uri: row.media_url },
       }
     })
 }
 
-function formatCount(n: number): string {
-  if (n >= 1000) return (n / 1000).toFixed(1) + 'k'
-  return n.toString()
-}
+// `formatCount` lived here and turned 1200 into "1.2k" for the like and comment
+// tallies on the rail. Both tallies are gone by PM ruling — no engagement or
+// popularity number is shown on this surface — so the helper went with them
+// rather than sitting unused waiting to be reintroduced.
 
 function getInitials(name: string): string {
   return name
@@ -205,7 +209,16 @@ async function loadComments(postId: string): Promise<CommentRow[]> {
 
 export default function ReelsScreen() {
   const insets = useSafeAreaInsets()
-  const { user, providerId: myProviderId } = useAuth()
+  const { colors, type } = useTheme()
+  const { user, providerId: myProviderId, isProvider } = useAuth()
+
+  // THE CREATION AFFORDANCE IS PROVIDER-ONLY, AND "ELIGIBLE" MEANS BOTH HALVES.
+  // `isProvider` is the resolved role and `myProviderId` is the row the
+  // uploader needs; a signed-out viewer or a client has neither, and a provider
+  // still mid-onboarding can have the first without the second. Requiring both
+  // means the control can never appear for someone the uploader would then turn
+  // away — an entry point to a door you cannot open is worse than no door.
+  const canCreate = !!user && isProvider && !!myProviderId
   const [reels, setReels] = useState<Reel[]>([])
   // True until the first reels fetch resolves, so we show a spinner instead of
   // the empty state during the initial load.
@@ -423,7 +436,7 @@ export default function ReelsScreen() {
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
       <StatusBar hidden />
       <FlatList
         data={reels}
@@ -441,16 +454,44 @@ export default function ReelsScreen() {
           index,
         })}
         ListEmptyComponent={
-          <View style={[styles.emptyReels, { height: SCREEN_HEIGHT }]}>
+          <View
+            style={[
+              styles.emptyReels,
+              { height: SCREEN_HEIGHT, backgroundColor: colors.bgCanvas },
+            ]}
+          >
             {loadingReels ? (
-              <ActivityIndicator color="rgba(240,232,213,0.4)" />
+              <ActivityIndicator color={colors.textSecondary} />
             ) : (
               <>
-                <Ionicons name="film-outline" size={40} color="rgba(240,232,213,0.15)" />
-                <Text style={styles.emptyReelsTitle}>No reels yet</Text>
-                <Text style={styles.emptyReelsSub}>
-                  Provider reels will show up here as they post them.
+                <Ionicons name="film-outline" size={40} color={colors.textSecondary} />
+                <Text style={[styles.emptyReelsTitle, type.titleCard, { color: colors.textPrimary }]}>
+                  No reels yet
                 </Text>
+                <Text
+                  style={[styles.emptyReelsSub, type.bodySmall, { color: colors.textSecondary }]}
+                >
+                  {canCreate
+                    ? 'Post a video from Posts & Reels and it will show up here.'
+                    : 'Provider reels will show up here as they post them.'}
+                </Text>
+                {/* The empty feed is the one place the uploader can be offered
+                    at full weight without competing with anyone's video,
+                    because there is no video. Provider-only, same destination
+                    as the header control — not a second uploader. */}
+                {canCreate && (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    onPress={() => router.push('/(tabs)/business/posts' as any)}
+                    style={[styles.emptyAddBtn, { backgroundColor: colors.actionPrimary }]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Add a reel"
+                  >
+                    <Text style={[type.labelAction, { color: colors.textOnAction }]}>
+                      Add a reel
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </>
             )}
           </View>
@@ -462,6 +503,7 @@ export default function ReelsScreen() {
             // A provider cannot follow their own reel — the DB rejects the row
             // and the button would only error. Hide the follow affordance.
             isOwnReel={!!myProviderId && item.providerId === myProviderId}
+            canCreate={canCreate}
             onLike={() => toggleLike(item.id)}
             onDoubleTapLike={() => likeReel(item.id)}
             onSave={() => toggleSave(item.id)}
@@ -498,6 +540,7 @@ interface ReelItemProps {
   reel: Reel
   isActive: boolean
   isOwnReel: boolean
+  canCreate: boolean
   onLike: () => void
   onDoubleTapLike: () => void
   onSave: () => void
@@ -511,6 +554,7 @@ function ReelItem({
   reel,
   isActive,
   isOwnReel,
+  canCreate,
   onLike,
   onDoubleTapLike,
   onSave,
@@ -519,10 +563,41 @@ function ReelItem({
   onShare,
   insets,
 }: ReelItemProps) {
+  const { colors, type } = useTheme()
   const providerInitials = getInitials(reel.providerName)
   const videoRef = useRef<Video>(null)
   const lastTapAt = useRef(0)
   const burst = useRef(new Animated.Value(0)).current
+
+  // PAUSE IS A REAL STATE NOW, AND IT IS THE USER'S.
+  //
+  // Before this migration a single tap did nothing at all: `handleVideoTap`
+  // only counted double-taps, and the thing that looked like a play control was
+  // a 5%-opacity glyph with `pointerEvents="none"` mounted on every reel
+  // forever. There was no way to pause a video, and the one affordance that
+  // implied there was could not be pressed.
+  //
+  // `wantsPlay` is the viewer's intent and `isActive` is the feed's. A video
+  // plays only when both agree, so scrolling away still stops audio and
+  // scrolling back does not silently resume something the viewer paused.
+  const [wantsPlay, setWantsPlay] = useState(true)
+  const [progress, setProgress] = useState(0)
+  const pauseFade = useRef(new Animated.Value(0)).current
+  const paused = isActive && !wantsPlay
+
+  // Reset intent whenever this card becomes the active one, so a paused reel
+  // does not stay paused after the viewer has scrolled past it and come back.
+  useEffect(() => {
+    if (isActive) setWantsPlay(true)
+  }, [isActive])
+
+  useEffect(() => {
+    Animated.timing(pauseFade, {
+      toValue: paused ? 1 : 0,
+      duration: PAUSE_FADE_MS,
+      useNativeDriver: true,
+    }).start()
+  }, [paused, pauseFade])
 
   // Restart the video from the top every time this card becomes active,
   // and force a pause + rewind when it goes inactive so audio cannot
@@ -557,52 +632,84 @@ function ReelItem({
     ]).start()
   }
 
+  // A single tap toggles playback; a double tap still likes. The single-tap
+  // action is DEFERRED past the double-tap window rather than fired
+  // immediately, because otherwise every double-tap-to-like would also pause
+  // the video underneath it — two gestures on one region, one of them wrong.
+  const singleTapTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (singleTapTimer.current) clearTimeout(singleTapTimer.current)
+    }
+  }, [])
+
   function handleVideoTap() {
     const now = Date.now()
     if (now - lastTapAt.current < DOUBLE_TAP_MS) {
-      // Double-tap: like (never unlike, matching TikTok).
+      // Double-tap: like (never unlike). Cancel the pending pause.
+      if (singleTapTimer.current) {
+        clearTimeout(singleTapTimer.current)
+        singleTapTimer.current = null
+      }
       onDoubleTapLike()
       playBurst()
       lastTapAt.current = 0
       return
     }
     lastTapAt.current = now
+    if (singleTapTimer.current) clearTimeout(singleTapTimer.current)
+    singleTapTimer.current = setTimeout(() => {
+      singleTapTimer.current = null
+      setWantsPlay((p) => !p)
+    }, DOUBLE_TAP_MS)
   }
 
   function goToProvider() {
     router.push(`/providers/${reel.providerId}` as any)
   }
 
+  // The ground behind a still-loading video is `mediaScrim` — Ink, and the same
+  // Ink in both schemes, which is exactly the role's purpose. It used to be a
+  // per-reel `thumbnailColor` field carrying one hardcoded near-black for every
+  // row; the field is gone with the literal.
   return (
-    <View style={[styles.reelRoot, { backgroundColor: reel.thumbnailColor }]}>
+    <View style={[styles.reelRoot, { backgroundColor: colors.mediaScrim }]}>
       {/* Bundled video wrapped in a Pressable to catch double-taps. The
           right rail and header render after this Pressable so their
           touches take priority in their own regions. */}
-      <Pressable onPress={handleVideoTap} style={StyleSheet.absoluteFill}>
+      <Pressable
+        onPress={handleVideoTap}
+        style={StyleSheet.absoluteFill}
+        accessibilityRole="button"
+        accessibilityLabel={paused ? 'Play video' : 'Pause video'}
+      >
         <Video
           ref={videoRef}
           source={reel.video}
           style={StyleSheet.absoluteFill}
           resizeMode={ResizeMode.COVER}
-          shouldPlay={isActive}
+          shouldPlay={isActive && wantsPlay}
           isLooping
           isMuted={false}
           volume={1.0}
           useNativeControls={false}
+          onPlaybackStatusUpdate={(status) => {
+            if (!status.isLoaded || !status.durationMillis) return
+            setProgress(status.positionMillis / status.durationMillis)
+          }}
         />
       </Pressable>
 
-      {/* Fallback play icon if a video fails to load. Sits below the
-          scrims so it disappears the moment the video shows a frame. */}
-      <View
-        pointerEvents="none"
-        style={[
-          StyleSheet.absoluteFill,
-          { alignItems: 'center', justifyContent: 'center' },
-        ]}
-      >
-        <Ionicons name="play-circle" size={48} color="rgba(240,232,213,0.05)" />
-      </View>
+      {/* THERE IS NO CENTRE PLAY CONTROL, AND THAT IS THE POINT.
+          What stood here was a 48pt play-circle at 5% opacity with
+          `pointerEvents="none"`, mounted on every reel in every state. It was
+          commented as a fallback for a video that fails to load, but nothing
+          ever conditioned it — so it was a decorative glyph that looked like a
+          broken control. The visual system's rule is blunt about this: if a
+          control does not do anything, do not show it. Playback state is now
+          carried by the word below and by the seek line, both of which appear
+          only when there is something to say. */}
 
       {/* Double-tap heart burst */}
       <Animated.View
@@ -622,12 +729,15 @@ function ReelItem({
           },
         ]}
       >
-        <Ionicons name="heart" size={120} color={LIKE_RED} />
+        {/* The burst is Linen, not an engagement red. PM ruling: no
+            engagement-red token, and an active Like must not compete with the
+            screen's primary marketplace action, which owns Mulberry. */}
+        <Ionicons name="heart" size={112} color={colors.textOnAction} />
       </Animated.View>
 
       {/* Top scrim: 128px, 0.5 -> 0 */}
       <LinearGradient
-        colors={['rgba(8,8,8,0.5)', 'rgba(8,8,8,0)']}
+        colors={[scrim(0.5), scrim(0)]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
         style={styles.topGradient}
@@ -636,12 +746,7 @@ function ReelItem({
 
       {/* Bottom scrim: transparent until 65%, 0.3 at 80%, 0.7 at bottom */}
       <LinearGradient
-        colors={[
-          'rgba(8,8,8,0)',
-          'rgba(8,8,8,0)',
-          'rgba(8,8,8,0.3)',
-          'rgba(8,8,8,0.7)',
-        ]}
+        colors={[scrim(0), scrim(0), scrim(0.3), scrim(0.72)]}
         locations={[0, 0.65, 0.8, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 0, y: 1 }}
@@ -653,151 +758,234 @@ function ReelItem({
           Reels is a root tab, so switch away via the bottom bar. */}
       <View style={[styles.header, { top: insets.top + 8 }]}>
         <View style={styles.headerLeft}>
-          <Text style={styles.wordmark}>Reels</Text>
-        </View>
+          <Text style={[styles.wordmark, type.titleCard, { color: colors.textOnAction }]}>
+            Reels
+          </Text>
+          {/* PAUSED IS SAID, NOT MERELY SHOWN. The visual system requires state
+              to be carried in words rather than colour alone, and a paused
+              video is otherwise indistinguishable from one that stalled.
 
-        <View style={styles.tab}>
-          <Text style={styles.tabText}>For You</Text>
-          <View style={styles.tabUnderline} />
-        </View>
-
-        {/* Spacer keeps the For You tab balanced. A capture entry point will
-            live here once recording exists; until then, no dead control. */}
-        <View style={styles.cameraBtn} />
-      </View>
-
-      {/* Right rail: avatar+Follow, heart, comment, share, Book */}
-      <View style={[styles.rightActions, { bottom: insets.bottom + 128 }]}>
-        {/* Provider avatar + follow. Tapping toggles follow (does NOT navigate);
-            the provider name in the caption is the link to their profile. */}
-        <View style={styles.railAvatarGroup}>
-          {/* On your own reel the avatar stays for context, but the follow
-              affordance (tap, + badge, label) is hidden — same as the profile. */}
-          <TouchableOpacity
-            activeOpacity={isOwnReel ? 1 : 0.85}
-            onPress={isOwnReel ? undefined : onFollow}
-            disabled={isOwnReel}
-            style={styles.railAvatarWrap}
-          >
-            <View style={styles.railAvatar}>
-              {reel.providerAvatarUrl ? (
-                <Image
-                  source={{ uri: reel.providerAvatarUrl }}
-                  style={styles.railAvatarImg}
-                />
-              ) : (
-                <Text style={styles.railAvatarInitials}>{providerInitials}</Text>
-              )}
-            </View>
-            {!isOwnReel && !reel.isFollowing && (
-              <View style={styles.followBadge}>
-                <Ionicons name="add" size={14} color="#080808" />
-              </View>
-            )}
-          </TouchableOpacity>
-          {!isOwnReel && (
-            <Text style={styles.followLabel}>{reel.isFollowing ? 'Following' : 'Follow'}</Text>
+              MOUNTED ONLY WHILE PAUSED, not merely faded to zero. A
+              transparent Text node is still in the accessibility tree, so
+              keeping it mounted meant a screen reader announced "PAUSED" over a
+              video that was playing. Losing the fade-OUT is the cheaper of the
+              two costs; the fade-in still runs on mount. */}
+          {paused && (
+            <Animated.View style={{ opacity: pauseFade }} pointerEvents="none">
+              <Text style={[styles.pausedWord, type.caption, { color: colors.textOnAction }]}>
+                PAUSED
+              </Text>
+            </Animated.View>
           )}
         </View>
 
-        {/* Like */}
+        <View style={styles.tab}>
+          <Text style={[styles.tabText, type.labelAction, { color: colors.textOnAction }]}>
+            For You
+          </Text>
+          <View style={[styles.tabUnderline, { backgroundColor: colors.textOnAction }]} />
+        </View>
+
+        {/* THE PROVIDER-ONLY WAY IN. This slot was reserved as an empty spacer
+            with a note that a capture entry point would live here once one
+            existed. One does: the Posts & Reels uploader. It is a contextual
+            entry point, NOT a second uploader, not a tab and not a floating
+            button — a consumer sees the same empty space they see today, which
+            is why the spacer stays rather than the row re-centring. The durable
+            provider-management path remains Me / My Studio. */}
+        {canCreate ? (
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => router.push('/(tabs)/business/posts' as any)}
+            style={styles.cameraBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel="Add a reel"
+            accessibilityHint="Opens your Posts and Reels uploader"
+          >
+            <View style={[styles.addReel, { borderColor: colors.textOnAction }]}>
+              <Ionicons name="add" size={18} color={colors.textOnAction} />
+            </View>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.cameraBtn} />
+        )}
+      </View>
+
+      {/* Seek line. Sits on the frame's bottom edge, above the tab bar. It is
+          the only thing that reports position, and it brightens when paused
+          rather than appearing from nothing — a line that materialises on tap
+          reads as a glitch. */}
+      <View
+        pointerEvents="none"
+        style={[styles.seekTrack, { bottom: insets.bottom + 56 }]}
+      >
+        <Animated.View
+          style={[
+            styles.seekFill,
+            {
+              backgroundColor: colors.textOnAction,
+              width: `${Math.min(Math.max(progress, 0), 1) * 100}%`,
+              opacity: pauseFade.interpolate({ inputRange: [0, 1], outputRange: [0.28, 0.9] }),
+            },
+          ]}
+        />
+      </View>
+
+      {/* THE RAIL IS FOUR QUIET GLYPHS AND NOTHING ELSE.
+          Gone from it: the provider's avatar (the same provider was rendered
+          twice on one screen — once here, once in the identity block below),
+          the follow badge, every engagement count, and Book. Counts are removed
+          by PM ruling; Book left because a marketplace's conversion action
+          should not be the fifth icon in a stack of icons, weighted the same as
+          Share. It now lives under the provider's name where it reads as part
+          of a sentence. */}
+      <View style={[styles.rightActions, { bottom: insets.bottom + 128 }]}>
         <ActionButton
           ionicon={reel.isLiked ? 'heart' : 'heart-outline'}
-          size={28}
-          color={reel.isLiked ? LIKE_RED : '#F0E8D5'}
-          labelColor={reel.isLiked ? LIKE_RED : undefined}
-          label={formatCount(reel.likes)}
+          size={26}
+          color={colors.textOnAction}
+          // Active state is FILL plus the word, never a colour the primary
+          // action could be confused with. There is deliberately no
+          // engagement-red token in this system.
+          active={reel.isLiked}
+          label={reel.isLiked ? 'Liked' : 'Like'}
+          type={type}
           onPress={onLike}
         />
 
-        {/* Save */}
         <ActionButton
           ionicon={reel.isSaved ? 'bookmark' : 'bookmark-outline'}
-          size={26}
-          color={reel.isSaved ? '#C8922A' : '#F0E8D5'}
-          labelColor={reel.isSaved ? '#C8922A' : undefined}
-          label="Save"
+          size={24}
+          color={colors.textOnAction}
+          active={reel.isSaved}
+          label={reel.isSaved ? 'Saved' : 'Save'}
+          type={type}
           onPress={onSave}
         />
 
-        {/* Comment */}
         <ActionButton
-          ionicon="chatbubble"
-          size={28}
-          color="#F0E8D5"
-          label={formatCount(reel.comments)}
+          ionicon="chatbubble-outline"
+          size={25}
+          color={colors.textOnAction}
+          label="Comment"
+          type={type}
           onPress={onComment}
         />
 
-        {/* Share */}
         <ActionButton
-          ionicon="paper-plane"
-          size={26}
-          color="#F0E8D5"
+          ionicon="paper-plane-outline"
+          size={24}
+          color={colors.textOnAction}
           label="Share"
+          type={type}
           onPress={onShare}
         />
+      </View>
 
-        {/* Book */}
+      {/* ONE IDENTITY BLOCK, AND THE ACTION THAT FOLLOWS FROM IT.
+          The provider used to appear twice on this screen: an avatar with a
+          follow badge on the rail, and this row. They were the same person.
+          This is now the only identity on the reel, and the reading order is
+          deliberate — who made this, where they work, what they said, then the
+          way to reach them. That last step is a sentence ending, not the fifth
+          icon in a column. */}
+      <View style={[styles.leftContent, { bottom: insets.bottom + 88 }]}>
+        <View style={styles.providerRow}>
+          <TouchableOpacity
+            style={styles.providerTap}
+            activeOpacity={0.8}
+            onPress={goToProvider}
+            accessibilityRole="button"
+            accessibilityLabel={`${reel.providerName}, view profile`}
+          >
+            <View style={[styles.providerAvatar, { borderColor: colors.textOnAction }]}>
+              {reel.providerAvatarUrl ? (
+                <Image
+                  source={{ uri: reel.providerAvatarUrl }}
+                  style={styles.providerAvatarImg}
+                />
+              ) : (
+                <Text
+                  style={[
+                    styles.providerAvatarInitials,
+                    type.labelAction,
+                    { color: colors.textOnAction },
+                  ]}
+                >
+                  {providerInitials}
+                </Text>
+              )}
+            </View>
+
+            <View style={styles.providerInfo}>
+              <Text
+                style={[styles.providerName, type.titleCard, { color: colors.textOnAction }]}
+                numberOfLines={1}
+              >
+                {reel.providerName}
+              </Text>
+              {/* Category is plain; the NEIGHBOURHOOD takes Cypress, because in
+                  this system Cypress is the colour of where — place and
+                  truthful status, never quality. Lifted Cypress is used so it
+                  holds over media in both schemes. No availability claim, no
+                  verification mark, no rating: attribution only. */}
+              <Text style={[styles.providerMeta, type.labelMeta]} numberOfLines={1}>
+                <Text style={{ color: colors.textOnAction }}>{reel.providerCategory}</Text>
+                <Text style={{ color: colors.textOnAction }}>{'  ·  '}</Text>
+                <Text style={{ color: colors.statusLocal }}>{reel.providerNeighborhood}</Text>
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          {/* Follow moved off the rail and into the identity block as a word.
+              It is an outline against the primary action, never beside it in
+              weight. Hidden on your own reel, where the DB would reject it. */}
+          {!isOwnReel && (
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={onFollow}
+              style={[styles.followChip, { borderColor: colors.textOnAction }]}
+              accessibilityRole="button"
+              accessibilityLabel={reel.isFollowing ? 'Following. Tap to unfollow' : 'Follow'}
+            >
+              <Text
+                style={[styles.followChipText, type.caption, { color: colors.textOnAction }]}
+              >
+                {reel.isFollowing ? 'Following' : 'Follow'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Caption: restrained, subordinate, two lines. */}
+        {reel.caption ? (
+          <Text
+            style={[styles.caption, type.bodyDefault, { color: colors.textOnAction }]}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {reel.caption}
+          </Text>
+        ) : null}
+
+        {/* THE ONE PRIMARY ACTION ON THIS SCREEN, IN MULBERRY.
+            Labelled "View & book" and not "Book": it routes to the provider
+            profile, where the real booking action lives. Calling it "Book"
+            promised something this control does not do, and the system's rule
+            against copy that sounds confident about what the product cannot do
+            covers exactly that. The booking flow itself is untouched here. */}
         <TouchableOpacity
           activeOpacity={0.85}
           onPress={goToProvider}
-          style={styles.bookWrap}
+          style={[styles.bookBtn, { backgroundColor: colors.actionPrimary }]}
+          accessibilityRole="button"
+          accessibilityLabel={`View ${reel.providerName}'s profile and book`}
         >
-          <View style={styles.bookCircle}>
-            <Ionicons name="calendar" size={24} color="#C8922A" />
-          </View>
-          <Text style={styles.bookLabel}>Book</Text>
+          <Text style={[styles.bookLabel, type.labelAction, { color: colors.textOnAction }]}>
+            View &amp; book
+          </Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Bottom-left content. +64 clears the bottom tab bar now that Reels is a
-          tab (keeps the original 24 gap above it). */}
-      <View style={[styles.leftContent, { bottom: insets.bottom + 88 }]}>
-        {/* Provider row + availability inline */}
-        {/* TODO: design Houston-native trust signal to replace the verification check */}
-        <TouchableOpacity
-          style={styles.providerRow}
-          activeOpacity={0.8}
-          onPress={goToProvider}
-        >
-          <View style={styles.providerAvatar}>
-            {reel.providerAvatarUrl ? (
-              <Image
-                source={{ uri: reel.providerAvatarUrl }}
-                style={styles.providerAvatarImg}
-              />
-            ) : (
-              <Text style={styles.providerAvatarInitials}>
-                {providerInitials}
-              </Text>
-            )}
-          </View>
-
-          <View style={styles.providerInfo}>
-            <View style={styles.providerNameRow}>
-              <Text style={styles.providerName} numberOfLines={1}>
-                {reel.providerName}
-              </Text>
-              {/* THE "AVAILABLE" BADGE IS GONE. `providerAvailable` was assigned
-                  `false` at one place in this file and never set anywhere else, so
-                  the pulsing dot could not render under any real state — dead UI
-                  that would have become a false availability claim the moment
-                  somebody wired it, because "available" is not something this beta
-                  can establish (there is no slot engine; see the Open Today lane).
-                  The field is removed with it rather than left as a trap. */}
-
-            </View>
-            <Text style={styles.providerMeta} numberOfLines={1}>
-              {reel.providerCategory} · {reel.providerNeighborhood}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Caption: plain, max 2 lines */}
-        <Text style={styles.caption} numberOfLines={2} ellipsizeMode="tail">
-          {reel.caption}
-        </Text>
       </View>
     </View>
   )
@@ -818,6 +1006,7 @@ function CommentSheet({
   onCountDelta: (delta: number) => void
   onCountLoaded: (count: number) => void
 }) {
+  const { colors, type } = useTheme()
   const [comments, setComments] = useState<CommentRow[]>([])
   const [loading, setLoading] = useState(false)
   const [input, setInput] = useState('')
@@ -895,31 +1084,44 @@ function CommentSheet({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.commentRoot}>
+      <View style={[styles.commentRoot, { backgroundColor: scrim(0.6) }]}>
         <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          style={[styles.commentSheet, { paddingBottom: insets.bottom + 8 }]}
+          style={[
+            styles.commentSheet,
+            {
+              paddingBottom: insets.bottom + 8,
+              backgroundColor: colors.bgSurface,
+              borderColor: colors.borderSubtle,
+            },
+          ]}
         >
-          <View style={styles.commentHandle} />
-          <View style={styles.commentHeader}>
-            <Text style={styles.commentTitle}>Comments</Text>
+          <View style={[styles.commentHandle, { backgroundColor: colors.borderSubtle }]} />
+          <View style={[styles.commentHeader, { borderBottomColor: colors.borderSubtle }]}>
+            <Text style={[styles.commentTitle, type.titleCard, { color: colors.textPrimary }]}>
+              Comments
+            </Text>
             <TouchableOpacity
               onPress={onClose}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               activeOpacity={0.7}
             >
-              <Ionicons name="close" size={22} color="#F0E8D5" />
+              <Ionicons name="close" size={22} color={colors.iconPrimary} />
             </TouchableOpacity>
           </View>
 
           {loading ? (
             <View style={styles.commentLoading}>
-              <ActivityIndicator color="rgba(240,232,213,0.4)" />
+              <ActivityIndicator color={colors.textSecondary} />
             </View>
           ) : comments.length === 0 ? (
             <View style={styles.commentEmpty}>
-              <Text style={styles.commentEmptyText}>No comments yet. Be the first.</Text>
+              <Text
+                style={[styles.commentEmptyText, type.bodyDefault, { color: colors.textSecondary }]}
+              >
+                No comments yet. Be the first.
+              </Text>
             </View>
           ) : (
             <FlatList
@@ -930,44 +1132,62 @@ function CommentSheet({
               contentContainerStyle={styles.commentList}
               renderItem={({ item }) => (
                 <View style={styles.commentItem}>
-                  <View style={styles.commentAvatar}>
-                    <Text style={styles.commentAvatarText}>{getInitials(item.authorName)}</Text>
+                  <View style={[styles.commentAvatar, { backgroundColor: colors.bgSubtle }]}>
+                    <Text
+                      style={[styles.commentAvatarText, type.labelMeta, { color: colors.textPrimary }]}
+                    >
+                      {getInitials(item.authorName)}
+                    </Text>
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.commentAuthor}>
+                    <Text
+                      style={[styles.commentAuthor, type.labelAction, { color: colors.textPrimary }]}
+                    >
                       {item.authorName}
-                      <Text style={styles.commentTime}>{'  '}{timeAgo(item.created_at)}</Text>
+                      <Text style={[styles.commentTime, type.labelMeta, { color: colors.textSecondary }]}>
+                        {'  '}
+                        {timeAgo(item.created_at)}
+                      </Text>
                     </Text>
-                    <Text style={styles.commentBody}>{item.comment_text}</Text>
+                    <Text style={[styles.commentBody, type.bodyDefault, { color: colors.textPrimary }]}>
+                      {item.comment_text}
+                    </Text>
                   </View>
                 </View>
               )}
             />
           )}
 
-          <View style={styles.commentInputRow}>
+          <View style={[styles.commentInputRow, { borderTopColor: colors.borderSubtle }]}>
             <TextInput
-              style={styles.commentInput}
+              style={[
+                styles.commentInput,
+                type.bodyDefault,
+                {
+                  backgroundColor: colors.bgSubtle,
+                  borderColor: colors.borderSubtle,
+                  color: colors.textPrimary,
+                },
+              ]}
               placeholder="Add a comment..."
-              placeholderTextColor="rgba(240,232,213,0.3)"
+              placeholderTextColor={colors.textSecondary}
               value={input}
               onChangeText={setInput}
               multiline
             />
             <TouchableOpacity
-              style={[styles.commentSend, !canSend && styles.commentSendDisabled]}
+              style={[
+                styles.commentSend,
+                { backgroundColor: colors.actionPrimary, opacity: canSend ? 1 : 0.45 },
+              ]}
               onPress={submit}
               disabled={!canSend}
               activeOpacity={0.8}
             >
               {submitting ? (
-                <ActivityIndicator color="#080808" size="small" />
+                <ActivityIndicator color={colors.textOnAction} size="small" />
               ) : (
-                <Ionicons
-                  name="arrow-up"
-                  size={18}
-                  color={canSend ? '#080808' : 'rgba(8,8,8,0.4)'}
-                />
+                <Ionicons name="arrow-up" size={18} color={colors.textOnAction} />
               )}
             </TouchableOpacity>
           </View>
@@ -981,47 +1201,72 @@ interface ActionButtonProps {
   ionicon: keyof typeof Ionicons.glyphMap
   color: string
   size?: number
-  label?: string
-  labelColor?: string
+  label: string
+  active?: boolean
+  type: Record<string, { fontFamily: string; fontSize: number; lineHeight: number; letterSpacing: number }>
   onPress: () => void
 }
 
-function ActionButton({ ionicon, color, size = 28, label, labelColor, onPress }: ActionButtonProps) {
+// ACTIVE IS A FILLED GLYPH PLUS A CHANGED WORD — never a colour of its own.
+// PM ruling: no engagement-red token, and an active Like must not compete with
+// the screen's primary marketplace action, which owns Mulberry. So both states
+// are Linen and the difference is carried by weight and by the label, which is
+// also what the system means by "state is carried in words, not only colour".
+function ActionButton({ ionicon, color, size = 26, label, active, type, onPress }: ActionButtonProps) {
   return (
-    <TouchableOpacity activeOpacity={0.7} onPress={onPress} style={styles.actionWrap}>
-      <Ionicons name={ionicon} size={size} color={color} />
-      {label != null && (
-        <Text style={[styles.actionLabel, labelColor ? { color: labelColor } : null]}>
-          {label}
-        </Text>
-      )}
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={onPress}
+      style={styles.actionWrap}
+      hitSlop={{ top: 6, bottom: 6, left: 10, right: 10 }}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={active != null ? { selected: active } : undefined}
+    >
+      <Ionicons name={ionicon} size={size} color={color} style={{ opacity: active ? 1 : 0.92 }} />
+      <Text style={[styles.actionLabel, type.caption, { color, opacity: active ? 1 : 0.7 }]}>
+        {label}
+      </Text>
     </TouchableOpacity>
   )
 }
 
+// STRUCTURE ONLY — NO COLOUR LIVES HERE.
+//
+// Every colour on this screen now resolves from the theme at render time. That
+// is not a stylistic preference: a StyleSheet is created once at module load,
+// so a colour baked into one cannot follow a Light/Dark/System change. The
+// screen previously held 35 literals from the retired The Book palette —
+// including a gold and a bone that are not roles in the Third system at all —
+// and none of them could respond to the appearance the viewer chose.
+//
+// Most chrome here reads `textOnAction` and `mediaScrim`, which are the two
+// roles deliberately IDENTICAL in both schemes, because lettering over a
+// photograph and a scrim over one must not invert. So this surface looking the
+// same in Light and Dark is the system working, not the migration missing.
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#080808',
   },
   emptyReels: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 48,
     gap: 12,
-    backgroundColor: '#080808',
   },
   emptyReelsTitle: {
-    fontSize: 16,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_600SemiBold',
+    textAlign: 'center',
   },
   emptyReelsSub: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.3)',
-    fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
-    lineHeight: 19,
+  },
+  emptyAddBtn: {
+    marginTop: 8,
+    paddingHorizontal: 20,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   reelRoot: {
@@ -1039,7 +1284,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Gradients
   topGradient: {
     position: 'absolute',
     top: 0,
@@ -1066,18 +1310,16 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   wordmark: {
-    fontSize: 18,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
     letterSpacing: 0.16,
+  },
+  pausedWord: {
+    letterSpacing: 1.4,
+    opacity: 0.75,
   },
   tab: {
     alignItems: 'center',
   },
   tabText: {
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
     letterSpacing: 0.04,
   },
   tabUnderline: {
@@ -1085,7 +1327,6 @@ const styles = StyleSheet.create({
     height: 2,
     width: '100%',
     borderRadius: 9999,
-    backgroundColor: '#F0E8D5',
   },
   cameraBtn: {
     width: 44,
@@ -1093,113 +1334,69 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
     justifyContent: 'center',
   },
+  addReel: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.85,
+  },
+
+  // Seek line
+  seekTrack: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 2,
+    zIndex: 4,
+  },
+  seekFill: {
+    height: 2,
+  },
 
   // Right rail
   rightActions: {
     position: 'absolute',
-    right: 16,
+    right: 14,
     alignItems: 'center',
-    gap: 24,
-  },
-  railAvatarGroup: {
-    alignItems: 'center',
-    marginBottom: 28,
-  },
-  railAvatarWrap: {
-    width: 48,
-    height: 48,
-    position: 'relative',
-  },
-  railAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 2,
-    borderColor: '#C8922A',
-    backgroundColor: '#1A1410',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-  },
-  railAvatarImg: {
-    width: '100%',
-    height: '100%',
-  },
-  railAvatarInitials: {
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
-  followBadge: {
-    position: 'absolute',
-    bottom: -4,
-    left: 14,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: '#C8922A',
-    borderWidth: 2,
-    borderColor: '#080808',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  followLabel: {
-    marginTop: 12,
-    fontSize: 10,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    gap: 22,
+    zIndex: 5,
   },
   actionWrap: {
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
+    minWidth: 44,
   },
   actionLabel: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  bookWrap: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  bookCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: 'rgba(200,146,42,0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.3)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bookLabel: {
-    fontSize: 13,
-    color: '#C8922A',
-    fontFamily: 'Manrope_700Bold',
+    letterSpacing: 0.2,
   },
 
   // Bottom-left content
   leftContent: {
     position: 'absolute',
-    left: 16,
-    right: 80,
+    left: 20,
+    right: 76,
+    zIndex: 5,
   },
 
-  // Provider row
   providerRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+  },
+  providerTap: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
+    flexShrink: 1,
   },
   providerAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.2)',
-    backgroundColor: '#1A1410',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -1210,52 +1407,57 @@ const styles = StyleSheet.create({
     borderRadius: 18,
   },
   providerAvatarInitials: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
+    textAlign: 'center',
   },
   providerInfo: {
-    flex: 1,
-  },
-  providerNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    flexShrink: 1,
   },
   providerName: {
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
     flexShrink: 1,
   },
   providerMeta: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
     marginTop: 2,
   },
+  followChip: {
+    paddingHorizontal: 10,
+    height: 26,
+    borderRadius: 13,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    opacity: 0.9,
+  },
+  followChipText: {
+    letterSpacing: 0.3,
+  },
 
-  // Caption (Figma: plain Manrope Regular 14, ~11px gap from provider row)
   caption: {
-    marginTop: 11,
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.9)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 23,
+    marginTop: 10,
+    opacity: 0.92,
+  },
+
+  bookBtn: {
+    marginTop: 16,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 20,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bookLabel: {
+    letterSpacing: 0.1,
   },
 
   // Comment sheet
   commentRoot: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.6)',
   },
   commentSheet: {
-    backgroundColor: '#121212',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderTopWidth: 1,
-    borderColor: 'rgba(240,232,213,0.08)',
     maxHeight: '75%',
     minHeight: '45%',
   },
@@ -1264,7 +1466,6 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: 'rgba(240,232,213,0.2)',
     marginTop: 10,
     marginBottom: 6,
   },
@@ -1275,13 +1476,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
   },
-  commentTitle: {
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
+  commentTitle: {},
   commentLoading: {
     paddingVertical: 40,
     alignItems: 'center',
@@ -1292,9 +1488,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
   },
   commentEmptyText: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.35)',
-    fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },
   commentList: {
@@ -1311,32 +1504,15 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: 'rgba(240,232,213,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  commentAvatarText: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
+  commentAvatarText: {},
   commentAuthor: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
     marginBottom: 3,
   },
-  commentTime: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  commentBody: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.85)',
-    fontFamily: 'Manrope_400Regular',
-    lineHeight: 20,
-  },
+  commentTime: {},
+  commentBody: {},
   commentInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -1344,32 +1520,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.06)',
   },
   commentInput: {
     flex: 1,
     minHeight: 44,
     maxHeight: 120,
-    backgroundColor: 'rgba(240,232,213,0.05)',
     borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
     borderRadius: 22,
     paddingHorizontal: 16,
     paddingTop: 12,
     paddingBottom: 12,
-    fontSize: 14,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
   },
   commentSend: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#F0E8D5',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  commentSendDisabled: {
-    backgroundColor: 'rgba(240,232,213,0.2)',
   },
 })
