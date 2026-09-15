@@ -879,8 +879,22 @@ Five shared tabs: **Discover · Reels · Bookings · Messages · Me** (`app/(tab
 
 **Reels was migrated onto the Third visual system in Session 6B** — direction "Held Light",
 approved by PM/founder as art direction and built against it. Design:
-[design/REELS.md](../design/REELS.md). **Engineering-complete, unmerged, and NOT final:
-founder on-device visual approval is required**, as it is for Session 5.
+[design/REELS.md](../design/REELS.md). **Engineering-complete for the buildout phase; final
+visual consistency approval deferred to the whole-app visual pass.**
+
+**The remaining visual migration is build-first** (founder ruling, 2026-09-15): a surface does
+**not** wait on a founder device review before the next one begins. One whole-app visual and
+navigation consistency pass, a founder final visual review, and deep device QA come at the end.
+The process and its limits are in
+[ROADMAP.md](ROADMAP.md#how-the-remaining-visual-migration-proceeds--build-first-founder-ruling-2026-09-15).
+**Reels is not "founder visually final"** — Discover is the only surface with an actual founder
+visual approval behind it.
+
+**Session 5's outstanding device requirement is a different kind of thing and still stands.**
+It is *functional*, not visual: `expo-video-thumbnails` is a native module that has never been
+executed, so video upload is unproven until a rebuilt client runs it. Build-first relaxes
+per-screen **visual** gates and relaxes no functional blocker, safety or privacy review,
+security defect, product-rule approval, navigation constraint, or fairness rule.
 
 It was the last unmigrated primary surface, and three defects were sitting behind that fact:
 

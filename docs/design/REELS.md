@@ -5,8 +5,27 @@ Session 6B built against it. Cross-app principles live in
 [THIRD_VISUAL_SYSTEM.md](THIRD_VISUAL_SYSTEM.md); nothing here is a global rule unless that
 document says so.
 
-**Status: engineering-complete, NOT approved.** Founder on-device visual approval is required
-before this phase is final. PR is open and unmerged.
+**Status: engineering-complete for the buildout phase; final visual consistency approval
+deferred to the whole-app visual pass.**
+
+The remaining visual migration is **build-first** (founder ruling, 2026-09-15): art direction →
+implementation → light build-phase validation → next surface, with one whole-app visual and
+navigation consistency pass, a founder final visual review, and deep device QA at the end. **A
+surface does not wait on a founder device review before the next one begins**, and this screen
+is not "founder visually final" — no founder review of it has happened. The process, and what it
+explicitly does not relax, is recorded in
+[ROADMAP.md](../product/ROADMAP.md#how-the-remaining-visual-migration-proceeds--build-first-founder-ruling-2026-09-15).
+
+**What that does not cover — tracked for the later device pass**, because none of it can be
+executed in the development environment (this machine has no Xcode, only Command Line Tools):
+
+- that video actually **plays and pauses** on a device, and that the deferred single-tap does
+  not feel laggy against a real double-tap
+- that the **seek line** tracks smoothly from real `onPlaybackStatusUpdate` intervals
+- that **audio** stops on navigation away and does not bleed under a pushed screen
+- **scroll/paging feel** on a real list of real videos, and memory behaviour over a long feed
+- that the **scrim** holds legibility over real provider footage rather than a mocked view
+- **VoiceOver** ordering and announcement of the paused state on device
 
 ---
 
@@ -179,6 +198,39 @@ a wine fill** where a clone puts its fifth icon.
 
 What makes it Third is the reading order — who, where, what, then how to reach them — and a
 place name rendered in the colour this system reserves for place.
+
+---
+
+## 11. Open, and NOT to be cleaned up unilaterally: the "For You" label
+
+**Do not change this without a founder decision.** It is recorded here because it looks exactly
+like tidy-up work, and it is not — it touches what the feed claims to be.
+
+**What it is.** A `View` holding a `Text` and a 2pt full-width `textOnAction` underline. It is
+**not** wrapped in a `Pressable` or `TouchableOpacity` and has no handler: it is **static copy
+styled as a selected tab**. The underline is the standard "this option is selected" affordance,
+so it reads as one choice out of several while being the only one that exists.
+
+**What the feed actually is.** `posts_visible`, `media_type = 'video'`, active, non-demo,
+`order('created_at', desc)`. Nothing re-sorts it afterwards. That is **strict reverse
+chronology over every eligible video in the marketplace** — no personalization, no follow
+input, no engagement input, no ranking of any kind. The only viewer-dependent element is
+PD-089's block filter, which *removes* rows for safety; it does not *order* them.
+
+**The mismatch.** "For You" is the category term for an algorithmically personalized feed, so
+the label claims a personalization the product does not perform, and the underline claims a
+selector that does not exist. Two repository rules bear on it directly: the visual system rules
+out *copy that sounds confident about something the product cannot do*, and **PD-073** requires
+beta discovery lanes to **print the rule that put content in front of you** — "For You" prints
+no rule, and the rule it implies is not the rule in force.
+
+**Smallest correction, recommended but NOT implemented:** delete the label and its underline,
+leaving the "Reels" wordmark and the provider-only `+`. It removes a false claim and a phantom
+selector, and it adds nothing. If a word is wanted in that space, **"Latest"** is the only one
+that is true today.
+
+**Explicitly out of scope without founder approval:** a Following feed, a second feed, a
+category switcher, or any ranking behaviour.
 
 ---
 
