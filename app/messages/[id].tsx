@@ -36,6 +36,7 @@ import {
   type ReportReason,
 } from '@/lib/safety'
 import { openSafetyMenu, confirmUnblock } from '@/lib/safetyMenu'
+import { useTheme } from '@/context/ThemeContext'
 
 const INPUT_ACCESSORY_ID = 'chatInput'
 const GROUP_WINDOW_MS = 5 * 60 * 1000
@@ -54,10 +55,50 @@ function formatMessageTime(dateStr: string): string {
   })
 }
 
+// ── DAY SEPARATORS, DERIVED AND NOTHING MORE ─────────────────────────────
+//
+// A long thread had no date boundary anywhere: messages grouped by sender
+// within a five-minute window, and a reply sent three weeks later sat directly
+// under the one it answered with nothing between them. These separators read
+// the timestamps the messages already carry. No message data changes, no
+// grouping semantics change, and nothing is persisted — the same thread with the
+// same rows renders the same conversation, with the days named.
+
+/** Local calendar day for a timestamp, as a comparable key. */
+function dayKey(dateStr: string): string {
+  const d = new Date(dateStr)
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+
+/** "Today" / "Yesterday" / "Tuesday" within the week / an explicit date beyond it. */
+function formatDayLabel(dateStr: string): string {
+  const d = new Date(dateStr)
+  if (Number.isNaN(d.getTime())) return ''
+  const now = new Date()
+  if (dayKey(dateStr) === dayKey(now.toISOString())) return 'Today'
+
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (dayKey(dateStr) === dayKey(yesterday.toISOString())) return 'Yesterday'
+
+  // Inside the last week a weekday name is the most readable form; past that it
+  // stops being locating and a date is clearer.
+  const days = Math.floor((now.getTime() - d.getTime()) / 86400000)
+  if (days >= 0 && days < 7) return d.toLocaleDateString('en-US', { weekday: 'long' })
+
+  const sameYear = d.getFullYear() === now.getFullYear()
+  return d.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    ...(sameYear ? {} : { year: 'numeric' }),
+  })
+}
+
 export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
   const { user } = useAuth()
   const insets = useSafeAreaInsets()
+  const { colors, type } = useTheme()
 
   const { messages, loading, sending, sendMessage } = useMessages(id as string)
   const [inputText, setInputText] = useState('')
@@ -308,29 +349,38 @@ export default function ChatScreen() {
   // Conversation not found state
   if (convoFound === false) {
     return (
-      <View style={styles.root}>
-        <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+      <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
+        <View
+          style={[
+            styles.topBar,
+            { paddingTop: insets.top + 12, borderBottomColor: colors.borderSubtle },
+          ]}
+        >
           <TouchableOpacity
             onPress={() => router.back()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
-            <Ionicons name="chevron-back" size={24} color="#F0E8D5" />
+            <Ionicons name="chevron-back" size={24} color={colors.iconPrimary} />
           </TouchableOpacity>
-          <Text style={styles.topBarTitle}>Conversation</Text>
+          <Text style={[styles.topBarTitle, type.titleCard, { color: colors.textPrimary }]}>
+            Conversation
+          </Text>
           <View style={{ width: 24 }} />
         </View>
         <View style={styles.centerWrap}>
-          <Ionicons
-            name="chatbubble-outline"
-            size={40}
-            color="rgba(240,232,213,0.2)"
-          />
-          <Text style={styles.notFoundTitle}>Conversation not found</Text>
+          <Text style={[styles.notFoundTitle, type.titleCard, { color: colors.textPrimary }]}>
+            Conversation not found
+          </Text>
           <TouchableOpacity
-            style={styles.findBtn}
+            style={[styles.findBtn, { backgroundColor: colors.actionPrimary }]}
             onPress={() => router.replace('/(tabs)/messages' as never)}
+            accessibilityRole="button"
           >
-            <Text style={styles.findBtnText}>Back to Messages</Text>
+            <Text style={[type.labelAction, { color: colors.textOnAction }]}>
+              Back to Messages
+            </Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -343,27 +393,34 @@ export default function ChatScreen() {
         style={styles.root}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        {/* Top bar */}
-        <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
+        {/* Top bar: back, who, and the safety control. Structure unchanged. */}
+        <View
+          style={[
+            styles.topBar,
+            { paddingTop: insets.top + 12, borderBottomColor: colors.borderSubtle },
+          ]}
+        >
           <TouchableOpacity
             onPress={() => router.back()}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
             style={{ marginRight: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel="Back"
           >
-            <Ionicons name="chevron-back" size={24} color="#F0E8D5" />
+            <Ionicons name="chevron-back" size={24} color={colors.iconPrimary} />
           </TouchableOpacity>
-          <View style={styles.topAvatar}>
-            <Text style={styles.topAvatarText}>{avatarInitial}</Text>
+          <View style={[styles.topAvatar, { backgroundColor: colors.bgSubtle }]}>
+            <Text style={[type.labelAction, { color: colors.textSecondary }]}>
+              {avatarInitial}
+            </Text>
           </View>
           <View style={styles.topCenter}>
-            <Text style={styles.otherName} numberOfLines={1}>
+            <Text
+              style={[styles.otherName, type.titleCard, { color: colors.textPrimary }]}
+              numberOfLines={1}
+            >
               {otherPartyName || ' '}
             </Text>
-            {bookingService ? (
-              <Text style={styles.bookingMeta} numberOfLines={1}>
-                {bookingService}
-              </Text>
-            ) : null}
           </View>
           {/* This slot held an `information-circle-outline` icon with NO
               `onPress` — a dead button that had been sitting in the thread
@@ -376,33 +433,64 @@ export default function ChatScreen() {
               activeOpacity={0.7}
               onPress={safetyMenu}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
               accessibilityLabel="Safety options"
             >
-              <Ionicons
-                name="ellipsis-horizontal"
-                size={22}
-                color="rgba(240,232,213,0.4)"
-              />
+              <Ionicons name="ellipsis-horizontal" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           ) : (
             <View style={{ width: 22 }} />
           )}
         </View>
 
+        {/* ── THE CONTEXT BAND ──────────────────────────────────────────────
+            One place that answers "what is this conversation, and what state is
+            it in". It carries ONLY what the screen already knew: the booking
+            service (previously a second line under the name in the header) and
+            the request state (previously a notice bar that appeared down beside
+            the keyboard, which is the worst place to explain why you cannot
+            type). It invents no state and changes no gating.
+
+            SAFETY NOTICES ARE NOT IN HERE, deliberately. The blocker's notice
+            stays immediately above the composer where it sits today, because it
+            is paired with the composer it does not close and with its Unblock
+            action. Moving it would have been a safety-behaviour change in a
+            visual session. */}
+        {bookingService || gate.notice ? (
+          <View
+            style={[
+              styles.contextBand,
+              { backgroundColor: colors.bgSubtle, borderBottomColor: colors.borderSubtle },
+            ]}
+          >
+            {bookingService ? (
+              <Text style={[type.labelMeta, { color: colors.statusLocal }]} numberOfLines={1}>
+                {bookingService}
+              </Text>
+            ) : null}
+            {gate.notice ? (
+              <Text
+                style={[
+                  type.bodySmall,
+                  { color: colors.textSecondary, marginTop: bookingService ? 4 : 0 },
+                ]}
+              >
+                {gate.notice}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
         {loading && messages.length === 0 ? (
           <View style={styles.centerWrap}>
-            <ActivityIndicator color="#C8922A" />
+            <ActivityIndicator color={colors.textSecondary} />
           </View>
         ) : messages.length === 0 ? (
           <View style={styles.emptyWrap}>
-            <Ionicons
-              name="chatbubble-outline"
-              size={40}
-              color="rgba(240,232,213,0.15)"
-              style={{ marginBottom: 12 }}
-            />
-            <Text style={styles.emptyTitle}>No messages yet</Text>
-            <Text style={styles.emptySub}>
+            <Text style={[styles.emptyTitle, type.titleCard, { color: colors.textPrimary }]}>
+              No messages yet
+            </Text>
+            <Text style={[styles.emptySub, type.bodyDefault, { color: colors.textSecondary }]}>
               Send a message to start the conversation.
             </Text>
           </View>
@@ -415,6 +503,8 @@ export default function ChatScreen() {
             renderItem={({ item, index }) => {
               const prev = messages[index - 1]
               const next = messages[index + 1]
+              // GROUPING IS UNCHANGED. Same sender, inside the same five-minute
+              // window, on both sides — exactly as before this migration.
               const sameSenderAsPrev =
                 prev &&
                 prev.sender_id === item.sender_id &&
@@ -433,48 +523,90 @@ export default function ChatScreen() {
               ]
               if (sameSenderAsPrev) wrapStyle.push({ marginTop: 0 })
 
+              // A new calendar day opens with a rule. Derived from the
+              // timestamps already on these rows; the first message always
+              // opens one, so a thread never begins mid-air.
+              const startsNewDay = !prev || dayKey(prev.created_at) !== dayKey(item.created_at)
+              const daySeparator = startsNewDay ? (
+                <View style={styles.dayWrap}>
+                  <View style={[styles.dayRule, { backgroundColor: colors.borderSubtle }]} />
+                  <Text style={[styles.dayLabel, type.caption, { color: colors.textSecondary }]}>
+                    {formatDayLabel(item.created_at)}
+                  </Text>
+                  <View style={[styles.dayRule, { backgroundColor: colors.borderSubtle }]} />
+                </View>
+              ) : null
+
               // A platform notice is authored by NOBODY. Falling through to the
               // participant branches would render it in the counterparty's bubble — the
               // impersonation the server-side representation exists to avoid. Centred,
               // unattributed, and visually distinct from both participants.
               if (item.is_system) {
                 return (
-                  <View style={[styles.systemWrap, ...wrapStyle]}>
-                    <Text style={styles.systemText}>{item.content}</Text>
-                    {showTime && (
-                      <Text style={styles.systemTime}>
-                        {formatMessageTime(item.created_at)}
+                  <>
+                    {daySeparator}
+                    <View style={[styles.systemWrap, ...wrapStyle]}>
+                      <Text
+                        style={[styles.systemText, type.bodySmall, { color: colors.textSecondary }]}
+                      >
+                        {item.content}
                       </Text>
-                    )}
-                  </View>
+                      {showTime && (
+                        <Text style={[type.caption, { color: colors.textSecondary }]}>
+                          {formatMessageTime(item.created_at)}
+                        </Text>
+                      )}
+                    </View>
+                  </>
                 )
               }
 
+              // SLABS, NOT CHAT BUBBLES. Incoming and outgoing are told apart by
+              // alignment and by one tonal step, with a hairline on the incoming
+              // side. No tails, low rounding, and NO MULBERRY FILL — Mulberry is
+              // the one primary-action colour on this screen and it belongs to
+              // Send and to Accept, not to every sentence the viewer typed.
               if (item.is_mine) {
                 return (
-                  <View style={[styles.myWrap, ...wrapStyle]}>
-                    <View style={styles.myBubble}>
-                      <Text style={styles.myBubbleText}>{item.content}</Text>
+                  <>
+                    {daySeparator}
+                    <View style={[styles.myWrap, ...wrapStyle]}>
+                      <View style={[styles.slab, styles.mySlab, { backgroundColor: colors.bgElevated }]}>
+                        <Text style={[type.bodyDefault, { color: colors.textPrimary }]}>
+                          {item.content}
+                        </Text>
+                      </View>
+                      {showTime && (
+                        <Text style={[styles.myTime, type.caption, { color: colors.textSecondary }]}>
+                          {formatMessageTime(item.created_at)}
+                        </Text>
+                      )}
+                    </View>
+                  </>
+                )
+              }
+              return (
+                <>
+                  {daySeparator}
+                  <View style={[styles.theirWrap, ...wrapStyle]}>
+                    <View
+                      style={[
+                        styles.slab,
+                        styles.theirSlab,
+                        { backgroundColor: colors.bgSurface, borderColor: colors.borderSubtle },
+                      ]}
+                    >
+                      <Text style={[type.bodyDefault, { color: colors.textPrimary }]}>
+                        {item.content}
+                      </Text>
                     </View>
                     {showTime && (
-                      <Text style={styles.myTime}>
+                      <Text style={[styles.theirTime, type.caption, { color: colors.textSecondary }]}>
                         {formatMessageTime(item.created_at)}
                       </Text>
                     )}
                   </View>
-                )
-              }
-              return (
-                <View style={[styles.theirWrap, ...wrapStyle]}>
-                  <View style={styles.theirBubble}>
-                    <Text style={styles.theirBubbleText}>{item.content}</Text>
-                  </View>
-                  {showTime && (
-                    <Text style={styles.theirTime}>
-                      {formatMessageTime(item.created_at)}
-                    </Text>
-                  )}
-                </View>
+                </>
               )
             }}
           />
@@ -493,27 +625,59 @@ export default function ChatScreen() {
             itself — which it now does out loud (MESSAGE_REFUSED_COPY) instead
             of silently.
 
-            Without this the blocker got a cause-free "This conversation is not
-            available right now" on a thread that still looked writable, having
-            forgotten they were the one who closed it. */}
+            IT STAYS HERE, ABOVE THE COMPOSER, and was deliberately NOT moved
+            into the context band with the request state. It is paired with the
+            composer it does not close and with its own Unblock action; relocating
+            a safety notice is a safety change, not a visual one. */}
         {blockedByMe === true ? (
-          <View style={styles.blockedNotice}>
-            <Text style={styles.blockedNoticeText}>{BLOCKED_THREAD_COPY.notice}</Text>
-            <TouchableOpacity onPress={unblockFromThread} activeOpacity={0.7}>
-              <Text style={styles.blockedNoticeAction}>{BLOCKED_THREAD_COPY.action}</Text>
+          <View
+            style={[
+              styles.blockedNotice,
+              { backgroundColor: colors.bgSubtle, borderTopColor: colors.borderSubtle },
+            ]}
+          >
+            <Text style={[type.bodySmall, { color: colors.textSecondary, flex: 1 }]}>
+              {BLOCKED_THREAD_COPY.notice}
+            </Text>
+            <TouchableOpacity
+              onPress={unblockFromThread}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+            >
+              <Text style={[type.labelAction, { color: colors.actionText }]}>
+                {BLOCKED_THREAD_COPY.action}
+              </Text>
             </TouchableOpacity>
           </View>
         ) : null}
 
-        {/* Composer / request controls, gated by the request status. */}
+        {/* Composer / request controls, gated by the request status. The GATING
+            IS UNCHANGED — `composerState` decides, exactly as before. */}
         {gate.canCompose ? (
-          <View style={[styles.inputBar, { paddingBottom: insets.bottom + 12 }]}>
+          <View
+            style={[
+              styles.inputBar,
+              {
+                paddingBottom: insets.bottom + 12,
+                backgroundColor: colors.bgCanvas,
+                borderTopColor: colors.borderSubtle,
+              },
+            ]}
+          >
             <TextInput
-              style={styles.input}
+              style={[
+                styles.input,
+                type.bodyDefault,
+                {
+                  backgroundColor: colors.bgSurface,
+                  borderColor: colors.borderSubtle,
+                  color: colors.textPrimary,
+                },
+              ]}
               value={inputText}
               onChangeText={setInputText}
               placeholder="Message..."
-              placeholderTextColor="rgba(240,232,213,0.25)"
+              placeholderTextColor={colors.textSecondary}
               multiline
               maxLength={1000}
               inputAccessoryViewID={
@@ -523,65 +687,97 @@ export default function ChatScreen() {
               blurOnSubmit={false}
             />
             <TouchableOpacity
-              style={[styles.sendBtn, hasText && styles.sendBtnActive]}
+              style={[
+                styles.sendBtn,
+                { backgroundColor: hasText ? colors.actionPrimary : colors.bgSubtle },
+              ]}
               onPress={handleSend}
               disabled={sending || !hasText}
               activeOpacity={0.8}
+              accessibilityRole="button"
+              accessibilityLabel="Send message"
             >
               {sending ? (
                 <ActivityIndicator
-                  color={hasText ? '#080808' : 'rgba(240,232,213,0.3)'}
+                  color={hasText ? colors.textOnAction : colors.textSecondary}
                   size="small"
                 />
               ) : (
                 <Ionicons
                   name="send"
                   size={18}
-                  color={hasText ? '#080808' : 'rgba(240,232,213,0.2)'}
+                  color={hasText ? colors.textOnAction : colors.textSecondary}
                 />
               )}
             </TouchableOpacity>
           </View>
         ) : gate.showAcceptDecline ? (
-          <View style={[styles.requestBar, { paddingBottom: insets.bottom + 12 }]}>
-            <Text style={styles.requestPrompt}>{otherPartyName} sent a message request.</Text>
+          /* ACCEPT AND DECLINE STAY AT THE BOTTOM, where the composer would be
+             and where the thumb already is. Accept is the one Mulberry fill;
+             Decline is an outline beside it and must never out-weigh it. */
+          <View
+            style={[
+              styles.requestBar,
+              {
+                paddingBottom: insets.bottom + 12,
+                backgroundColor: colors.bgCanvas,
+                borderTopColor: colors.borderSubtle,
+              },
+            ]}
+          >
+            <Text style={[styles.requestPrompt, type.bodySmall, { color: colors.textSecondary }]}>
+              {otherPartyName} sent a message request.
+            </Text>
             <View style={styles.requestBtns}>
               <TouchableOpacity
-                style={[styles.declineBtn, statusBusy && styles.btnBusy]}
+                style={[
+                  styles.declineBtn,
+                  { borderColor: colors.borderSubtle, opacity: statusBusy ? 0.5 : 1 },
+                ]}
                 onPress={() => handleRequestDecision('declined')}
                 disabled={statusBusy}
                 activeOpacity={0.85}
+                accessibilityRole="button"
               >
-                <Text style={styles.declineText}>Decline</Text>
+                <Text style={[type.labelAction, { color: colors.textPrimary }]}>Decline</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.acceptBtn, statusBusy && styles.btnBusy]}
+                style={[
+                  styles.acceptBtn,
+                  { backgroundColor: colors.actionPrimary, opacity: statusBusy ? 0.5 : 1 },
+                ]}
                 onPress={() => handleRequestDecision('accepted')}
                 disabled={statusBusy}
                 activeOpacity={0.85}
+                accessibilityRole="button"
               >
                 {statusBusy ? (
-                  <ActivityIndicator color="#080808" size="small" />
+                  <ActivityIndicator color={colors.textOnAction} size="small" />
                 ) : (
-                  <Text style={styles.acceptText}>Accept</Text>
+                  <Text style={[type.labelAction, { color: colors.textOnAction }]}>Accept</Text>
                 )}
               </TouchableOpacity>
             </View>
           </View>
-        ) : (
-          <View style={[styles.noticeBar, { paddingBottom: insets.bottom + 12 }]}>
-            <Text style={styles.noticeText}>{gate.notice}</Text>
-          </View>
-        )}
+        ) : null}
+        {/* The notice that used to sit here now lives in the context band under
+            the header, which is persistent and never scrolls away. Rendering it
+            in both places would have said the same sentence twice; and in these
+            states there is no control to reach at the bottom, so nothing is lost
+            by the move. */}
+
       </KeyboardAvoidingView>
 
       {Platform.OS === 'ios' && (
-        <InputAccessoryView nativeID={INPUT_ACCESSORY_ID} backgroundColor="#111111">
-          <View style={styles.accessoryBar}>
+        <InputAccessoryView nativeID={INPUT_ACCESSORY_ID} backgroundColor={colors.bgElevated}>
+          <View style={[styles.accessoryBar, { borderTopColor: colors.borderSubtle }]}>
             <Text
               style={[
-                styles.accessoryCount,
-                inputText.length > 800 && styles.accessoryCountWarning,
+                type.caption,
+                {
+                  color:
+                    inputText.length > 800 ? colors.statusDanger : colors.textSecondary,
+                },
               ]}
             >
               {inputText.length} / 1000
@@ -591,7 +787,7 @@ export default function ChatScreen() {
                 onPress={Keyboard.dismiss}
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <Text style={styles.accessoryDone}>Done</Text>
+                <Text style={[type.labelAction, { color: colors.textSecondary }]}>Done</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
@@ -605,8 +801,11 @@ export default function ChatScreen() {
               >
                 <Text
                   style={[
-                    styles.accessorySend,
-                    (!hasText || sending) && styles.accessorySendDisabled,
+                    type.labelAction,
+                    {
+                      color: colors.actionText,
+                      opacity: !hasText || sending ? 0.4 : 1,
+                    },
                   ]}
                 >
                   Send
@@ -629,82 +828,65 @@ export default function ChatScreen() {
   )
 }
 
+// STRUCTURE ONLY — every colour resolves from the theme at render time. This
+// screen previously carried ~50 literals from the retired The Book palette and a
+// hardcoded near-black canvas, so it could not follow a Light/Dark/System change
+// at all. Unlike Reels, Messages has no media on it: nothing here needs to be
+// scheme-invariant, and every surface follows the viewer's choice.
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#080808',
-  },
+  root: { flex: 1 },
+
+  // Top bar
   topBar: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(240,232,213,0.08)',
   },
   topBarTitle: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
   },
   topAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#1A1410',
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
-  topAvatarText: {
-    fontSize: 13,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
   topCenter: {
     flex: 1,
-    marginRight: 12,
+    marginRight: 10,
   },
-  otherName: {
-    fontSize: 16,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
+  otherName: {},
+
+  // Context band
+  contextBand: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  bookingMeta: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_400Regular',
-    marginTop: 1,
-  },
+
   centerWrap: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 40,
-    gap: 12,
+    paddingHorizontal: 32,
+    gap: 16,
   },
   notFoundTitle: {
-    fontSize: 16,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_500Medium',
-    marginTop: 8,
+    textAlign: 'center',
   },
   findBtn: {
-    marginTop: 8,
-    paddingHorizontal: 22,
+    paddingHorizontal: 20,
     height: 44,
-    borderRadius: 14,
-    backgroundColor: '#F0E8D5',
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  findBtnText: {
-    fontSize: 14,
-    color: '#080808',
-    fontFamily: 'Manrope_700Bold',
-  },
+
   emptyWrap: {
     flex: 1,
     alignItems: 'center',
@@ -712,229 +894,152 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyTitle: {
-    fontSize: 15,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_500Medium',
-    marginBottom: 4,
+    marginBottom: 8,
+    textAlign: 'center',
   },
   emptySub: {
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.3)',
-    fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
   },
+
   list: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 16,
+    paddingBottom: 12,
   },
 
-  // My (amber) bubble
-  systemWrap: { alignItems: 'center', paddingHorizontal: 24, marginVertical: 10 },
-  systemText: {
-    color: 'rgba(240,232,213,0.55)',
-    fontSize: 12.5,
-    lineHeight: 18,
-    textAlign: 'center',
-    fontStyle: 'italic',
+  // Day separators
+  dayWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 20,
+    marginBottom: 16,
   },
-  systemTime: { color: 'rgba(240,232,213,0.3)', fontSize: 10.5, marginTop: 3 },
+  dayRule: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+  },
+  dayLabel: {
+    letterSpacing: 0.3,
+  },
 
+  // Message slabs
+  slab: {
+    maxWidth: '82%',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderCurve: 'continuous',
+  },
+  mySlab: {},
+  theirSlab: {
+    borderWidth: StyleSheet.hairlineWidth,
+  },
   myWrap: {
     alignItems: 'flex-end',
   },
-  myBubble: {
-    maxWidth: '75%',
-    backgroundColor: '#C8922A',
-    borderRadius: 18,
-    borderBottomRightRadius: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  myBubbleText: {
-    fontSize: 15,
-    lineHeight: 21,
-    color: '#080808',
-    fontFamily: 'Manrope_400Regular',
-  },
-  myTime: {
-    marginTop: 2,
-    marginRight: 4,
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.3)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'right',
-  },
-
-  // Their bubble
   theirWrap: {
     alignItems: 'flex-start',
   },
-  theirBubble: {
-    maxWidth: '75%',
-    backgroundColor: 'rgba(240,232,213,0.08)',
-    borderRadius: 18,
-    borderBottomLeftRadius: 4,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  theirBubbleText: {
-    fontSize: 15,
-    lineHeight: 21,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
+  myTime: {
+    marginTop: 4,
+    marginRight: 2,
   },
   theirTime: {
-    marginTop: 2,
-    marginLeft: 4,
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.3)',
-    fontFamily: 'Manrope_400Regular',
-    textAlign: 'left',
+    marginTop: 4,
+    marginLeft: 2,
+  },
+  systemWrap: {
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    gap: 4,
+  },
+  systemText: {
+    textAlign: 'center',
+    fontStyle: 'italic',
   },
 
-  // Input bar
+  // Blocked notice
+  blockedNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+
+  // Composer
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 10,
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,213,0.08)',
-    backgroundColor: '#080808',
-  },
-  requestBar: {
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,213,0.08)',
-    backgroundColor: '#080808',
-    gap: 12,
-  },
-  requestPrompt: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.75)',
-    fontFamily: 'Manrope_500Medium',
-    textAlign: 'center',
-  },
-  requestBtns: { flexDirection: 'row', gap: 10 },
-  declineBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.12)',
-  },
-  declineText: { fontSize: 15, color: 'rgba(240,232,213,0.7)', fontFamily: 'Manrope_600SemiBold' },
-  acceptBtn: {
-    flex: 1,
-    height: 48,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F0E8D5',
-  },
-  acceptText: { fontSize: 15, color: '#080808', fontFamily: 'Manrope_700Bold' },
-  btnBusy: { opacity: 0.6 },
-  blockedNotice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: 'rgba(200,146,42,0.10)',
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(200,146,42,0.25)',
-  },
-  blockedNoticeText: {
-    flex: 1,
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.7)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  blockedNoticeAction: {
-    fontSize: 13,
-    color: '#C8922A',
-    fontFamily: 'Manrope_700Bold',
-  },
-  noticeBar: {
     paddingHorizontal: 20,
-    paddingTop: 14,
+    paddingTop: 12,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(240,232,213,0.08)',
-    backgroundColor: '#080808',
-  },
-  noticeText: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.55)',
-    fontFamily: 'Manrope_500Medium',
-    textAlign: 'center',
-    lineHeight: 20,
   },
   input: {
     flex: 1,
-    backgroundColor: 'rgba(240,232,213,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(240,232,213,0.1)',
-    borderRadius: 22,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_400Regular',
-    maxHeight: 100,
+    minHeight: 44,
+    maxHeight: 120,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    paddingHorizontal: 14,
+    paddingTop: 12,
+    paddingBottom: 12,
   },
   sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(240,232,213,0.06)',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendBtnActive: {
-    backgroundColor: '#C8922A',
+
+  // Request bar
+  requestBar: {
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 12,
+  },
+  requestPrompt: {
+    textAlign: 'center',
+  },
+  requestBtns: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  declineBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  acceptBtn: {
+    flex: 1,
+    height: 46,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  // iOS accessory
+  // iOS input accessory
   accessoryBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(240,232,213,0.08)',
-  },
-  accessoryCount: {
-    fontSize: 11,
-    color: 'rgba(240,232,213,0.3)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  accessoryCountWarning: {
-    color: '#C8922A',
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   accessoryActions: {
     flexDirection: 'row',
-    gap: 12,
-  },
-  accessoryDone: {
-    fontSize: 15,
-    color: 'rgba(240,232,213,0.6)',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  accessorySend: {
-    fontSize: 15,
-    color: '#C8922A',
-    fontFamily: 'Manrope_700Bold',
-  },
-  accessorySendDisabled: {
-    color: 'rgba(240,232,213,0.2)',
-    fontFamily: 'Manrope_400Regular',
+    gap: 20,
   },
 })

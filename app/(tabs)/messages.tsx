@@ -9,13 +9,49 @@ import {
   View,
 } from 'react-native'
 import { router } from 'expo-router'
-import { Ionicons } from '@expo/vector-icons'
 import { StatusBar } from 'expo-status-bar'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Conversation, useConversations } from '../../hooks/useMessaging'
 import { inboxSection } from '@/lib/messageRequests'
+import { useTheme } from '@/context/ThemeContext'
+import { FONT, type Theme } from '@/lib/theme/tokens'
 
+// THE FILTER KEY IS STILL 'all'. Only its LABEL changed, to "Conversations".
+// Renaming the key would have been a bigger diff for no gain and would have
+// invited the reading that the filter's behaviour changed with its name. It did
+// not: this is `inboxSection(...) === 'active'` before and after.
 type Filter = 'all' | 'requests' | 'bookings'
+
+// "All" was not all. The filter excludes pending requests, which live under
+// Requests, and declined ones, which are hidden from the active lists — so the
+// label promised a complete view and showed a partial one. A viewer whose only
+// conversation was a pending request saw an empty "All" and was told there was
+// nothing here. "Conversations" describes what the list actually holds.
+const FILTER_LABEL: Record<Filter, string> = {
+  all: 'Conversations',
+  requests: 'Requests',
+  bookings: 'Bookings',
+}
+
+// Each empty state describes ITS OWN filter and instructs nothing. The previous
+// copy for this list read "Message a provider to get started" — an instruction
+// this screen cannot carry out, because the compose control was deliberately
+// removed when conversation creation was found to be unwired. Telling someone to
+// do something and giving them no way to do it is worse than saying less.
+const EMPTY_COPY: Record<Filter, { title: string; body: string }> = {
+  all: {
+    title: 'No conversations yet',
+    body: 'Ongoing conversations will appear here.',
+  },
+  requests: {
+    title: 'No message requests',
+    body: 'New message requests will appear here.',
+  },
+  bookings: {
+    title: 'No booking conversations',
+    body: 'Conversations connected to bookings will appear here.',
+  },
+}
 
 function timeAgo(dateStr: string | null): string {
   if (!dateStr) return ''
@@ -32,7 +68,7 @@ function timeAgo(dateStr: string | null): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
-function Shimmer({ style }: { style: any }) {
+function Shimmer({ style, color }: { style: any; color: string }) {
   const opacity = useRef(new Animated.Value(0.4)).current
   useEffect(() => {
     const loop = Animated.loop(
@@ -48,14 +84,13 @@ function Shimmer({ style }: { style: any }) {
     }
   }, [opacity])
   return (
-    <Animated.View
-      style={[{ backgroundColor: 'rgba(240,232,213,0.06)', opacity }, style]}
-    />
+    <Animated.View style={[{ backgroundColor: color, opacity }, style]} />
   )
 }
 
 export default function MessagesInboxScreen() {
   const insets = useSafeAreaInsets()
+  const { colors, type, scheme } = useTheme()
   const { conversations, loading, refetch } = useConversations()
   const [refreshing, setRefreshing] = useState(false)
   const [activeFilter, setActiveFilter] = useState<Filter>('all')
@@ -69,6 +104,7 @@ export default function MessagesInboxScreen() {
   // 'all' shows open conversations only (pending requests live under Requests;
   // declined requests are hidden from the active lists). 'requests' shows pending
   // requests (incoming for a provider, sent for a client). 'bookings' unchanged.
+  // UNCHANGED BY THIS MIGRATION — the label moved, the predicate did not.
   const filtered =
     activeFilter === 'requests'
       ? conversations.filter((c) => inboxSection(c.request_status) === 'requests')
@@ -82,59 +118,73 @@ export default function MessagesInboxScreen() {
     (c) => inboxSection(c.request_status) === 'requests',
   ).length
 
+  const empty = EMPTY_COPY[activeFilter]
+
   return (
-    <View style={styles.root}>
-      <StatusBar style="light" />
+    <View style={[styles.root, { backgroundColor: colors.bgCanvas }]}>
+      {/* The bar follows the SCHEME, not a hardcoded 'light'. This screen used
+          to force light status-bar content because it was permanently dark;
+          on a Porch canvas that is invisible text on a pale ground. */}
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
 
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Text style={styles.headerTitle}>Messages</Text>
-        {/* Compose entry hidden: it was a no-op. Restore when new-message
-            conversation creation is wired. */}
+        <Text style={[type.titleLarge, { color: colors.textPrimary }]}>Messages</Text>
+        {/* Compose entry stays hidden: it was a no-op. Restore only when new-message
+            conversation creation is wired from here. */}
       </View>
 
+      {/* Text + underline, deliberately NOT segmented pills. These are three real
+          controls with real states, so the selected-tab affordance is truthful
+          here — unlike the inert one Reels carried. */}
       <View style={styles.tabs}>
         {(['all', 'requests', 'bookings'] as Filter[]).map((tab) => {
           const active = activeFilter === tab
-          const label = tab === 'all' ? 'All' : tab === 'requests' ? 'Requests' : 'Bookings'
           return (
             <TouchableOpacity
               key={tab}
               activeOpacity={0.7}
               style={styles.tab}
               onPress={() => setActiveFilter(tab)}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
             >
-              <Text style={active ? styles.tabTextActive : styles.tabTextInactive}>
-                {label}
+              <Text
+                style={[
+                  type.labelAction,
+                  { color: active ? colors.textPrimary : colors.textSecondary },
+                ]}
+              >
+                {FILTER_LABEL[tab]}
+                {/* A truthful count, inside the filter and nowhere else. It is a
+                    count of things waiting, not an alert, so it reads as part of
+                    the label rather than as a badge. The Messages TAB carries no
+                    badge — that would be new unread semantics. */}
                 {tab === 'requests' && requestCount > 0 ? ` (${requestCount})` : ''}
               </Text>
-              {active && <View style={styles.tabUnderline} />}
+              {active && (
+                <View style={[styles.tabUnderline, { backgroundColor: colors.textPrimary }]} />
+              )}
             </TouchableOpacity>
           )
         })}
       </View>
-      <View style={styles.tabsSeparator} />
+      <View style={[styles.tabsSeparator, { backgroundColor: colors.borderSubtle }]} />
 
       {loading && conversations.length === 0 ? (
         <View style={{ paddingTop: 8 }}>
           {[0, 1, 2].map((i) => (
-            <SkeletonRow key={i} />
+            <SkeletonRow key={i} colors={colors} />
           ))}
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.emptyWrap}>
-          <Ionicons
-            name="chatbubbles-outline"
-            size={48}
-            color="rgba(240,232,213,0.15)"
-            style={{ marginBottom: 16 }}
-          />
-          <Text style={styles.emptyTitle}>No messages yet</Text>
-          <Text style={styles.emptySub}>
-            {activeFilter === 'bookings'
-              ? 'Messages from bookings will appear here.'
-              : activeFilter === 'requests'
-                ? 'Message requests will appear here.'
-                : 'Message a provider to get started.'}
+          {/* Type-led and quiet. No decorative icon: a 48pt chat glyph at 15%
+              opacity was the loudest thing on an empty screen. */}
+          <Text style={[styles.emptyTitle, type.titleCard, { color: colors.textPrimary }]}>
+            {empty.title}
+          </Text>
+          <Text style={[styles.emptySub, type.bodyDefault, { color: colors.textSecondary }]}>
+            {empty.body}
           </Text>
         </View>
       ) : (
@@ -144,7 +194,7 @@ export default function MessagesInboxScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={handleRefresh}
-              tintColor="#C8922A"
+              tintColor={colors.textSecondary}
             />
           }
         >
@@ -158,105 +208,140 @@ export default function MessagesInboxScreen() {
 }
 
 function ConversationRow({ convo }: { convo: Conversation }) {
+  const { colors, type } = useTheme()
   const initial = (convo.other_party_name || 'C').charAt(0).toUpperCase()
   const unread = convo.unread_count > 0
   return (
     <TouchableOpacity
       activeOpacity={0.7}
-      style={styles.row}
+      style={[styles.row, { borderBottomColor: colors.borderSubtle }]}
       onPress={() => router.push(`/messages/${convo.id}` as never)}
+      accessibilityRole="button"
+      accessibilityLabel={
+        unread
+          ? `${convo.other_party_name}, unread conversation`
+          : convo.other_party_name
+      }
     >
+      {/* A HAIRLINE-SEPARATED ROW, NOT A CARD. The visual system names
+          hairline-separated rows as the reference pattern for lists of facts,
+          and a card per conversation would put a container around every one of
+          them for no gain. */}
       <View style={styles.avatarWrap}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>{initial}</Text>
+        {/* A monogram, not a photograph. There is no photo to show: the
+            messaging data layer carries no avatar URL for either party, so this
+            is the honest representation rather than a placeholder standing in
+            for something we have. */}
+        <View style={[styles.avatar, { backgroundColor: colors.bgSubtle }]}>
+          <Text style={[type.titleCard, { color: colors.textSecondary }]}>{initial}</Text>
         </View>
-        {unread && <View style={styles.unreadDot} />}
+        {/* Unread is carried by the NAME'S WEIGHT first and this dot second.
+            Colour is never the only carrier of a state, and no number is shown —
+            a count would be new unread semantics. */}
+        {unread && (
+          <View
+            style={[
+              styles.unreadDot,
+              { backgroundColor: colors.statusLocal, borderColor: colors.bgCanvas },
+            ]}
+          />
+        )}
       </View>
 
       <View style={styles.center}>
         <View style={styles.topRow}>
-          <Text style={[styles.name, unread && styles.nameUnread]} numberOfLines={1}>
+          <Text
+            style={[
+              styles.name,
+              type.bodyLarge,
+              // WEIGHT, NOT SIZE. Swapping the ramp entry would change the name's
+              // size between read and unread and shift every row below it as
+              // messages arrive. Only the face changes.
+              { color: colors.textPrimary, fontFamily: unread ? FONT.extrabold : FONT.semibold },
+            ]}
+            numberOfLines={1}
+          >
             {convo.other_party_name}
           </Text>
-          <Text style={styles.timeText}>{timeAgo(convo.last_message_at)}</Text>
+          <Text style={[type.caption, { color: colors.textSecondary }]}>
+            {timeAgo(convo.last_message_at)}
+          </Text>
         </View>
-        <View style={styles.bottomRow}>
-          {convo.booking_service ? (
-            <View style={styles.bookingPill}>
-              <Text style={styles.bookingPillText} numberOfLines={1}>
-                {convo.booking_service}
-              </Text>
-            </View>
-          ) : null}
-          {convo.last_message_preview ? (
-            <Text style={styles.preview} numberOfLines={1}>
-              {convo.last_message_preview}
-            </Text>
-          ) : (
-            <Text style={styles.previewEmpty}>Start a conversation</Text>
-          )}
-        </View>
+
+        {/* Booking context is a LINE, not a pill. It is a fact about this
+            conversation, and a bordered chip makes a fact look like a filter.
+            Cypress is the colour of place and truthful status in this system —
+            used here as a screen-specific treatment for context, not as a new
+            universal rule. */}
+        {convo.booking_service ? (
+          <Text
+            style={[styles.context, type.labelMeta, { color: colors.statusLocal }]}
+            numberOfLines={1}
+          >
+            {convo.booking_service}
+          </Text>
+        ) : null}
+
+        <Text
+          style={[styles.preview, type.bodySmall, { color: colors.textSecondary }]}
+          numberOfLines={1}
+        >
+          {convo.last_message_preview || 'No messages yet'}
+        </Text>
       </View>
     </TouchableOpacity>
   )
 }
 
-function SkeletonRow() {
+function SkeletonRow({ colors }: { colors: Theme['colors'] }) {
   return (
     <View style={[styles.row, { borderBottomWidth: 0 }]}>
-      <Shimmer style={{ width: 48, height: 48, borderRadius: 24, marginRight: 14 }} />
+      <Shimmer
+        color={colors.bgSubtle}
+        style={{ width: 44, height: 44, borderRadius: 22, marginRight: 14 }}
+      />
       <View style={{ flex: 1 }}>
-        <Shimmer style={{ width: '60%', height: 13, borderRadius: 4 }} />
-        <Shimmer style={{ width: '85%', height: 12, borderRadius: 4, marginTop: 8 }} />
+        <Shimmer color={colors.bgSubtle} style={{ width: '60%', height: 13, borderRadius: 4 }} />
+        <Shimmer
+          color={colors.bgSubtle}
+          style={{ width: '85%', height: 12, borderRadius: 4, marginTop: 8 }}
+        />
       </View>
     </View>
   )
 }
 
+// STRUCTURE ONLY — every colour resolves from the theme at render time. A
+// StyleSheet is built once at module load, so a colour baked in here cannot
+// follow a Light/Dark/System change; this screen previously held 22 literals
+// from the retired The Book palette and could not respond to the setting at all.
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#080808' },
+  root: { flex: 1 },
   header: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingBottom: 16,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  headerTitle: {
-    fontSize: 24,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
   tabs: {
     flexDirection: 'row',
     gap: 24,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     marginBottom: 8,
   },
   tab: {
     paddingVertical: 6,
     alignItems: 'center',
   },
-  tabTextActive: {
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-  },
-  tabTextInactive: {
-    fontSize: 15,
-    color: 'rgba(240,232,213,0.4)',
-    fontFamily: 'Manrope_600SemiBold',
-  },
   tabUnderline: {
     marginTop: 4,
     width: '100%',
     height: 2,
     borderRadius: 1,
-    backgroundColor: '#C8922A',
   },
   tabsSeparator: {
     height: StyleSheet.hairlineWidth,
-    backgroundColor: 'rgba(240,232,213,0.06)',
   },
   emptyWrap: {
     alignItems: 'center',
@@ -264,108 +349,55 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyTitle: {
-    fontSize: 18,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
     marginBottom: 8,
+    textAlign: 'center',
   },
   emptySub: {
-    fontSize: 14,
-    color: 'rgba(240,232,213,0.5)',
-    fontFamily: 'Manrope_400Regular',
     textAlign: 'center',
-    lineHeight: 21,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(240,232,213,0.06)',
   },
   avatarWrap: {
-    width: 48,
-    height: 48,
+    width: 44,
+    height: 44,
     marginRight: 14,
     position: 'relative',
   },
   avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#1A1410',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarText: {
-    fontSize: 18,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_700Bold',
-  },
   unreadDot: {
     position: 'absolute',
-    top: 0,
-    right: 0,
+    top: -1,
+    right: -1,
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#C8922A',
     borderWidth: 2,
-    borderColor: '#080808',
   },
   center: { flex: 1 },
   topRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 8,
   },
   name: {
     flex: 1,
-    fontSize: 15,
-    color: '#F0E8D5',
-    fontFamily: 'Manrope_600SemiBold',
-    marginRight: 8,
   },
-  nameUnread: {
-    fontFamily: 'Manrope_700Bold',
-  },
-  timeText: {
-    fontSize: 12,
-    color: 'rgba(240,232,213,0.35)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  bottomRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 3,
-  },
-  bookingPill: {
-    backgroundColor: 'rgba(200,146,42,0.08)',
-    borderWidth: 1,
-    borderColor: 'rgba(200,146,42,0.2)',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginRight: 6,
-    maxWidth: 110,
-  },
-  bookingPillText: {
-    fontSize: 11,
-    color: '#C8922A',
-    fontFamily: 'Manrope_500Medium',
+  context: {
+    marginTop: 2,
   },
   preview: {
-    flex: 1,
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.45)',
-    fontFamily: 'Manrope_400Regular',
-  },
-  previewEmpty: {
-    flex: 1,
-    fontSize: 13,
-    color: 'rgba(240,232,213,0.25)',
-    fontFamily: 'Manrope_400Regular',
-    fontStyle: 'italic',
+    marginTop: 2,
   },
 })

@@ -197,6 +197,31 @@ inference marketplace ranking refuses to make. The row now shows Bookings and Ra
 could never render, and "available" is not something this beta can establish. Commenting on
 a **sample** reel now says so honestly instead of claiming the feature is "coming soon".
 
+**Messages after Session 7B** (design: [design/MESSAGES.md](../design/MESSAGES.md)) — the
+support-facing changes:
+
+- **The inbox filter "All" is now "Conversations".** It never included pending requests or
+  declined ones, so the old label promised a complete view and showed a partial one. **Nothing
+  about which conversations appear has changed** — only the word. *"Where did All go"* is
+  expected; the answer is that it was renamed to describe what it always showed.
+- **A pending request appears under Requests, never under Conversations**, with a truthful count
+  in the filter. The **Messages tab shows no badge**.
+- **The empty screens no longer say "Message a provider to get started."** There is no compose
+  control in Messages, so that sentence pointed at an action the screen could not perform. A
+  conversation still starts from a provider's profile.
+- **Long threads now show day separators** — Today, Yesterday, a weekday, then a date. Derived
+  from existing message times; nothing was backfilled and no message changed.
+- **The booking service and the request state now sit in a band under the thread header** rather
+  than in the header line and down beside the keyboard.
+- **Safety is unchanged and in the same place.** The block notice still sits above the composer
+  with its Unblock action, the composer still does not close for a blocker (a live booking keeps
+  a working thread by design), the "…" safety menu is still in the thread header, and the
+  refusal copy still names no cause — PD-082 means a blocked person is never told they were
+  blocked.
+- **No read receipts, typing indicators, presence or online status were added**, and none exist.
+  If someone asks whether the other person has "seen" a message: the product does not report
+  that, and `is_read` drives only the recipient's own unread mark.
+
 **Reels after Session 6B** (design: [design/REELS.md](../design/REELS.md)) — the support-facing
 changes:
 
