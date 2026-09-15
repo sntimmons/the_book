@@ -1280,7 +1280,7 @@ unavailable state. **The fail direction is HIDE, so no boundary is weakened**, a
 pattern the product already ruled on for Discover (a failed read must not be presented as an
 empty truth) applies. Deliberately not widened into the block-visibility correction.
 
-#### Returned, not actioned#### Returned, not actioned
+#### Returned, not actioned
 
 - **`/reviews/all/[id]`** reads base `providers`. **PD-089 explicitly preserves review access**,
   so it is unchanged and is **not** a defect. Recorded separately: the route also offers a **Book
