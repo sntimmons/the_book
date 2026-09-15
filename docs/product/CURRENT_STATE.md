@@ -83,6 +83,13 @@ Media is the repository's own photographic assets uploaded to the non-production
 `posts-media` bucket under a `qa-seed/` folder, so it is never mistaken for a real
 provider's work.
 
+**`From people you follow` renders only for `client@thebook.dev`.** The row is
+viewer-specific by construction, and the seed makes the QA client follow the QA provider —
+so `provider@thebook.dev`, who follows nobody, correctly sees nothing, as does any other
+account. `See the work` is not viewer-specific and appears for everyone. That asymmetry has
+already caused one false defect report: the reel row was visible, the followed row was not,
+and the signed-in account was the provider. **Check the account before the code.**
+
 **Discover is FULLY migrated onto the Third theme** (Phase 4B, `04735d0`, PR #108,
 2026-09-14). **Founder visually approved the design before merge.** It was the **last
 primary surface** still painted in the legacy dark palette — `useTheme` used **zero** times

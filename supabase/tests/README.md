@@ -202,3 +202,26 @@ reel row has nothing renderable and stays invisible even with content present.
 Media is uploaded from the repository's own assets into the non-production `posts-media`
 bucket under `<providerUserId>/qa-seed/`, at deterministic paths so re-running the seed
 overwrites rather than accumulates.
+
+### ⚠ Which QA account you sign in as decides what you see
+
+**`From people you follow` only renders for `client@thebook.dev`.**
+
+The seed makes the QA **client** follow the QA **provider**. The row is viewer-specific by
+construction — the follow set is read first and bounds everything after it — so signing in
+as `provider@thebook.dev`, who follows nobody, correctly renders **nothing**. So does any
+other account.
+
+`See the work` is **not** viewer-specific and appears for every signed-in account, which
+makes the two rows easy to misread: seeing the reel row but not the followed row looks like
+a bug in the followed row and is usually just the wrong account.
+
+**If the followed row is missing, check the signed-in account first.** Verified 2026-09-15
+by running the shipped `fetchFollowedActivity` against non-production:
+
+| Account | `provider_follows` rows | `fetchFollowedActivity()` | `fetchDiscoverReels()` |
+|---|---|---|---|
+| `client@thebook.dev` | 1 | **3 items** | 1 item |
+| `provider@thebook.dev` | 0 | **0 items** | 1 item |
+
+Nothing hides the row for the client account; nothing can show it for the provider account.
