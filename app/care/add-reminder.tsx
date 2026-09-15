@@ -40,20 +40,53 @@ export default function AddReminder() {
     if (!user) return
     let cancelled = false
     ;(async () => {
-      const { data } = await supabase
+      // The saved-list error was previously destructured away entirely, so a
+      // failed read rendered as "you have saved nobody" with nothing captured.
+      const { data, error: savedError } = await supabase
         .from('saved_providers')
         .select('provider_id, created_at, providers(id, display_name)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
       if (cancelled) return
+      if (savedError) {
+        Sentry.captureException(savedError, { extra: { where: 'add-reminder saved list' } })
+        setSavedProviders([])
+        return
+      }
+      // Through `unknown`: destructuring `error` alongside `data` narrows the
+      // inferred row type, and supabase-js types the embed as an array even
+      // where the FK makes it single-valued. Same shape the rest of the repo
+      // uses for an embedded read.
       const rows =
-        (data as
+        (data as unknown as
           | { providers: { id: string; display_name: string | null } | null }[]
           | null) ?? []
+      // PD-089: the same gate the two saved-provider LISTS carry
+      // (CODE-DRIFT-008). Without it a provider the viewer is blocked with is
+      // offered here as a selectable chip — and worse than being merely visible,
+      // they can be named as the subject of a NEW care reminder, which is a
+      // forward-looking artefact rather than preserved history.
+      const savedIds = rows.map((r) => r.providers?.id).filter(Boolean) as string[]
+      let visible = new Set<string>()
+      if (savedIds.length > 0) {
+        const { data: vis, error: visError } = await supabase
+          .from('providers_visible')
+          .select('id')
+          .in('id', savedIds)
+        if (cancelled) return
+        if (visError) {
+          // Fail closed: offer no one rather than risk offering a blocked person.
+          Sentry.captureException(visError, { extra: { where: 'add-reminder saved visibility' } })
+        } else {
+          visible = new Set(((vis as { id: string }[] | null) ?? []).map((v) => v.id))
+        }
+      }
+
       setSavedProviders(
         rows
           .map((r) => r.providers)
           .filter((p): p is NonNullable<typeof p> => !!p)
+          .filter((p) => visible.has(p.id))
           .map((p) => ({ id: p.id, name: p.display_name ?? 'Provider' })),
       )
     })()

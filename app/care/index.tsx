@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons'
 import { router, useFocusEffect } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { useAuth } from '@/context/AuthContext'
+import * as Sentry from '@sentry/react-native'
 import { supabase } from '@/lib/supabase'
 import { cacheBustedPhoto } from '@/lib/image'
 import { fetchProviderInfoMap, initials } from '@/lib/community'
@@ -144,15 +145,65 @@ export default function CareHub() {
       ...upRows.map((r) => r.provider_id),
       ...compRows.map((r) => r.provider_id),
     ]
-    // TRANSACTION scope: these are providers the client SAVED and has history
-    // with. PD-089 filters ordinary discovery, not your own saved list.
+    // TRANSACTION scope, DELIBERATELY, and it stays that way. Upcoming
+    // appointments and completed booking history are the narrow existing-
+    // transaction access PD-089 preserves: two people inside a live obligation
+    // must still see each other's name, or a block strands the trade. Narrowing
+    // this call would hide a booking counterparty, which is the one thing the
+    // exception exists to prevent.
     const infoMap = await fetchProviderInfoMap(providerIds, 'transaction')
 
+    // ── PROVIDER-BOUND REMINDERS ARE GATED; BOOKING HISTORY IS NOT ──────────
+    //
+    // A care reminder tied to a provider is a FORWARD-LOOKING RE-ENGAGEMENT
+    // surface, not preserved history: it names the provider, it says "Time to
+    // rebook", it offers Book Now / Book Again, and it exists to drive another
+    // transaction. So it honours PD-089 while a block applies — the same reading
+    // `add-reminder.tsx` already applies when the reminder is CREATED, so
+    // creation and display now agree rather than contradicting each other.
+    //
+    // THE `care_reminders` ROW IS NOT TOUCHED. It is not deleted, not
+    // deactivated, and reappears on unblock under its existing active/due rules.
+    // Only the render is gated.
+    //
+    // A generic reminder — no `providerId` — is unaffected, because there is no
+    // provider identity in it to hide.
+    //
+    // This one read covers the reminder ids AND the saved ids below, so the two
+    // gates cannot disagree about who is visible.
+    const gatedIds = Array.from(
+      new Set([
+        ...remRows.map((r) => r.providerId).filter((x): x is string => !!x),
+        ...(((savedRes.data as { providers: { id: string } | null }[] | null) ?? [])
+          .map((r) => r?.providers?.id)
+          .filter(Boolean) as string[]),
+      ]),
+    )
+    let visibleProviders = new Set<string>()
+    if (gatedIds.length > 0) {
+      const { data: vis, error: visError } = await supabase
+        .from('providers_visible')
+        .select('id')
+        .in('id', gatedIds)
+      if (visError) {
+        // FAIL CLOSED. Falling back to the ungated rows would put a blocked
+        // provider back on screen at exactly the moment the check that would
+        // have caught it stopped working.
+        Sentry.captureException(visError, { extra: { where: 'Care Hub visibility' } })
+      } else {
+        visibleProviders = new Set(((vis as { id: string }[] | null) ?? []).map((v) => v.id))
+      }
+    }
+
     setReminders(
-      remRows.map((r) => ({
-        ...r,
-        providerName: r.providerId ? infoMap.get(r.providerId)?.name ?? 'Provider' : null,
-      })),
+      remRows
+        // A provider-bound reminder survives in the database and disappears from
+        // the screen. A generic one has no provider to hide and always stays.
+        .filter((r) => !r.providerId || visibleProviders.has(r.providerId))
+        .map((r) => ({
+          ...r,
+          providerName: r.providerId ? infoMap.get(r.providerId)?.name ?? 'Provider' : null,
+        })),
     )
 
     setUpcoming(
@@ -180,9 +231,21 @@ export default function CareHub() {
             } | null
           }[]
         | null) ?? []
+    // PD-089: THE SAME GATE THE Me -> SAVED LIST CARRIES.
+    //
+    // This is a SECOND saved-providers list, one tap from the first, and it was
+    // missed when the first was fixed (CODE-DRIFT-008): it renders a card with
+    // photo, name, category, neighbourhood and a Book control from the same
+    // un-gated `saved_providers -> providers` embed. Base-table RLS does not
+    // compensate — `providers_public_read` carries no block predicate, because
+    // the block filter lives only in `providers_visible`.
+    //
+    // THE SAVED ROW IS NOT TOUCHED. A block is not an unsave; only the render is
+    // gated, and the relationship returns on unblock.
     const savedMapped: SavedProvider[] = savedRows
       .map((r) => r.providers)
       .filter((p): p is NonNullable<typeof p> => !!p)
+      .filter((p) => visibleProviders.has(p.id))
       .map((p) => ({
         id: p.id,
         name: p.display_name ?? 'Provider',

@@ -213,6 +213,13 @@ export default function ProviderProfilePage() {
       return
     }
     ;(async () => {
+      // BASE `posts`, MATCHING THE IDENTITY READ ABOVE. A directly-opened
+      // profile is outside PD-089's ordinary-surface rule for the closed beta
+      // — the closed-beta direct-profile exception preserved under PD-090 /
+      // PD-104 / OQ-076 — and identity and media have to answer the
+      // same way: a profile that resolves the provider but empties their
+      // portfolio and reels under a block would be a partial state that signals
+      // the block louder than either consistent answer.
       const { data, error } = await supabase
         .from('posts')
         .select('id, media_url, media_type, content_type, caption, sort_order')

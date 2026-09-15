@@ -1153,6 +1153,110 @@ edited historical file. Process and the dated record:
 > migrations").
 
 
+### Block visibility on ordinary saved-provider surfaces (CODE-DRIFT-008, split)
+
+**2026-09-15.** CODE-DRIFT-008 was originally filed as one finding covering both the directly
+opened provider profile and the saved-provider lists. **A founder ruling split it**, and the two
+halves have opposite answers. They are recorded separately here so a future engineer does not
+reopen the same conflict.
+
+#### The directly opened provider profile — ACCEPTED BEHAVIOUR, NOT A DEFECT
+
+**A directly opened provider profile remains outside PD-089's ordinary-surface hiding rule for
+the Houston closed beta.** It reads base `providers` and base `posts`, deliberately.
+**PD-090 is unchanged. PD-104 is unchanged. OQ-076 remains reaffirmed** and carried to the
+pre-public-launch privacy/security revisit.
+
+**The safety rationale is the substance, not a formality:** making a profile 404 for one viewer
+while it resolves for another would create a **louder viewer-facing block signal** than the
+diffability the closed beta already accepts. Hiding here would announce.
+
+A branch briefly moved this surface onto the `_visible` views and was **reverted before merge**.
+Nothing was narrowed and **nothing may be read as having narrowed it**. There is deliberately no
+partial state: identity and media answer the same way, because a profile that resolved the
+provider while emptying their portfolio would signal the block louder than either consistent
+answer.
+
+The live `providers_visible` database comment describing this exception is intentionally left
+intact.
+
+#### Ordinary saved-provider list and selection surfaces — DRIFT CORRECTED
+
+Three surfaces rendered a provider the viewer is blocked with, from an un-gated
+`saved_providers → providers` embed. These are lists and pickers, not a directly opened profile,
+and PD-089 covers them:
+
+| Surface | Was | Now |
+|---|---|---|
+| **Client Me → Saved** | base embed, rendered | gated through `providers_visible` |
+| **Care Hub → saved providers** | base embed, rendered **with a Book control** | gated |
+| **Care Hub → Add Reminder chips** | base embed, selectable | gated |
+| **Care Hub → provider-bound reminders** | base read, rendered **with Book Now / Book Again** | gated |
+
+All three **fail closed**: if the visibility read itself errors, none render, because falling
+back to the ungated list would put a blocked provider back on screen at exactly the moment the
+check that would have caught it stopped working.
+
+**A block hides; it does not delete.** The `saved_providers` row is never touched — the
+relationship is the viewer's own choice, it survives the block, and it returns on unblock.
+Asserted in the DB suite.
+
+**No migration, no view change, no schema change.** The `posts_visible` + `sort_order` migration
+existed only to serve the profile change and was removed with it; non-production was restored to
+the `20261111000000` definition (14 columns, no `sort_order`, owner and grants verified) and its
+migration record removed, so the database and the migration set match exactly.
+
+#### One client fix that is NOT about blocking
+
+`useProvider` refetches on focus, and its error path left the previously-fetched provider
+rendered. It now clears on **PGRST116 only** — PostgREST's "no rows for `.single()`".
+
+**Verified at runtime that this cannot touch block behaviour:** base `providers` carries no block
+predicate, so under a block in either direction the row still returns and no PGRST116 occurs. The
+condition that *does* reach it is an **open deletion request, an erased account or an ownerless
+shell** — precisely the case **PD-104 records the profile screen getting wrong**, where the rule
+is about the row and applies to everyone. A network failure deliberately does not clear, so a
+transient error cannot blank a profile the viewer is legitimately looking at.
+
+#### Provider-bound care reminders — RULED, AND GATED
+
+**PM/founder ruling:** an active care reminder tied to a provider is a **forward-looking
+re-engagement surface, not preserved transaction history**. It names the provider, says *Time to
+rebook*, offers **Book Now / Book Again**, and exists to drive another transaction. So it honours
+PD-089 while a block applies — the same reading `add-reminder.tsx` already applied when the
+reminder is *created*, so creation and display now agree.
+
+- **The `care_reminders` row is preserved.** Not deleted, not deactivated. It returns on unblock
+  under its existing active/due rules. The one write to that table is `removeReminder` — the
+  viewer's own explicit action — and it is untouched.
+- **A generic reminder with no provider id always renders.** There is no identity in it to hide.
+- **Booking history is deliberately not gated.** `fetchProviderInfoMap(…, 'transaction')` is
+  unchanged, so upcoming appointments and completed bookings still resolve their counterparty from
+  the base table. Narrowing it would hide a live booking counterparty, which is precisely what
+  PD-089's existing-transaction access exists to prevent.
+
+**Still true and worth keeping in mind:** the `saved_providers` census cannot see a
+`care_reminders` reader, so a future third consumer of `fetchActiveReminders` will not be caught
+automatically. The Discover rebook banner is one such consumer today — it renders **no provider
+identity** and routes to `/care` rather than to a profile, so nothing is disclosed, but whether
+the ruling extends to a surface that names no provider is **open and returned to PM**.
+
+#### Returned, not actioned#### Returned, not actioned
+
+- **`/reviews/all/[id]`** reads base `providers`. **PD-089 explicitly preserves review access**,
+  so it is unchanged and is **not** a defect. Recorded separately: the route also offers a **Book
+  action**, which may warrant a later action-state review. That is not a reason to hide the
+  review surface.
+- **`provider_services`** left unchanged; no `provider_services_visible` was created.
+- The `lib/providerVisibility.ts` extraction and brittle-test cleanup are **deferred**.
+
+Coverage: `supabase/tests/blocked_surfaces.test.sql` § 6 — which pins **both** halves, including
+that a directly-opened profile **still resolves under a block** — and
+`__tests__/guards/blockVisibilityIntegrity.test.ts`, whose census enumerates every
+`saved_providers` reader and fails when a new one appears unclassified.
+
+---
+
 ### Security posture — Pre-Beta Correction 2 (2026-09-08)
 
 **Bounded update by the correction slice itself, not by a Steward reconciliation.** It records
@@ -1937,10 +2041,14 @@ internal Review Queue (PD-085). See § Safety, trust and operator handling below
 
 What is **still unbuilt**: the **operator SURFACE** over that queue, without which PD-068 stays
 PARTIALLY SATISFIED and no case can be worked outside `psql`; the **Open to Trades** opt-in; the
-post-decline reverse-contact episode (PD-048); the bounded report-intake abuse control (PD-088 —
-locked, **not implemented**); and hiding a blocked person from ordinary discovery and community
-surfaces (PD-089 — locked, **not implemented**). The first is a pre-beta requirement and the fourth
-is required before broad beta; both are sequenced in [ROADMAP.md](ROADMAP.md) § Next.
+post-decline reverse-contact episode (PD-048); and the bounded report-intake abuse control
+(PD-088 — locked, **not implemented**). The first is a pre-beta requirement and the last is
+required before broad beta; both are sequenced in [ROADMAP.md](ROADMAP.md) § Next.
+
+*(PD-089 was listed here as unimplemented. **It has been implemented since Session 8C**
+(`0b1f563`, 2026-09-10) — five `SECURITY DEFINER` views — and the ordinary saved-provider surfaces
+were brought onto it on 2026-09-15. Corrected because a reader greping PD-089 in this document was
+getting two stale answers alongside the current one.)*
 
 **Recorded as exploratory only, and none of it is committed work** — the Needs Attention → Under
 Review question that used to head this list is **closed** by PD-072 and has been moved out of it:
@@ -2022,10 +2130,11 @@ Three Founder rulings on the finished branch, and two of them are requirements r
   reporting is neither rate-limited nor idempotent per subject. The limits are decided and written
   down (one open case per reporter/target pair, 5/hour and 20/day, **no standing requirement**);
   none of it is built. Closes OQ-074.
-- **PD-089 — a blocked person disappears from ordinary discovery and community surfaces.
-  NOT IMPLEMENTED**, and explicitly **not** Session 8B. Session 8 stopped at CONTACT: neither the
-  feed nor the barter board filters a blocked person's content, so a blocker still sees them, can
-  still tap Respond, and gets a refusal that points them at their own eligibility. Closes OQ-075.
+- **PD-089 — a blocked person disappears from ordinary discovery and community surfaces.**
+  *(Dated record: **not implemented AT SESSION 8B**, and explicitly not that session's work.
+  **Session 8C implemented it** — `0b1f563`, 2026-09-10.)* Session 8 stopped at CONTACT: neither the
+  feed nor the barter board filtered a blocked person's content, so a blocker still saw them, could
+  still tap Respond, and got a refusal that pointed them at their own eligibility. Closes OQ-075.
 
 ---
 

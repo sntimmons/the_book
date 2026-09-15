@@ -395,4 +395,173 @@ begin
   perform pg_temp.chk('blockedsurfaces', 'and restores the blocker for them', '1', v_n::text);
   perform pg_temp.act_service();
 end $$;
+
+-- ══ 6. ORDINARY SAVED-PROVIDER SURFACES, AND THE PROFILE EXCEPTION ════════
+--
+-- SCOPE IS THE DECISION HERE, so it is stated before the assertions.
+--
+-- A DIRECTLY-OPENED PROVIDER PROFILE IS OUTSIDE PD-089's hiding rule for the
+-- Houston closed beta. THE CLOSED-BETA DIRECT-PROFILE EXCEPTION IS PRESERVED
+-- UNDER PD-090 / PD-104 / OQ-076 — not a new decision, and superseding none of
+-- them. It reads base `providers` and base `posts` on purpose.
+-- The reasoning is a safety argument, not an oversight: a profile that 404s for
+-- one viewer and resolves for another is a LOUDER viewer-facing block signal than
+-- the diffability the closed beta already accepts. The first assertion below pins
+-- that exception so a future reader does not "fix" it back into a defect.
+--
+-- ORDINARY LIST AND SELECTION surfaces are a different question and ARE filtered:
+-- Me -> Saved, the Care Hub saved list, the Add Reminder chips. Those read
+-- `providers_visible`, and the rest of this section is about them.
+--
+-- A BLOCK HIDES; IT DOES NOT DELETE. The saved relationship is the viewer's own
+-- choice and survives, or unblocking would silently lose it.
+do $$
+declare
+  au uuid := current_setting('b5c.a')::uuid;
+  bu uuid := current_setting('b5c.b')::uuid;
+  cu uuid := current_setting('b5c.c')::uuid;
+  pb uuid := current_setting('b5c.pb')::uuid;
+  v_n integer;
+begin
+  perform pg_temp.act_service();
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (au, bu)
+    on conflict do nothing;
+  insert into public.saved_providers(user_id, provider_id) values (au, pb)
+    on conflict do nothing;
+
+  -- THE EXCEPTION, PINNED. Base `providers` carries no block predicate, so a
+  -- directly-opened profile still resolves for a blocker. If this ever starts
+  -- returning 0, PD-090 / PD-104 / OQ-076 have been narrowed without a ruling.
+  perform pg_temp.act(au);
+  select count(*) into v_n from public.providers where id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'A DIRECTLY-OPENED PROFILE STILL RESOLVES UNDER A BLOCK (PD-090/PD-104/OQ-076)',
+    '1', v_n::text);
+
+  -- And the ordinary saved LIST does not, because it reads the view.
+  select count(*) into v_n from public.providers_visible where id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'but the saved-list read of the same provider returns nothing', '0', v_n::text);
+
+  -- The relationship itself is untouched by either.
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.saved_providers
+    where user_id = au and provider_id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'THE SAVED ROW SURVIVES THE BLOCK', '1', v_n::text);
+
+  -- Symmetry: the blocked party's saved-list read is filtered too.
+  perform pg_temp.act(bu);
+  select count(*) into v_n from public.providers_visible
+    where id = current_setting('b5c.pa')::uuid;
+  perform pg_temp.chk('blockedsurfaces',
+    'and the blocked party''s saved list is filtered in the same way', '0', v_n::text);
+
+  -- A bystander is unaffected on both.
+  perform pg_temp.act(cu);
+  select count(*) into v_n from public.providers_visible where id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'an unrelated viewer still sees them in a saved list', '1', v_n::text);
+
+  -- Unblocking restores the list, and the saved row is still there to restore.
+  perform pg_temp.act(au);
+  delete from public.user_blocks where blocker_user_id = au and blocked_user_id = bu;
+  select count(*) into v_n from public.providers_visible where id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'unblocking restores them to the saved list', '1', v_n::text);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.saved_providers
+    where user_id = au and provider_id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'with the saved relationship intact throughout', '1', v_n::text);
+
+  -- ── PROVIDER-BOUND CARE REMINDERS ARE FORWARD-LOOKING, SO THEY ARE GATED ──
+  --
+  -- A reminder tied to a provider names them, says "Time to rebook" and offers
+  -- Book Now. It exists to drive another transaction, so it honours PD-089 while
+  -- a block applies. The ROW is not touched: not deleted, not deactivated, and it
+  -- returns on unblock under its existing active/due rules.
+  --
+  -- Upcoming appointments and completed bookings are the opposite case and are
+  -- asserted below to stay visible, because PD-089's narrow existing-transaction
+  -- access is what stops a block stranding a live trade.
+  perform pg_temp.act_service();
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (au, bu)
+    on conflict do nothing;
+  insert into public.care_reminders(client_user_id, provider_id, service_name,
+                                    next_reminder_at, is_active)
+    values (au, pb, 'Rebook trim', now() + interval '7 days', true);
+  insert into public.care_reminders(client_user_id, provider_id, service_name,
+                                    next_reminder_at, is_active)
+    values (au, null, 'Generic reminder', now() + interval '7 days', true);
+
+  -- The client resolves reminder identity through the same view the screen does.
+  perform pg_temp.act(au);
+  select count(*) into v_n from public.providers_visible where id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'A PROVIDER-BOUND REMINDER RESOLVES NO IDENTITY UNDER A BLOCK', '0', v_n::text);
+
+  -- Symmetry: the blocked party's side is filtered the same way.
+  perform pg_temp.act(bu);
+  select count(*) into v_n from public.providers_visible
+    where id = current_setting('b5c.pa')::uuid;
+  perform pg_temp.chk('blockedsurfaces',
+    'and the same holds in the other block direction', '0', v_n::text);
+
+  -- THE REMINDER ROWS SURVIVE. Both of them.
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.care_reminders
+    where client_user_id = au and provider_id = pb and is_active;
+  perform pg_temp.chk('blockedsurfaces',
+    'THE PROVIDER-BOUND REMINDER ROW IS PRESERVED, NOT DELETED OR DEACTIVATED',
+    '1', v_n::text);
+  select count(*) into v_n from public.care_reminders
+    where client_user_id = au and provider_id is null and is_active;
+  perform pg_temp.chk('blockedsurfaces',
+    'and a GENERIC reminder is unaffected — no provider identity to hide',
+    '1', v_n::text);
+
+  -- Unblocking restores the identity the reminder row needs to render again.
+  perform pg_temp.act(au);
+  delete from public.user_blocks where blocker_user_id = au and blocked_user_id = bu;
+  select count(*) into v_n from public.providers_visible where id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'unblocking restores the reminder''s provider identity', '1', v_n::text);
+  perform pg_temp.act_service();
+  select count(*) into v_n from public.care_reminders
+    where client_user_id = au and provider_id = pb and is_active;
+  perform pg_temp.chk('blockedsurfaces',
+    'with the reminder row still active throughout', '1', v_n::text);
+
+  -- AND THE TRANSACTION SURFACES ARE NOT TOUCHED. Re-block, then assert the
+  -- booking counterparty still resolves from the base table, which is the read
+  -- the upcoming/completed sections use.
+  insert into public.user_blocks(blocker_user_id, blocked_user_id) values (au, bu)
+    on conflict do nothing;
+  perform pg_temp.act(au);
+  select count(*) into v_n from public.providers where id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'BOOKING HISTORY STILL RESOLVES ITS COUNTERPARTY UNDER A BLOCK (PD-089)',
+    '1', v_n::text);
+  perform pg_temp.act_service();
+  delete from public.user_blocks where blocker_user_id = au and blocked_user_id = bu;
+  delete from public.care_reminders where client_user_id = au;
+
+  -- THE DELETION RULE IS A DIFFERENT RULE and applies to everyone, including on
+  -- the directly-opened profile the block rule deliberately leaves alone. This is
+  -- what PD-104 records the profile screen getting wrong, and it is the condition
+  -- the client's PGRST116 handling exists for.
+  insert into public.account_deletion_requests(subject_user_id, subject_id, status,
+                                               grace_ends_at, disclosed_grace_days)
+  values (bu, bu, 'requested', now() + interval '7 days', 7);
+  perform pg_temp.act(cu);
+  select count(*) into v_n from public.providers where id = pb;
+  perform pg_temp.chk('blockedsurfaces',
+    'an unavailable owner IS hidden from the base table, for everyone', '0', v_n::text);
+
+  perform pg_temp.act_service();
+  delete from public.account_deletion_requests where subject_user_id = bu;
+  delete from public.saved_providers where user_id = au and provider_id = pb;
+end $$;
+
 select pg_temp.act_service();

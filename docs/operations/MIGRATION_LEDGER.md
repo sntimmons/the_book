@@ -1996,6 +1996,43 @@ annotated where it fires.
 `.env.tooling.local` resolve to `wcoyjeklscuqsumpjpfo`; no production credential
 exists in the working environment.
 
+## 2026-09-15 — `20261138000000` **APPLIED, THEN REVERTED AND WITHDRAWN** (block visibility ruling)
+
+**No migration survives from this work. The highest applied version on non-production is
+`20261137000000`, and it matches the migration set exactly.** This entry exists because the file
+was briefly applied, and a version row with no corresponding file is the drift this ledger is for.
+
+`20261138000000_a_profile_is_an_ordinary_surface.sql` recreated `posts_visible` with
+`sort_order`, to let the public provider profile read the block-filtered view while preserving
+the provider's own curation order. It was applied to `wcoyjeklscuqsumpjpfo` via
+`supabase db push --linked`.
+
+**A founder ruling then withdrew the change it existed to serve.** A directly opened provider
+profile remains outside PD-089's ordinary-surface hiding rule for the Houston closed beta,
+preserving PD-090, PD-104 and the reaffirmed OQ-076. With the profile back on base `posts`,
+nothing required `sort_order` in the view.
+
+**Reverted, and verified rather than assumed.** `create or replace view` cannot drop a column, so
+`posts_visible` was dropped and recreated from the `20261111000000` definition, with ownership
+and the `20261066000000` grants restored in the same statement. Confirmed by catalog query:
+**14 columns, no `sort_order`, owner `postgres`, `reloptions = security_invoker=false`, SELECT
+held by `anon` and `authenticated`.** The `20261138000000` row was then deleted from
+`supabase_migrations.schema_migrations`, and `max(version)` is back to `20261137000000`.
+
+**A `drop view` also destroys the view's COMMENT, and the first pass of this revert missed it.**
+`create or replace` preserves a comment; a drop does not, and the `20261111000000` definition the
+view was restored from does not restate one — the live text was last set by `20261102000000`. A
+catalog query confirmed `obj_description('public.posts_visible'::regclass)` was **null** after the
+revert. It has been restored verbatim from `20261102000000` and re-verified non-null. Recorded
+because this repository treats view comments as load-bearing documentation rather than decoration
+— `hooks/useProviders.ts` tells the reader to "see the view's comment" — so a silently missing one
+is the same class of object-vs-file drift this entry exists to prevent.
+
+The migration file is deleted from the branch. **`20261111000000` remains the live definition of
+`posts_visible` and was never edited.**
+
+---
+
 ## 2026-09-14 — `20261137000000` **APPLIED to non-production and VERIFIED** (policy truth, PR #106)
 
 One file, one function, no table change.

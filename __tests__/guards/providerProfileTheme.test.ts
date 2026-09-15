@@ -117,8 +117,15 @@ describe('the data path reads only what already exists', () => {
     expect(page).toMatch(/content_type === 'process'/)
     // One posts read, partitioned three ways — not three queries and not a
     // second content type.
+    //
+    // BASE `posts`, AND THAT IS THE RULING. A directly-opened profile sits
+    // outside PD-089's ordinary-surface hiding rule for the closed beta
+    // — the closed-beta direct-profile exception preserved under PD-090 /
+    // PD-104 / OQ-076. This
+    // assertion was briefly retargeted to `posts_visible` and is restored.
     expect((page.match(/\.from\('posts'\)/g) ?? []).length).toBe(1)
   })
+
 
   it('does not read the owner-only booking preferences table', () => {
     // provider_booking_preferences is readable ONLY by the provider who owns the
