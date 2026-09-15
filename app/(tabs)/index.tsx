@@ -24,6 +24,7 @@ import {
 import { supabase } from '../../lib/supabase'
 import DiscoveryLanes from '../../components/DiscoveryLanes'
 import DiscoverCommunity from '../../components/DiscoverCommunity'
+import { FollowedActivityRow, ReelsEntryRow } from '../../components/DiscoverSocialRows'
 import ProviderCard from '../../components/ui/ProviderCard'
 import EmptyState from '../../components/ui/EmptyState'
 import ErrorState from '../../components/ui/ErrorState'
@@ -396,6 +397,20 @@ export default function DiscoveryFeed() {
           />
         ) : null}
 
+        {/* ── From people you follow ─────────────────────────────────────
+            AFTER the four marketplace lanes and before the grid, which is the
+            honest position for it. Above them it would read as the primary way
+            Discover works and imply that following someone moves them up the
+            marketplace — it does not, anywhere. Below the paginated grid it
+            would be unreachable in practice.
+
+            It is viewer-specific, it is hidden entirely when empty, and it
+            reorders nothing above or below it: the lanes and the grid are built
+            from `lib/discovery.ts`, which cannot see a follow. */}
+        {!loading && !failed && activeCategoryId === null ? (
+          <FollowedActivityRow userId={user?.id} />
+        ) : null}
+
         {/* ── Browse ─────────────────────────────────────────────────────── */}
         <View style={s.browseHead}>
           <Text style={[type.titleCard, { color: colors.textPrimary }]}>
@@ -475,6 +490,12 @@ export default function DiscoveryFeed() {
           </Pressable>
         ) : null}
 
+        {/* ── See the work ───────────────────────────────────────────────
+            A doorway into the Reels experience that already exists, kept BELOW
+            the complete grid so provider discovery stays the page. Ordered by
+            recency alone — no like count, no engagement, no provider signal. */}
+        {!loading && !failed && !isEmpty && activeCategoryId === null ? <ReelsEntryRow /> : null}
+
         {/* ── Community ──────────────────────────────────────────────────── */}
         {/* BELOW the grid and capped. A doorway onto the marketplace, not a
             replacement for it — and it reorders nothing above it, because social
@@ -553,7 +574,7 @@ const s = StyleSheet.create({
     justifyContent: 'center',
   },
   loadMore: {
-    marginTop: 28,
+    marginTop: 20,
     marginHorizontal: GUTTER,
     height: 48,
     borderRadius: 14,

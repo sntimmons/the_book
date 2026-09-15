@@ -224,3 +224,29 @@ which is precisely why the rows were removed rather than repointed.
   improvise an answer about what it says.
 - **A provider asking whether Reels or portfolio are required to go live**: no. Basics, a
   photo, a service and a neighbourhood.
+
+## Attribution on content surfaces (Phase 4C, 2026-09-15)
+
+Discover now shows **content** as well as providers, and content carries a rule the provider
+surfaces do not need: **media without attribution reads as a recommendation.** A row of
+unlabelled photographs on a marketplace looks like the product endorsing what is in them.
+
+So every content tile names its source, and the naming is deliberately the *weakest* thing
+it could truthfully be:
+
+| | Treatment |
+|---|---|
+| Provider identity | `labelMeta` / `caption` at `textPrimary` or `textSecondary` |
+| Time | `caption` at `textSecondary`, always subordinate to the identity |
+| Anything evaluative | **Absent** — no rating, followers, likes, engagement, badges, verification, completed bookings, price or quality language |
+
+The identity line answers *whose work is this*. It never answers *is this good*. The types
+behind these rows carry no field that could answer the second question, which is what keeps
+the rule from depending on discipline.
+
+**Where a name cannot be read, it is omitted rather than invented**, and the tile still
+appears — attribution is a caption on the work, never a filter on it.
+
+This is the same principle the provider card follows (`components/ui/ProviderCard.tsx`): a
+surface may state facts about identity freely and must state nothing about worth that the
+product cannot support.

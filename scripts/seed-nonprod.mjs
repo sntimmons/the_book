@@ -1,7 +1,22 @@
-// Minimal NON-PRODUCTION seed foundation for B5B (DB/security) and B5C (Maestro).
-// Creates two reserved auth identities plus a provider row, client row, and one
-// provider service. Idempotent. Targets NON-PROD only, with a hard production-ref
-// guard.
+// Minimal NON-PRODUCTION seed foundation for B5B (DB/security), B5C (Maestro) and
+// Discover QA. Creates two reserved auth identities plus a provider row, client
+// row, one provider service, and the small amount of CONTENT the Discover social
+// rows need in order to be visible at all. Idempotent. Targets NON-PROD only,
+// with a hard production-ref guard.
+//
+// ── WHY CONTENT IS SEEDED AT ALL ──────────────────────────────────────────
+//
+// `From people you follow` and `See the work` are both hidden when empty, by
+// design — no filler, no fallback to strangers. That is correct behaviour and it
+// is exactly why they were invisible in QA: non-production had ZERO posts and the
+// QA client followed nobody, so both rows suppressed themselves truthfully.
+//
+// This seeds the minimum that makes them appear: one follow, one recent image
+// post, one video post. It is QA DATA, not product behaviour — nothing here
+// changes ranking, eligibility or any rule. The media is real: the repository's
+// own photographic assets, uploaded into the non-production `posts-media` bucket
+// under a clearly-labelled `qa-seed` folder so nobody mistakes it for a real
+// provider's work.
 //
 // Secrets are read from the private tooling env (NOT EXPO_PUBLIC_*, never bundled,
 // never committed). Populate .env.tooling.local from .env.tooling.example and run:
@@ -10,6 +25,7 @@
 //
 // Required env: TEST_SUPABASE_URL, TEST_SUPABASE_SERVICE_ROLE_KEY,
 //   SEED_CLIENT_EMAIL, SEED_CLIENT_PASSWORD, SEED_PROVIDER_EMAIL, SEED_PROVIDER_PASSWORD.
+import { readFileSync } from 'node:fs'
 import { createClient } from '@supabase/supabase-js'
 
 // Keep in sync with test/guards/supabaseTarget.ts (that TS guard is the canonical
@@ -117,6 +133,13 @@ async function main() {
     if (sErr) throw sErr
   }
 
+  // ── DISCOVER QA CONTENT ──────────────────────────────────────────────
+  //
+  // Everything below is idempotent and additive. It creates no rule, changes no
+  // ranking, and touches no schema: three rows in `posts` and one in
+  // `provider_follows`, all of which the product's own screens already write.
+  const seeded = await seedDiscoverContent(admin, providerUser.id, providerId, clientUser.id)
+
   console.log(
     JSON.stringify(
       {
@@ -124,11 +147,182 @@ async function main() {
         clientUserId: clientUser.id,
         providerUserId: providerUser.id,
         providerId,
+        discoverQa: seeded,
       },
       null,
       2,
     ),
   )
+}
+
+const POSTS_BUCKET = 'posts-media'
+
+// Real bytes from the repository's own assets. Uploaded rather than linked so
+// non-production owns its media and the seed has no external dependency.
+const MEDIA = {
+  work1: { file: 'assets/images/auth/signup1.jpg', type: 'image/jpeg', ext: 'jpg' },
+  work2: { file: 'assets/images/auth/signup2.jpg', type: 'image/jpeg', ext: 'jpg' },
+  still: { file: 'assets/images/auth/signup3.jpg', type: 'image/jpeg', ext: 'jpg' },
+  clip: { file: 'assets/videos/welcome.mp4', type: 'video/mp4', ext: 'mp4' },
+}
+
+/**
+ * Upload one asset to a DETERMINISTIC path and return its public URL.
+ *
+ * The path is fixed rather than timestamped (which is what the app's own
+ * `generatePath` does) precisely so re-running this seed overwrites the same
+ * object instead of accumulating a new copy on every run.
+ */
+async function putMedia(admin, providerUserId, key) {
+  const m = MEDIA[key]
+  const path = `${providerUserId}/qa-seed/${key}.${m.ext}`
+  const bytes = readFileSync(m.file)
+  const { error } = await admin.storage
+    .from(POSTS_BUCKET)
+    .upload(path, bytes, { contentType: m.type, upsert: true })
+  if (error) throw new Error(`upload ${key}: ${error.message}`)
+  const { data } = admin.storage.from(POSTS_BUCKET).getPublicUrl(path)
+  return data.publicUrl
+}
+
+/** Insert a post once, keyed on its media_url so a re-run does not duplicate it. */
+async function ensurePost(admin, providerId, row) {
+  const { data: existing } = await admin
+    .from('posts')
+    .select('id')
+    .eq('provider_id', providerId)
+    .eq('media_url', row.media_url)
+    .maybeSingle()
+  if (existing) return existing.id
+  const { data, error } = await admin.from('posts').insert(row).select('id').single()
+  if (error) throw new Error(`post insert: ${error.message}`)
+  return data.id
+}
+
+async function seedDiscoverContent(admin, providerUserId, providerId, clientUserId) {
+  const [work1, work2, still, clip] = await Promise.all([
+    putMedia(admin, providerUserId, 'work1'),
+    putMedia(admin, providerUserId, 'work2'),
+    putMedia(admin, providerUserId, 'still'),
+    putMedia(admin, providerUserId, 'clip'),
+  ])
+
+  // `created_at` is left to the column default (now()), which is what puts these
+  // inside the 30-day activity window. Backdating them would be seeding a lie
+  // about when the work happened, and a stale seed would silently stop showing
+  // the row 31 days later with no explanation.
+  const posts = {
+    image1: await ensurePost(admin, providerId, {
+      provider_id: providerId,
+      media_url: work1,
+      media_type: 'image',
+      content_type: 'portfolio',
+      caption: 'QA seed — portfolio image',
+      is_active: true,
+      is_demo: false,
+    }),
+    image2: await ensurePost(admin, providerId, {
+      provider_id: providerId,
+      media_url: work2,
+      media_type: 'image',
+      content_type: 'portfolio',
+      caption: 'QA seed — portfolio image',
+      is_active: true,
+      is_demo: false,
+    }),
+    // THE THUMBNAIL IS SET EXPLICITLY, AND THAT IS NOT INCIDENTAL. Nothing in
+    // the product writes `thumbnail_url` — see the deferred defect recorded in
+    // docs/product/CURRENT_STATE.md — so a video seeded without one would be
+    // dropped by every surface that draws a still, and `See the work` would
+    // stay invisible even with content present. Setting it here is what makes
+    // the row reviewable; it does not fix the defect.
+    video: await ensurePost(admin, providerId, {
+      provider_id: providerId,
+      media_url: clip,
+      media_type: 'video',
+      thumbnail_url: still,
+      content_type: 'reel',
+      caption: 'QA seed — reel',
+      is_active: true,
+      is_demo: false,
+    }),
+  }
+
+  // ── THE FOLLOWS ─────────────────────────────────────────────────────
+  //
+  // `From people you follow` is gated on VIEWER FOLLOW STATE, not on role. A
+  // provider browsing Discover is a client like anyone else, and sees the row
+  // whenever THEY follow somebody with recent work.
+  //
+  // Both reserved accounts are therefore seeded as followers, so QA can review
+  // the row from either side of the switcher. Seeding only the client made the
+  // row look client-only and cost a review cycle to a false defect report.
+  await ensureFollow(admin, providerId, clientUserId)
+
+  // The provider account needs somebody ELSE to follow — a provider cannot
+  // follow themselves, and the row would be meaningless if they could. Any
+  // second approved provider will do; it is discovered rather than hardcoded so
+  // this does not pin the seed to one non-production row.
+  const second = await findSecondProvider(admin, providerId)
+  let providerFollows = null
+  if (second) {
+    const work = await putMedia(admin, second.user_id, 'work1')
+    await ensurePost(admin, second.id, {
+      provider_id: second.id,
+      media_url: work,
+      media_type: 'image',
+      content_type: 'portfolio',
+      caption: 'QA seed — portfolio image',
+      is_active: true,
+      is_demo: false,
+    })
+    await ensureFollow(admin, second.id, providerUserId)
+    providerFollows = { providerId: second.id, displayName: second.display_name }
+  }
+
+  return {
+    posts,
+    follows: {
+      clientFollows: { providerId, follower: clientUserId },
+      // Null when non-production has only one approved provider. Reported rather
+      // than silently skipped: without it the provider account sees no row, and
+      // a QA reviewer needs to know that is the data and not the code.
+      providerFollows: providerFollows
+        ? { ...providerFollows, follower: providerUserId }
+        : null,
+    },
+  }
+}
+
+/** Insert a follow once. The pair is the identity, so a re-run is a no-op. */
+async function ensureFollow(admin, providerId, followerUserId) {
+  const { data: existing } = await admin
+    .from('provider_follows')
+    .select('id')
+    .eq('provider_id', providerId)
+    .eq('follower_user_id', followerUserId)
+    .maybeSingle()
+  if (existing) return existing.id
+  const { data, error } = await admin
+    .from('provider_follows')
+    .insert({ provider_id: providerId, follower_user_id: followerUserId })
+    .select('id')
+    .single()
+  if (error) throw new Error(`follow insert: ${error.message}`)
+  return data.id
+}
+
+/** Any approved provider that is not the QA provider and still has an owner. */
+async function findSecondProvider(admin, excludeProviderId) {
+  const { data } = await admin
+    .from('providers')
+    .select('id, user_id, display_name')
+    .eq('is_approved', true)
+    .not('user_id', 'is', null)
+    .neq('id', excludeProviderId)
+    .order('display_name')
+    .limit(1)
+  return data && data.length > 0 ? data[0] : null
 }
 
 main().catch((e) => {

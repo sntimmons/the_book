@@ -184,3 +184,53 @@ the gate.
 Configure this in GitHub repository settings; the repository itself cannot report whether
 it is currently set (see the note above). A fork PR skips regardless, because GitHub
 withholds secrets from forks.
+
+## Discover QA content (non-production only)
+
+`scripts/seed-nonprod.mjs` also seeds the small amount of CONTENT the Discover social rows
+need to be visible: one follow (QA client → QA provider), two image posts and one video
+post by the QA provider.
+
+This exists because **`From people you follow` and `See the work` are hidden when empty by
+design** — no filler, no fallback to unrelated providers — so against an empty database
+they suppress themselves correctly and appear to be broken. They are not.
+
+The seeded video sets `thumbnail_url` **explicitly**. Nothing in the product does, which is
+a recorded deferred defect (see `docs/product/CURRENT_STATE.md`); without it the Discover
+reel row has nothing renderable and stays invisible even with content present.
+
+Media is uploaded from the repository's own assets into the non-production `posts-media`
+bucket under `<providerUserId>/qa-seed/`, at deterministic paths so re-running the seed
+overwrites rather than accumulates.
+
+### The followed row depends on FOLLOW STATE, not on role
+
+**`From people you follow` is not client-only.** A provider browsing Discover is a client
+like anyone else: any signed-in account sees the row whenever **that account** follows a
+provider with recent eligible activity. There is no role gate anywhere in the path —
+`lib/discoverSocial.ts` takes a user id and reads `provider_follows.follower_user_id`, and
+`app/(tabs)/index.tsx` does not reference `isProvider` at all.
+
+The seed therefore makes **both** reserved accounts followers, so the row can be reviewed
+from either side of the `__DEV__` switcher:
+
+| Account | Follows | `fetchFollowedActivity()` | `fetchDiscoverReels()` |
+|---|---|---|---|
+| `client@thebook.dev` | the QA provider | **3 items** | 1 item |
+| `provider@thebook.dev` | a second approved provider | **1 item** | 1 item |
+
+Verified 2026-09-15 by running the shipped `fetchFollowedActivity` against non-production,
+once per account.
+
+The provider account follows a **different** provider because nobody can follow themselves,
+and the second provider is **discovered at seed time** rather than hardcoded. If
+non-production ever has only one approved provider, the seed reports
+`providerFollows: null` in its output rather than skipping silently — without it the
+provider account sees no row, and a reviewer needs to know that is the data and not a
+defect.
+
+**If the row is missing, check what that specific account follows.** An account that
+follows nobody correctly sees nothing — that is the locked behaviour (hidden when empty, no
+filler, no fallback to strangers), not a bug. `See the work` is not viewer-specific and
+appears for everyone, so seeing one row and not the other is normal and says nothing about
+either.

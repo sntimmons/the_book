@@ -39,6 +39,79 @@ JSX text contains bare apostrophes — `a provider's profile` — which a naive 
 reads as the start of a literal and is then desynced, reporting comments as user-visible
 copy. The guard tests that failure mode against itself.
 
+**PHASE 4C IS CLOSED. Discover's two social rows are FOUNDER VISUALLY APPROVED and FINAL for this phase** — approved 2026-09-15 on real-device screenshots, not on a code review. No further product or visual change to either row without reopening the phase.
+`From people you follow` sits after the marketplace lanes and before the grid; `See the
+work` sits below the grid. Both carry **attribution only** — provider identity, and for
+followed activity a subordinate timestamp. Neither carries a rating, follower count, likes,
+engagement, badge, verification, completed bookings, price or any quality language, and the
+types behind them have no field that could. **Social activity is visually supportive of
+marketplace discovery and structurally separate from its ranking**: `lib/discovery.ts` has
+no follow input, so a social signal cannot reach placement even by mistake. The full
+treatment is recorded in
+[operations/DISCOVERY_OPERATIONS.md](../operations/DISCOVERY_OPERATIONS.md) and the
+attribution rule in [operations/UX_OPERATIONS.md](../operations/UX_OPERATIONS.md).
+
+**⚠ DEFERRED DEFECT — product-created video posts carry no `thumbnail_url`, so every
+surface that draws a video STILL shows nothing.** Found during Phase 4C QA (2026-09-15).
+**Not fixed, deliberately, and not caused by Phase 4C.**
+
+All three post-creation sites — `app/(tabs)/business/posts.tsx`,
+`app/(tabs)/business/portfolio.tsx` and `app/onboarding/provider/golive.tsx` — insert
+`media_url`, `media_type`, `content_type` and `is_demo`, and **never** `thumbnail_url`. The
+column has no default, so **every video a provider uploads has `thumbnail_url = NULL`.**
+
+**Affected surfaces**, all of which resolve a video's still from that column:
+
+| Surface | Behaviour with a NULL thumbnail |
+|---|---|
+| Discover → **See the work** (`lib/discoverSocial.ts`) | The item is **dropped**; the row can never render from product-created video |
+| **Provider search** content grid (`app/(tabs)/search.tsx`) | Renders a **blank tile** |
+| **Business → Posts** grid (`app/(tabs)/business/posts.tsx`) | Renders a **blank tile** |
+| **Reels tab** (`app/(tabs)/reels.tsx`) | **Works** — it plays `media_url` and needs no still |
+
+That last row is the cross-surface inconsistency: once a provider uploads a reel it plays
+in the Reels tab while Discover stays empty and two grids show blanks. Discover fails
+*closed* (shows nothing) where the grids fail *blank* (show an empty box) — different
+symptoms, one cause.
+
+**Why it is not fixed here.** A real fix is thumbnail generation at upload, which is new
+media infrastructure and outside the Phase 4C scope (*"no second Reels implementation"*).
+The alternatives — rendering a video player inside a horizontal row, or showing an
+unrelated image in its place — are both worse than showing nothing. **Recorded as a
+follow-up rather than improvised.**
+
+**Non-production QA state required to review the Discover social rows.** Both rows are
+hidden when empty by design, with no filler and no fallback to strangers, so they are
+invisible against an empty database — which is exactly what non-production was. Seeded by
+`scripts/seed-nonprod.mjs` (idempotent, service-role, production-ref-guarded):
+
+- one `provider_follows` row — QA client → QA provider
+- two image posts and one video post by the QA provider, `is_active`, `is_demo = false`,
+  `created_at` left to `now()` so they fall inside the 30-day activity window
+- the video's `thumbnail_url` is **set explicitly**, because of the defect above; without
+  it `See the work` stays invisible even with content present
+
+Media is the repository's own photographic assets uploaded to the non-production
+`posts-media` bucket under a `qa-seed/` folder, so it is never mistaken for a real
+provider's work.
+
+**`From people you follow` is gated on VIEWER FOLLOW STATE, not on role.** A provider
+browsing Discover is a client like anyone else, and sees the row whenever **that account**
+follows a provider with recent eligible activity. There is no role gate in the path:
+`lib/discoverSocial.ts` takes a user id and reads `provider_follows.follower_user_id`, and
+`app/(tabs)/index.tsx` does not reference `isProvider` at all.
+
+The seed makes **both** reserved accounts followers so the row is reviewable from either
+side of the `__DEV__` switcher — the provider account follows a *different* approved
+provider, since nobody can follow themselves.
+
+An account that follows nobody correctly sees nothing: hidden when empty, no filler, no
+fallback to strangers. **That is indistinguishable from a defect without checking the
+account's follow state**, and it has already produced one false defect report — the reel row
+was visible, the followed row was not, and the signed-in account simply followed nobody.
+`See the work` is not viewer-specific and appears for everyone, so one row present and the
+other absent is normal.
+
 **Discover is FULLY migrated onto the Third theme** (Phase 4B, `04735d0`, PR #108,
 2026-09-14). **Founder visually approved the design before merge.** It was the **last
 primary surface** still painted in the legacy dark palette — `useTheme` used **zero** times
