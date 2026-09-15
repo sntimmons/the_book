@@ -64,6 +64,7 @@ export async function deleteProviderMedia(
   postId: string,
   mediaUrl: string,
   bucket: string = 'posts-media',
+  thumbnailUrl: string | null = null,
 ): Promise<MediaDeleteResult> {
   const { data, error } = await supabase
     .from('posts')
@@ -83,18 +84,49 @@ export async function deleteProviderMedia(
     return { ok: false, fileOrphaned: false, error: { code: 'no_rows' } }
   }
 
-  const path = storagePathFromPublicUrl(mediaUrl, bucket)
-  if (!path) return { ok: true, fileOrphaned: true, error: null }
+  // A VIDEO POST IS TWO OBJECTS, NOT ONE. The upload boundary stores the clip
+  // and a still generated from it (lib/storage.ts), so a delete that removes
+  // only `media_url` leaves a recognisable frame of that video publicly
+  // readable in a public bucket. This function exists for the case named at the
+  // top of this file — a photo of a client who later asked for it to come down
+  // — and a frame of the same client from the same clip is that photo. Both
+  // objects go, or the delete is reported as orphaned.
+  const paths = [
+    storagePathFromPublicUrl(mediaUrl, bucket),
+    thumbnailUrl ? storagePathFromPublicUrl(thumbnailUrl, bucket) : null,
+  ].filter((p): p is string => p !== null && p.length > 0)
 
-  const { error: fileError } = await supabase.storage.from(bucket).remove([path])
+  // Every URL we were given failed to parse into a path in this bucket — there
+  // is nothing we can address, so the file is orphaned by definition.
+  if (paths.length === 0) return { ok: true, fileOrphaned: true, error: null }
+
+  // A URL that did not parse while another did still leaves something behind.
+  const unaddressable = thumbnailUrl !== null && paths.length < 2
+
+  const { data: removed, error: fileError } = await supabase.storage
+    .from(bucket)
+    .remove(paths)
   if (fileError) {
     // NOT surfaced to the provider. From where they stand the photo is gone: it
     // has left their profile, the feed and Reels. Captured so the orphan is
     // visible to us rather than silent.
-    Sentry.captureException(fileError, { extra: { bucket, path, postId } })
+    Sentry.captureException(fileError, { extra: { bucket, paths, postId } })
     return { ok: true, fileOrphaned: true, error: null }
   }
-  return { ok: true, fileOrphaned: false, error: null }
+
+  // Same rule the row delete follows above: storage RLS FILTERS rather than
+  // raising, so a refused remove returns no error and simply omits the object
+  // from the removed set. Fewer objects back than asked for means something is
+  // still there.
+  const removedCount = ((removed as { name: string }[] | null) ?? []).length
+  if (removedCount < paths.length) {
+    Sentry.captureException(new Error('Storage remove did not remove every object'), {
+      extra: { bucket, paths, removedCount, postId },
+    })
+    return { ok: true, fileOrphaned: true, error: null }
+  }
+
+  return { ok: true, fileOrphaned: unaddressable, error: null }
 }
 
 /**

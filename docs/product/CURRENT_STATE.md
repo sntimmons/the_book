@@ -51,34 +51,75 @@ treatment is recorded in
 [operations/DISCOVERY_OPERATIONS.md](../operations/DISCOVERY_OPERATIONS.md) and the
 attribution rule in [operations/UX_OPERATIONS.md](../operations/UX_OPERATIONS.md).
 
-**⚠ DEFERRED DEFECT — product-created video posts carry no `thumbnail_url`, so every
-surface that draws a video STILL shows nothing.** Found during Phase 4C QA (2026-09-15).
-**Not fixed, deliberately, and not caused by Phase 4C.**
+**Every product-created video post now carries a usable still — the thumbnail defect is
+CLOSED** (Session 5, 2026-09-15).
 
-All three post-creation sites — `app/(tabs)/business/posts.tsx`,
-`app/(tabs)/business/portfolio.tsx` and `app/onboarding/provider/golive.tsx` — insert
-`media_url`, `media_type`, `content_type` and `is_demo`, and **never** `thumbnail_url`. The
-column has no default, so **every video a provider uploads has `thumbnail_url = NULL`.**
+**The invariant, stated once:** *every product-created video post must have a usable
+thumbnail/still for surfaces that cannot play video.* It is enforced at the **shared upload
+boundary**, not at the call sites, so the two video-creating paths cannot drift apart on it.
 
-**Affected surfaces**, all of which resolve a video's still from that column:
+**What was wrong.** All three post-creation sites inserted `media_url`, `media_type`,
+`content_type` and `is_demo`, and **never** `thumbnail_url`. The column has no default, so
+every video a provider uploaded stored NULL — and the damage was split across five surfaces
+with no error anywhere:
 
-| Surface | Behaviour with a NULL thumbnail |
+| Surface | Before |
 |---|---|
-| Discover → **See the work** (`lib/discoverSocial.ts`) | The item is **dropped**; the row can never render from product-created video |
-| **Provider search** content grid (`app/(tabs)/search.tsx`) | Renders a **blank tile** |
-| **Business → Posts** grid (`app/(tabs)/business/posts.tsx`) | Renders a **blank tile** |
-| **Reels tab** (`app/(tabs)/reels.tsx`) | **Works** — it plays `media_url` and needs no still |
+| Discover → **See the work** | item **dropped** — the row could never render product video |
+| **Provider search** content grid | **blank tile** |
+| **Business → Posts** grid | **blank tile** |
+| **Provider public profile** → *In motion / Reels* | **blank tile** — it rendered the `.mp4` URL through `<Image>` |
+| **Reels tab** | **worked** — it plays `media_url` and needs no still |
 
-That last row is the cross-surface inconsistency: once a provider uploads a reel it plays
-in the Reels tab while Discover stays empty and two grids show blanks. Discover fails
-*closed* (shows nothing) where the grids fail *blank* (show an empty box) — different
-symptoms, one cause.
+The one surface that worked is the one a provider would check, which is why this survived.
 
-**Why it is not fixed here.** A real fix is thumbnail generation at upload, which is new
-media infrastructure and outside the Phase 4C scope (*"no second Reels implementation"*).
-The alternatives — rendering a video player inside a horizontal row, or showing an
-unrelated image in its place — are both worse than showing nothing. **Recorded as a
-follow-up rather than improvised.**
+The fifth surface was **missed by the first pass of this fix** and found by the Codebase
+Auditor: the original census named four, and `app/providers/[id].tsx` did not even select
+`thumbnail_url`. It is recorded here because the shape of the mistake is the point — a
+surface list that nobody checks for completeness proves only that the surfaces on it are
+fine. The guard now censuses every file that reads `media_type` and fails when a new one
+appears unclassified, the same way it already censused the post-insert sites.
+
+**The fix.** `lib/storage.ts`'s `uploadMedia()` generates a still from the uploaded video
+(`expo-video-thumbnails`, SDK-pinned `~10.0.8`), stores it beside the video in the same
+bucket, and returns it as `thumbnailUrl`; `uploadMultiple` returns `UploadedMedia[]` so a
+caller cannot lose the still between upload and insert. **A video that cannot produce a
+still fails the whole upload** and its already-stored object is removed — a video row
+without a still is publishable but half-broken, and an unrelated image would be a picture of
+somebody else's work on somebody's post. Image behaviour is unchanged.
+
+**A video post is now two storage objects, so the delete path removes two.** `deleteProviderMedia`
+took a single `media_url` and would have left a recognisable frame of a deleted video publicly
+readable — the exact case PD-076 and the provider-facing copy ("This removes it from your
+profile and from Third") exist for. It now takes the still as well, and a storage remove that
+returns fewer objects than it was asked for is reported as an orphan rather than as success:
+storage RLS *filters* a refused remove instead of raising, and this was verified against the
+Storage API, where removing a real object returns one entry and removing nothing returns zero.
+The same check now guards the upload's own rollback.
+
+**One new dependency, and it is native.** `expo-video-thumbnails` is imported **lazily** so
+a JS bundle running on a client built before it was added fails *that upload* with a clear
+message rather than crashing every screen that touches storage at module load. **A native
+rebuild of the dev client (and any EAS build) is required** before video upload works.
+
+**No backfill was required.** At the time of the fix non-production held exactly **one**
+video post — the QA seed row, which already carried an explicit thumbnail — and **zero**
+real product-created video rows. The cheapest possible moment to fix it.
+
+**No schema, RLS, migration, bucket, grant or ranking change.** Guards:
+`__tests__/guards/videoThumbnailIntegrity.test.ts` (which also censuses the post-insert sites
+and the `media_type` readers, so neither a new writer nor a new rendering surface can appear
+unnoticed), `__tests__/lib/storageVideoStill.test.ts`, and the two-object cases in
+`__tests__/lib/providerMedia.test.ts`. The upload contract itself is documented in
+[operations/MEDIA_UPLOAD.md](../operations/MEDIA_UPLOAD.md).
+
+**One thing the code does NOT enforce, and a reviewer should know it.** `posts.thumbnail_url`
+and `posts.media_url` are unconstrained `text`: row ownership binds *who* may insert, never
+*what* the URL points at, so nothing server-side stops a crafted insert from naming another
+provider's object. This is pre-existing and identical for both columns — the still adds a
+second door to an open room rather than opening the room — and it is open for a PM ruling
+rather than settled here. The canonical schema comment on `thumbnail_url` still reads
+"Server-generated", which is now inaccurate: the value is produced on the device.
 
 **Non-production QA state required to review the Discover social rows.** Both rows are
 hidden when empty by design, with no filler and no fallback to strangers, so they are

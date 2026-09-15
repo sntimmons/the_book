@@ -1349,7 +1349,9 @@ these as **structurally stable for the current beta scope**:
 - **barter terminology**
 - **Reels** cleanup
 - **Discover** — Phase 4B core redesign and Phase 4C social entry points, **founder visually
-  approved 2026-09-15 and CLOSED**. The approved treatment is
+  approved 2026-09-15 and CLOSED**. The video-thumbnail defect it surfaced was fixed
+  separately in Session 5 (same date) at the shared upload boundary.
+  **Session 5 was the last item tracked against Discover; nothing remains open on it.** The approved treatment is
   [docs/design/DISCOVER.md](../design/DISCOVER.md); the cross-app principles behind it are
   [docs/design/THIRD_VISUAL_SYSTEM.md](../design/THIRD_VISUAL_SYSTEM.md)
 

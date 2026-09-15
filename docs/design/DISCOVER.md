@@ -170,11 +170,14 @@ no second Reels implementation — it draws stills and routes to the tab.
 
 *"See the work"* — not *"these are the best providers"*.
 
-> **Known deferred defect:** product-created video posts do not populate `thumbnail_url`,
-> and this row (plus provider search and the business posts grid) depends on it for stills,
-> while Reels plays `media_url` directly. Recorded in
-> [../product/CURRENT_STATE.md](../product/CURRENT_STATE.md); **a separate follow-up, not
-> part of Phase 4C.**
+**Where the stills come from.** Every product-created video post carries one, guaranteed at
+the shared upload boundary: `lib/storage.ts` generates a still from the uploaded video and
+**fails the whole upload if it cannot**, so a video row without a still cannot exist. This
+row therefore renders from real product video, not only from seeded content.
+
+> *Fixed in Session 5 (2026-09-15). It previously read as a deferred defect here: nothing
+> wrote `thumbnail_url`, so this row dropped every product-created video while the Reels tab
+> played the same clip happily.*
 
 ---
 

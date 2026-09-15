@@ -19,7 +19,7 @@ import { useProviderStore } from '@/store/providerStore'
 import { DEFAULT_POLICY, policyToPoliciesRow, policyToBookingPrefs } from '@/lib/policy'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
-import { uploadMedia, uploadMultiple } from '@/lib/storage'
+import { uploadMedia, uploadMultiple, type UploadedMedia } from '@/lib/storage'
 
 // A newly-live provider lands in the shared tabs (their studio is reached via
 // the Me tab's My Studio entrance). One shell, no modes.
@@ -141,7 +141,7 @@ export default function ProviderGoLive() {
       }
 
       // STAGE 3: portfolio photos
-      let portfolioUrls: string[] = []
+      let portfolioUrls: UploadedMedia[] = []
       if (portfolioPhotos.length > 0) {
         setUploadStage('Uploading portfolio...')
         setUploadTotal(portfolioPhotos.length)
@@ -161,7 +161,7 @@ export default function ProviderGoLive() {
       }
 
       // STAGE 4: reels
-      let reelUrls: string[] = []
+      let reelUrls: UploadedMedia[] = []
       if (reels.length > 0) {
         setUploadStage('Uploading reels...')
         setUploadTotal(reels.length)
@@ -177,8 +177,20 @@ export default function ProviderGoLive() {
             setUploadTotal(total)
           },
         )
-        reelUrls = reelResult.successful
+        // THE INVARIANT IS ENFORCED HERE, NOT ASSUMED. uploadMedia refuses to
+        // return a video without a still, but uploadMultiple passes an
+        // already-remote URI straight through with `thumbnailUrl: null` — and
+        // this is the only place that turns an upload result into a video row.
+        // Inserting one of those would recreate the NULL `thumbnail_url` that
+        // blanks a reel everywhere except the Reels tab, so it is dropped and
+        // reported as a failed file rather than published half-broken.
+        reelUrls = reelResult.successful.filter((item) => item.thumbnailUrl !== null)
         uploadFailures.push(...reelResult.failed)
+        for (const dropped of reelResult.successful) {
+          if (dropped.thumbnailUrl === null) {
+            uploadFailures.push({ uri: dropped.url, error: 'No preview image could be made' })
+          }
+        }
       }
 
       // Surface any upload failures. Continue the go-live with whatever files
@@ -396,9 +408,9 @@ export default function ProviderGoLive() {
       let portfolioSaveFailed = false
       if (providerDbId && (portfolioUrls.length > 0 || reelUrls.length > 0)) {
         const postRows = [
-          ...portfolioUrls.map((url, index) => ({
+          ...portfolioUrls.map((item, index) => ({
             provider_id: providerDbId,
-            media_url: url,
+            media_url: item.url,
             media_type: 'image',
             content_type: 'portfolio',
             visibility: 'public',
@@ -406,9 +418,14 @@ export default function ProviderGoLive() {
             is_demo: false,
             sort_order: index,
           })),
-          ...reelUrls.map((url, index) => ({
+          // A reel carries the still the upload boundary produced. A video row
+          // without one is blank in Discover, search and the business grid while
+          // playing fine in Reels, so the boundary refuses to return a video
+          // without a thumbnail and this simply passes it through.
+          ...reelUrls.map((item, index) => ({
             provider_id: providerDbId,
-            media_url: url,
+            media_url: item.url,
+            thumbnail_url: item.thumbnailUrl,
             media_type: 'video',
             content_type: 'portfolio',
             visibility: 'public',
